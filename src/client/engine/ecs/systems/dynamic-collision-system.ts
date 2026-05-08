@@ -4,7 +4,6 @@ import {
     Interactable,
     MoveAlongPath,
     MovementState,
-    PhysicalObstacle,
     PlayerControlled,
     Position,
     Velocity,
@@ -51,8 +50,7 @@ export function createDynamicCollisionSystem(opts: DynamicCollisionOptions = {})
 function isSolidCharacter(world: Parameters<System['update']>[0], eid: number): boolean {
     return hasComponent(world, eid, PlayerControlled) ||
         hasComponent(world, eid, Wanderer) ||
-        hasComponent(world, eid, Interactable) ||
-        hasComponent(world, eid, PhysicalObstacle)
+        hasComponent(world, eid, Interactable)
 }
 
 function separatePair(world: Parameters<System['update']>[0], a: number, b: number, padding: number): void {

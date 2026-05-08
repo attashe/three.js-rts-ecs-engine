@@ -12,6 +12,8 @@ import { createCameraFollowSystem } from './engine/ecs/systems/camera-follow-sys
 import { createPlayerControlSystem } from './engine/ecs/systems/player-control-system'
 import { createPhysicsSystem } from './engine/ecs/systems/physics-system'
 import { createDynamicCollisionSystem } from './engine/ecs/systems/dynamic-collision-system'
+import { createRigidBodyPairSystem } from './engine/ecs/systems/rigidbody-pair-system'
+import { createImpactSystem } from './engine/ecs/systems/impact-system'
 import { createDebugOverlaySystem } from './engine/ecs/systems/debug-overlay-system'
 import { createVoxelMechanismSystem } from './engine/ecs/systems/voxel-mechanism-system'
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
@@ -180,11 +182,13 @@ async function main(): Promise<void> {
         .addSystem(createInteractionSystem(engine.input, { notify }))
         .addSystem(createMeleeCombatSystem(engine.input, { notify }))
         .addSystem(createPickupSystem({ notify }))
-        .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners))
+        .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 14 }))
         .addSystem(createWanderSystem(chunks))
         .addSystem(MoveAlongPathSystem)
         .addSystem(createPhysicsSystem(chunks))
-        .addSystem(createMovingObjectSystem(chunks))
+        .addSystem(createRigidBodyPairSystem())
+        .addSystem(createImpactSystem())
+        .addSystem(createMovingObjectSystem())
         .addSystem(createDynamicCollisionSystem())
         .addSystem(createRenderSyncSystem(renderer.scene))
         .addSystem(chunkRenderSystem)

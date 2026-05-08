@@ -1,5 +1,6 @@
 import { createWorld, type World } from 'bitecs'
 import type { Object3D, Vector3 } from 'three'
+import { ObstacleRegistry } from './obstacle-registry'
 
 export interface VoxelCoord {
     x: number
@@ -61,6 +62,20 @@ export interface GameLogEntry {
     eid?: number
 }
 
+/** Emitted by physics-system when a body's downward sweep was hard-blocked.
+ *  Drained each fixed step by impact-system. */
+export interface ImpactEvent {
+    eid: number
+    /** Inbound speed along the ground normal (m/s, always positive). */
+    speed: number
+    /** Body mass at the moment of impact. */
+    mass: number
+    /** Body position (foot-anchored) at the moment of impact. */
+    x: number
+    y: number
+    z: number
+}
+
 // Side-tables. bitecs components hold only numeric data; anything that's a
 // reference type (Object3D, path arrays, palette indices for level metadata)
 // lives here keyed by entity id.
@@ -72,6 +87,10 @@ export interface GameContext {
     mechanismByEid: Map<number, VoxelMechanism>
     voxelMechanisms: VoxelMechanism[]
     log: GameLogEntry[]
+    /** Per-frame queue of high-energy impacts produced by physics-system. */
+    impactEvents: ImpactEvent[]
+    /** AABBs of settled rigid bodies the voxel-sweep treats as solid. */
+    obstacles: ObstacleRegistry
 }
 
 export type GameWorld = World<GameContext>
@@ -85,6 +104,8 @@ export function createGameWorld(): GameWorld {
         mechanismByEid: new Map<number, VoxelMechanism>(),
         voxelMechanisms: [],
         log: [],
+        impactEvents: [],
+        obstacles: new ObstacleRegistry(),
     })
 }
 

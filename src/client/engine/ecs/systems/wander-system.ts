@@ -5,9 +5,9 @@ import {
     BoxCollider,
     Interactable,
     MoveAlongPath,
-    PhysicalObstacle,
     PlayerControlled,
     Position,
+    Sleeping,
     Wanderer,
     WanderHome,
     WanderRadius,
@@ -86,7 +86,7 @@ function collectDynamicBlockers(world: GameWorld): DynamicBlocker[] {
             !hasComponent(world, eid, PlayerControlled) &&
             !hasComponent(world, eid, Wanderer) &&
             !hasComponent(world, eid, Interactable) &&
-            !hasComponent(world, eid, PhysicalObstacle)
+            !hasComponent(world, eid, Sleeping)
         ) {
             continue
         }

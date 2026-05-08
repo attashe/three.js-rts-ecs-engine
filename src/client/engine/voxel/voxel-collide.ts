@@ -10,6 +10,12 @@ export interface AABB {
     maxZ: number
 }
 
+/** Pluggable source of "extra" solid AABBs the sweep treats as walls — used
+ *  for settled dynamic bodies that aren't baked into the voxel grid. */
+export interface ObstacleSource {
+    intersects(aabb: AABB, excludeEid?: number): boolean
+}
+
 const EPS = 1e-6
 
 /** Returns true if any solid voxel overlaps the AABB. */
@@ -34,6 +40,10 @@ export function voxelAABBOverlap(chunks: ChunkManager, aabb: AABB): boolean {
     return false
 }
 
+/** Whether `Position.y` is the entity's foot or the centre of its AABB.
+ *  See the `centerAnchored` flag on RigidBody for the rationale. */
+export type ColliderAnchor = 'foot' | 'center'
+
 /** Mutable AABB built from foot-anchored Position + BoxCollider half-extents.
  *  X/Z are centred on Position; Y spans `[pos.y, pos.y + 2*half.y]` so
  *  Position.y is the entity's *foot* (matching how player meshes are laid out
@@ -52,6 +62,32 @@ export function aabbFromFoot(
     return out
 }
 
+/** AABB centred on Position on every axis. Used for round bodies whose visual
+ *  Group origin sits at the body centre, so rotating the Group rotates the
+ *  visual in place rather than swinging it through the ground. */
+export function aabbFromCenter(
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    out: AABB,
+): AABB {
+    out.minX = pos.x - half.x
+    out.maxX = pos.x + half.x
+    out.minY = pos.y - half.y
+    out.maxY = pos.y + half.y
+    out.minZ = pos.z - half.z
+    out.maxZ = pos.z + half.z
+    return out
+}
+
+function aabbForAnchor(
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+    out: AABB,
+): AABB {
+    return anchor === 'center' ? aabbFromCenter(pos, half, out) : aabbFromFoot(pos, half, out)
+}
+
 /**
  * Sweep a single axis. Tries to displace `pos.{x,y,z}` along `axis` by
  * `delta` world units; if the resulting AABB overlaps a solid voxel, binary-
@@ -68,9 +104,45 @@ export function sweepAxis(
     half: { x: number; y: number; z: number },
     axis: 'x' | 'y' | 'z',
     delta: number,
+    obstacles?: ObstacleSource | null,
+    excludeEid?: number,
+    anchor: ColliderAnchor = 'foot',
 ): { moved: number; blocked: boolean } {
     if (delta === 0) return { moved: 0, blocked: false }
 
+    // Tunnel-safe sub-stepping: a single binary-searched endpoint test misses
+    // walls the body fully crossed in one frame. Cap the per-step distance at
+    // ~half the body's extent on the swept axis (and ≤0.5 — half a voxel) so
+    // every potential collider on the swept path appears as an overlap at the
+    // end of some sub-step.
+    const halfOnAxis = axis === 'x' ? half.x : axis === 'y' ? half.y : half.z
+    const stepLimit = Math.min(Math.max(halfOnAxis * 1.5, 0.05), 0.5)
+    const absDelta = Math.abs(delta)
+    if (absDelta <= stepLimit) {
+        return sweepAxisOnce(chunks, pos, half, axis, delta, obstacles, excludeEid, anchor)
+    }
+
+    const steps = Math.ceil(absDelta / stepLimit)
+    const stepDelta = delta / steps
+    let totalMoved = 0
+    for (let i = 0; i < steps; i++) {
+        const result = sweepAxisOnce(chunks, pos, half, axis, stepDelta, obstacles, excludeEid, anchor)
+        totalMoved += result.moved
+        if (result.blocked) return { moved: totalMoved, blocked: true }
+    }
+    return { moved: totalMoved, blocked: false }
+}
+
+function sweepAxisOnce(
+    chunks: ChunkManager,
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    axis: 'x' | 'y' | 'z',
+    delta: number,
+    obstacles: ObstacleSource | null | undefined,
+    excludeEid: number | undefined,
+    anchor: ColliderAnchor,
+): { moved: number; blocked: boolean } {
     const tmp: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     const test = (offset: number): boolean => {
         const tryPos = {
@@ -78,11 +150,12 @@ export function sweepAxis(
             y: axis === 'y' ? pos.y + offset : pos.y,
             z: axis === 'z' ? pos.z + offset : pos.z,
         }
-        aabbFromFoot(tryPos, half, tmp)
-        return voxelAABBOverlap(chunks, tmp)
+        aabbForAnchor(tryPos, half, anchor, tmp)
+        if (voxelAABBOverlap(chunks, tmp)) return true
+        if (obstacles && obstacles.intersects(tmp, excludeEid)) return true
+        return false
     }
 
-    // Optimistic: full delta is fine.
     if (!test(delta)) {
         if (axis === 'x') pos.x += delta
         else if (axis === 'y') pos.y += delta
@@ -90,7 +163,6 @@ export function sweepAxis(
         return { moved: delta, blocked: false }
     }
 
-    // Binary search [0, delta]. lo is always non-overlapping.
     let lo = 0
     let hi = delta
     for (let i = 0; i < 12; i++) {
@@ -104,20 +176,30 @@ export function sweepAxis(
     return { moved: lo, blocked: true }
 }
 
-/** Standing-on-ground check: is there a solid voxel within `epsilon` below the AABB? */
+/** Standing-on-ground check: is there a solid voxel (or registered obstacle)
+ *  within `epsilon` below the AABB?
+ *
+ *  For foot-anchored bodies the probe sits in `[pos.y - epsilon, pos.y]`. For
+ *  centre-anchored bodies the probe sits in `[pos.y - half.y - epsilon, pos.y - half.y]`. */
 export function isGrounded(
     chunks: ChunkManager,
     pos: { x: number; y: number; z: number },
     half: { x: number; y: number; z: number },
     epsilon = 0.05,
+    obstacles?: ObstacleSource | null,
+    excludeEid?: number,
+    anchor: ColliderAnchor = 'foot',
 ): boolean {
+    const baseY = anchor === 'center' ? pos.y - half.y : pos.y
     const tmp: AABB = {
         minX: pos.x - half.x,
         maxX: pos.x + half.x,
-        minY: pos.y - epsilon,
-        maxY: pos.y,
+        minY: baseY - epsilon,
+        maxY: baseY,
         minZ: pos.z - half.z,
         maxZ: pos.z + half.z,
     }
-    return voxelAABBOverlap(chunks, tmp)
+    if (voxelAABBOverlap(chunks, tmp)) return true
+    if (obstacles && obstacles.intersects(tmp, excludeEid)) return true
+    return false
 }

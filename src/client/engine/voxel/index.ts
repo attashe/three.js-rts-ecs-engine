@@ -31,8 +31,8 @@ export type { VoxelHit } from './voxel-raycast'
 export { findPath } from './voxel-path'
 export type { PathPoint, PathOptions } from './voxel-path'
 
-export { voxelAABBOverlap, sweepAxis, isGrounded, aabbFromFoot } from './voxel-collide'
-export type { AABB } from './voxel-collide'
+export { voxelAABBOverlap, sweepAxis, isGrounded, aabbFromFoot, aabbFromCenter } from './voxel-collide'
+export type { AABB, ColliderAnchor, ObstacleSource } from './voxel-collide'
 
 export { deserializeLevel, serializeLevel } from './level-serializer'
 export type { SerializedLevel } from './level-serializer'

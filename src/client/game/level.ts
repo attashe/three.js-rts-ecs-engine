@@ -1,6 +1,6 @@
 import { BLOCK, type ChunkManager } from '../engine/voxel'
 import type { DoorMechanismConfig, PistonMechanismConfig } from './mechanisms'
-import type { StoneFallSpawnerConfig } from './moving-objects'
+import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 
 export interface LevelMeta {
     /** World-space spawn position (X, Y, Z). Y is standing height (one above topmost solid). */
@@ -135,18 +135,51 @@ function placeStoneCliff(
         chunks.setVoxel(x, valleyTop + 1, z0 + width + 1, BLOCK.noWalk)
     }
 
+    // Diverse cliff: pebbles patter constantly, the occasional boulder lands
+    // hard. Spawners are spread along the cliff edge (varying z) so debris
+    // arrives at different points in the valley.
     return [
         {
-            position: { x: x0 + 2.5, y: cliffTop + 1.1, z: z0 + 1.5 },
+            position: { x: x0 + 2.6, y: cliffTop + 1.1, z: z0 + 0.6 },
+            velocity: { x: 3.6, y: 0.1, z: 0.4 },
+            interval: 1.0,
+            jitter: 0.35,
+            options: STONE_TIER.pebble,
+        },
+        {
+            position: { x: x0 + 2.1, y: cliffTop + 1.1, z: z0 + 2.1 },
+            velocity: { x: 3.0, y: 0.3, z: 0.2 },
+            interval: 1.65,
+            jitter: 0.3,
+            options: STONE_TIER.cobble,
+        },
+        {
+            position: { x: x0 + 2.5, y: cliffTop + 1.1, z: z0 + 3.5 },
             velocity: { x: 3.2, y: 0.2, z: 0.25 },
             interval: 2.25,
             jitter: 0.35,
+            options: STONE_TIER.stone,
         },
         {
             position: { x: x0 + 1.8, y: cliffTop + 1.1, z: z0 + 4.8 },
             velocity: { x: 2.7, y: 0.3, z: -0.15 },
             interval: 3.1,
             jitter: 0.25,
+            options: STONE_TIER.stone,
+        },
+        {
+            position: { x: x0 + 2.2, y: cliffTop + 1.2, z: z0 + 6.0 },
+            velocity: { x: 3.5, y: 0.0, z: -0.3 },
+            interval: 3.6,
+            jitter: 0.3,
+            options: STONE_TIER.rock,
+        },
+        {
+            position: { x: x0 + 2.4, y: cliffTop + 1.4, z: z0 + 2.8 },
+            velocity: { x: 3.8, y: -0.1, z: 0.05 },
+            interval: 5.5,
+            jitter: 0.2,
+            options: STONE_TIER.boulder,
         },
     ]
 }

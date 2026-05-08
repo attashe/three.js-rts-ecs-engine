@@ -58,8 +58,45 @@ export const MovingObject = {
     kind: new Uint8Array(MAX_ENTITIES),
     /** Seconds since spawn. */
     age: new Float32Array(MAX_ENTITIES),
-    /** Seconds spent grounded/slow enough to settle. */
-    restTime: new Float32Array(MAX_ENTITIES),
+}
+
+/**
+ * Material parameters for a dynamic body. Read by physics-system every step
+ * for entities that also have Position + Velocity + BoxCollider.
+ *
+ * Defaults (when a field is 0 and would be invalid, e.g. mass) are applied by
+ * the spawn helpers in game/moving-objects.ts; physics treats explicit zero
+ * for damping/restitution/impactDamageScale as "off".
+ */
+export const RigidBody = {
+    /** Inertial mass for pairwise impulse weighting. >0; falls back to 1 if 0. */
+    mass: new Float32Array(MAX_ENTITIES),
+    /** Bounce coefficient on Y-block, 0..1. 0 = no bounce. */
+    restitution: new Float32Array(MAX_ENTITIES),
+    /** Per-second damping rate applied to horizontal velocity while grounded.
+     *  Effective: v *= exp(-rate*dt). 0 = no damping. */
+    linearDamping: new Float32Array(MAX_ENTITIES),
+    /** Multiplier on the engine's gravity. 0 fallback => 1.0. */
+    gravityScale: new Float32Array(MAX_ENTITIES),
+    /** Per-body terminal-fall override; 0 = use engine default. */
+    maxFallSpeed: new Float32Array(MAX_ENTITIES),
+    /** Squared total speed below which the sleep timer ticks. 0 fallback => 0.04. */
+    sleepThresholdSq: new Float32Array(MAX_ENTITIES),
+    /** Seconds the body has been below sleepThresholdSq while grounded. */
+    sleepTimer: new Float32Array(MAX_ENTITIES),
+    /** Seconds of below-threshold grounded time required to sleep. 0 fallback => 0.6. */
+    sleepDelay: new Float32Array(MAX_ENTITIES),
+    /** damage = mass * inboundSpeed * impactDamageScale. 0 = no damage on hit. */
+    impactDamageScale: new Float32Array(MAX_ENTITIES),
+    /** 1 = visually tumble around X/Z when rolling on the ground. */
+    rollOnGround: new Uint8Array(MAX_ENTITIES),
+    /** 1 = collider AABB is centred on Position.y (sphere-ish bodies whose
+     *  visual Group origin is at the sphere center). 0 = foot-anchored, AABB Y
+     *  spans [Position.y, Position.y + 2*half.y]. The two anchors look the
+     *  same when sitting still but matter the moment the body rotates: a
+     *  foot-anchored Group rotates around its foot, swinging an offset sphere
+     *  visual into the ground. Round dynamics (stones) use centre. */
+    centerAnchored: new Uint8Array(MAX_ENTITIES),
 }
 
 // Tag components — empty objects, used purely as identity in queries.
@@ -73,4 +110,6 @@ export const Interactable = {}
 export const Pickup = {}
 export const Attackable = {}
 export const Wanderer = {}
-export const PhysicalObstacle = {}
+/** Settled rigid body. Skipped by physics; registered in the obstacle registry
+ *  so character/projectile sweeps treat it as solid like a voxel. */
+export const Sleeping = {}
