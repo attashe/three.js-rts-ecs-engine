@@ -18,6 +18,7 @@ import { createDebugOverlaySystem } from './engine/ecs/systems/debug-overlay-sys
 import { createVoxelMechanismSystem } from './engine/ecs/systems/voxel-mechanism-system'
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
+import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
 import { MoveAlongPathSystem } from './engine/ecs/systems/move-along-path-system'
 import { createInteractionSystem } from './engine/ecs/systems/interaction-system'
 import { createMeleeCombatSystem } from './engine/ecs/systems/melee-combat-system'
@@ -179,6 +180,7 @@ async function main(): Promise<void> {
         .addSystem(createVoxelMechanismSystem(chunks, engine.input))
         .addSystem(createPlayerControlSystem(engine.input, renderer.iso))
         .addSystem(createProjectileLaunchSystem(engine.input))
+        .addSystem(createArrowHitSystem(chunks, { notify }))
         .addSystem(createInteractionSystem(engine.input, { notify }))
         .addSystem(createMeleeCombatSystem(engine.input, { notify }))
         .addSystem(createPickupSystem({ notify }))

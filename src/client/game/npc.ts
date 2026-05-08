@@ -4,6 +4,7 @@ import type { GameWorld } from '../engine/ecs/world'
 import {
     BoxCollider,
     Faction,
+    Health,
     Interactable,
     InteractionRange,
     Position,
@@ -27,7 +28,7 @@ export interface NpcOptions {
 
 export function spawnSampleNpc(world: GameWorld, opts: NpcOptions): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, Renderable, BoxCollider, Faction, Interactable, InteractionRange])
+    addComponents(world, eid, [Position, Rotation, Renderable, BoxCollider, Faction, Health, Interactable, InteractionRange])
 
     Position.x[eid] = opts.position.x
     Position.y[eid] = opts.position.y
@@ -38,6 +39,8 @@ export function spawnSampleNpc(world: GameWorld, opts: NpcOptions): number {
     BoxCollider.y[eid] = 0.9
     BoxCollider.z[eid] = 0.35
     Faction.id[eid] = opts.faction ?? FactionId.Neutral
+    Health.max[eid] = 60
+    Health.current[eid] = 60
     InteractionRange.value[eid] = 1.8
     world.interactionByEid.set(eid, {
         label: 'Merchant',
@@ -57,6 +60,7 @@ export function spawnWanderingNpc(world: GameWorld, opts: NpcOptions & { radius?
         Renderable,
         BoxCollider,
         Faction,
+        Health,
         Interactable,
         InteractionRange,
         Wanderer,
@@ -74,6 +78,8 @@ export function spawnWanderingNpc(world: GameWorld, opts: NpcOptions & { radius?
     BoxCollider.y[eid] = 0.9
     BoxCollider.z[eid] = 0.34
     Faction.id[eid] = opts.faction ?? FactionId.Neutral
+    Health.max[eid] = 80
+    Health.current[eid] = 80
     InteractionRange.value[eid] = 1.6
     WanderHome.x[eid] = opts.position.x
     WanderHome.y[eid] = opts.position.y
