@@ -1,0 +1,109 @@
+import { BufferAttribute, BufferGeometry, Mesh, type Scene } from 'three'
+import type { MeshStandardNodeMaterial } from 'three/webgpu'
+import type { ChunkManager } from './chunk-manager'
+import { Chunk, CHUNK_DIM, chunkKey, type ChunkKey } from './chunk'
+import { greedyMesh } from './greedy-mesher'
+import { createVoxelVertexColor } from '../render/materials/voxel-vertex-color'
+
+/**
+ * Owns the THREE.Mesh per chunk. Each frame, drains `manager.drainDirty()`
+ * and re-meshes whichever chunks changed. Empty chunks are removed from the
+ * scene; new chunks are added on first build.
+ *
+ * Phase 3 ships synchronous meshing on the main thread — fine for the demo's
+ * ~4 chunks. Phase 3+ can swap `greedyMesh` for a worker-pool variant in
+ * `update()` without touching anything else.
+ */
+export class ChunkRenderer {
+    private readonly scene: Scene
+    private readonly manager: ChunkManager
+    private readonly material: MeshStandardNodeMaterial
+    private readonly meshByKey: Map<ChunkKey, Mesh> = new Map()
+    private readonly meshedVersion: Map<ChunkKey, number> = new Map()
+
+    constructor(scene: Scene, manager: ChunkManager) {
+        this.scene = scene
+        this.manager = manager
+        this.material = createVoxelVertexColor({ flatShading: true })
+    }
+
+    /** Force a full remesh (e.g. after bulk level generation). Discards any
+     *  dirty markers since we've just rebuilt everything from scratch. */
+    rebuildAll(): void {
+        for (const c of this.manager.allChunks()) {
+            this.remesh(c)
+        }
+        this.manager.drainDirty()
+    }
+
+    /** Drain the manager's dirty set and rebuild changed chunks. */
+    update(): void {
+        const dirty = this.manager.drainDirty()
+        if (dirty.length === 0) return
+        for (const c of dirty) {
+            // Skip if our cached version is already up-to-date (multiple dirty markers, single rebuild).
+            if (this.meshedVersion.get(chunkKey(c.cx, c.cy, c.cz)) === c.version) continue
+            this.remesh(c)
+        }
+    }
+
+    private remesh(chunk: Chunk): void {
+        const key = chunkKey(chunk.cx, chunk.cy, chunk.cz)
+
+        // No solid voxels → ensure no mesh in the scene.
+        if (chunk.nonAirCount === 0) {
+            const old = this.meshByKey.get(key)
+            if (old) {
+                this.scene.remove(old)
+                old.geometry.dispose()
+                this.meshByKey.delete(key)
+            }
+            this.meshedVersion.set(key, chunk.version)
+            return
+        }
+
+        // Sample callback: in-bounds reads come from `chunk`, out-of-bounds reads
+        // bounce to ChunkManager (which forwards to neighbour chunks or returns AIR).
+        const baseX = chunk.cx * CHUNK_DIM
+        const baseY = chunk.cy * CHUNK_DIM
+        const baseZ = chunk.cz * CHUNK_DIM
+        const sample = (lx: number, ly: number, lz: number): number => {
+            if (lx >= 0 && lx < CHUNK_DIM && ly >= 0 && ly < CHUNK_DIM && lz >= 0 && lz < CHUNK_DIM) {
+                return chunk.getLocal(lx, ly, lz)
+            }
+            return this.manager.getVoxel(baseX + lx, baseY + ly, baseZ + lz)
+        }
+
+        const data = greedyMesh(sample, CHUNK_DIM, this.manager.palette)
+
+        let mesh = this.meshByKey.get(key)
+        if (!mesh) {
+            const geom = new BufferGeometry()
+            mesh = new Mesh(geom, this.material)
+            mesh.castShadow = true
+            mesh.receiveShadow = true
+            mesh.position.set(baseX, baseY, baseZ)
+            this.scene.add(mesh)
+            this.meshByKey.set(key, mesh)
+        }
+        const geom = mesh.geometry
+        geom.setAttribute('position', new BufferAttribute(data.positions, 3))
+        geom.setAttribute('normal', new BufferAttribute(data.normals, 3))
+        geom.setAttribute('color', new BufferAttribute(data.colors, 3))
+        geom.setIndex(new BufferAttribute(data.indices, 1))
+        geom.computeBoundingSphere()
+        geom.computeBoundingBox()
+
+        this.meshedVersion.set(key, chunk.version)
+    }
+
+    dispose(): void {
+        for (const mesh of this.meshByKey.values()) {
+            this.scene.remove(mesh)
+            mesh.geometry.dispose()
+        }
+        this.meshByKey.clear()
+        this.meshedVersion.clear()
+        this.material.dispose()
+    }
+}

@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "noEmit": false,
+    "outDir": ".tmp/test-build",
+    "rootDir": ".",
+    "types": ["node"],
+    "sourceMap": true
+  },
+  "include": [
+    "src/client/engine/voxel/chunk.ts",
+    "src/client/engine/voxel/chunk-manager.ts",
+    "src/client/engine/voxel/level-serializer.ts",
+    "src/client/engine/voxel/palette.ts",
+    "src/client/engine/voxel/voxel-collide.ts",
+    "src/client/engine/voxel/voxel-path.ts",
+    "tests/**/*.ts"
+  ]
+}
