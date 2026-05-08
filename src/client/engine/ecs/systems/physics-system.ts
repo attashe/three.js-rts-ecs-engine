@@ -1,5 +1,5 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
-import type { ChunkManager, ColliderAnchor } from '../../voxel'
+import type { AABB, ChunkManager, ColliderAnchor } from '../../voxel'
 import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis } from '../../voxel'
 import {
     BoxCollider,
@@ -189,11 +189,63 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                     ? RigidBody.sleepDelay[eid]
                     : DEFAULT_SLEEP_DELAY
                 if (RigidBody.sleepTimer[eid] >= delay) {
-                    sleepBody(world, eid, half, anchor)
+                    if (canSleepHere(world, eid, half, anchor)) {
+                        sleepBody(world, eid, half, anchor)
+                    } else {
+                        // Some other entity (player, NPC, another stone) is
+                        // overlapping where the obstacle AABB would land — if
+                        // we slept now we'd register an obstacle that contains
+                        // the other body, trapping it. Hold the timer back so
+                        // we re-check next frame; if the blocker moves away
+                        // we'll settle then.
+                        RigidBody.sleepTimer[eid] = delay * 0.5
+                    }
                 }
             }
         },
     }
+}
+
+const tmpAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpOther: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+
+function canSleepHere(
+    world: Parameters<System['update']>[0],
+    eid: number,
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+): boolean {
+    const pos = { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
+    const aabb = anchor === 'center'
+        ? aabbFromCenter(pos, half, tmpAABB)
+        : aabbFromFoot(pos, half, tmpAABB)
+
+    const others = query(world, [Position, BoxCollider])
+    for (let i = 0; i < others.length; i++) {
+        const other = others[i]
+        if (other === eid) continue
+        const otherAnchor: ColliderAnchor =
+            hasComponent(world, other, RigidBody) && RigidBody.centerAnchored[other] === 1
+                ? 'center'
+                : 'foot'
+        const otherHalf = {
+            x: BoxCollider.x[other],
+            y: BoxCollider.y[other],
+            z: BoxCollider.z[other],
+        }
+        const otherPos = { x: Position.x[other], y: Position.y[other], z: Position.z[other] }
+        const otherBox = otherAnchor === 'center'
+            ? aabbFromCenter(otherPos, otherHalf, tmpOther)
+            : aabbFromFoot(otherPos, otherHalf, tmpOther)
+        if (
+            aabb.maxX > otherBox.minX && aabb.minX < otherBox.maxX &&
+            aabb.maxY > otherBox.minY && aabb.minY < otherBox.maxY &&
+            aabb.maxZ > otherBox.minZ && aabb.minZ < otherBox.maxZ
+        ) {
+            return false
+        }
+    }
+    return true
 }
 
 function sleepBody(
@@ -208,7 +260,7 @@ function sleepBody(
     removeComponent(world, eid, Velocity)
     if (hasComponent(world, eid, HorizontalBlocked)) removeComponent(world, eid, HorizontalBlocked)
     addComponent(world, eid, Sleeping)
-    const out = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+    const out: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     const pos = { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
     const aabb = anchor === 'center'
         ? aabbFromCenter(pos, half, out)

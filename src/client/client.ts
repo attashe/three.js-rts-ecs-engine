@@ -190,7 +190,7 @@ async function main(): Promise<void> {
         .addSystem(createWanderSystem(chunks))
         .addSystem(MoveAlongPathSystem)
         .addSystem(createPhysicsSystem(chunks))
-        .addSystem(createRigidBodyPairSystem())
+        .addSystem(createRigidBodyPairSystem(chunks))
         .addSystem(createImpactSystem())
         .addSystem(createMovingObjectSystem())
         .addSystem(createDynamicCollisionSystem())

@@ -110,6 +110,19 @@ export function sweepAxis(
 ): { moved: number; blocked: boolean } {
     if (delta === 0) return { moved: 0, blocked: false }
 
+    // If the body is already inside a wall (e.g. shoved there by a position
+    // correction in another system), substepping makes things worse — every
+    // intermediate position is still overlapping, so the escape branch in
+    // sweepAxisOnce never sees a clear destination. Single-shot the full delta
+    // and let the escape branch try the whole displacement at once.
+    const tmpStart: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+    aabbForAnchor(pos, half, anchor, tmpStart)
+    const startOverlapping = voxelAABBOverlap(chunks, tmpStart) ||
+        (obstacles ? obstacles.intersects(tmpStart, excludeEid) : false)
+    if (startOverlapping) {
+        return sweepAxisOnce(chunks, pos, half, axis, delta, obstacles, excludeEid, anchor)
+    }
+
     // Tunnel-safe sub-stepping: a single binary-searched endpoint test misses
     // walls the body fully crossed in one frame. Cap the per-step distance at
     // ~half the body's extent on the swept axis (and ≤0.5 — half a voxel) so
@@ -161,6 +174,16 @@ function sweepAxisOnce(
         else if (axis === 'y') pos.y += delta
         else pos.z += delta
         return { moved: delta, blocked: false }
+    }
+
+    // Escape hatch: if the body started overlapping (e.g. it got shoved into a
+    // wall by another system before this sweep ran), the binary-search
+    // invariant `lo=0 non-overlapping` is broken. We can't bisect, but we also
+    // shouldn't report "blocked" (which would zero the body's velocity and
+    // trap it permanently). Just don't move along this axis this step — let
+    // the caller's next frame, or a different axis, find a clear direction.
+    if (test(0)) {
+        return { moved: 0, blocked: false }
     }
 
     let lo = 0

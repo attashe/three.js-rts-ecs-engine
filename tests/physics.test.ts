@@ -118,6 +118,36 @@ test('sweepAxis: obstacle on top of voxel does not double-count and still blocks
     assert.ok(pos.y >= 1.55 && pos.y <= 1.57, `expected y ≈ 1.56, got ${pos.y}`)
 })
 
+test('sweepAxis: body that starts inside a wall can escape if delta lands clear', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(1, 0, 0, BLOCK.stone)
+    // Body starts inside the voxel (overlap), trying to move out along -x.
+    const pos = { x: 1.2, y: 0, z: 0.5 }
+    const half = { x: 0.25, y: 0.5, z: 0.25 }
+
+    const sweep = sweepAxis(chunks, pos, half, 'x', -1)
+    // Destination at x=0.2 has body AABB [-0.05, 0.45] which is clear of the
+    // voxel at cell x=1 ([1, 2]). The escape commits the full delta.
+    assert.equal(sweep.blocked, false)
+    assert.ok(Math.abs(pos.x - 0.2) < 1e-9, `expected pos.x ≈ 0.2, got ${pos.x}`)
+})
+
+test('sweepAxis: body inside a wall reports not-blocked when destination still overlaps', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(1, 0, 0, BLOCK.stone)
+    // Body starts overlapping the voxel and tries to move further into it.
+    const pos = { x: 1.4, y: 0, z: 0.5 }
+    const half = { x: 0.25, y: 0.5, z: 0.25 }
+
+    const sweep = sweepAxis(chunks, pos, half, 'x', 0.3)
+    // Both endpoints overlap, so no movement — but the sweep must NOT report
+    // `blocked: true`, since that would make physics-system zero out the
+    // body's velocity and trap it permanently.
+    assert.equal(sweep.blocked, false)
+    assert.equal(sweep.moved, 0)
+    assert.equal(pos.x, 1.4)
+})
+
 test('sweepAxis: centre-anchored body lands with its centre half above the floor', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     chunks.setVoxel(0, 0, 0, BLOCK.stone)
