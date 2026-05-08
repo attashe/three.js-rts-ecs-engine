@@ -19,6 +19,7 @@ import { createVoxelMechanismSystem } from './engine/ecs/systems/voxel-mechanism
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
+import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { MoveAlongPathSystem } from './engine/ecs/systems/move-along-path-system'
 import { createInteractionSystem } from './engine/ecs/systems/interaction-system'
 import { createMeleeCombatSystem } from './engine/ecs/systems/melee-combat-system'
@@ -181,6 +182,7 @@ async function main(): Promise<void> {
         .addSystem(createPlayerControlSystem(engine.input, renderer.iso))
         .addSystem(createProjectileLaunchSystem(engine.input))
         .addSystem(createArrowHitSystem(chunks, { notify }))
+        .addSystem(createAirPushSystem(engine.input, { notify }))
         .addSystem(createInteractionSystem(engine.input, { notify }))
         .addSystem(createMeleeCombatSystem(engine.input, { notify }))
         .addSystem(createPickupSystem({ notify }))
@@ -204,7 +206,7 @@ async function main(): Promise<void> {
 
     try {
         await engine.start()
-        showHint('WASD / arrows move · Q/R rotate · B shoot arrow · space jump · E interact · F attack · scroll zoom')
+        showHint('WASD / arrows move · Q/R rotate · B shoot arrow · G air push · space jump · E interact · F attack · scroll zoom')
     } catch (err) {
         console.error(err)
         showFatal(err instanceof Error ? err.message : String(err))
