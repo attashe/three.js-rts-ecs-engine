@@ -1,9 +1,23 @@
 import { hasComponent, query, removeComponent } from 'bitecs'
-import { BoxCollider, Grounded, HorizontalBlocked, MoveAlongPath, MovementState, Position, Rotation, Velocity, Wanderer, WanderTimer } from '../components'
+import {
+    BoxCollider,
+    Grounded,
+    HorizontalBlocked,
+    Interactable,
+    MoveAlongPath,
+    MovementState,
+    PlayerControlled,
+    Position,
+    Rotation,
+    Velocity,
+    Wanderer,
+    WanderTimer,
+} from '../components'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { MovementStateId } from '../movement-state'
 import { pushGameLog } from '../world'
+import { steerAroundActors, type AvoidanceActor } from '../actor-avoidance'
 
 const EPSILON = 1e-3
 const PHYSICS_ARRIVAL_RADIUS = 0.16
@@ -27,6 +41,7 @@ export const MoveAlongPathSystem: System = {
     order: FixedOrder.movement,
     update(world, dt) {
         const eids = query(world, [MoveAlongPath, Position])
+        const avoidanceActors = collectAvoidanceActors(world)
         for (let i = 0; i < eids.length; i++) {
             const eid = eids[i]
             const state = world.pathByEid.get(eid)
@@ -86,8 +101,26 @@ export const MoveAlongPathSystem: System = {
             if (hasVelocity) {
                 // Physics-owned/collidable entities must not bypass collision.
                 const denom = hasCollider ? horizDist : dist
-                Velocity.x[eid] = denom > EPSILON ? (dx / denom) * state.speed : 0
-                Velocity.z[eid] = denom > EPSILON ? (dz / denom) * state.speed : 0
+                let desiredX = denom > EPSILON ? (dx / denom) * state.speed : 0
+                let desiredZ = denom > EPSILON ? (dz / denom) * state.speed : 0
+                if (hasCollider && denom > EPSILON) {
+                    const steered = steerAroundActors(
+                        {
+                            eid,
+                            x: Position.x[eid],
+                            y: Position.y[eid],
+                            z: Position.z[eid],
+                            radius: Math.max(BoxCollider.x[eid], BoxCollider.z[eid]),
+                        },
+                        desiredX,
+                        desiredZ,
+                        avoidanceActors,
+                    )
+                    desiredX = steered.x
+                    desiredZ = steered.z
+                }
+                Velocity.x[eid] = desiredX
+                Velocity.z[eid] = desiredZ
                 if (hasCollider && hasComponent(world, eid, HorizontalBlocked)) {
                     state.blockedTime = (state.blockedTime ?? 0) + dt
                     if (
@@ -157,4 +190,27 @@ export const MoveAlongPathSystem: System = {
             }
         }
     },
+}
+
+function collectAvoidanceActors(world: Parameters<System['update']>[0]): AvoidanceActor[] {
+    const eids = query(world, [Position, BoxCollider])
+    const actors: AvoidanceActor[] = []
+    for (let i = 0; i < eids.length; i++) {
+        const eid = eids[i]
+        if (!isAvoidanceActor(world, eid)) continue
+        actors.push({
+            eid,
+            x: Position.x[eid],
+            y: Position.y[eid],
+            z: Position.z[eid],
+            radius: Math.max(BoxCollider.x[eid], BoxCollider.z[eid]),
+        })
+    }
+    return actors
+}
+
+function isAvoidanceActor(world: Parameters<System['update']>[0], eid: number): boolean {
+    return hasComponent(world, eid, PlayerControlled) ||
+        hasComponent(world, eid, Wanderer) ||
+        hasComponent(world, eid, Interactable)
 }

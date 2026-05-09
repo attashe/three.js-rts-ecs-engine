@@ -1,4 +1,4 @@
-import { hasComponent, query, removeComponent } from 'bitecs'
+import { hasComponent, query } from 'bitecs'
 import {
     BoxCollider,
     Interactable,
@@ -8,7 +8,6 @@ import {
     Position,
     Velocity,
     Wanderer,
-    WanderTimer,
 } from '../components'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -87,7 +86,9 @@ function separatePair(world: Parameters<System['update']>[0], a: number, b: numb
     Position.x[b] += nx * bPush
     Position.z[b] += nz * bPush
     const yieldEid = chooseYieldingEntity(world, a, b)
-    if (penetration > 0.06) cancelPath(world, yieldEid)
+    if (penetration > 0.08 && hasComponent(world, yieldEid, MoveAlongPath)) {
+        MovementState.value[yieldEid] = MovementStateId.Blocked
+    }
 
     if (hasComponent(world, a, Velocity)) {
         const va = Velocity.x[a] * nx + Velocity.z[a] * nz
@@ -111,19 +112,4 @@ function chooseYieldingEntity(world: Parameters<System['update']>[0], a: number,
     if (aMoving && !bMoving) return a
     if (bMoving && !aMoving) return b
     return a > b ? a : b
-}
-
-function cancelPath(world: Parameters<System['update']>[0], eid: number): void {
-    if (hasComponent(world, eid, MoveAlongPath)) {
-        removeComponent(world, eid, MoveAlongPath)
-        world.pathByEid.delete(eid)
-    }
-    if (hasComponent(world, eid, Velocity)) {
-        Velocity.x[eid] = 0
-        Velocity.z[eid] = 0
-    }
-    if (hasComponent(world, eid, WanderTimer)) {
-        WanderTimer.value[eid] = 0.75 + (eid % 5) * 0.16
-    }
-    MovementState.value[eid] = MovementStateId.Blocked
 }
