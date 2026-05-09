@@ -204,7 +204,6 @@ export function spawnHostileArcherNpc(world: GameWorld, opts: HostileNpcOptions)
         Attackable,
         Behaviour,
         Wanderer,
-        Shield,
     ])
 
     Position.x[eid] = opts.position.x
