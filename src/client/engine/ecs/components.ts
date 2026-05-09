@@ -59,14 +59,6 @@ export const Behaviour = {
     blockedTime: new Float32Array(MAX_ENTITIES),
 }
 
-export const WanderHome = vec3()
-export const WanderRadius = {
-    value: new Float32Array(MAX_ENTITIES),
-}
-export const WanderTimer = {
-    value: new Float32Array(MAX_ENTITIES),
-}
-
 export const MovingObject = {
     /** 1 = arrow, 2 = stone. */
     kind: new Uint8Array(MAX_ENTITIES),
@@ -123,6 +115,10 @@ export const HorizontalBlocked = {}
 export const Interactable = {}
 export const Pickup = {}
 export const Attackable = {}
+/** Path-following actor body. Historical name; covers any AI-driven actor that
+ *  shares `MoveAlongPath` / dynamic-collision semantics — wanderers, hostiles,
+ *  later patrols. Used as a "this is an actor body" marker by physics, voxel
+ *  mechanism, and dynamic-collision systems. */
 export const Wanderer = {}
 /** Settled rigid body. Skipped by physics; registered in the obstacle registry
  *  so character/projectile sweeps treat it as solid like a voxel. */

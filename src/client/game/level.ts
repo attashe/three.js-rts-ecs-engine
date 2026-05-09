@@ -11,6 +11,9 @@ export interface LevelMeta {
     wanderers: { x: number; y: number; z: number }[]
     pistonTester: { x: number; y: number; z: number }
     pistonTesterGoal: { x: number; y: number; z: number }
+    /** Hostile melee spawns. Placed near landmarks the player will visit so the
+     *  Chase / Attack / ReturnHome loop is observable from the spawn area. */
+    hostiles: { position: { x: number; y: number; z: number }; yaw: number; label?: string }[]
     stoneSpawners: StoneFallSpawnerConfig[]
     coins: { x: number; y: number; z: number }
     potion: { x: number; y: number; z: number }
@@ -90,6 +93,17 @@ export function generateDemoLevel(chunks: ChunkManager): LevelMeta {
     const coins = standingPoint(heightAt, 25, 22)
     const potion = standingPoint(heightAt, 29, 27)
 
+    // Hostile spawns. The east-island marauder lives away from the spawn so
+    // the player has to walk into its sight cone — that visit demonstrates
+    // Chase, and walking back toward spawn pulls them past the leash radius
+    // and triggers ReturnHome. The cliff valley grunt is placed where falling
+    // stones will sometimes finish it off, exercising impact damage routing
+    // through the same Health pipeline.
+    const hostiles = [
+        { position: standingPoint(heightAt, 38, 16), yaw: Math.PI, label: 'East Marauder' },
+        { position: standingPoint(heightAt, 16, 22), yaw: -Math.PI * 0.5, label: 'Valley Brute' },
+    ]
+
     return {
         spawn: { x: sx + 0.5, y: sy, z: sz + 0.5 },
         npc: { x: nx + 0.5, y: ny, z: nz + 0.5 },
@@ -97,6 +111,7 @@ export function generateDemoLevel(chunks: ChunkManager): LevelMeta {
         wanderers,
         pistonTester: corridor.npc,
         pistonTesterGoal: corridor.goal,
+        hostiles,
         stoneSpawners,
         coins,
         potion,

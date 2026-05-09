@@ -1,6 +1,9 @@
 export const FixedOrder = {
     mechanisms: 90,
     input: 100,
+    /** Reads world state into the AI blackboard. Runs before `ai` so the
+     *  behaviour system sees up-to-date target/visibility facts. */
+    perception: 180,
     ai: 200,
     movement: 300,
     physics: 400,

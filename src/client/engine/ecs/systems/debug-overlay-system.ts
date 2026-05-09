@@ -18,8 +18,8 @@ import {
     type Scene,
 } from 'three'
 import { hasComponent, query } from 'bitecs'
-import { Behaviour, BoxCollider, Faction, MovementState, Position } from '../components'
-import { behaviourStateName } from '../behaviour'
+import { Behaviour, BoxCollider, Faction, Health, MovementState, Position } from '../components'
+import { behaviourStateName, getBehaviourTarget } from '../behaviour'
 import { movementStateName } from '../movement-state'
 import type { System } from './system'
 import { RenderOrder } from './orders'
@@ -194,12 +194,18 @@ function updateLabel(
     refreshText: boolean,
 ): void {
     const faction = hasComponent(world, eid, Faction) ? Faction.id[eid] : 0
-    const text = `F${faction} ${behaviourStateName(Behaviour.state[eid])}/${movementStateName(MovementState.value[eid])}`
+    const target = getBehaviourTarget(eid)
+    const hp = hasComponent(world, eid, Health)
+        ? `${Math.max(0, Math.round(Health.current[eid]))}/${Math.round(Health.max[eid] || 0)}`
+        : '--'
+    const top = `F${faction} ${behaviourStateName(Behaviour.state[eid])}/${movementStateName(MovementState.value[eid])}`
+    const bottom = `tgt:${target ?? '--'} hp:${hp}`
+    const text = `${top}\n${bottom}`
     let state = map.get(eid)
     if (!state) {
         const sprite = new Sprite(new SpriteMaterial({ transparent: true, depthTest: false }))
         sprite.name = `DebugLabel${eid}`
-        sprite.scale.set(1.6, 0.35, 1)
+        sprite.scale.set(1.7, 0.55, 1)
         state = { sprite, text: '' }
         map.set(eid, state)
         root.add(sprite)
@@ -215,17 +221,22 @@ function updateLabel(
 }
 
 function makeTextTexture(text: string): Texture {
+    const lines = text.split('\n')
     const canvas = document.createElement('canvas')
     canvas.width = 256
-    canvas.height = 64
+    canvas.height = lines.length > 1 ? 96 : 64
     const ctx = canvas.getContext('2d')!
     ctx.fillStyle = 'rgba(8, 12, 16, 0.72)'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = '#d9f7ff'
-    ctx.font = '24px ui-monospace, monospace'
+    ctx.font = '22px ui-monospace, monospace'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2)
+    const lineHeight = 30
+    const startY = canvas.height / 2 - ((lines.length - 1) * lineHeight) / 2
+    for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i] ?? '', canvas.width / 2, startY + i * lineHeight)
+    }
     const texture = new Texture(canvas)
     texture.needsUpdate = true
     return texture

@@ -11,4 +11,13 @@ export type { BowOptions, QuiverOptions, SwordOptions } from './weapons'
 export { createSampleNpc } from './npc'
 export type { SampleNpcOptions } from './npc'
 
+export {
+    createBanditEnemy,
+    createCaveBat,
+    createForestWolf,
+    createPackMule,
+    createTownGuardNpc,
+} from './creatures'
+export type { CreaturePalette } from './creatures'
+
 export { createCoinPile, createHealthPotion, createStone, createTrainingDummy } from './props'

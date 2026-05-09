@@ -11,7 +11,6 @@ import {
     Rotation,
     Velocity,
     Wanderer,
-    WanderTimer,
 } from '../components'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -138,13 +137,12 @@ export const MoveAlongPathSystem: System = {
                         Velocity.x[eid] = 0
                         Velocity.z[eid] = 0
                         MovementState.value[eid] = MovementStateId.Repathing
-                        pushGameLog(world, { type: 'path', message: 'Wanderer repathing after being blocked.', eid })
+                        pushGameLog(world, { type: 'path', message: 'Actor repathing after being blocked.', eid })
                         world.pathByEid.delete(eid)
                         removeComponent(world, eid, MoveAlongPath)
                         removeComponent(world, eid, HorizontalBlocked)
-                        if (hasComponent(world, eid, WanderTimer)) {
-                            WanderTimer.value[eid] = 0.9 + (eid % 5) * 0.14
-                        }
+                        // Behaviour-system will request the next path on its
+                        // own repath cooldown (no per-entity timer needed).
                         continue
                     }
                 } else {

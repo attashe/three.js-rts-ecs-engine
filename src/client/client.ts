@@ -25,10 +25,11 @@ import { MoveAlongPathSystem } from './engine/ecs/systems/move-along-path-system
 import { createInteractionSystem } from './engine/ecs/systems/interaction-system'
 import { createMeleeCombatSystem } from './engine/ecs/systems/melee-combat-system'
 import { createPickupSystem } from './engine/ecs/systems/pickup-system'
-import { createWanderSystem } from './engine/ecs/systems/wander-system'
+import { createPerceptionSystem } from './engine/ecs/systems/perception-system'
+import { createBehaviourSystem } from './engine/ecs/systems/behaviour-system'
 import { generateDemoLevel } from './game/level'
 import { spawnPlayer } from './game/player'
-import { spawnSampleNpc, spawnWanderingNpc } from './game/npc'
+import { spawnHostileMeleeNpc, spawnSampleNpc, spawnWanderingNpc } from './game/npc'
 import { spawnCoinPile, spawnHealthPotion, spawnTrainingDummy } from './game/props'
 import { registerDoorMechanism, registerPistonMechanism } from './game/mechanisms'
 import { GAME_COMMAND_HINT_ACTIONS, createGameActionMap } from './game/actions'
@@ -92,6 +93,9 @@ async function main(): Promise<void> {
     spawnTrainingDummy(world, { position: meta.dummy, yaw: Math.PI * 0.35 })
     spawnCoinPile(world, { position: meta.coins })
     spawnHealthPotion(world, { position: meta.potion })
+    for (const hostile of meta.hostiles) {
+        spawnHostileMeleeNpc(world, hostile)
+    }
     for (const door of meta.doors) registerDoorMechanism(world, door)
     for (const piston of meta.pistons) registerPistonMechanism(world, piston)
 
@@ -118,7 +122,8 @@ async function main(): Promise<void> {
         .addSystem(createMeleeCombatSystem(actions, { notify }))
         .addSystem(createPickupSystem({ notify }))
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 14 }))
-        .addSystem(createWanderSystem(chunks))
+        .addSystem(createPerceptionSystem())
+        .addSystem(createBehaviourSystem(chunks))
         .addSystem(MoveAlongPathSystem)
         .addSystem(createPhysicsSystem(chunks))
         .addSystem(createRigidBodyPairSystem(chunks))
