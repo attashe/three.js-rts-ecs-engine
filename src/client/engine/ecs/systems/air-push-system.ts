@@ -1,6 +1,9 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import {
     BoxCollider,
+    Behaviour,
+    MoveAlongPath,
+    MovementState,
     PlayerControlled,
     Position,
     RigidBody,
@@ -13,6 +16,7 @@ import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
 import type { GameWorld } from '../world'
+import { MovementStateId } from '../movement-state'
 
 export interface AirPushOptions {
     /** Half-angle of the cone in radians. Default ≈ 58° (Math.PI * 0.32). */
@@ -20,12 +24,14 @@ export interface AirPushOptions {
     /** Maximum reach of the cone in world units. Default 5.5. */
     range?: number
     /** Outward push speed at the apex (point-blank). Falls off linearly to
-     *  `minSpeedFactor * baseSpeed` at the cone's edge. Default 12. */
+     *  `minSpeedFactor * baseSpeed` at the cone's edge. Default 18. */
     baseSpeed?: number
     /** Floor on the proximity falloff so far-edge hits still feel alive. */
     minSpeedFactor?: number
-    /** Extra upward kick added at the apex; falls off with proximity. Default 4. */
+    /** Extra upward kick added at the apex; falls off with proximity. Default 5.5. */
     verticalLift?: number
+    /** Seconds an AI path follower waits before repathing after being shoved. */
+    actorRecoveryDelay?: number
     actionId?: ActionId
     /** UI hint callback. Combat-log entry is always pushed regardless. */
     notify?: (message: string) => void
@@ -36,8 +42,10 @@ export interface AirPushOptions {
  * On `KeyG`, every entity inside the cone with a `Velocity` (or a sleeping
  * `RigidBody`) gets a radial impulse outward from the player. Sleeping bodies
  * are woken and de-registered from the obstacle registry so they fly free
- * before re-settling. Static props (no `Velocity`, no `RigidBody`) are
- * intentionally untouched — Air Push is for "physical objects", not scenery.
+ * before re-settling. Path-following actors are briefly interrupted, otherwise
+ * their movement controller would overwrite the impulse later in the same
+ * fixed step. Static props (no `Velocity`, no `RigidBody`) are intentionally
+ * untouched — Air Push is for "physical objects", not scenery.
  *
  * The cone is checked in the XZ plane only, with a separate 3D range gate, so
  * stones above or below the player at close range still get caught (matching
@@ -46,9 +54,10 @@ export interface AirPushOptions {
 export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {}): System {
     const halfAngle = opts.halfAngle ?? Math.PI * 0.32
     const range = opts.range ?? 5.5
-    const baseSpeed = opts.baseSpeed ?? 12
+    const baseSpeed = opts.baseSpeed ?? 18
     const minSpeedFactor = opts.minSpeedFactor ?? 0.4
-    const verticalLift = opts.verticalLift ?? 4
+    const verticalLift = opts.verticalLift ?? 5.5
+    const actorRecoveryDelay = opts.actorRecoveryDelay ?? 0.55
     const actionId = opts.actionId ?? 'spell.airPush'
     const cosHalfAngle = Math.cos(halfAngle)
     const rangeSq = range * range
@@ -129,6 +138,7 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
                 // so a body at exactly the player's centre still pops up.
                 Velocity.y[eid] += Math.max(0, radialY) * speed * 0.5 + verticalLift * proximity
                 Velocity.z[eid] += radialZ * speed
+                interruptPathFollower(world, eid, actorRecoveryDelay)
                 pushed++
             }
 
@@ -138,6 +148,21 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             pushGameLog(world, { type: 'combat', message, eid: player })
             opts.notify?.(message)
         },
+    }
+}
+
+function interruptPathFollower(world: GameWorld, eid: number, recoveryDelay: number): void {
+    if (hasComponent(world, eid, MoveAlongPath)) {
+        removeComponent(world, eid, MoveAlongPath)
+        world.pathByEid.delete(eid)
+    }
+    if (hasComponent(world, eid, Behaviour)) {
+        Behaviour.nextRepathAt[eid] = Math.max(Behaviour.nextRepathAt[eid], recoveryDelay)
+        const blackboard = world.behaviourByEid.get(eid)
+        if (blackboard) blackboard.pathGoal = null
+    }
+    if (hasComponent(world, eid, MovementState)) {
+        MovementState.value[eid] = MovementStateId.Airborne
     }
 }
 
