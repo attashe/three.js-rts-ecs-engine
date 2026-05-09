@@ -1,24 +1,22 @@
-# Voxel RPG Engine (work in progress)
+# Voxel RPG Engine
 
-An isometric voxel RPG engine built on **three.js + WebGPU + bitecs**, reworked from the original `three.js-rts-ecs-engine` RTS demo. Single-player; single rendering path (WebGPU only, no WebGL fallback).
+An isometric voxel ARPG prototype built on **three.js + WebGPU + bitecs**. The
+project is being reworked from the original RTS demo into a single-player,
+direct-control voxel RPG engine with a future level editor.
 
-![Original RTS demo (pre-rework)](three.js_rts_ecs_demo_engine.png)
+The current prototype has:
+- WebGPU-only rendering with an isometric orthographic camera.
+- Chunked voxel terrain, greedy meshing, raycast, collision, pathfinding, and
+  level serialization foundations.
+- ECS-driven player, NPCs, factions, pickups, combat hooks, projectiles,
+  moving stones, pistons, doors, and debug overlays.
+- A shared framework-free UI library used by the game HUD, editor shell, and UI
+  catalog page.
 
-> The screenshot above is the legacy RTS demo. The rework deletes the RTS surface and rebuilds the engine on a voxel foundation. See the phase schedule below for the migration plan.
+Historical phase notes and completed work have moved to
+[`CHANGELOG.md`](./CHANGELOG.md).
 
-## Locked technical decisions
-
-| Area | Choice |
-|---|---|
-| Renderer | `WebGPURenderer` only (Three Shading Language materials) |
-| ECS | [bitecs](https://github.com/NateTheGreatt/bitecs) — SoA TypedArray archetype ECS |
-| Voxel rendering | Greedy meshing per chunk in a Web Worker, one `BufferGeometry` per chunk |
-| Editor | Separate page via Vite multi-entry (`/editor.html`) |
-| Build | Vite |
-| Asset format | glTF (binary) for characters; custom binary blobs for voxel levels; `.vox` import optional |
-| Server | Out of scope for v1 (single-player) |
-
-## Local pages
+## Local Pages
 
 Run the Vite dev server on the forwarded port:
 
@@ -27,315 +25,333 @@ npm run dev -- --host 0.0.0.0 --port 8000
 ```
 
 Available pages:
-- `/index.html` — game demo.
-- `/editor.html` — editor shell.
-- `/ui-demo.html` — shared UI catalog for testing HUD, editor, toasts,
-  command hints, panels, buttons, log panel, and palette controls together.
+- `/index.html` - game demo.
+- `/editor.html` - editor shell.
+- `/ui-demo.html` - shared UI catalog for HUD, editor, toasts, command hints,
+  panels, buttons, log panel, and palette controls.
 
-## Phase schedule
+## Technical Decisions
 
-The original Phase 4/5 sketch has been revised after the ARPG retrofit,
-asset-pass, and architecture audit. The current next-stage plan lives in
-[`docs/roadmap-next.md`](./docs/roadmap-next.md). In short: harden data
-contracts and gameplay boundaries before building the full editor.
+| Area | Choice |
+|---|---|
+| Renderer | `WebGPURenderer` only, no WebGL fallback |
+| ECS | `bitecs` SoA typed-array ECS |
+| Voxel rendering | Chunked voxel volumes with greedy meshing |
+| Gameplay style | Direct-control isometric ARPG first; click-to-move optional later |
+| Editor | Separate Vite entry at `/editor.html` |
+| UI | Framework-free DOM components in `src/client/ui/` |
+| Build | Vite |
+| Runtime scope | Single-player v1 |
 
-### UI foundation branch plan — `feature/ui-foundation`
-Goal: establish a reusable, vanilla TypeScript UI layer that can serve both
-the game HUD and the future voxel editor without introducing a framework.
+## Project Structure
 
-Planned architecture:
-- Add `src/client/ui/` as the shared UI package for game and editor entries.
-- Keep UI framework-free: components are small DOM factories/classes with
-  explicit `dispose()` methods and stable CSS class names.
-- Centralize visual tokens in one stylesheet (`ui.css`): colors, spacing,
-  typography, z-index layers, panel surfaces, focus states, and compact
-  control sizing.
-- Make UI composition explicit. The game should create a HUD shell and add
-  widgets to named regions; the editor should create an app shell with
-  toolbar/sidebar/status regions.
-- Keep gameplay systems ignorant of UI implementation. Gameplay systems accept
-  callbacks (`notify`, later command/event adapters), while UI owns DOM. The
-  debug overlay is the explicit client-side exception because it already renders
-  diagnostic DOM.
+```text
+.
+├── index.html                  # game entry
+├── editor.html                 # editor entry
+├── ui-demo.html                # shared UI catalog entry
+├── vite.config.ts              # Vite multi-entry build and dev server config
+├── tests/                      # node test suite for engine subsystems
+├── docs/
+│   ├── roadmap-next.md          # earlier architecture roadmap notes
+│   └── shaders/                 # TSL material notes and examples
+└── src/
+    ├── demo/
+    │   └── ui-demo.ts           # UI catalog page
+    ├── editor/
+    │   └── editor.ts            # editor shell bootstrap
+    └── client/
+        ├── client.ts            # game bootstrap, level setup, system wiring
+        ├── ui/                  # shared UI primitives and widgets
+        ├── game/
+        │   ├── assets/          # code-native placeholder visuals
+        │   ├── level.ts         # procedural demo level
+        │   ├── mechanisms.ts    # doors and pistons
+        │   ├── moving-objects.ts
+        │   ├── npc.ts
+        │   ├── player.ts
+        │   └── props.ts
+        └── engine/
+            ├── engine.ts        # world + renderer + scheduler + input
+            ├── scheduler.ts     # fixed-step and render-step loop
+            ├── input/           # keyboard, pointer, wheel, click queue
+            ├── render/          # WebGPU renderer, camera, stats, materials
+            ├── voxel/           # chunks, palette, meshing, collision, pathing
+            └── ecs/
+                ├── components.ts
+                ├── world.ts
+                ├── factions.ts
+                ├── obstacle-registry.ts
+                └── systems/     # gameplay, physics, render, debug systems
+```
 
-First component library slice:
-- `el` / `button` / `iconButton` / `panel` / `sectionTitle` /
-  `toolbar` primitives for consistent structure.
-- `ToastStack` for transient notifications.
-- `CommandHintBar` for compact input hints.
-- `GameHud` for reusable game overlays.
-- `EditorShell` for the editor page frame, toolbar, side panels, and status bar.
-- `UiLogPanel` for compact debug/game log rendering that can later replace
-  ad-hoc debug DOM.
+## Feature Exploration
 
-First integration pass:
-- Replace inline DOM styling in `client.ts` with `GameHud`.
-- Replace the editor placeholder with `EditorShell` and representative
-  disabled tool controls for paint/erase/fill/select/save/load.
-- Add `/ui-demo.html` as a catalog page for testing the shared UI controls,
-  HUD regions, toasts, command hints, log panel, and embedded editor shell.
-- Leave the 3D debug overlay internals intact for now, except where it can
-  consume shared UI classes without changing debug behavior.
+The next stage should borrow genre lessons from **Magicka**, **Minecraft
+Dungeons**, **Tunic**, **Diablo**, and **Titan Quest**, but translate them into
+engine systems instead of one-off demo scripts.
 
-Deferred:
-- No React/Vue/Svelte.
-- No editor command system yet; controls are presentational until Phase 5A.
-- No persistence of UI layout.
-- No modal-heavy flows until save/load and validation rules are implemented.
+### Combat And Abilities
 
-### Phase 0 — Foundations (mechanical, low-risk) ✅ complete
-Goal: clean slate that compiles and renders an empty scene.
+Useful genre elements:
+- Magicka-style ability composition: element tags, status reactions, friendly
+  fire risk, charge/cast timing, and environmental interactions.
+- Diablo/Titan Quest-style ability definitions: cooldowns, resource cost,
+  hit shapes, damage packets, status effects, and animation/event timing.
+- Minecraft Dungeons-style readable telegraphs: short windups, ground markers,
+  projectile trails, and clear hit confirmation.
 
-Landed:
-- Dependencies pinned to current majors:
-  - `three` 0.158 → **0.184**, `@types/three` → **0.184**
-  - `typescript` 5.2 → **6.0**
-  - Added `vite` **8.0**, `bitecs` **0.4**, `lil-gui` **0.21**, `sass` **1.99**, `@types/node` **25**
-  - Removed: `webpack*`, `ts-loader`, `style-loader`, `css-loader`, `webpack-merge`, `webpack-cli`, `webpack-dev-server`, `node-sass`, `sass-loader`, `dat.gui`, `@types/dat.gui`, `@tweenjs/tween.js`, `pathfinding`, `pseudo-random`, `socket.io`, `socket.io-client`, `express`, `@types/express`, `concurrently`, `nodemon`, `@types/node-sass`
-- Build moved to **Vite multi-entry**: `index.html` (game), `editor.html` (Phase 4 placeholder), config in `vite.config.ts`. Old `webpack.{common,dev,prod}.js` deleted.
-- Single `tsconfig.json` at project root with `strict`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `forceConsistentCasingInFileNames`, `isolatedModules`, `moduleResolution: bundler`, ES2022 target. Old per-folder tsconfigs deleted.
-- RTS surface deleted: `game/components/unit*`, `game/components/select-3d-object-component.ts`, `game/modules/{map,path-find,cursor-3d,ui}`, `game/logic/point-and-click-module.ts`, `config-gameobjects.ts`, `game-events.ts`, `game-component-events.ts`, `engine/modules/network-module.ts`, `engine/store.ts`, `src/server/`, `src/shared/`.
-- TWEEN/dat.gui/FBX usages cleaned: `object-3d-component.ts` no longer tweens rotation, `renderer-module.ts` no longer ticks TWEEN, `debug-3d-module.ts` switched to `lil-gui`, `assets-module.ts` stubbed (Phase 3 will rebuild it on glTF).
-- `client.ts` reduced to a 25-line bootstrap: GridHelper + ambient + directional light + camera at (15, 15, 15).
-- Verified: `npm run typecheck` clean, `npm run build` emits `dist/index.html`, `dist/editor.html`, `dist/assets/game-*.js`, `dist/assets/editor-*.js`.
+Engine implications:
+- Add a data-driven `Action` / `Ability` layer above raw input.
+- Represent attacks as declared hit volumes or projectiles, not custom logic per
+  weapon.
+- Add `DamagePacket`, `StatusEffect`, resistance, and elemental tags.
+- Separate targeting, cast validation, execution, and presentation events.
+- Keep abilities deterministic enough for tests and later save/replay support.
 
-Intentionally deferred:
-- `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are **not** enabled. They generate noise that the legacy class-based ECS would have to absorb; cleaner to enable on the bitecs rewrite.
-- `BaseComponent`/`BaseModule` still expose `protected config: any`. These classes are deleted in Phase 1 — adding generics now is throwaway work.
-- The 594 kB game bundle warning is just three.js. Phase 2 will code-split the WebGPU/post-processing modules.
+### Loot, Equipment, And Progression
 
-### Phase 1 — ECS rebuild on bitecs ✅ complete
-Goal: replace class-based component storage with a real archetype ECS.
+Useful genre elements:
+- Diablo/Titan Quest itemization: item base type, rarity, affixes, requirements,
+  sockets or modifiers.
+- Minecraft Dungeons simplicity: quick comparison, obvious upgrades, limited
+  active equipment complexity.
+- Tunic-style discoveries: keys, relics, notes, shortcuts, and world objects
+  that explain themselves through placement.
 
-Landed:
-- New `src/client/engine/ecs/`: `world.ts` (typed `GameWorld` with side-table `Map<eid, Object3D>`), `components.ts` (SoA `Float32Array` storage capped at `MAX_ENTITIES = 65_536`), `systems/` (`system.ts` interface + `movement-system.ts`, `spin-system.ts`, `render-sync-system.ts`).
-- New `src/client/engine/render/renderer.ts` — focused class wrapping the still-WebGL renderer (Phase 2 swaps to WebGPU).
-- New `src/client/engine/scheduler.ts` — fixed + render scheduler. Default 60 Hz fixed step, render at rAF rate, frame delta clamped at 100 ms.
-- New `src/client/engine/engine.ts` — owns `world`, `renderer`, `scheduler`, `signals`. `addSystem(s)` routes to either fixed or render bucket based on `s.fixed`. Calls `s.init?(world)` on `start()` and `s.dispose?()` on `stop()`.
-- `RenderSyncSystem` uses `bitecs.observe(onAdd/onRemove)` to attach/detach `Object3D`s from the scene, plus an initial-scan in `init()` so entities spawned before `start()` are picked up.
-- `signals.ts` rewritten to drop the legacy `Events` dependency and the per-send `console.log`. Used only for UI events now; ECS systems never go through it.
-- Demo bootstrap in `client.ts`: 5 cubes orbiting + spinning, driven by `Position`/`Velocity`/`Rotation`/`AngularVelocity` components.
+Engine implications:
+- Add inventory and equipment data separate from mesh attachments.
+- Define item instances as data: id, base item, stack count, affixes, durability
+  or charges if needed.
+- Add equipment slots that drive actor stat modifiers and visual attachments.
+- Keep loot tables deterministic and seedable for testable drops.
+- Add pickup prompts and compare panels in UI only after item data is stable.
 
-Deletions:
-- `engine/{config,events,utils}.ts`, the entire `engine/components/`, `engine/game-objects/`, `engine/modules/` (incl. `assets/` and `renderer/`), and `game/` (RTS module-list config).
+### AI, Factions, And Encounters
 
-Bundle: game `552 kB` (down from `594 kB` after dropping legacy modules + dat.gui surface; lil-gui & sass are unused in the game entry now and tree-shake out — they'll come back via the editor entry in Phase 4).
+Useful genre elements:
+- Diablo/Titan Quest enemy packs with roles: melee blocker, ranged harasser,
+  caster, summoner, elite modifier.
+- Minecraft Dungeons readable enemy behavior: short state cycles, obvious
+  aggro, leash, and reset.
+- Faction relationships already exist; they should drive perception and target
+  choice rather than only debug labels.
 
-Intentionally deferred / known limits:
-- **No FPS / perf counter** — the legacy `StatsModule` was deleted and not replaced. Phase 2's renderer rebuild will add an HUD-style overlay.
-- **Component palette is intentionally minimal** — only `Position`, `Rotation`, `Velocity`, `AngularVelocity`, `Renderable`. The plan's aspirational `ChunkRef`, `Health`, `Stats`, etc. land with their consumers in Phases 3 & 5.
-- **Verification was build + module-resolution only** — `tsc --noEmit`, `vite build`, and a Vite dev-server smoke test confirm both entries serve and the module graph resolves. Actual canvas rendering of the demo cubes was not headlessly verified; visual smoke-test happens in the browser.
-- **Memory: ~3 MB** for the four `Float32Array(65 536) * 3` vec3 components. Right tradeoff for SoA at this entity cap; if levels stay well below the cap this just sits idle in heap.
+Engine implications:
+- Add perception queries: sight radius, hearing/noise events, aggro memory,
+  leash radius, and target priority.
+- Replace random wandering with behavior states: idle, patrol, investigate,
+  chase, attack, flee, return.
+- Improve local avoidance so NPCs do not interlock around the player or each
+  other.
+- Add encounter volumes and spawners that can be authored by the editor.
+- Store faction relationship data in content, not hard-coded bootstrap logic.
 
-### Phase 2 — WebGPU renderer ✅ complete
-Goal: switch the rendering backend.
+### Voxel World Interactions
 
-Landed:
-- `Renderer` rewritten on `WebGPURenderer` from `three/webgpu`. WebGPU-only — constructor throws `WebGPUUnavailableError` if `navigator.gpu` is missing; `client.ts` shows a graceful fatal-error overlay.
-- `Engine.start()` is now async — awaits `renderer.init()` (WebGPU device acquisition) before kicking off the scheduler.
-- New `IsometricCamera` (`engine/render/isometric-camera.ts`) — `OrthographicCamera` at fixed 45° yaw / 30° pitch with configurable view-size/distance/target. `syncPosition()` keeps camera at fixed offset as `target` moves; `applyZoom()` handles wheel-zoom clamp.
-- New `Input` module (`engine/input/input.ts`) — held-key set, last pointer, accumulated wheel delta. Listeners on `window`. Auto-clears keys on `blur` to avoid stuck-key drift.
-- New `CameraControlSystem` (render-step) — WASD + arrow-keys + edge-pan combined, normalised so diagonal isn't √2× faster; wheel zooms in/out with configurable factor and clamps.
-- New `StatsHUD` (`engine/render/stats-hud.ts`) — minimal absolute-positioned div showing FPS / frame-time, smoothed over 0.5 s. Replaces the deleted three-stats-module dep.
-- Demo material switched: `MeshStandardMaterial` → `MeshStandardNodeMaterial` (TSL-compatible). Tone-mapping = `ACESFilmicToneMapping`.
-- `OrbitControls` is no longer in the game runtime (will be re-introduced only inside the Phase 4 editor entry).
+Useful genre elements:
+- Minecraft Dungeons traps, gates, pressure plates, falling hazards, and
+  readable environmental combat.
+- Tunic shortcuts and spatial secrets: doors, hidden paths, elevation puzzles,
+  locked gates, and return routes.
+- Diablo/Titan Quest destructibles and containers that provide loot and combat
+  texture.
 
-Bundle: game `752 kB` (gzip `207 kB`), up from `552 kB` after Phase 1. The growth is `three/webgpu` + the TSL node-material graph; pre-bundled by Vite's dep optimiser.
+Engine implications:
+- Generalize doors, pistons, and moving blocks into a mechanism graph:
+  triggers, actuators, timing, blocking policy, and signal channels.
+- Add authorable trigger volumes and region tags: no-walk, hazard, safe zone,
+  encounter, checkpoint, camera hint.
+- Add destructible voxel/object props with health, loot drop, and debris
+  presentation.
+- Keep moving solid objects registered in collision, pathfinding, and AI
+  avoidance as first-class obstacles.
+- Add tests around moving-block collision so traps can push actors without
+  tunneling or burying them.
 
-Intentional deviation from the original plan:
-- **No FXAA pass.** TSL in three 0.184 ships `pass` + tone-mapping nodes but no built-in FXAA/SMAA, and `PostProcessing` was deprecated in favour of `RenderPipeline`. AA is delivered via **MSAA** (`WebGPURenderer({ antialias: true })`) — generally higher-quality than FXAA, free on modern GPUs. Custom `RenderPipeline`-based post-processing (SSAO, bloom) lands when there's a concrete need.
+### Exploration And World Readability
 
-Intentionally deferred:
-- **WebGPU adapter capability surface** — `webgpu.init()` throws on unsupported configurations and the error propagates to the fatal overlay; we don't yet probe specific features (e.g. timestamp queries, multi-sample limits).
-- **`setAnimationLoop` vs custom `Scheduler`** — three.js recommends `renderer.setAnimationLoop(cb)` (auto-init, free WebXR). We deliberately use our own `Scheduler` because it provides separate fixed-timestep and render-timestep buckets that `setAnimationLoop` doesn't. As long as `await renderer.init()` runs before the first `render()` (which `Engine.start()` guarantees), manual rAF is officially supported — see the source comment on `Renderer.render()` in three's `renderers/common/Renderer.js`.
+Useful genre elements:
+- Tunic rewards observation: landmarks, obscured paths, reusable keys, signs,
+  manual pages, and compact world language.
+- Diablo/Titan Quest uses hubs, portals, checkpoints, and quest breadcrumbs.
+- Minecraft Dungeons keeps goals readable with strong silhouettes and clear
+  objective markers.
 
-Validation against three.js r184 source + manual:
-- `WebGPURenderer({ antialias: true })` → 4× MSAA (source line 275 in `Renderer.js`).
-- `renderAsync()` was deprecated in r181 in favour of `render()` after `await init()` (line 1038); we use `render()`.
-- `MeshStandardNodeMaterial({ color })` is valid — the constructor accepts the same parameter object as the legacy material; TSL-style `material.colorNode = color(…)` is optional for complex shader graphs.
-- Shadow casting/receiving works identically to WebGL (r168-r169 fixed the early WebGPU shadow regressions; r184 is stable).
+Engine implications:
+- Add marker entities: sign, portal, checkpoint, objective, exit, hidden path.
+- Add simple quest/objective state before complex branching quests.
+- Add camera hint volumes for tight spaces and important reveals.
+- Add minimap/overlay hooks later, but first expose level metadata and region
+  data.
+- Make editor validation catch missing spawn, unreachable objectives, and
+  disconnected encounter regions.
 
-### Phase 3 — Voxel core ✅ complete (playable demo)
-Goal: replace the flat grid world with a chunked voxel volume — and ship a playable demo.
+### UI And Tooling
 
-Landed:
-- **`engine/voxel/`** — full subsystem (re-exported via `engine/voxel/index.ts`):
-  - `palette.ts` — `PaletteEntry { name, color, solid }` plus optional block traits (`collidable`, `occludesFaces`, `raycastTarget`, `pathSurface`). `DEFAULT_PALETTE` has air + 9 block types (grass, dirt, stone, sand, wood, leaf, plank, brick, glow). Index 0 reserved for air.
-  - `chunk.ts` — `CHUNK_DIM = 32`, `Uint16Array(32³)` storage, `version` counter, `nonAirCount` for early-out, `getLocal`/`setLocal`.
-  - `chunk-manager.ts` — `Map<ChunkKey, Chunk>`. Negative-safe world↔chunk coord conversion. Boundary writes mark neighbour chunks dirty so cross-chunk faces re-mesh.
-  - `greedy-mesher.ts` — pure Mikola-Lysenko sweep over 3 axes; per-quad CCW/CW winding so cross-products produce the correct face normal. Cross-chunk-aware via `VoxelSampler` callback (chunk renderer wires it to the manager so out-of-chunk reads fall through to neighbours).
-  - `chunk-renderer.ts` — one `BufferGeometry`+`Mesh` per chunk. `update()` drains the dirty set per frame and re-meshes. Synchronous on main thread (Phase 3 ships ~4 chunks; worker pool deferred until profiling justifies it).
-  - `voxel-raycast.ts` — Amanatides–Woo DDA. Returns `{ voxel, normal, t }` or `null`.
-  - `voxel-path.ts` — surface-grid A* with `maxStepUp`/`maxDrop` tolerances. Nodes include X/Y/Z standing height so stacked floors/roofs do not collapse into one column; 4-connected neighbours.
-- **ECS additions**:
-  - Tag components `MoveAlongPath` and `CameraTarget`.
-  - `pathByEid: Map<eid, { points: Vector3[], index, speed }>` side-table.
-  - `move-along-path-system.ts` (fixed) — follows waypoints with yaw-only facing; entities with `Velocity` feed movement into physics instead of bypassing collision.
-  - `camera-follow-system.ts` (render) — `IsometricCamera.target` lerps toward the first `CameraTarget` entity; frame-rate-independent exponential approach (`alpha = 1 - exp(-smoothing * dt)`).
-  - `camera-control-system.ts` — refactored with `keyboardPan` / `edgePan` / `wheelZoom` toggles so the demo can run zoom-only.
-- **Input additions**:
-  - Click queue (pointerdown + pointerup with no significant drag and within 350 ms = a click). Right-click suppresses the browser context menu so it can be used as in-game cancel.
-  - `engine/input/pointer.ts` — `screenToWorldRay` helper (works for ortho via `Raycaster.setFromCamera`).
-- **Game layer (`src/client/game/`)**:
-  - `level.ts` — deterministic procedural island, ~48×48, height variation, sandy fringe, 5 trees, a brick-and-plank hut with a glowstone lantern.
-  - `assets/` — code-native placeholder visuals for the hero, weapons, and sample NPC.
-  - `player.ts` — visual hero wrapped in a `Group` so the entity's `Position` is at the player's *feet*. Equipped sword/bow/quiver are presentation-only children.
-  - `npc.ts` — sample NPC spawn helper using the same ECS render path as the player.
-  - `click-to-move.ts` — render-step system. **Preserved but no longer registered** in the demo (see "ARPG retrofit" below). Useful when re-introducing click-to-walk as a Diablo-style alternative to WASD.
+Useful genre elements:
+- ARPG UI needs compact health/resources, ability bar, interaction prompt,
+  pickup feed, inventory/equipment, item compare, map/objectives, and readable
+  combat feedback.
+- The editor needs command-oriented tools, undo/redo, property panels, palette
+  controls, validation, and preview/debug layers.
 
-**The demo:** WASD or arrow keys to move (camera-relative), Space to jump, scroll to zoom. Camera follows smoothly. Walk through the hut door, jump onto the roof, hop between hills, fall off cliffs.
+Engine implications:
+- Add input action mapping and command labels that the HUD can read.
+- Keep UI widgets bound to view models rather than ECS arrays directly.
+- Extend `/ui-demo.html` whenever adding a new reusable widget.
+- Add editor tools only after level serialization, edit sessions, and undoable
+  commands are stable.
 
-#### ARPG retrofit (post-Phase-3 critical pass)
+## Future Plan
 
-The original Phase 3 plan shipped click-to-move with A* pathfinding. The user redirected the demo to ARPG-style direct control (WASD + Space + jump), which fundamentally conflicts with click-to-move (one wants direct velocity, the other wants pathed movement). The retrofit:
+### Research Track - Current Branch
 
-- **New components**: `PlayerControlled`, `Grounded` tags + `BoxCollider` (half-extents; X and Z half-widths, Y half-height with foot-anchored AABB).
-- **New `engine/voxel/voxel-collide.ts`**: `voxelAABBOverlap` (bounded triple-loop with `-EPS` on max for clean integer-boundary handling), `sweepAxis` (binary-search clamp to nearest blocker, 12 iterations = 1/4096 precision), `isGrounded` (thin probe under the AABB with 0.08 epsilon to absorb sweep residual).
-- **New `physics-system.ts`** (fixed-step): gravity → axis-wise sweep (X→Z→Y) → manage `Grounded` tag. Y-last so ground snapping happens after horizontal motion.
-- **New `player-control-system.ts`** (fixed-step): camera-relative WASD via `IsometricCamera.getPanForward().negate()` and `getPanRight()`; horizontal velocity is exponentially smoothed (`alpha = 1 - exp(-accel*dt)`) so input feels weighted, not snappy. Space rising-edge while `Grounded` → upward velocity. `Rotation.y` writes only when horizontal speed exceeds 0.5 m/s so the player doesn't jitter back to the last facing on tiny residual motion.
-- **`camera-follow-system` smoothing tightened from 6 → 8** so the camera tracks jump arcs without lag.
-- `MoveAlongPathSystem` and `createClickToMoveSystem` no longer registered; both files preserved for future use (e.g. NPC pathing, or a re-introduced click-to-walk fallback). Tree-shaken from the bundle.
+Goal: use this branch to review feature direction and identify architecture
+changes before implementation branches.
 
-**Critical review of the original Phase 3 work (audit notes):**
-- ✅ **Greedy mesher winding**: cross-product verified for all six face directions (`+X`/`−X`/`+Y`/`−Y`/`+Z`/`−Z`). Both `c0,c1,c2,c3` (positive faces) and `c0,c3,c2,c1` (negative faces) produce normals matching their face direction.
-- ✅ **Cross-chunk meshing**: boundary writes mark neighbour chunks dirty so faces re-mesh correctly when adjacent voxels change.
-- ✅ **`ChunkManager` negative-coord safety**: `Math.floor` for chunk index, positive-modulo for local — verified for negative voxel coordinates.
-- 🟡 **`MoveAlongPathSystem` `state.points[state.index]!`**: redundant non-null assertion (we already gated on `state.index >= state.points.length`). Cosmetic; left in for intent.
-- 🟡 **`voxel-path.ts surfaceY`**: O(searchRange) voxel reads around endpoints and O(maxStepUp/maxDrop) reads per neighbour. Acceptable for click-triggered queries (now unregistered); a pre-computed per-chunk heightmap is the right optimisation if pathfinding is reintroduced for NPCs.
-- 🟡 **Step-up assistance**: 1-voxel ledges require pressing Space. ARPGs typically auto-step shallow ledges. Easy add (after a blocked X/Z sweep, try Y+1 then re-sweep), deferred to keep the diff focused.
+Deliverables:
+- Keep this README focused on structure and future plan.
+- Keep completed phase detail in `CHANGELOG.md`.
+- Review current engine seams: action/input, mechanisms, AI, collision,
+  serialization, UI binding, and editor readiness.
+- Produce implementation issues or branch plans from this review.
 
-Build: `tsc --noEmit` clean, `vite build` 840 kB / 234 kB gzip (45 modules transformed). Up from 752 kB after Phase 2 — the delta is the voxel subsystem + game files + the shader-material factories pulled into the import graph.
+Exit criteria:
+- The next implementation branch has a narrow scope and clear acceptance tests.
 
-Intentionally deferred:
-- **Web-worker meshing.** Synchronous on main thread is fine for ~4 chunks. The mesher is a pure function — moving it off-thread is one new file (`mesher.worker.ts`) plus a pool wrapper, no API changes elsewhere.
-- **glTF loader for characters.** Code-native hero/NPC/weapon factories are sufficient as stand-ins; a glTF pipeline lands when authored models exist.
-- **Streaming chunks / chunk LOD.** Levels are bounded; streaming makes sense once levels exceed 256³ or so.
-- **Diagonal pathfinding.** 4-connected A* gives blocky paths but feels deliberately "tile-y" for an isometric grid game. Easy to add later by extending `NEIGHBORS` and adding a √2 cost.
-- **Pre-computed heightmap for pathfinding.** Endpoint resolution still searches a bounded vertical range; for the 48×48 demo level this is fast enough. For larger worlds, cache a 2D heightmap per chunk/layer.
+### Phase A - Action And Gameplay Contracts
 
-### Phase 4A — Engine hardening and data contracts
-Goal: make the current prototype safe to extend before adding large tools.
-- Add tests for voxel math, collision, raycast, pathing, and lifecycle invariants.
-- Add level serialization for palette + chunks + metadata.
-- Add a bulk voxel edit/session API so generation and editor commands preserve dirty marking without per-voxel churn.
-- Add explicit system ordering metadata instead of relying on bootstrap call order.
-- Define actor visual attachment points for main hand, off hand, back, overhead, and ground markers.
+Goal: introduce the contracts needed for ARPG mechanics without building the
+full content set yet.
 
-### Phase 4B — Game vertical slice
-Goal: make the demo feel like a small ARPG scene.
-- Add interaction components (`Interactable`, `Health`, `Faction`, presentation hooks).
-- Add one NPC interaction using the sample NPC.
-- Add one combat or pickup loop using the new weapon/prop visual factories.
-- Reintroduce click-to-move only after it is AABB-aware and physics-owned.
+Deliverables:
+- Input action map with buffering, hold/release state, and display labels.
+- `ActionIntent` or equivalent bridge from input/AI to gameplay systems.
+- Ability definitions for melee, bow shot, interaction, air push, and jump.
+- Damage/status primitives with faction-aware target filtering.
+- Small tests for action buffering, cooldowns, target filtering, and status
+  lifetime.
 
-### Phase 5A — Editor foundation
-Goal: build the minimal editor on stable data contracts.
+Exit criteria:
+- Player and NPC behavior can invoke actions through the same contract.
+- Existing demo controls still feel unchanged.
+
+### Phase B - Navigation, Avoidance, And AI Roles
+
+Goal: make NPC movement and enemy behavior reliable before adding more content.
+
+Deliverables:
+- Dynamic obstacle integration for player, NPCs, stones, pistons, and doors.
+- Local avoidance or reservation logic to prevent interlocking.
+- Behavior states for idle, patrol, chase, attack, blocked, and return.
+- Encounter/faction targeting using the relationship matrix.
+- Debug overlay toggles for paths, avoidance radii, state, and target.
+
+Exit criteria:
+- Multiple NPCs can navigate through moving-door/piston test areas without
+  permanent blocked/repath loops.
+
+### Phase C - Mechanism And Region System
+
+Goal: turn doors, pistons, traps, no-walk zones, and future editor-authored
+areas into one coherent world-interaction layer.
+
+Deliverables:
+- Region registry for hazards, no-walk areas, encounter zones, camera hints,
+  checkpoints, and objectives.
+- Mechanism graph with triggers, actuators, timers, blocking policy, and signal
+  channels.
+- Moving-solid collision rules for crushing, pushing, blocking, and path
+  invalidation.
+- Demo playground for traps, shortcuts, locked doors, and environmental hazards.
+
+Exit criteria:
+- A trap corridor can affect player, NPCs, projectiles, and pathfinding through
+  shared mechanism/obstacle contracts.
+
+### Phase D - Loot, Inventory, And Equipment
+
+Goal: add a small but extensible item loop.
+
+Deliverables:
+- Item base definitions and item instances.
+- Pickup, inventory, stack, equipment slot, and stat modifier data.
+- Basic loot tables and deterministic drops.
+- UI widgets for pickup feed, equipment slots, inventory grid, and item compare.
+- Visual attachment updates driven by equipped items.
+
+Exit criteria:
+- Player can pick up, equip, compare, and use at least one weapon and one
+  consumable through data-driven item definitions.
+
+### Phase E - Editor Data Foundation
+
+Goal: start editor work only on stable data and command APIs.
+
+Deliverables:
+- Level save/load round trip for chunks, palette, entities, mechanisms, regions,
+  and metadata.
+- Bulk voxel edit sessions with undoable commands.
 - Editor viewport with scoped input and renderer reuse.
-- Paint / erase / pick / box-fill tools as undoable commands.
-- Palette panel backed by the same block traits used by game systems.
-- Save/load through the Phase 4A serializer.
+- Paint, erase, pick, fill, selection, spawn placement, and validation tools.
+- Game launch against an edited level.
 
-### Phase 5B — Editor production tools
-Goal: make authoring efficient.
-- Region copy/paste, stamps, spawn/NPC/loot placement, validation, and optional `.vox` import.
+Exit criteria:
+- A playable test level can be authored without modifying source code.
 
-### Phase 6 — Asset pipeline
-Goal: swap code-native placeholders for authored content without changing gameplay systems.
-- Add glTF loading and an asset registry.
-- Keep code-native assets as fallback/debug visuals.
-- Define attachment sockets in data rather than by mesh child names.
+### Phase F - Asset And Presentation Pipeline
 
-### Phase 7 — Scaling and performance
-Goal: optimize measured bottlenecks.
-- Add perf counters for remesh time, draw calls, entity counts, and fixed-step cost.
-- Move meshing to workers only when authored levels produce visible spikes.
-- Add chunk streaming and path/height caches when content scale demands them.
+Goal: replace code-native placeholder visuals without changing gameplay logic.
 
-## Local development
+Deliverables:
+- glTF asset registry with code-native fallback visuals.
+- Actor sockets for main hand, off hand, back, overhead, and ground markers.
+- Animation hooks for idle, walk, attack, hit, cast, pickup, and death.
+- Material/presentation events for status effects and interactable highlights.
+
+Exit criteria:
+- Hero or NPC visuals can be swapped to authored assets without changing
+  physics, action, AI, or item systems.
+
+### Phase G - Scale And Performance
+
+Goal: optimize measured bottlenecks after content scale increases.
+
+Deliverables:
+- Counters for frame time, fixed-step cost, path queries, remesh time, draw
+  calls, entity count, and UI update cost.
+- Worker meshing only when authored levels produce measurable spikes.
+- Height/path caches when NPC navigation becomes active at scale.
+- Chunk streaming only after levels exceed bounded demo size.
+
+Exit criteria:
+- Performance work is tied to metrics, not assumptions.
+
+## Local Development
 
 ```bash
 npm install
-npm run dev        # Vite dev server on :8080, opens game entry
-npm run typecheck  # tsc --noEmit
-npm run build      # typecheck then build production bundles for both entries
-npm run preview    # preview production build
+npm run dev -- --host 0.0.0.0 --port 8000
+npm run typecheck
+npm test
+npm run build
 ```
 
-Game entry: `/index.html` (default).
-Editor entry: `/editor.html` (placeholder until Phase 5A).
+## Shader Docs
 
-## Shader docs
+TSL primer and material examples live under [`docs/shaders/`](./docs/shaders/):
 
-TSL primer + runnable material examples live under [`docs/shaders/`](./docs/shaders/README.md):
-
-- [`docs/shaders/tsl-cheatsheet.md`](./docs/shaders/tsl-cheatsheet.md) — syntax reference
-- [`docs/shaders/examples.md`](./docs/shaders/examples.md) — annotated walkthroughs of the example materials
-- `src/client/engine/render/materials/` — five opt-in `MeshStandardNodeMaterial` factories (vertex-color, pulsing-emissive, fresnel-rim, dissolve, wind-foliage). Not in the default import graph; pull what you need.
-
-## Repository layout
-
-```
-.
-├── index.html                  ← game entry (Vite)
-├── editor.html                 ← editor entry (Vite)
-├── vite.config.ts
-├── tsconfig.json
-├── docs/
-│   └── shaders/                ← TSL cheatsheet + example walkthroughs
-├── src/
-│   ├── client/
-│   │   ├── client.ts           ← game bootstrap (spawn entities, register systems, start engine)
-│   │   └── engine/
-│   │       ├── engine.ts             ← Engine: world + renderer + scheduler + systems + input
-│   │       ├── scheduler.ts          ← fixed-step + render-step loop
-│   │       ├── signals.ts            ← UI event bus (NOT for hot-path)
-│   │       ├── signals-event.ts
-│   │       ├── input/
-│   │       │   ├── input.ts          ← keyboard + pointer + wheel + click queue
-│   │       │   └── pointer.ts        ← screen → world ray helper
-│   │       ├── ecs/
-│   │       │   ├── world.ts                       ← createGameWorld() + Object3D + path side-tables
-│   │       │   ├── components.ts                  ← SoA TypedArray components + tags
-│   │       │   └── systems/
-│   │       │       ├── system.ts                  ← System interface
-│   │       │       ├── movement-system.ts         ← fixed-step (Position += Velocity)
-│   │       │       ├── spin-system.ts             ← fixed-step (Rotation += AngularVelocity)
-│   │       │       ├── physics-system.ts          ← fixed-step (gravity + AABB voxel collision + Grounded)
-│   │       │       ├── player-control-system.ts  ← fixed-step (camera-rel WASD + jump)
-│   │       │       ├── move-along-path-system.ts  ← fixed-step path walker (preserved, unregistered)
-│   │       │       ├── render-sync-system.ts     ← render-step + onAdd/onRemove
-│   │       │       ├── camera-control-system.ts  ← render-step zoom/pan with toggles
-│   │       │       └── camera-follow-system.ts   ← render-step (smooth lerp to CameraTarget)
-│   │       ├── voxel/                  ← voxel core (chunks, mesher, collide, raycast, A*)
-│   │       │   ├── palette.ts              ← block type registry
-│   │       │   ├── chunk.ts                ← 32³ Uint16 storage
-│   │       │   ├── chunk-manager.ts        ← Map<key, Chunk> + dirty set
-│   │       │   ├── greedy-mesher.ts        ← pure Mikola-Lysenko sweep
-│   │       │   ├── chunk-renderer.ts       ← per-chunk Mesh + dirty drain
-│   │       │   ├── voxel-collide.ts        ← AABB overlap + axis-sweep + grounded probe
-│   │       │   ├── voxel-raycast.ts        ← Amanatides–Woo DDA
-│   │       │   ├── voxel-path.ts           ← surface-grid A* (preserved, unused in demo)
-│   │       │   └── index.ts                ← re-exports
-│   │       └── render/
-│   │           ├── renderer.ts            ← WebGPURenderer + ACES tone mapping + MSAA
-│   │           ├── isometric-camera.ts    ← OrthographicCamera rig (45°/30°)
-│   │           ├── stats-hud.ts           ← FPS / frame-time overlay
-│   │           └── materials/             ← opt-in TSL material factories (see docs/shaders)
-│   │   └── game/
-│   │       ├── assets/           ← code-native placeholder visuals (hero, weapons, NPC)
-│   │       ├── level.ts            ← procedural demo island
-│   │       ├── player.ts           ← spawn visual hero with PlayerControlled + BoxCollider
-│   │       ├── npc.ts              ← spawn sample NPC
-│   │       └── click-to-move.ts    ← preserved for future use, not registered in the WASD demo
-│   └── editor/
-│       └── editor.ts           ← editor bootstrap (Phase 5A stub)
-└── dist/                       ← Vite build output (gitignored)
-```
+- [`docs/shaders/tsl-cheatsheet.md`](./docs/shaders/tsl-cheatsheet.md)
+- [`docs/shaders/examples.md`](./docs/shaders/examples.md)
+- `src/client/engine/render/materials/`
 
 ## License
 
-ISC. See `LICENSE`.
+ISC. See [`LICENSE`](./LICENSE).
 
 ## Acknowledgements
 
-Reworked from [`three.js-rts-ecs-engine`](https://github.com/andvolodko/three.js-rts-ecs-engine) by andvolodko, which was itself based on Sean Bradley's Three.js TypeScript boilerplate (`socketio` branch).
+Reworked from [`three.js-rts-ecs-engine`](https://github.com/andvolodko/three.js-rts-ecs-engine)
+by andvolodko, which was itself based on Sean Bradley's Three.js TypeScript
+boilerplate (`socketio` branch).
