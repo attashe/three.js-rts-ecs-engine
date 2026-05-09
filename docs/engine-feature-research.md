@@ -38,6 +38,9 @@ Recommended near-term order:
 This order keeps the game playable while preventing future editor work from
 being built on unstable data structures.
 
+Detailed NPC/enemy state-machine planning lives in
+[`npc-enemy-behaviour-state-machine.md`](./npc-enemy-behaviour-state-machine.md).
+
 ## Core Engine Capabilities To Add
 
 ### 1. Action Layer

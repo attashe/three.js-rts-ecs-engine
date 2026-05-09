@@ -57,6 +57,7 @@ Available pages:
 ├── tests/                      # node test suite for engine subsystems
 ├── docs/
 │   ├── engine-feature-research.md
+│   ├── npc-enemy-behaviour-state-machine.md
 │   ├── roadmap-next.md          # earlier architecture roadmap notes
 │   └── shaders/                 # TSL material notes and examples
 └── src/
