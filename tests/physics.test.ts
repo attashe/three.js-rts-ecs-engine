@@ -6,7 +6,8 @@ import { isGrounded, sweepAxis, type AABB, type ObstacleSource } from '../src/cl
 import { ObstacleRegistry } from '../src/client/engine/ecs/obstacle-registry'
 import { BLOCK, DEFAULT_PALETTE } from '../src/client/engine/voxel/palette'
 import { createDynamicCollisionSystem } from '../src/client/engine/ecs/systems/dynamic-collision-system'
-import { BoxCollider, PlayerControlled, Position, Velocity } from '../src/client/engine/ecs/components'
+import { BoxCollider, MoveAlongPath, MovementState, PlayerControlled, Position, Velocity } from '../src/client/engine/ecs/components'
+import { MovementStateId } from '../src/client/engine/ecs/movement-state'
 import { createGameWorld, type GameWorld } from '../src/client/engine/ecs/world'
 
 function makeAABB(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number): AABB {
@@ -233,6 +234,20 @@ test('DynamicCollisionSystem: corrective shoves do not double-apply sweep displa
         Position.x[wallSideActor] >= 2.34 - 1e-6,
         `expected wall-side actor to stay outside the voxel wall, got x=${Position.x[wallSideActor]}`,
     )
+})
+
+test('DynamicCollisionSystem: overlapping moving actors both report blocked for path release', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const a = addMovableActor(world, 0, 0, 0)
+    const b = addMovableActor(world, 0.15, 0, 0)
+    addComponent(world, a, MoveAlongPath)
+    addComponent(world, b, MoveAlongPath)
+
+    createDynamicCollisionSystem(chunks, { passes: 1, padding: 0.08 }).update(world, 1 / 60)
+
+    assert.equal(MovementState.value[a], MovementStateId.Blocked)
+    assert.equal(MovementState.value[b], MovementStateId.Blocked)
 })
 
 test('ObstacleSource interface: any object satisfying it works with sweepAxis', () => {

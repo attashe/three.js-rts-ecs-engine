@@ -2,6 +2,7 @@ import { addEntity as bitecsAddEntity, removeEntity as bitecsRemoveEntity } from
 import { MAX_ENTITIES } from './components'
 import type { GameWorld } from './world'
 import { disposeObject3D } from '../render/dispose-object'
+import { clearEntityHostility } from './factions'
 
 export function createEntity(world: GameWorld): number {
     const eid = bitecsAddEntity(world)
@@ -22,5 +23,7 @@ export function despawnEntity(world: GameWorld, eid: number): void {
     world.pathByEid.delete(eid)
     world.interactionByEid.delete(eid)
     world.pickupByEid.delete(eid)
+    world.projectileOwnerByEid.delete(eid)
+    clearEntityHostility(world, eid)
     bitecsRemoveEntity(world, eid)
 }

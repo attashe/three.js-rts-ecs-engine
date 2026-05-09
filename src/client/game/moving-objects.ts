@@ -111,6 +111,7 @@ export function spawnArrowProjectile(
     world: GameWorld,
     position: { x: number; y: number; z: number },
     velocity: { x: number; y: number; z: number },
+    owner?: number,
 ): number {
     const eid = createEntity(world)
     addComponents(world, eid, [Position, Rotation, Velocity, BoxCollider, RigidBody, MovingObject])
@@ -137,6 +138,7 @@ export function spawnArrowProjectile(
 
     MovingObject.kind[eid] = MovingObjectKind.Arrow
     MovingObject.age[eid] = 0
+    if (owner !== undefined) world.projectileOwnerByEid.set(eid, owner)
 
     const obj = createArrow()
     obj.scale.setScalar(0.9)
@@ -194,6 +196,7 @@ export function spawnFallingStone(
 }
 
 export function turnArrowIntoPickup(world: GameWorld, eid: number): void {
+    world.projectileOwnerByEid.delete(eid)
     addComponents(world, eid, [Pickup, PickupValue])
     PickupValue.kind[eid] = 3
     PickupValue.amount[eid] = 1

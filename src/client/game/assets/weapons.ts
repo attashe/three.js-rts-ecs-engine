@@ -55,6 +55,14 @@ export interface QuiverOptions {
     arrowCount?: number
 }
 
+export interface ShieldOptions {
+    width?: number
+    height?: number
+    color?: number
+    rimColor?: number
+    bossColor?: number
+}
+
 export function createSword(options: SwordOptions = {}): Group {
     const bladeLength = options.bladeLength ?? 1.25
     const bladeWidth = options.bladeWidth ?? 0.16
@@ -190,6 +198,67 @@ export function createQuiver(options: QuiverOptions = {}): Group {
         arrow.rotation.y = -0.18 + i * 0.04
         root.add(arrow)
     }
+
+    enableShadows(root)
+    return root
+}
+
+export function createShield(options: ShieldOptions = {}): Group {
+    const width = options.width ?? 0.46
+    const height = options.height ?? 0.72
+    const face = new MeshStandardMaterial({
+        color: options.color ?? 0x2f5e8f,
+        roughness: 0.62,
+        metalness: 0.08,
+    })
+    const rim = new MeshStandardMaterial({
+        color: options.rimColor ?? 0xb9c4cf,
+        roughness: 0.42,
+        metalness: 0.45,
+    })
+    const bossMat = new MeshStandardMaterial({
+        color: options.bossColor ?? 0xd6c277,
+        roughness: 0.38,
+        metalness: 0.35,
+    })
+
+    const root = new Group()
+    root.name = 'Shield'
+
+    const body = new Mesh(new BoxGeometry(width, height, 0.055), face)
+    body.name = 'ShieldFace'
+    root.add(body)
+
+    const top = new Mesh(new BoxGeometry(width + 0.08, 0.055, 0.075), rim)
+    top.name = 'ShieldTopRim'
+    top.position.y = height * 0.5
+    root.add(top)
+
+    const bottom = top.clone()
+    bottom.name = 'ShieldBottomRim'
+    bottom.position.y = -height * 0.5
+    root.add(bottom)
+
+    const left = new Mesh(new BoxGeometry(0.055, height + 0.08, 0.075), rim)
+    left.name = 'ShieldLeftRim'
+    left.position.x = -width * 0.5
+    root.add(left)
+
+    const right = left.clone()
+    right.name = 'ShieldRightRim'
+    right.position.x = width * 0.5
+    root.add(right)
+
+    const boss = new Mesh(new CylinderGeometry(0.12, 0.14, 0.055, 16), bossMat)
+    boss.name = 'ShieldBoss'
+    boss.rotation.x = Math.PI * 0.5
+    boss.position.z = 0.052
+    root.add(boss)
+
+    const strap = new Mesh(new BoxGeometry(0.28, 0.055, 0.035), darkLeather())
+    strap.name = 'ShieldGrip'
+    strap.position.z = -0.055
+    root.add(strap)
 
     enableShadows(root)
     return root

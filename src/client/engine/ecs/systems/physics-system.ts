@@ -1,6 +1,6 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
-import type { AABB, ChunkManager, ColliderAnchor } from '../../voxel'
-import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis } from '../../voxel'
+import type { ChunkManager } from '../../voxel/chunk-manager'
+import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis, type AABB, type ColliderAnchor } from '../../voxel/voxel-collide'
 import {
     BoxCollider,
     Grounded,
@@ -16,6 +16,7 @@ import type { System } from './system'
 import { FixedOrder } from './orders'
 import { MovementStateId } from '../movement-state'
 
+export const DEFAULT_PHYSICS_GRAVITY = 24
 const DEFAULT_GRAVITY_SCALE = 1
 const DEFAULT_MASS = 1
 const DEFAULT_SLEEP_THRESHOLD_SQ = 0.04
@@ -53,7 +54,7 @@ export interface PhysicsOptions {
  * there's no per-frame skip cost.
  */
 export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions = {}): System {
-    const gravity = opts.gravity ?? 24
+    const gravity = opts.gravity ?? DEFAULT_PHYSICS_GRAVITY
     const maxFallSpeed = opts.maxFallSpeed ?? 40
 
     const pos = { x: 0, y: 0, z: 0 }

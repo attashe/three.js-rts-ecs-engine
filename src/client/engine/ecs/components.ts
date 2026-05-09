@@ -66,6 +66,16 @@ export const MovingObject = {
     age: new Float32Array(MAX_ENTITIES),
 }
 
+export const Shield = {
+    /** 1 while actively raised by input/AI. */
+    raised: new Uint8Array(MAX_ENTITIES),
+    /** Minimum dot between actor forward and incoming projectile source direction. */
+    blockArcCos: new Float32Array(MAX_ENTITIES),
+    /** Shield coverage in target-local Y, relative to Position.y. */
+    minY: new Float32Array(MAX_ENTITIES),
+    maxY: new Float32Array(MAX_ENTITIES),
+}
+
 /**
  * Material parameters for a dynamic body. Read by physics-system every step
  * for entities that also have Position + Velocity + BoxCollider.

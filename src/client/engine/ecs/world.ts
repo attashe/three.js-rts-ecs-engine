@@ -84,6 +84,8 @@ export interface GameContext {
     object3DByEid: Map<number, Object3D>
     pathByEid: Map<number, PathState>
     behaviourByEid: Map<number, ActorBlackboard>
+    hostilityByEid: Map<number, Set<number>>
+    projectileOwnerByEid: Map<number, number>
     interactionByEid: Map<number, InteractionState>
     pickupByEid: Map<number, PickupState>
     mechanismByEid: Map<number, VoxelMechanism>
@@ -102,6 +104,8 @@ export function createGameWorld(): GameWorld {
         object3DByEid: new Map<number, Object3D>(),
         pathByEid: new Map<number, PathState>(),
         behaviourByEid: new Map<number, ActorBlackboard>(),
+        hostilityByEid: new Map<number, Set<number>>(),
+        projectileOwnerByEid: new Map<number, number>(),
         interactionByEid: new Map<number, InteractionState>(),
         pickupByEid: new Map<number, PickupState>(),
         mechanismByEid: new Map<number, VoxelMechanism>(),
