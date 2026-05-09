@@ -142,6 +142,7 @@ async function main(): Promise<void> {
             { keys: ['Space'], label: 'Jump' },
             { keys: ['F'], label: 'Attack' },
             { keys: ['B'], label: 'Bow' },
+            { keys: ['G'], label: 'Air push' },
             { keys: ['E'], label: 'Interact' },
             { keys: ['Wheel'], label: 'Zoom' },
         ])
