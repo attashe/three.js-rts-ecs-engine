@@ -4,29 +4,29 @@ import { AIR, aabbFromFoot, voxelAABBOverlap } from '../../voxel'
 import { BoxCollider, Interactable, PlayerControlled, Position, Velocity, Wanderer } from '../components'
 import type { DoorMechanism, GameWorld, PistonMechanism, VoxelCoord } from '../world'
 import { pushGameLog } from '../world'
-import type { Input } from '../../input/input'
+import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 
 export interface VoxelMechanismOptions {
     interactionRange?: number
-    inputBufferMs?: number
+    actionId?: ActionId
 }
 
 export function createVoxelMechanismSystem(
     chunks: ChunkManager,
-    input: Input,
+    actions: ActionMap,
     opts: VoxelMechanismOptions = {},
 ): System {
     const interactionRange = opts.interactionRange ?? 2.1
-    const inputBufferMs = opts.inputBufferMs ?? 160
+    const actionId = opts.actionId ?? 'world.interact'
 
     return {
         fixed: true,
         order: FixedOrder.mechanisms,
         update(world, dt) {
             tickPistons(chunks, world, dt)
-            handleDoorInput(chunks, input, world, interactionRange, inputBufferMs)
+            handleDoorInput(chunks, actions, world, interactionRange, actionId)
         },
     }
 }
@@ -113,12 +113,12 @@ function overlappingCharacterEids(world: GameWorld, pos: VoxelCoord): number[] {
 
 function handleDoorInput(
     chunks: ChunkManager,
-    input: Input,
+    actions: ActionMap,
     world: GameWorld,
     range: number,
-    inputBufferMs: number,
+    actionId: ActionId,
 ): void {
-    if (!input.hasBufferedKeyPressed('KeyE', inputBufferMs)) return
+    if (!actions.hasBufferedPress(actionId)) return
 
     const players = query(world, [PlayerControlled, Position])
     if (players.length === 0) return
@@ -127,7 +127,7 @@ function handleDoorInput(
     if (!door) return
 
     const changed = door.open ? tryCloseDoor(chunks, world, door) : openDoor(chunks, door)
-    input.consumeKeyPressed('KeyE')
+    actions.consumePressed(actionId, player)
 
     const message = changed
         ? door.open ? 'Door opened.' : 'Door closed.'

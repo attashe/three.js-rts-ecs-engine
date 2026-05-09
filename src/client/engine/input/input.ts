@@ -1,8 +1,8 @@
 // Lightweight global input state. Tracks held keys, last pointer position,
 // and accumulated wheel delta. Systems read this synchronously each frame.
 //
-// Phase 5 will introduce action mapping (e.g. "move-up" → bound key set);
-// for Phase 2 the camera controller pokes raw key codes directly.
+// Higher-level gameplay actions are layered on top in actions.ts; this class
+// intentionally stays as the raw keyboard/pointer/wheel source.
 
 export interface ClickEvent {
     /** CSS pixel x in viewport. */

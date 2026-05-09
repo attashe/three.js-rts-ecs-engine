@@ -1,7 +1,7 @@
 import { query, removeComponent } from 'bitecs'
 import { Attackable, Faction, Health, PlayerControlled, Position, Rotation } from '../components'
 import { areEnemies } from '../factions'
-import type { Input } from '../../input/input'
+import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
@@ -10,33 +10,25 @@ export interface MeleeCombatOptions {
     range?: number
     arcRadians?: number
     damage?: number
-    recoveryMs?: number
     notify?: (message: string) => void
-    inputBufferMs?: number
+    actionId?: ActionId
 }
 
-export function createMeleeCombatSystem(input: Input, opts: MeleeCombatOptions = {}): System {
+export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOptions = {}): System {
     const range = opts.range ?? 1.35
     const arc = opts.arcRadians ?? Math.PI * 0.65
     const damage = opts.damage ?? 25
-    const recoveryMs = opts.recoveryMs ?? 360
-    const inputBufferMs = opts.inputBufferMs ?? 120
+    const actionId = opts.actionId ?? 'attack.primary'
     const cosHalfArc = Math.cos(arc * 0.5)
-    const readyAtByPlayer = new Map<number, number>()
 
     return {
         fixed: true,
         order: FixedOrder.input,
         update(world) {
-            if (!input.hasBufferedKeyPressed('KeyF', inputBufferMs)) return
-
             const players = query(world, [PlayerControlled, Position])
             if (players.length === 0) return
             const player = players[0]
-            const now = performance.now()
-            if (now < (readyAtByPlayer.get(player) ?? 0)) return
-            input.consumeKeyPressed('KeyF')
-            readyAtByPlayer.set(player, now + recoveryMs)
+            if (!actions.consumePressed(actionId, player)) return
 
             const px = Position.x[player]
             const pz = Position.z[player]

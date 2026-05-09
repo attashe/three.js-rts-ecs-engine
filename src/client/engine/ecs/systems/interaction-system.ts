@@ -1,27 +1,25 @@
 import { query } from 'bitecs'
 import { Interactable, InteractionRange, PlayerControlled, Position } from '../components'
-import type { Input } from '../../input/input'
+import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
 
 export interface InteractionSystemOptions {
     notify?: (message: string) => void
-    inputBufferMs?: number
+    actionId?: ActionId
 }
 
-export function createInteractionSystem(input: Input, opts: InteractionSystemOptions = {}): System {
-    const inputBufferMs = opts.inputBufferMs ?? 120
+export function createInteractionSystem(actions: ActionMap, opts: InteractionSystemOptions = {}): System {
+    const actionId = opts.actionId ?? 'world.interact'
     return {
         fixed: true,
         order: FixedOrder.input,
         update(world) {
-            if (!input.hasBufferedKeyPressed('KeyE', inputBufferMs)) return
-
             const players = query(world, [PlayerControlled, Position])
             if (players.length === 0) return
-            input.consumeKeyPressed('KeyE')
             const player = players[0]
+            if (!actions.consumePressed(actionId, player)) return
             const px = Position.x[player]
             const py = Position.y[player]
             const pz = Position.z[player]

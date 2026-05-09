@@ -1,31 +1,30 @@
 import { query } from 'bitecs'
 import { PlayerControlled, Position, Rotation } from '../components'
-import type { Input } from '../../input/input'
+import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { spawnArrowProjectile } from '../../../game/moving-objects'
 
 export interface ProjectileLaunchOptions {
-    inputBufferMs?: number
     arrowSpeed?: number
     arrowLift?: number
+    actionId?: ActionId
 }
 
-export function createProjectileLaunchSystem(input: Input, opts: ProjectileLaunchOptions = {}): System {
-    const inputBufferMs = opts.inputBufferMs ?? 140
+export function createProjectileLaunchSystem(actions: ActionMap, opts: ProjectileLaunchOptions = {}): System {
     const arrowSpeed = opts.arrowSpeed ?? 10.5
     const arrowLift = opts.arrowLift ?? 3.2
+    const actionId = opts.actionId ?? 'weapon.bowShot'
 
     return {
         fixed: true,
         order: FixedOrder.input + 20,
         update(world) {
-            if (!input.hasBufferedKeyPressed('KeyB', inputBufferMs)) return
             const players = query(world, [PlayerControlled, Position, Rotation])
             if (players.length === 0) return
 
             const player = players[0]
-            input.consumeKeyPressed('KeyB')
+            if (!actions.consumePressed(actionId, player)) return
             const yaw = Rotation.y[player]
             const forwardX = Math.sin(yaw)
             const forwardZ = Math.cos(yaw)

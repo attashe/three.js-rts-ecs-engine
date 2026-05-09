@@ -17,6 +17,7 @@
     "src/client/engine/voxel/palette.ts",
     "src/client/engine/voxel/voxel-collide.ts",
     "src/client/engine/voxel/voxel-path.ts",
+    "src/client/engine/input/actions.ts",
     "src/client/engine/ecs/obstacle-registry.ts",
     "tests/**/*.ts"
   ]

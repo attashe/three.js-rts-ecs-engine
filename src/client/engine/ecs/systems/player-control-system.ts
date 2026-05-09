@@ -2,6 +2,7 @@ import { Vector3 } from 'three'
 import { hasComponent, query, removeComponent } from 'bitecs'
 import { Grounded, PlayerControlled, Position, Rotation, Velocity } from '../components'
 import type { Input } from '../../input/input'
+import type { ActionMap, ActionId } from '../../input/actions'
 import type { IsometricCamera } from '../../render/isometric-camera'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -18,6 +19,15 @@ export interface PlayerControlOptions {
     jumpBufferMs?: number
     /** Grace period after leaving ground where jump is still accepted, in milliseconds. Default 100. */
     coyoteMs?: number
+    actions?: PlayerControlActions
+}
+
+export interface PlayerControlActions {
+    forward: ActionId
+    backward: ActionId
+    left: ActionId
+    right: ActionId
+    jump: ActionId
 }
 
 /**
@@ -31,6 +41,7 @@ export interface PlayerControlOptions {
  */
 export function createPlayerControlSystem(
     input: Input,
+    actions: ActionMap,
     iso: IsometricCamera,
     opts: PlayerControlOptions = {},
 ): System {
@@ -39,6 +50,13 @@ export function createPlayerControlSystem(
     const accel = opts.accel ?? 18
     const jumpBufferMs = opts.jumpBufferMs ?? 200
     const coyoteMs = opts.coyoteMs ?? 100
+    const actionIds = opts.actions ?? {
+        forward: 'move.forward',
+        backward: 'move.backward',
+        left: 'move.left',
+        right: 'move.right',
+        jump: 'move.jump',
+    }
 
     const forward = new Vector3()
     const right = new Vector3()
@@ -60,10 +78,10 @@ export function createPlayerControlSystem(
             // Read input direction.
             let inFwd = 0
             let inRight = 0
-            if (input.isKeyDown('KeyW') || input.isKeyDown('ArrowUp')) inFwd += 1
-            if (input.isKeyDown('KeyS') || input.isKeyDown('ArrowDown')) inFwd -= 1
-            if (input.isKeyDown('KeyD') || input.isKeyDown('ArrowRight')) inRight += 1
-            if (input.isKeyDown('KeyA') || input.isKeyDown('ArrowLeft')) inRight -= 1
+            if (actions.isHeld(actionIds.forward)) inFwd += 1
+            if (actions.isHeld(actionIds.backward)) inFwd -= 1
+            if (actions.isHeld(actionIds.right)) inRight += 1
+            if (actions.isHeld(actionIds.left)) inRight -= 1
 
             // Compose into a world-space horizontal direction; normalise so diagonals aren't faster.
             let dirX = forward.x * inFwd + right.x * inRight
@@ -79,7 +97,7 @@ export function createPlayerControlSystem(
             // Frame-rate independent exponential smoothing.
             const alpha = 1 - Math.exp(-accel * dt)
 
-            let jumpBuffered = input.hasBufferedKeyPressed('Space', jumpBufferMs)
+            let jumpBuffered = actions.hasBufferedPress(actionIds.jump)
             const pointer = input.getPointer()
             if (pointer) {
                 screenToWorldRay(pointer.x, pointer.y, iso.camera, pointerRay)
@@ -96,7 +114,7 @@ export function createPlayerControlSystem(
 
                 const canJump = grounded || now - (lastGroundedAt.get(eid) ?? -Infinity) <= coyoteMs
                 if (jumpBuffered && canJump) {
-                    input.consumeKeyPressed('Space')
+                    actions.consumePressed(actionIds.jump, eid)
                     jumpBuffered = false
                     Velocity.y[eid] = jumpVelocity
                     removeComponent(world, eid, Grounded)

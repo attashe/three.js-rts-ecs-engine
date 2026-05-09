@@ -1,6 +1,7 @@
 import { Vector3 } from 'three'
 import type { IsometricCamera } from '../../render/isometric-camera'
 import type { Input } from '../../input/input'
+import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { RenderOrder } from './orders'
 
@@ -22,6 +23,16 @@ export interface CameraControlOptions {
     /** Zoom clamp. Default [0.25, 5]. */
     zoomMin?: number
     zoomMax?: number
+    actions?: CameraControlActions
+}
+
+export interface CameraControlActions {
+    forward: ActionId
+    backward: ActionId
+    left: ActionId
+    right: ActionId
+    rotateLeft: ActionId
+    rotateRight: ActionId
 }
 
 // Render-step system. Reads Input each frame and pans the IsometricCamera's
@@ -31,6 +42,7 @@ export interface CameraControlOptions {
 export function createCameraControlSystem(
     iso: IsometricCamera,
     input: Input,
+    actions: ActionMap,
     opts: CameraControlOptions = {},
 ): System {
     const keyboardPan = opts.keyboardPan ?? true
@@ -42,6 +54,14 @@ export function createCameraControlSystem(
     const zoomFactor = opts.zoomFactor ?? 1.1
     const zoomMin = opts.zoomMin ?? 0.25
     const zoomMax = opts.zoomMax ?? 5
+    const actionIds = opts.actions ?? {
+        forward: 'move.forward',
+        backward: 'move.backward',
+        left: 'move.left',
+        right: 'move.right',
+        rotateLeft: 'camera.rotateLeft',
+        rotateRight: 'camera.rotateRight',
+    }
 
     const right = new Vector3()
     const forward = new Vector3()
@@ -51,18 +71,18 @@ export function createCameraControlSystem(
         order: RenderOrder.cameraControl,
         update(_world, dt) {
             if (stepRotate) {
-                if (input.consumeKeyPressed('KeyQ')) iso.rotateYaw(-Math.PI * 0.5)
-                if (input.consumeKeyPressed('KeyR')) iso.rotateYaw(Math.PI * 0.5)
+                if (actions.consumePressed(actionIds.rotateLeft)) iso.rotateYaw(-Math.PI * 0.5)
+                if (actions.consumePressed(actionIds.rotateRight)) iso.rotateYaw(Math.PI * 0.5)
             }
 
             // Keyboard pan (WASD + arrows). +x = right, +z = back/forward in pan-space.
             let panX = 0
             let panZ = 0
             if (keyboardPan) {
-                if (input.isKeyDown('KeyW') || input.isKeyDown('ArrowUp')) panZ -= 1
-                if (input.isKeyDown('KeyS') || input.isKeyDown('ArrowDown')) panZ += 1
-                if (input.isKeyDown('KeyA') || input.isKeyDown('ArrowLeft')) panX -= 1
-                if (input.isKeyDown('KeyD') || input.isKeyDown('ArrowRight')) panX += 1
+                if (actions.isHeld(actionIds.forward)) panZ -= 1
+                if (actions.isHeld(actionIds.backward)) panZ += 1
+                if (actions.isHeld(actionIds.left)) panX -= 1
+                if (actions.isHeld(actionIds.right)) panX += 1
             }
 
             if (edgePanEnabled && edgeThreshold > 0) {

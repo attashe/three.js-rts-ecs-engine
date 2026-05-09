@@ -8,7 +8,7 @@ import {
     Sleeping,
     Velocity,
 } from '../components'
-import type { Input } from '../../input/input'
+import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
@@ -26,10 +26,7 @@ export interface AirPushOptions {
     minSpeedFactor?: number
     /** Extra upward kick added at the apex; falls off with proximity. Default 4. */
     verticalLift?: number
-    /** Cast cooldown (ms). Default 1500. */
-    cooldownMs?: number
-    /** Buffered-keypress window (ms). Default 140. */
-    inputBufferMs?: number
+    actionId?: ActionId
     /** UI hint callback. Combat-log entry is always pushed regardless. */
     notify?: (message: string) => void
 }
@@ -46,31 +43,24 @@ export interface AirPushOptions {
  * stones above or below the player at close range still get caught (matching
  * a real gust of wind rather than a laser).
  */
-export function createAirPushSystem(input: Input, opts: AirPushOptions = {}): System {
+export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {}): System {
     const halfAngle = opts.halfAngle ?? Math.PI * 0.32
     const range = opts.range ?? 5.5
     const baseSpeed = opts.baseSpeed ?? 12
     const minSpeedFactor = opts.minSpeedFactor ?? 0.4
     const verticalLift = opts.verticalLift ?? 4
-    const cooldownMs = opts.cooldownMs ?? 1500
-    const inputBufferMs = opts.inputBufferMs ?? 140
+    const actionId = opts.actionId ?? 'spell.airPush'
     const cosHalfAngle = Math.cos(halfAngle)
     const rangeSq = range * range
-    const cooldownByPlayer = new Map<number, number>()
 
     return {
         fixed: true,
         order: FixedOrder.input + 30,
         update(world) {
-            if (!input.hasBufferedKeyPressed('KeyG', inputBufferMs)) return
             const players = query(world, [PlayerControlled, Position, Rotation])
             if (players.length === 0) return
             const player = players[0]
-
-            const now = performance.now()
-            if (now < (cooldownByPlayer.get(player) ?? 0)) return
-            input.consumeKeyPressed('KeyG')
-            cooldownByPlayer.set(player, now + cooldownMs)
+            if (!actions.consumePressed(actionId, player)) return
 
             const px = Position.x[player]
             // Anchor the cone at chest height so a stone at the player's feet

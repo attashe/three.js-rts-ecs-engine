@@ -31,6 +31,7 @@ import { spawnPlayer } from './game/player'
 import { spawnSampleNpc, spawnWanderingNpc } from './game/npc'
 import { spawnCoinPile, spawnHealthPotion, spawnTrainingDummy } from './game/props'
 import { registerDoorMechanism, registerPistonMechanism } from './game/mechanisms'
+import { GAME_COMMAND_HINT_ACTIONS, createGameActionMap } from './game/actions'
 
 async function main(): Promise<void> {
     let engine: Engine
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
     }
 
     const { renderer, world } = engine
+    const actions = createGameActionMap(engine.input)
     const hud = new GameHud()
     const notify = (message: string) => hud.notify(message)
 
@@ -107,13 +109,13 @@ async function main(): Promise<void> {
 
     // Systems declare their own phase order; call order here is no longer the scheduling contract.
     engine
-        .addSystem(createVoxelMechanismSystem(chunks, engine.input))
-        .addSystem(createPlayerControlSystem(engine.input, renderer.iso))
-        .addSystem(createProjectileLaunchSystem(engine.input))
+        .addSystem(createVoxelMechanismSystem(chunks, actions))
+        .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso))
+        .addSystem(createProjectileLaunchSystem(actions))
         .addSystem(createArrowHitSystem(chunks, { notify }))
-        .addSystem(createAirPushSystem(engine.input, { notify }))
-        .addSystem(createInteractionSystem(engine.input, { notify }))
-        .addSystem(createMeleeCombatSystem(engine.input, { notify }))
+        .addSystem(createAirPushSystem(actions, { notify }))
+        .addSystem(createInteractionSystem(actions, { notify }))
+        .addSystem(createMeleeCombatSystem(actions, { notify }))
         .addSystem(createPickupSystem({ notify }))
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 14 }))
         .addSystem(createWanderSystem(chunks))
@@ -126,7 +128,7 @@ async function main(): Promise<void> {
         .addSystem(createRenderSyncSystem(renderer.scene))
         .addSystem(chunkRenderSystem)
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input))
-        .addSystem(createCameraControlSystem(renderer.iso, engine.input, {
+        .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,
             edgePan: false,
             wheelZoom: true,
@@ -135,17 +137,7 @@ async function main(): Promise<void> {
 
     try {
         await engine.start()
-        hud.setCommandHints([
-            { keys: ['WASD', 'Arrows'], label: 'Move' },
-            { keys: ['Mouse'], label: 'Aim' },
-            { keys: ['Q', 'R'], label: 'Rotate camera' },
-            { keys: ['Space'], label: 'Jump' },
-            { keys: ['F'], label: 'Attack' },
-            { keys: ['B'], label: 'Bow' },
-            { keys: ['G'], label: 'Air push' },
-            { keys: ['E'], label: 'Interact' },
-            { keys: ['Wheel'], label: 'Zoom' },
-        ])
+        hud.setCommandHints(actions.commandHints(GAME_COMMAND_HINT_ACTIONS))
     } catch (err) {
         console.error(err)
         hud.fatal(err instanceof Error ? err.message : String(err))
