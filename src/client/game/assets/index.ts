@@ -5,8 +5,8 @@ export {
 } from './main-character'
 export type { MainCharacterOptions } from './main-character'
 
-export { createArrow, createBow, createQuiver, createSword } from './weapons'
-export type { BowOptions, QuiverOptions, SwordOptions } from './weapons'
+export { createArrow, createBow, createQuiver, createShield, createSword } from './weapons'
+export type { BowOptions, QuiverOptions, ShieldOptions, SwordOptions } from './weapons'
 
 export { createSampleNpc } from './npc'
 export type { SampleNpcOptions } from './npc'
@@ -16,6 +16,7 @@ export {
     createCaveBat,
     createForestWolf,
     createPackMule,
+    createRabbit,
     createTownGuardNpc,
 } from './creatures'
 export type { CreaturePalette } from './creatures'

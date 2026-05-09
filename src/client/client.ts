@@ -11,6 +11,7 @@ import { createRenderSyncSystem } from './engine/ecs/systems/render-sync-system'
 import { createCameraControlSystem } from './engine/ecs/systems/camera-control-system'
 import { createCameraFollowSystem } from './engine/ecs/systems/camera-follow-system'
 import { createPlayerControlSystem } from './engine/ecs/systems/player-control-system'
+import { createShieldSystem } from './engine/ecs/systems/shield-system'
 import { createPhysicsSystem } from './engine/ecs/systems/physics-system'
 import { createDynamicCollisionSystem } from './engine/ecs/systems/dynamic-collision-system'
 import { createRigidBodyPairSystem } from './engine/ecs/systems/rigidbody-pair-system'
@@ -27,9 +28,18 @@ import { createMeleeCombatSystem } from './engine/ecs/systems/melee-combat-syste
 import { createPickupSystem } from './engine/ecs/systems/pickup-system'
 import { createPerceptionSystem } from './engine/ecs/systems/perception-system'
 import { createBehaviourSystem } from './engine/ecs/systems/behaviour-system'
-import { generateDemoLevel } from './game/level'
+import { generateLevel, type LevelId } from './game/level'
 import { spawnPlayer } from './game/player'
-import { spawnHostileMeleeNpc, spawnSampleNpc, spawnWanderingNpc } from './game/npc'
+import {
+    spawnGuardNpc,
+    spawnHostileArcherNpc,
+    spawnHostileMeleeNpc,
+    spawnHunterNpc,
+    spawnRabbitNpc,
+    spawnSampleNpc,
+    spawnVillagerNpc,
+    spawnWanderingNpc,
+} from './game/npc'
 import { spawnCoinPile, spawnHealthPotion, spawnTrainingDummy } from './game/props'
 import { registerDoorMechanism, registerPistonMechanism } from './game/mechanisms'
 import { GAME_COMMAND_HINT_ACTIONS, createGameActionMap } from './game/actions'
@@ -70,7 +80,8 @@ async function main(): Promise<void> {
 
     // Voxel world + level + chunk renderer.
     const chunks = new ChunkManager(DEFAULT_PALETTE)
-    const meta = generateDemoLevel(chunks)
+    const meta = generateLevel(chunks, selectedLevel())
+    sun.target.position.set(meta.size / 2, 0, meta.size / 2)
     const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
     chunkRenderer.rebuildAll()
 
@@ -84,17 +95,51 @@ async function main(): Promise<void> {
             radius: 8,
         })
     }
-    const pistonTester = spawnWanderingNpc(world, {
-        position: meta.pistonTester,
-        yaw: Math.PI * 0.5,
-        radius: 11,
-    })
-    seedPistonTesterPath(chunks, world, pistonTester, meta.pistonTester, meta.pistonTesterGoal)
+    if (meta.pistonTester && meta.pistonTesterGoal) {
+        const pistonTester = spawnWanderingNpc(world, {
+            position: meta.pistonTester,
+            yaw: Math.PI * 0.5,
+            radius: 11,
+        })
+        seedPistonTesterPath(chunks, world, pistonTester, meta.pistonTester, meta.pistonTesterGoal)
+    }
     spawnTrainingDummy(world, { position: meta.dummy, yaw: Math.PI * 0.35 })
     spawnCoinPile(world, { position: meta.coins })
     spawnHealthPotion(world, { position: meta.potion })
+    for (let i = 0; i < meta.villagers.length; i++) {
+        spawnVillagerNpc(world, {
+            position: meta.villagers[i]!,
+            yaw: Math.PI * (0.15 + i * 0.17),
+            label: `Villager ${i + 1}`,
+        })
+    }
+    for (let i = 0; i < meta.guards.length; i++) {
+        spawnGuardNpc(world, {
+            position: meta.guards[i]!,
+            yaw: Math.PI * (0.5 + i * 0.25),
+            label: `Village Guard ${i + 1}`,
+        })
+    }
+    for (let i = 0; i < meta.hunters.length; i++) {
+        spawnHunterNpc(world, {
+            position: meta.hunters[i]!.home,
+            huntingGround: meta.hunters[i]!.huntingGround,
+            yaw: Math.PI,
+            label: `Hunter ${i + 1}`,
+        })
+    }
+    for (let i = 0; i < meta.rabbits.length; i++) {
+        spawnRabbitNpc(world, {
+            position: meta.rabbits[i]!,
+            yaw: Math.PI * (0.25 + i * 0.35),
+            label: `Rabbit ${i + 1}`,
+        })
+    }
     for (const hostile of meta.hostiles) {
         spawnHostileMeleeNpc(world, hostile)
+    }
+    for (const archer of meta.archers) {
+        spawnHostileArcherNpc(world, archer)
     }
     for (const door of meta.doors) registerDoorMechanism(world, door)
     for (const piston of meta.pistons) registerPistonMechanism(world, piston)
@@ -114,6 +159,7 @@ async function main(): Promise<void> {
     // Systems declare their own phase order; call order here is no longer the scheduling contract.
     engine
         .addSystem(createVoxelMechanismSystem(chunks, actions))
+        .addSystem(createShieldSystem(actions))
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso))
         .addSystem(createProjectileLaunchSystem(actions))
         .addSystem(createArrowHitSystem(chunks, { notify }))
@@ -150,6 +196,11 @@ async function main(): Promise<void> {
 }
 
 void main()
+
+function selectedLevel(): LevelId {
+    const value = new URLSearchParams(window.location.search).get('map')
+    return value === 'village' ? 'village' : 'playground'
+}
 
 function seedPistonTesterPath(
     chunks: ChunkManager,

@@ -27,6 +27,8 @@ const DEFAULTS = {
     mulePack: 0x6c4a2f,
     batWing: 0x2b2f3a,
     batBody: 0x4a4050,
+    rabbitFur: 0xb7aa96,
+    rabbitBelly: 0xe1d6c4,
     skin: 0xc88758,
     dark: 0x241b18,
     bone: 0xd8c8a0,
@@ -157,6 +159,28 @@ export function createCaveBat(options: CreaturePalette = {}): Group {
     return finalize(root)
 }
 
+export function createRabbit(options: CreaturePalette = {}): Group {
+    const root = namedRoot('Rabbit')
+    const fur = material(options.primary ?? DEFAULTS.rabbitFur, 0.86)
+    const belly = material(options.secondary ?? DEFAULTS.rabbitBelly, 0.78)
+    const dark = material(options.accent ?? DEFAULTS.dark, 0.72)
+
+    addSphere(root, 'body', [0, 0.27, 0.02], [0.22, 0.18, 0.32], fur)
+    addSphere(root, 'chest', [0, 0.3, -0.16], [0.16, 0.15, 0.16], belly)
+    addSphere(root, 'head', [0, 0.48, -0.26], [0.16, 0.15, 0.16], fur)
+    addCone(root, 'left ear', [-0.07, 0.72, -0.24], 0.045, 0.28, fur, -0.18, 0, 0.08)
+    addCone(root, 'right ear', [0.07, 0.72, -0.24], 0.045, 0.28, fur, -0.18, 0, -0.08)
+    addSphere(root, 'tail', [0, 0.32, 0.34], [0.08, 0.08, 0.08], belly)
+    addSphere(root, 'left eye', [-0.055, 0.51, -0.39], [0.022, 0.022, 0.018], dark)
+    addSphere(root, 'right eye', [0.055, 0.51, -0.39], [0.022, 0.022, 0.018], dark)
+    addBox(root, 'left forepaw', [-0.09, 0.09, -0.2], [0.07, 0.08, 0.14], fur)
+    addBox(root, 'right forepaw', [0.09, 0.09, -0.2], [0.07, 0.08, 0.14], fur)
+    addBox(root, 'left hindpaw', [-0.13, 0.08, 0.18], [0.1, 0.08, 0.2], fur)
+    addBox(root, 'right hindpaw', [0.13, 0.08, 0.18], [0.1, 0.08, 0.2], fur)
+
+    return finalize(root)
+}
+
 function namedRoot(name: string): Group {
     const root = new Group()
     root.name = name
@@ -265,4 +289,3 @@ function addCone(
     parent.add(mesh)
     return mesh
 }
-

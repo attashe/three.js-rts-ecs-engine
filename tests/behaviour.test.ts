@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addComponent, addEntity } from 'bitecs'
-import { Behaviour, Faction, Health, Position } from '../src/client/engine/ecs/components'
+import { addComponent, addEntity, hasComponent, query } from 'bitecs'
+import { Attackable, Behaviour, BoxCollider, Faction, Health, Interactable, MoveAlongPath, MovingObject, Position, Rotation, Velocity, Wanderer } from '../src/client/engine/ecs/components'
 import {
     BEHAVIOUR_PROFILES,
     BehaviourProfileId,
@@ -18,10 +18,19 @@ import {
 } from '../src/client/engine/ecs/behaviour'
 import { FactionId } from '../src/client/engine/ecs/factions'
 import { createGameWorld } from '../src/client/engine/ecs/world'
+import { createBehaviourSystem } from '../src/client/engine/ecs/systems/behaviour-system'
+import { createArrowHitSystem } from '../src/client/engine/ecs/systems/arrow-hit-system'
+import { createPhysicsSystem } from '../src/client/engine/ecs/systems/physics-system'
+import { ChunkManager } from '../src/client/engine/voxel/chunk-manager'
+import { BLOCK, DEFAULT_PALETTE } from '../src/client/engine/voxel/palette'
+import { applyDamagePacket } from '../src/client/engine/ecs/damage'
 
 const HOSTILE = getBehaviourProfile(BehaviourProfileId.HostileMeleeGrunt)!
 const WANDERER = getBehaviourProfile(BehaviourProfileId.NeutralWanderer)!
 const MERCHANT = getBehaviourProfile(BehaviourProfileId.NeutralMerchant)!
+const HUNTER = getBehaviourProfile(BehaviourProfileId.Hunter)!
+const RABBIT = getBehaviourProfile(BehaviourProfileId.Rabbit)!
+const ARCHER = getBehaviourProfile(BehaviourProfileId.HostileArcher)!
 
 function makeSnapshot(overrides: Partial<BehaviourSnapshot> = {}): BehaviourSnapshot {
     return {
@@ -31,6 +40,12 @@ function makeSnapshot(overrides: Partial<BehaviourSnapshot> = {}): BehaviourSnap
         targetVisible: false,
         distanceToTarget: 0,
         distanceToHome: 0,
+        distanceToActivity: 0,
+        hasActivity: false,
+        stateTime: 0,
+        actionReady: true,
+        movementBlocked: false,
+        hasPath: false,
         ...overrides,
     }
 }
@@ -51,6 +66,10 @@ test('behaviour profiles cover the demo archetypes with consistent invariants', 
     assert.equal(HOSTILE.faction, FactionId.Hostile)
     assert.equal(WANDERER.faction, FactionId.Neutral)
     assert.equal(MERCHANT.faction, FactionId.Neutral)
+    assert.equal(HUNTER.faction, FactionId.Hunter)
+    assert.equal(RABBIT.faction, FactionId.Wildlife)
+    assert.equal(ARCHER.faction, FactionId.Hostile)
+    assert.equal(ARCHER.attackKind, 'bow')
 })
 
 test('decideTransition: dead overrides everything', () => {
@@ -87,6 +106,40 @@ test('decideTransition: visible target inside leash but out of reach → Chase',
     assert.equal(next, BehaviourStateId.Chase)
 })
 
+test('decideTransition: blocked combatant with target repositions before continuing chase', () => {
+    const next = decideTransition(HOSTILE, makeSnapshot({
+        state: BehaviourStateId.Chase,
+        targetVisible: true,
+        targetEid: 9,
+        distanceToTarget: HOSTILE.attackRange + 1.0,
+        distanceToHome: 1,
+        movementBlocked: true,
+    }))
+    assert.equal(next, BehaviourStateId.Reposition)
+})
+
+test('decideTransition: recovering actor waits for cooldown, then resumes combat', () => {
+    const waiting = decideTransition(HOSTILE, makeSnapshot({
+        state: BehaviourStateId.Recover,
+        targetVisible: true,
+        targetEid: 9,
+        distanceToTarget: HOSTILE.attackRange - 0.1,
+        distanceToHome: 1,
+        actionReady: false,
+    }))
+    assert.equal(waiting, null)
+
+    const ready = decideTransition(HOSTILE, makeSnapshot({
+        state: BehaviourStateId.Recover,
+        targetVisible: true,
+        targetEid: 9,
+        distanceToTarget: HOSTILE.attackRange - 0.1,
+        distanceToHome: 1,
+        actionReady: true,
+    }))
+    assert.equal(ready, BehaviourStateId.Attack)
+})
+
 test('decideTransition: visible target past leash → ReturnHome (gives up the chase)', () => {
     const next = decideTransition(HOSTILE, makeSnapshot({
         state: BehaviourStateId.Chase,
@@ -113,6 +166,51 @@ test('decideTransition: ReturnHome reaches home → Idle for non-wanderer combat
         distanceToHome: 0.3,
     }))
     assert.equal(next, BehaviourStateId.Idle)
+})
+
+test('decideTransition: ReturnHome ignores visible targets until home is reached', () => {
+    const next = decideTransition(HOSTILE, makeSnapshot({
+        state: BehaviourStateId.ReturnHome,
+        targetVisible: true,
+        targetEid: 9,
+        distanceToTarget: HOSTILE.attackRange + 1,
+        distanceToHome: 2,
+    }))
+    assert.equal(next, null)
+})
+
+test('decideTransition: hunter reaches activity point and starts hunting locally', () => {
+    const next = decideTransition(HUNTER, makeSnapshot({
+        state: BehaviourStateId.TravelToActivity,
+        hasActivity: true,
+        distanceToActivity: HUNTER.activityRadius - 0.1,
+    }))
+    assert.equal(next, BehaviourStateId.Wander)
+})
+
+test('decideTransition: hunter returns home to idle after an activity', () => {
+    const next = decideTransition(HUNTER, makeSnapshot({
+        state: BehaviourStateId.ReturnHome,
+        hasActivity: true,
+        distanceToHome: 0.2,
+    }))
+    assert.equal(next, BehaviourStateId.Idle)
+})
+
+test('decideTransition: rabbit flees from visible enemy and resumes wandering after escape', () => {
+    const flee = decideTransition(RABBIT, makeSnapshot({
+        state: BehaviourStateId.Wander,
+        targetVisible: true,
+        targetEid: 4,
+        distanceToTarget: 3,
+    }))
+    assert.equal(flee, BehaviourStateId.Flee)
+
+    const recover = decideTransition(RABBIT, makeSnapshot({
+        state: BehaviourStateId.Flee,
+        targetVisible: false,
+    }))
+    assert.equal(recover, BehaviourStateId.Wander)
 })
 
 test('decideTransition: idle wanderer enters Wander on its own', () => {
@@ -200,6 +298,269 @@ test('findNearestEnemy: faction-filtered radius scan picks the closest enemy', (
     assert.equal(findNearestEnemy(world, seeker, 25), farPlayer)
 })
 
+test('findNearestEnemy: hunter and wildlife are mutually hostile without making wildlife hostile to player', () => {
+    const world = createGameWorld()
+    const hunter = addEntity(world)
+    addComponent(world, hunter, Position); addComponent(world, hunter, Faction); addComponent(world, hunter, Health)
+    Position.x[hunter] = 0; Position.y[hunter] = 0; Position.z[hunter] = 0
+    Faction.id[hunter] = FactionId.Hunter
+    Health.max[hunter] = 70; Health.current[hunter] = 70
+
+    const rabbit = addEntity(world)
+    addComponent(world, rabbit, Position); addComponent(world, rabbit, Faction); addComponent(world, rabbit, Health)
+    Position.x[rabbit] = 3; Position.y[rabbit] = 0; Position.z[rabbit] = 0
+    Faction.id[rabbit] = FactionId.Wildlife
+    Health.max[rabbit] = 12; Health.current[rabbit] = 12
+
+    const player = addEntity(world)
+    addComponent(world, player, Position); addComponent(world, player, Faction); addComponent(world, player, Health)
+    Position.x[player] = 1; Position.y[player] = 0; Position.z[player] = 0
+    Faction.id[player] = FactionId.Player
+    Health.max[player] = 100; Health.current[player] = 100
+
+    assert.equal(findNearestEnemy(world, hunter, 10), rabbit)
+    assert.equal(findNearestEnemy(world, rabbit, 10), hunter)
+    assert.equal(findNearestEnemy(world, player, 10), null)
+})
+
+test('findNearestEnemy: skirmish factions fight each other while ignoring neutral player', () => {
+    const world = createGameWorld()
+    const red = addEntity(world)
+    addComponent(world, red, Position); addComponent(world, red, Faction); addComponent(world, red, Health)
+    Position.x[red] = 0; Position.y[red] = 0; Position.z[red] = 0
+    Faction.id[red] = FactionId.SkirmishRed
+    Health.max[red] = 50; Health.current[red] = 50
+
+    const player = addEntity(world)
+    addComponent(world, player, Position); addComponent(world, player, Faction); addComponent(world, player, Health)
+    Position.x[player] = 2; Position.y[player] = 0; Position.z[player] = 0
+    Faction.id[player] = FactionId.Player
+    Health.max[player] = 100; Health.current[player] = 100
+
+    const blue = addEntity(world)
+    addComponent(world, blue, Position); addComponent(world, blue, Faction); addComponent(world, blue, Health)
+    Position.x[blue] = 5; Position.y[blue] = 0; Position.z[blue] = 0
+    Faction.id[blue] = FactionId.SkirmishBlue
+    Health.max[blue] = 50; Health.current[blue] = 50
+
+    assert.equal(findNearestEnemy(world, red, 8), blue)
+    assert.equal(findNearestEnemy(world, blue, 8), red)
+    assert.equal(findNearestEnemy(world, player, 8), null)
+})
+
+test('BehaviourSystem: hunter returns home immediately after killing a rabbit', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+
+    const hunter = addEntity(world)
+    addComponent(world, hunter, Position); addComponent(world, hunter, Faction); addComponent(world, hunter, Health); addComponent(world, hunter, Behaviour)
+    Position.x[hunter] = 0; Position.y[hunter] = 0; Position.z[hunter] = 0
+    Faction.id[hunter] = FactionId.Hunter
+    Health.max[hunter] = 70; Health.current[hunter] = 70
+    assignBehaviourProfile(world, hunter, BehaviourProfileId.Hunter, { x: -5, y: 0, z: 0 }, {
+        activity: { x: 0, y: 0, z: 0 },
+    })
+    setBehaviourState(world, hunter, BehaviourStateId.Attack)
+
+    const rabbit = addEntity(world)
+    addComponent(world, rabbit, Position); addComponent(world, rabbit, Faction); addComponent(world, rabbit, Health); addComponent(world, rabbit, Attackable)
+    Position.x[rabbit] = 0.8; Position.y[rabbit] = 0; Position.z[rabbit] = 0
+    Faction.id[rabbit] = FactionId.Wildlife
+    Health.max[rabbit] = 12; Health.current[rabbit] = 12
+    world.interactionByEid.set(rabbit, { label: 'Test Rabbit', message: '' })
+    setBehaviourTarget(world, hunter, rabbit)
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Health.current[rabbit], 0)
+    assert.equal(Behaviour.state[hunter], BehaviourStateId.ReturnHome)
+    assert.equal(getBehaviourTarget(hunter), null)
+})
+
+test('BehaviourSystem: attack enters Recover after a non-lethal strike', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+
+    const hunter = addEntity(world)
+    addComponent(world, hunter, Position); addComponent(world, hunter, Faction); addComponent(world, hunter, Health); addComponent(world, hunter, Behaviour)
+    Position.x[hunter] = 0; Position.y[hunter] = 0; Position.z[hunter] = 0
+    Faction.id[hunter] = FactionId.Hunter
+    Health.max[hunter] = 70; Health.current[hunter] = 70
+    assignBehaviourProfile(world, hunter, BehaviourProfileId.Hunter, { x: 0, y: 0, z: 0 }, {
+        activity: { x: 0, y: 0, z: 0 },
+    })
+    setBehaviourState(world, hunter, BehaviourStateId.Attack)
+
+    const rabbit = addEntity(world)
+    addComponent(world, rabbit, Position); addComponent(world, rabbit, Faction); addComponent(world, rabbit, Health); addComponent(world, rabbit, Attackable)
+    Position.x[rabbit] = 0.8; Position.y[rabbit] = 0; Position.z[rabbit] = 0
+    Faction.id[rabbit] = FactionId.Wildlife
+    Health.max[rabbit] = 24; Health.current[rabbit] = 24
+    world.interactionByEid.set(rabbit, { label: 'Durable Rabbit', message: '' })
+    setBehaviourTarget(world, hunter, rabbit)
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Health.current[rabbit], 12)
+    assert.equal(Behaviour.state[hunter], BehaviourStateId.Recover)
+    assert.ok(Behaviour.nextThinkAt[hunter] > 0)
+})
+
+test('BehaviourSystem: archer attack launches an owned arrow and enters Recover', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+
+    const archer = addEntity(world)
+    addComponent(world, archer, Position); addComponent(world, archer, Rotation)
+    addComponent(world, archer, Faction); addComponent(world, archer, Health); addComponent(world, archer, Behaviour)
+    Position.x[archer] = 0; Position.y[archer] = 1; Position.z[archer] = 0
+    Faction.id[archer] = FactionId.Hostile
+    Health.max[archer] = 42; Health.current[archer] = 42
+    assignBehaviourProfile(world, archer, BehaviourProfileId.HostileArcher, { x: 0, y: 1, z: 0 })
+    setBehaviourState(world, archer, BehaviourStateId.Attack)
+
+    const player = addEntity(world)
+    addComponent(world, player, Position); addComponent(world, player, BoxCollider); addComponent(world, player, Velocity)
+    addComponent(world, player, Faction); addComponent(world, player, Health)
+    Position.x[player] = 0; Position.y[player] = 1; Position.z[player] = 5
+    BoxCollider.x[player] = 0.35; BoxCollider.y[player] = 0.9; BoxCollider.z[player] = 0.35
+    Velocity.x[player] = 1.5; Velocity.y[player] = 0; Velocity.z[player] = 0
+    Faction.id[player] = FactionId.Player
+    Health.max[player] = 100; Health.current[player] = 100
+    setBehaviourTarget(world, archer, player)
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    const arrows = query(world, [MovingObject, Position, Velocity])
+    assert.equal(arrows.length, 1)
+    assert.equal(world.projectileOwnerByEid.get(arrows[0]!), archer)
+    assert.ok(Velocity.x[arrows[0]!] > 0.1, 'archer should lead a moving target')
+    assert.ok(Velocity.y[arrows[0]!] > 4, 'archer should launch with enough lift for the physics arc')
+    assert.equal(Behaviour.state[archer], BehaviourStateId.Recover)
+    assert.ok(Behaviour.nextThinkAt[archer] > 0)
+})
+
+test('BehaviourSystem: archer shot can land on another archer at duel range', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+
+    const archer = addEntity(world)
+    addComponent(world, archer, Position); addComponent(world, archer, Rotation)
+    addComponent(world, archer, Faction); addComponent(world, archer, Health); addComponent(world, archer, Behaviour)
+    Position.x[archer] = 0; Position.y[archer] = 1; Position.z[archer] = 0
+    Faction.id[archer] = FactionId.SkirmishRed
+    Health.max[archer] = 42; Health.current[archer] = 42
+    assignBehaviourProfile(world, archer, BehaviourProfileId.HostileArcher, { x: 0, y: 1, z: 0 })
+    setBehaviourState(world, archer, BehaviourStateId.Attack)
+
+    const target = addEntity(world)
+    addComponent(world, target, Position); addComponent(world, target, BoxCollider)
+    addComponent(world, target, Faction); addComponent(world, target, Health)
+    Position.x[target] = 0; Position.y[target] = 1; Position.z[target] = 8
+    BoxCollider.x[target] = 0.35; BoxCollider.y[target] = 0.9; BoxCollider.z[target] = 0.35
+    Faction.id[target] = FactionId.SkirmishBlue
+    Health.max[target] = 100; Health.current[target] = 100
+    setBehaviourTarget(world, archer, target)
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    const hitSystem = createArrowHitSystem(chunks, { baseDamage: 10, speedBonus: 0 })
+    const physicsSystem = createPhysicsSystem(chunks)
+    for (let i = 0; i < 90 && Health.current[target] === 100; i++) {
+        hitSystem.update(world, 1 / 60)
+        physicsSystem.update(world, 1 / 60)
+    }
+
+    assert.equal(Health.current[target], 90)
+})
+
+test('BehaviourSystem: damaged villager flees from a neutral attacker via threat memory', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+
+    const attacker = addEntity(world)
+    addComponent(world, attacker, Position); addComponent(world, attacker, Faction); addComponent(world, attacker, Health)
+    Position.x[attacker] = 0; Position.y[attacker] = 1; Position.z[attacker] = 0
+    Faction.id[attacker] = FactionId.Player
+    Health.max[attacker] = 100; Health.current[attacker] = 100
+
+    const villager = addEntity(world)
+    addComponent(world, villager, Position); addComponent(world, villager, Faction); addComponent(world, villager, Health); addComponent(world, villager, Behaviour)
+    Position.x[villager] = 1; Position.y[villager] = 1; Position.z[villager] = 0
+    Faction.id[villager] = FactionId.Neutral
+    Health.max[villager] = 45; Health.current[villager] = 45
+    assignBehaviourProfile(world, villager, BehaviourProfileId.Villager, { x: 1, y: 1, z: 0 })
+
+    const result = applyDamagePacket(world, {
+        source: attacker,
+        target: villager,
+        amount: 5,
+        type: 'physical',
+    })
+    assert.equal(result.applied, true)
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Behaviour.state[villager], BehaviourStateId.Flee)
+    assert.equal(world.behaviourByEid.get(villager)?.threatEid, attacker)
+})
+
+test('BehaviourSystem: death leaves a corpse visual and removes actor blocking tags', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+
+    const actor = addEntity(world)
+    addComponent(world, actor, Position); addComponent(world, actor, Rotation); addComponent(world, actor, Velocity)
+    addComponent(world, actor, Faction); addComponent(world, actor, Health); addComponent(world, actor, Behaviour)
+    addComponent(world, actor, Attackable); addComponent(world, actor, Wanderer); addComponent(world, actor, Interactable)
+    Position.x[actor] = 0; Position.y[actor] = 1; Position.z[actor] = 0
+    Faction.id[actor] = FactionId.Hostile
+    Health.max[actor] = 10; Health.current[actor] = 0
+    Velocity.x[actor] = 1; Velocity.y[actor] = -1; Velocity.z[actor] = 1
+    assignBehaviourProfile(world, actor, BehaviourProfileId.HostileMeleeGrunt, { x: 0, y: 1, z: 0 })
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Behaviour.state[actor], BehaviourStateId.Dead)
+    assert.equal(hasComponent(world, actor, Attackable), false)
+    assert.equal(hasComponent(world, actor, Wanderer), false)
+    assert.equal(hasComponent(world, actor, Interactable), false)
+    assert.ok(Math.abs(Rotation.x[actor] - Math.PI * 0.5) < 1e-5)
+    assert.equal(Velocity.x[actor], 0)
+    assert.equal(Velocity.y[actor], 0)
+    assert.equal(Velocity.z[actor], 0)
+})
+
+test('BehaviourSystem: travel paths route around dynamic actor blockers', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = 0; x <= 6; x++) {
+        for (let z = 0; z <= 4; z++) {
+            chunks.setVoxel(x, 0, z, BLOCK.plank)
+        }
+    }
+
+    const hunter = addEntity(world)
+    addComponent(world, hunter, Position); addComponent(world, hunter, Behaviour)
+    Position.x[hunter] = 0.5; Position.y[hunter] = 1; Position.z[hunter] = 2.5
+    assignBehaviourProfile(world, hunter, BehaviourProfileId.Hunter, { x: 0.5, y: 1, z: 2.5 }, {
+        activity: { x: 6.5, y: 1, z: 2.5 },
+    })
+
+    const blocker = addEntity(world)
+    addComponent(world, blocker, Position); addComponent(world, blocker, BoxCollider); addComponent(world, blocker, Wanderer)
+    Position.x[blocker] = 3.5; Position.y[blocker] = 1; Position.z[blocker] = 2.5
+    BoxCollider.x[blocker] = 0.34; BoxCollider.y[blocker] = 0.9; BoxCollider.z[blocker] = 0.34
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Behaviour.state[hunter], BehaviourStateId.TravelToActivity)
+    assert.equal(hasComponent(world, hunter, MoveAlongPath), true)
+    const path = world.pathByEid.get(hunter)
+    assert.ok(path, 'hunter should receive a travel path')
+    assert.equal(path.points.some((p) => Math.floor(p.x) === 3 && Math.floor(p.z) === 2), false)
+})
+
 test('behaviourStateName names every supported state and returns "unknown" for unknowns', () => {
     assert.equal(behaviourStateName(BehaviourStateId.Idle), 'idle')
     assert.equal(behaviourStateName(BehaviourStateId.Wander), 'wander')
@@ -207,5 +568,9 @@ test('behaviourStateName names every supported state and returns "unknown" for u
     assert.equal(behaviourStateName(BehaviourStateId.Attack), 'attack')
     assert.equal(behaviourStateName(BehaviourStateId.ReturnHome), 'return')
     assert.equal(behaviourStateName(BehaviourStateId.Dead), 'dead')
+    assert.equal(behaviourStateName(BehaviourStateId.TravelToActivity), 'travel')
+    assert.equal(behaviourStateName(BehaviourStateId.Flee), 'flee')
+    assert.equal(behaviourStateName(BehaviourStateId.Reposition), 'reposition')
+    assert.equal(behaviourStateName(BehaviourStateId.Recover), 'recover')
     assert.equal(behaviourStateName(99), 'unknown')
 })

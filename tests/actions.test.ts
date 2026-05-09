@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ActionMap, type ActionDefinition, type ActionInputSource } from '../src/client/engine/input/actions'
+import { GAME_ACTIONS, GAME_COMMAND_HINT_ACTIONS, GameAction } from '../src/client/game/actions'
 
 class FakeInput implements ActionInputSource {
     held = new Set<string>()
@@ -125,3 +126,16 @@ test('ActionMap groups command hints by hint group and order', () => {
     ])
 })
 
+test('game actions expose held shield input and command hint', () => {
+    let now = 0
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(GAME_ACTIONS, input, { now: () => now })
+
+    input.held.add('ShiftLeft')
+
+    assert.equal(actions.isHeld(GameAction.Shield), true)
+    assert.deepEqual(
+        actions.commandHints(GAME_COMMAND_HINT_ACTIONS).find((hint) => hint.label === 'Shield'),
+        { keys: ['Shift'], label: 'Shield' },
+    )
+})

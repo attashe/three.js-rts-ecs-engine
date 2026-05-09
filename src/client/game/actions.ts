@@ -10,6 +10,7 @@ export const GameAction = {
     Jump: 'move.jump',
     AttackPrimary: 'attack.primary',
     BowShot: 'weapon.bowShot',
+    Shield: 'defense.shield',
     AirPush: 'spell.airPush',
     Interact: 'world.interact',
     CameraRotateLeft: 'camera.rotateLeft',
@@ -86,6 +87,12 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
         hint: { group: 'bow', label: 'Bow', keys: ['B'], order: 60 },
     },
     {
+        id: GameAction.Shield,
+        label: 'Shield',
+        bindings: [{ keys: ['ShiftLeft', 'ShiftRight'], displayKeys: ['Shift'] }],
+        hint: { group: 'shield', label: 'Shield', keys: ['Shift'], order: 65 },
+    },
+    {
         id: GameAction.AirPush,
         label: 'Air push',
         bindings: [{ keys: ['KeyG'] }],
@@ -114,6 +121,7 @@ export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
     GameAction.Jump,
     GameAction.AttackPrimary,
     GameAction.BowShot,
+    GameAction.Shield,
     GameAction.AirPush,
     GameAction.Interact,
     GameAction.CameraZoom,
@@ -122,4 +130,3 @@ export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
 export function createGameActionMap(input: Input): ActionMap {
     return new ActionMap(GAME_ACTIONS, input)
 }
-

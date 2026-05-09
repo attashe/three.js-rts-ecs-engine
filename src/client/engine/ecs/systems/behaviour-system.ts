@@ -1,6 +1,7 @@
 import { Vector3 } from 'three'
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
-import { findPath, type ChunkManager } from '../../voxel'
+import type { ChunkManager } from '../../voxel/chunk-manager'
+import { findPath, type PathOptions } from '../../voxel/voxel-path'
 import {
     Attackable,
     Behaviour,
@@ -8,6 +9,7 @@ import {
     Health,
     Interactable,
     MoveAlongPath,
+    MovementState,
     PlayerControlled,
     Position,
     Rotation,
@@ -20,20 +22,34 @@ import {
     decideTransition,
     getBehaviourProfile,
     getBehaviourTarget,
+    setBehaviourTarget,
     setBehaviourState,
     type ActorBlackboard,
     type BehaviourProfile,
     type BehaviourSnapshot,
 } from '../behaviour'
 import { applyDamagePacket } from '../damage'
+import { MovementStateId } from '../movement-state'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+import { DEFAULT_PHYSICS_GRAVITY } from './physics-system'
 import { pushGameLog, type GameWorld } from '../world'
+import { spawnArrowProjectile } from '../../../game/moving-objects'
 
 const WANDER_SPEED = 2.2
+const TRAVEL_SPEED = 2.45
 const CHASE_SPEED = 2.9
+const FLEE_SPEED = 3.35
 const RETURN_SPEED = 2.6
 const TARGET_MOVE_REPATH = 1.5
+const SLOT_MOVE_REPATH = 0.65
+const ARROW_MUZZLE_HEIGHT = 1.08
+const ARROW_MUZZLE_FORWARD = 0.55
+const ARROW_TARGET_LEAD = 0.65
+const MIN_ARROW_TRAVEL_TIME = 0.16
+const MAX_ARROW_TRAVEL_TIME = 1.1
+const MIN_ARROW_VERTICAL_SPEED = -2
+const MAX_ARROW_VERTICAL_SPEED = 14
 
 /**
  * Drives every actor with a `Behaviour` component. One pure resolver decides
@@ -72,6 +88,10 @@ function tickActor(
     const blackboard = world.behaviourByEid.get(eid)
     if (!profile || !blackboard) return
     blackboard.stateTime = Behaviour.stateTime[eid]
+    if (blackboard.threatTime > 0) {
+        blackboard.threatTime = Math.max(0, blackboard.threatTime - dt)
+        if (blackboard.threatTime === 0) blackboard.threatEid = null
+    }
 
     const snapshot = buildSnapshot(world, eid, blackboard, profile)
     const next = decideTransition(profile, snapshot)
@@ -84,9 +104,13 @@ function tickActor(
     const active = Behaviour.state[eid] as BehaviourStateId
     switch (active) {
         case BehaviourStateId.Wander: handleWander(world, eid, blackboard, profile, chunks, blockers); break
-        case BehaviourStateId.Chase: handleChase(world, eid, blackboard, profile, chunks, snapshot); break
+        case BehaviourStateId.TravelToActivity: handleTravelToActivity(world, eid, blackboard, profile, chunks, blockers); break
+        case BehaviourStateId.Chase: handleChase(world, eid, blackboard, profile, chunks, blockers, snapshot); break
+        case BehaviourStateId.Reposition: handleReposition(world, eid, blackboard, profile, chunks, blockers, snapshot); break
         case BehaviourStateId.Attack: handleAttack(world, eid, profile, snapshot); break
-        case BehaviourStateId.ReturnHome: handleReturnHome(world, eid, blackboard, chunks); break
+        case BehaviourStateId.Recover: handleRecover(world, eid, snapshot); break
+        case BehaviourStateId.Flee: handleFlee(world, eid, blackboard, profile, chunks, blockers, snapshot); break
+        case BehaviourStateId.ReturnHome: handleReturnHome(world, eid, blackboard, chunks, blockers); break
         case BehaviourStateId.Idle: handleIdle(world, eid); break
         case BehaviourStateId.Dead: /* nothing */ break
     }
@@ -98,10 +122,12 @@ function buildSnapshot(
     blackboard: ActorBlackboard,
     profile: BehaviourProfile,
 ): BehaviourSnapshot {
-    const targetEid = getBehaviourTarget(eid)
+    const perceivedTarget = getBehaviourTarget(eid)
+    const targetEid = perceivedTarget ?? blackboard.threatEid
     const visible = targetEid !== null
         && hasComponent(world, targetEid, Position)
         && (!hasComponent(world, targetEid, Health) || Health.current[targetEid] > 0)
+        && (perceivedTarget !== null || blackboard.threatTime > 0)
 
     const px = Position.x[eid]
     const py = Position.y[eid]
@@ -115,6 +141,10 @@ function buildSnapshot(
     }
     const home = blackboard.home
     const dToHome = Math.hypot(home.x - px, home.y - py, home.z - pz)
+    const activity = blackboard.activity
+    const dToActivity = activity
+        ? Math.hypot(activity.x - px, activity.y - py, activity.z - pz)
+        : 0
 
     const health = hasComponent(world, eid, Health) ? Health.current[eid] : 1
 
@@ -125,29 +155,57 @@ function buildSnapshot(
         targetVisible: visible,
         distanceToTarget: dToTarget,
         distanceToHome: dToHome,
+        distanceToActivity: dToActivity,
+        hasActivity: activity !== null,
+        stateTime: Behaviour.stateTime[eid],
+        actionReady: Behaviour.nextThinkAt[eid] <= 0,
+        movementBlocked: MovementState.value[eid] === MovementStateId.Blocked ||
+            MovementState.value[eid] === MovementStateId.Repathing,
+        hasPath: hasComponent(world, eid, MoveAlongPath),
     }
 }
 
 function onExitState(world: GameWorld, eid: number, state: BehaviourStateId): void {
-    if (state === BehaviourStateId.Wander || state === BehaviourStateId.Chase || state === BehaviourStateId.ReturnHome) {
+    if (
+        state === BehaviourStateId.Wander ||
+        state === BehaviourStateId.TravelToActivity ||
+        state === BehaviourStateId.Chase ||
+        state === BehaviourStateId.Reposition ||
+        state === BehaviourStateId.Flee ||
+        state === BehaviourStateId.ReturnHome
+    ) {
         clearPath(world, eid)
     }
 }
 
 function onEnterState(world: GameWorld, eid: number, state: BehaviourStateId, blackboard: ActorBlackboard): void {
-    if (state === BehaviourStateId.Attack || state === BehaviourStateId.Idle) {
+    if (state === BehaviourStateId.Attack || state === BehaviourStateId.Recover || state === BehaviourStateId.Idle) {
         clearPath(world, eid)
     }
-    if (state === BehaviourStateId.Chase || state === BehaviourStateId.Wander || state === BehaviourStateId.ReturnHome) {
+    if (
+        state === BehaviourStateId.Chase ||
+        state === BehaviourStateId.Reposition ||
+        state === BehaviourStateId.Flee ||
+        state === BehaviourStateId.Wander ||
+        state === BehaviourStateId.TravelToActivity ||
+        state === BehaviourStateId.ReturnHome
+    ) {
         blackboard.pathGoal = null
     }
     if (state === BehaviourStateId.Dead) {
         clearPath(world, eid)
         if (hasComponent(world, eid, Velocity)) {
             Velocity.x[eid] = 0
+            Velocity.y[eid] = 0
             Velocity.z[eid] = 0
         }
         if (hasComponent(world, eid, Attackable)) removeComponent(world, eid, Attackable)
+        if (hasComponent(world, eid, Wanderer)) removeComponent(world, eid, Wanderer)
+        if (hasComponent(world, eid, Interactable)) removeComponent(world, eid, Interactable)
+        Rotation.x[eid] = Math.PI * 0.5
+        Rotation.z[eid] = ((eid % 5) - 2) * 0.08
+        const obj = world.object3DByEid.get(eid)
+        if (obj) obj.name = `${obj.name || 'Actor'}Corpse`
         const interaction = world.interactionByEid.get(eid)
         pushGameLog(world, {
             type: 'combat',
@@ -180,7 +238,10 @@ function handleWander(
         y: Math.floor(Position.y[eid]),
         z: Math.floor(Position.z[eid]),
     }
-    const goal = chooseWanderGoal(eid, blackboard.home, profile.wanderRadius)
+    const center = blackboard.activity && Behaviour.state[eid] !== BehaviourStateId.ReturnHome
+        ? blackboard.activity
+        : blackboard.home
+    const goal = chooseWanderGoal(eid, center, profile.wanderRadius)
     const path = findPath(chunks, start, goal, {
         maxNodes: 2048,
         maxStepUp: 1,
@@ -203,12 +264,41 @@ function handleWander(
     }
 }
 
+function handleTravelToActivity(
+    world: GameWorld,
+    eid: number,
+    blackboard: ActorBlackboard,
+    profile: BehaviourProfile,
+    chunks: ChunkManager,
+    blockers: DynamicBlocker[],
+): void {
+    if (!blackboard.activity) return
+    const goal = voxelGoal(blackboard.activity)
+    requestPathTo(
+        world,
+        eid,
+        blackboard,
+        chunks,
+        blackboard.activity,
+        TRAVEL_SPEED,
+        profile.repathCooldown,
+        {
+            maxNodes: 2048,
+            maxStepUp: 1,
+            maxDrop: 2,
+            surfaceSearchRange: 8,
+            isBlocked: (x, y, z) => isDynamicallyBlocked(blockers, eid, x, y, z, goal),
+        },
+    )
+}
+
 function handleChase(
     world: GameWorld,
     eid: number,
     blackboard: ActorBlackboard,
     profile: BehaviourProfile,
     chunks: ChunkManager,
+    blockers: DynamicBlocker[],
     snapshot: BehaviourSnapshot,
 ): void {
     if (snapshot.targetEid === null) return
@@ -240,6 +330,7 @@ function handleChase(
         maxStepUp: 1,
         maxDrop: 2,
         surfaceSearchRange: 6,
+        isBlocked: (x, y, z) => isDynamicallyBlocked(blockers, eid, x, y, z, goal, target),
     })
 
     if (path && path.length > 1) {
@@ -254,14 +345,75 @@ function handleChase(
     Behaviour.nextRepathAt[eid] = profile.repathCooldown
 }
 
+function handleReposition(
+    world: GameWorld,
+    eid: number,
+    blackboard: ActorBlackboard,
+    profile: BehaviourProfile,
+    chunks: ChunkManager,
+    blockers: DynamicBlocker[],
+    snapshot: BehaviourSnapshot,
+): void {
+    if (snapshot.targetEid === null) return
+    const target = snapshot.targetEid
+    faceTowards(eid, Position.x[target], Position.z[target])
+
+    const slot = chooseAttackSlot(eid, target, profile)
+    const pathGoal = blackboard.pathGoal
+    const slotMoved = pathGoal
+        ? Math.hypot(slot.x - pathGoal.x, slot.z - pathGoal.z)
+        : Infinity
+    const needsRepath = !hasComponent(world, eid, MoveAlongPath) || slotMoved > SLOT_MOVE_REPATH
+    if (!needsRepath) return
+    if (Behaviour.nextRepathAt[eid] > 0) return
+
+    const start = {
+        x: Math.floor(Position.x[eid]),
+        y: Math.floor(Position.y[eid]),
+        z: Math.floor(Position.z[eid]),
+    }
+    const goal = voxelGoal(slot)
+    const path = findPath(chunks, start, goal, {
+        maxNodes: 1024,
+        maxStepUp: 1,
+        maxDrop: 2,
+        surfaceSearchRange: 8,
+        isBlocked: (x, y, z) => isDynamicallyBlocked(blockers, eid, x, y, z, goal, target),
+    })
+
+    if (path && path.length > 1) {
+        world.pathByEid.set(eid, {
+            points: path.slice(1).map((p) => new Vector3(p.x + 0.5, p.y, p.z + 0.5)),
+            index: 0,
+            speed: CHASE_SPEED,
+        })
+        blackboard.pathGoal = { ...slot }
+        addComponent(world, eid, MoveAlongPath)
+    } else if (snapshot.distanceToTarget <= profile.attackRange) {
+        setBehaviourState(world, eid, BehaviourStateId.Attack)
+    }
+    Behaviour.nextRepathAt[eid] = profile.repathCooldown
+}
+
 function handleAttack(world: GameWorld, eid: number, profile: BehaviourProfile, snapshot: BehaviourSnapshot): void {
     if (snapshot.targetEid === null) return
-    faceTowards(eid, Position.x[snapshot.targetEid], Position.z[snapshot.targetEid])
-    if (Behaviour.nextThinkAt[eid] > 0) return
+    const target = snapshot.targetEid
+    faceTowards(eid, Position.x[target], Position.z[target])
+    if (Behaviour.nextThinkAt[eid] > 0) {
+        setBehaviourState(world, eid, BehaviourStateId.Recover)
+        return
+    }
+
+    if (profile.attackKind === 'bow') {
+        launchBowAttack(world, eid, target, profile)
+        Behaviour.nextThinkAt[eid] = profile.attackCooldown
+        setBehaviourState(world, eid, BehaviourStateId.Recover)
+        return
+    }
 
     const result = applyDamagePacket(world, {
         source: eid,
-        target: snapshot.targetEid,
+        target,
         amount: profile.attackDamage,
         type: 'physical',
         targetPolicy: 'enemy',
@@ -272,16 +424,167 @@ function handleAttack(world: GameWorld, eid: number, profile: BehaviourProfile, 
     if (result.killed) {
         pushGameLog(world, {
             type: 'combat',
-            message: `${result.targetLabel} is killed by a hostile.`,
-            eid: snapshot.targetEid,
+            message: `${result.targetLabel} is killed by ${profile.role === 'hunter' ? 'the hunter' : 'a hostile'}.`,
+            eid: target,
         })
+        if (profile.returnHomeAfterKill) {
+            setBehaviourTarget(world, eid, null)
+            setBehaviourState(world, eid, BehaviourStateId.ReturnHome)
+            const blackboard = world.behaviourByEid.get(eid)
+            if (blackboard) blackboard.pathGoal = null
+            Behaviour.nextRepathAt[eid] = 0
+        } else {
+            setBehaviourState(world, eid, BehaviourStateId.Recover)
+        }
     } else {
         pushGameLog(world, {
             type: 'combat',
             message: `${result.targetLabel} takes ${profile.attackDamage} damage.`,
-            eid: snapshot.targetEid,
+            eid: target,
         })
+        setBehaviourState(world, eid, BehaviourStateId.Recover)
     }
+}
+
+function launchBowAttack(world: GameWorld, eid: number, target: number, profile: BehaviourProfile): void {
+    const speed = profile.projectileSpeed || 10
+    const directDx = Position.x[target] - Position.x[eid]
+    const directDz = Position.z[target] - Position.z[eid]
+    const directDist = Math.hypot(directDx, directDz)
+    if (directDist < 0.001) return
+
+    const firstTravelTime = clamp(
+        Math.max(0, directDist - ARROW_MUZZLE_FORWARD) / speed,
+        MIN_ARROW_TRAVEL_TIME,
+        MAX_ARROW_TRAVEL_TIME,
+    )
+    const leadTime = hasComponent(world, target, Velocity) ? firstTravelTime * ARROW_TARGET_LEAD : 0
+    let aimX = Position.x[target] + (leadTime > 0 ? Velocity.x[target] * leadTime : 0)
+    let aimZ = Position.z[target] + (leadTime > 0 ? Velocity.z[target] * leadTime : 0)
+    let dx = aimX - Position.x[eid]
+    let dz = aimZ - Position.z[eid]
+    let dist = Math.hypot(dx, dz)
+    if (dist < 0.001) return
+
+    let dirX = dx / dist
+    let dirZ = dz / dist
+    let spawnX = Position.x[eid] + dirX * ARROW_MUZZLE_FORWARD
+    let spawnZ = Position.z[eid] + dirZ * ARROW_MUZZLE_FORWARD
+
+    let horizontalDist = Math.hypot(aimX - spawnX, aimZ - spawnZ)
+    let travelTime = clamp(horizontalDist / speed, MIN_ARROW_TRAVEL_TIME, MAX_ARROW_TRAVEL_TIME)
+    if (leadTime > 0) {
+        aimX = Position.x[target] + Velocity.x[target] * travelTime * ARROW_TARGET_LEAD
+        aimZ = Position.z[target] + Velocity.z[target] * travelTime * ARROW_TARGET_LEAD
+        dx = aimX - Position.x[eid]
+        dz = aimZ - Position.z[eid]
+        dist = Math.hypot(dx, dz)
+        if (dist < 0.001) return
+        dirX = dx / dist
+        dirZ = dz / dist
+        spawnX = Position.x[eid] + dirX * ARROW_MUZZLE_FORWARD
+        spawnZ = Position.z[eid] + dirZ * ARROW_MUZZLE_FORWARD
+        horizontalDist = Math.hypot(aimX - spawnX, aimZ - spawnZ)
+        travelTime = clamp(horizontalDist / speed, MIN_ARROW_TRAVEL_TIME, MAX_ARROW_TRAVEL_TIME)
+    }
+
+    const spawnY = Position.y[eid] + ARROW_MUZZLE_HEIGHT
+    const targetHalfHeight = hasComponent(world, target, BoxCollider)
+        ? BoxCollider.y[target]
+        : 0.85
+    const aimY = Position.y[target] + targetHalfHeight * 1.15
+    const verticalSpeed = clamp(
+        (aimY - spawnY + 0.5 * DEFAULT_PHYSICS_GRAVITY * travelTime * travelTime) / travelTime,
+        Math.max(MIN_ARROW_VERTICAL_SPEED, profile.projectileLift),
+        MAX_ARROW_VERTICAL_SPEED,
+    )
+
+    spawnArrowProjectile(
+        world,
+        {
+            x: spawnX,
+            y: spawnY,
+            z: spawnZ,
+        },
+        {
+            x: dirX * speed,
+            y: verticalSpeed,
+            z: dirZ * speed,
+        },
+        eid,
+    )
+    pushGameLog(world, {
+        type: 'combat',
+        message: 'An archer looses an arrow.',
+        eid,
+    })
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value))
+}
+
+function handleRecover(world: GameWorld, eid: number, snapshot: BehaviourSnapshot): void {
+    if (snapshot.targetEid !== null) faceTowards(eid, Position.x[snapshot.targetEid], Position.z[snapshot.targetEid])
+    if (hasComponent(world, eid, Velocity)) {
+        Velocity.x[eid] = 0
+        Velocity.z[eid] = 0
+    }
+}
+
+function handleFlee(
+    world: GameWorld,
+    eid: number,
+    blackboard: ActorBlackboard,
+    profile: BehaviourProfile,
+    chunks: ChunkManager,
+    blockers: DynamicBlocker[],
+    snapshot: BehaviourSnapshot,
+): void {
+    if (snapshot.targetEid === null) return
+    if (hasComponent(world, eid, MoveAlongPath)) return
+    if (Behaviour.nextRepathAt[eid] > 0) return
+
+    const threat = snapshot.targetEid
+    const dx = Position.x[eid] - Position.x[threat]
+    const dz = Position.z[eid] - Position.z[threat]
+    const len = Math.hypot(dx, dz)
+    const awayX = len > 0.001 ? dx / len : 1
+    const awayZ = len > 0.001 ? dz / len : 0
+    const seed = nextSeed(eid)
+    const lateral = ((seed % 1000) / 1000 - 0.5) * 1.6
+    const goal = {
+        x: Math.floor(Position.x[eid] + awayX * profile.fleeDistance - awayZ * lateral),
+        y: Math.floor(Position.y[eid]),
+        z: Math.floor(Position.z[eid] + awayZ * profile.fleeDistance + awayX * lateral),
+    }
+
+    const start = {
+        x: Math.floor(Position.x[eid]),
+        y: Math.floor(Position.y[eid]),
+        z: Math.floor(Position.z[eid]),
+    }
+    const path = findPath(chunks, start, goal, {
+        maxNodes: 1024,
+        maxStepUp: 1,
+        maxDrop: 2,
+        surfaceSearchRange: 8,
+        isBlocked: (x, y, z) => isDynamicallyBlocked(blockers, eid, x, y, z),
+    })
+
+    if (path && path.length > 1) {
+        world.pathByEid.set(eid, {
+            points: path.slice(1).map((p) => new Vector3(p.x + 0.5, p.y, p.z + 0.5)),
+            index: 0,
+            speed: FLEE_SPEED,
+        })
+        blackboard.pathGoal = { ...goal }
+        addComponent(world, eid, MoveAlongPath)
+    } else if (hasComponent(world, eid, Velocity)) {
+        Velocity.x[eid] = awayX * FLEE_SPEED
+        Velocity.z[eid] = awayZ * FLEE_SPEED
+    }
+    Behaviour.nextRepathAt[eid] = profile.repathCooldown
 }
 
 function handleReturnHome(
@@ -289,6 +592,7 @@ function handleReturnHome(
     eid: number,
     blackboard: ActorBlackboard,
     chunks: ChunkManager,
+    blockers: DynamicBlocker[],
 ): void {
     if (hasComponent(world, eid, MoveAlongPath)) return
     if (Behaviour.nextRepathAt[eid] > 0) return
@@ -308,6 +612,7 @@ function handleReturnHome(
         maxStepUp: 1,
         maxDrop: 2,
         surfaceSearchRange: 8,
+        isBlocked: (x, y, z) => isDynamicallyBlocked(blockers, eid, x, y, z, home),
     })
     if (path && path.length > 1) {
         world.pathByEid.set(eid, {
@@ -319,6 +624,70 @@ function handleReturnHome(
         addComponent(world, eid, MoveAlongPath)
     }
     Behaviour.nextRepathAt[eid] = 0.6
+}
+
+function requestPathTo(
+    world: GameWorld,
+    eid: number,
+    blackboard: ActorBlackboard,
+    chunks: ChunkManager,
+    target: { x: number; y: number; z: number },
+    speed: number,
+    repathCooldown: number,
+    options: PathOptions,
+): void {
+    if (hasComponent(world, eid, MoveAlongPath)) return
+    if (Behaviour.nextRepathAt[eid] > 0) return
+
+    const start = {
+        x: Math.floor(Position.x[eid]),
+        y: Math.floor(Position.y[eid]),
+        z: Math.floor(Position.z[eid]),
+    }
+    const goal = {
+        x: Math.floor(target.x),
+        y: Math.floor(target.y),
+        z: Math.floor(target.z),
+    }
+    const path = findPath(chunks, start, goal, options)
+    if (path && path.length > 1) {
+        world.pathByEid.set(eid, {
+            points: path.slice(1).map((p) => new Vector3(p.x + 0.5, p.y, p.z + 0.5)),
+            index: 0,
+            speed,
+        })
+        blackboard.pathGoal = { ...goal }
+        addComponent(world, eid, MoveAlongPath)
+    }
+    Behaviour.nextRepathAt[eid] = repathCooldown
+}
+
+function voxelGoal(target: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+    return {
+        x: Math.floor(target.x),
+        y: Math.floor(target.y),
+        z: Math.floor(target.z),
+    }
+}
+
+function chooseAttackSlot(
+    eid: number,
+    target: number,
+    profile: BehaviourProfile,
+): { x: number; y: number; z: number } {
+    const radius = Math.max(0.75, profile.preferredRange || profile.attackRange * 0.9)
+    const angle = attackSlotAngle(eid, target)
+    return {
+        x: Position.x[target] + Math.sin(angle) * radius,
+        y: Position.y[target],
+        z: Position.z[target] + Math.cos(angle) * radius,
+    }
+}
+
+function attackSlotAngle(eid: number, target: number): number {
+    const slots = 8
+    const slot = Math.abs(Math.imul(eid + 1, 1103515245) ^ Math.imul(target + 7, 2654435761)) % slots
+    return slot * Math.PI * 2 / slots
 }
 
 function clearPath(world: GameWorld, eid: number): void {
@@ -375,11 +744,15 @@ function isDynamicallyBlocked(
     x: number,
     y: number,
     z: number,
+    allowedGoal?: { x: number; y: number; z: number },
+    ignoredEid?: number,
 ): boolean {
+    if (allowedGoal && x === allowedGoal.x && y === allowedGoal.y && z === allowedGoal.z) return false
     const cx = x + 0.5
     const cz = z + 0.5
     for (const blocker of blockers) {
         if (blocker.eid === self) continue
+        if (blocker.eid === ignoredEid) continue
         if (Math.abs(blocker.y - y) > 1.2) continue
         const clearance = blocker.radius + 0.24
         const dx = blocker.x - cx

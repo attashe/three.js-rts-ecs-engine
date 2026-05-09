@@ -1,15 +1,18 @@
 import { hasComponent, query, removeEntity } from 'bitecs'
-import { Vector3 } from 'three'
-import type { ChunkManager } from '../../voxel'
-import { voxelRaycast } from '../../voxel'
+import { Object3D, Vector3 } from 'three'
+import type { ChunkManager } from '../../voxel/chunk-manager'
+import { voxelRaycast } from '../../voxel/voxel-raycast'
 import {
     BoxCollider,
+    Faction,
     Health,
     MovingObject,
-    PlayerControlled,
     Position,
+    Rotation,
+    Shield,
     Velocity,
 } from '../components'
+import { FactionId } from '../factions'
 import { MovingObjectKind } from '../../../game/moving-objects'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -40,8 +43,8 @@ export interface ArrowHitOptions {
  * as a child of the host's mesh and tags along with the host's motion.
  *
  * Runs *before* physics so we can intercept the arrow before it tunnels
- * past a target whose AABB isn't a physics obstacle. Player and other
- * MovingObject entities are excluded from the target set.
+ * past a target whose AABB isn't a physics obstacle. The arrow's owner and
+ * other MovingObject entities are excluded from the target set.
  */
 export function createArrowHitSystem(
     chunks: ChunkManager,
@@ -86,11 +89,12 @@ export function createArrowHitSystem(
 
                 let bestT = Infinity
                 let bestTarget = -1
+                const owner = world.projectileOwnerByEid.get(arrow)
                 for (let j = 0; j < targets.length; j++) {
                     const t = targets[j]
                     if (t === arrow) continue
+                    if (t === owner) continue
                     if (Health.current[t] <= 0) continue
-                    if (hasComponent(world, t, PlayerControlled)) continue
                     if (hasComponent(world, t, MovingObject)) continue
 
                     const halfX = BoxCollider.x[t] + targetPadding
@@ -124,6 +128,11 @@ export function createArrowHitSystem(
                     }
                 }
 
+                if (isBlockedByShield(world, arrow, bestTarget, bestT, dx, dy, dz)) {
+                    blockArrowWithShield(world, arrow, bestTarget, opts.notify)
+                    continue
+                }
+
                 const speed = Math.sqrt(speedSq)
                 const speedFactor = Math.min(1, speed / referenceSpeed)
                 const damage = baseDamage + speedBonus * speedFactor
@@ -131,6 +140,77 @@ export function createArrowHitSystem(
             }
         },
     }
+}
+
+function isBlockedByShield(
+    world: GameWorld,
+    arrow: number,
+    target: number,
+    hitT: number,
+    dx: number,
+    dy: number,
+    dz: number,
+): boolean {
+    if (!hasComponent(world, target, Shield)) return false
+    if (Shield.raised[target] !== 1) return false
+    if (!hasComponent(world, target, Rotation)) return false
+
+    const hitY = Position.y[arrow] + dy * hitT
+    const minY = Shield.minY[target] || 0.45
+    const maxY = Shield.maxY[target] > minY ? Shield.maxY[target] : 1.45
+    const localY = hitY - Position.y[target]
+    if (localY < minY || localY > maxY) return false
+
+    const horizontalSpeed = Math.hypot(dx, dz)
+    if (horizontalSpeed < 0.0001) return false
+
+    const sourceDirX = -dx / horizontalSpeed
+    const sourceDirZ = -dz / horizontalSpeed
+    const yaw = Rotation.y[target]
+    const forwardX = Math.sin(yaw)
+    const forwardZ = Math.cos(yaw)
+    const arcCos = Shield.blockArcCos[target] || Math.cos(Math.PI * 0.42)
+    return sourceDirX * forwardX + sourceDirZ * forwardZ >= arcCos
+}
+
+function blockArrowWithShield(
+    world: GameWorld,
+    arrow: number,
+    target: number,
+    notify: ((message: string) => void) | undefined,
+): void {
+    const message = 'Shield blocks the arrow.'
+    pushGameLog(world, { type: 'combat', message, eid: target })
+    notify?.(message)
+
+    const arrowObj = world.object3DByEid.get(arrow)
+    const targetObj = world.object3DByEid.get(target)
+    const shieldObj = targetObj ? findShieldObject(targetObj) : undefined
+    if (arrowObj && shieldObj) {
+        arrowObj.name = 'BlockedArrow'
+        shieldObj.attach(arrowObj)
+    } else if (arrowObj && targetObj) {
+        arrowObj.name = 'BlockedArrow'
+        targetObj.attach(arrowObj)
+    }
+
+    world.object3DByEid.delete(arrow)
+    world.projectileOwnerByEid.delete(arrow)
+    removeEntity(world, arrow)
+}
+
+function findShieldObject(root: Object3D): Object3D | undefined {
+    const named = root.getObjectByName('PlayerShield') ??
+        root.getObjectByName('Shield') ??
+        root.getObjectByName('shield')
+    if (named) return named
+
+    let found: Object3D | undefined
+    root.traverse((object) => {
+        if (found) return
+        if (object.name.toLowerCase().includes('shield')) found = object
+    })
+    return found
 }
 
 function applyArrowHit(
@@ -141,9 +221,11 @@ function applyArrowHit(
     notify: ((message: string) => void) | undefined,
 ): void {
     const result = applyDamagePacket(world, {
+        source: world.projectileOwnerByEid.get(arrow),
         target,
         amount: damage,
         type: 'physical',
+        targetPolicy: arrowTargetPolicy(world, arrow),
     })
     if (!result.applied) return
 
@@ -169,7 +251,15 @@ function applyArrowHit(
     // Drop the ECS entity. The Object3D is now retained by the target's
     // scene-graph subtree, not by world.object3DByEid, so don't dispose it.
     world.object3DByEid.delete(arrow)
+    world.projectileOwnerByEid.delete(arrow)
     removeEntity(world, arrow)
+}
+
+function arrowTargetPolicy(world: GameWorld, arrow: number): 'any' | 'enemy' {
+    const owner = world.projectileOwnerByEid.get(arrow)
+    if (owner === undefined) return 'any'
+    if (!hasComponent(world, owner, Faction)) return 'any'
+    return Faction.id[owner] === FactionId.Player ? 'any' : 'enemy'
 }
 
 /** Slab-method segment-vs-AABB intersection. Returns parametric t in [0, 1]

@@ -1,6 +1,7 @@
 import { hasComponent, removeComponent } from 'bitecs'
-import { Attackable, Faction, Health } from './components'
-import { areEnemies } from './factions'
+import { Attackable, Health } from './components'
+import { areEntitiesEnemies } from './factions'
+import { applyDamageSocialResponse } from './social'
 import type { GameWorld } from './world'
 
 export type DamageType = 'physical' | 'impact' | 'fire' | 'cold' | 'lightning' | 'poison' | 'force' | 'arcane'
@@ -47,6 +48,9 @@ export function applyDamagePacket(world: GameWorld, packet: DamagePacket): Damag
     const currentHealth = Math.max(0, previousHealth - amount)
     Health.current[target] = currentHealth
     const killed = currentHealth <= 0
+    if (packet.source !== undefined && packet.source !== target) {
+        applyDamageSocialResponse(world, { source: packet.source, target })
+    }
     if (killed && packet.removeAttackableOnDeath !== false && hasComponent(world, target, Attackable)) {
         removeComponent(world, target, Attackable)
     }
@@ -63,15 +67,13 @@ export function applyDamagePacket(world: GameWorld, packet: DamagePacket): Damag
 export function targetLabel(world: GameWorld, target: number): string {
     const interaction = world.interactionByEid.get(target)
     if (interaction) return interaction.label
-    if (hasComponent(world, target, Faction)) return `faction-${Faction.id[target]} target`
     return 'target'
 }
 
 function passesTargetPolicy(world: GameWorld, packet: DamagePacket): boolean {
     if (packet.targetPolicy !== 'enemy') return true
     if (packet.source === undefined) return false
-    if (!hasComponent(world, packet.source, Faction) || !hasComponent(world, packet.target, Faction)) return false
-    return areEnemies(Faction.id[packet.source], Faction.id[packet.target])
+    return areEntitiesEnemies(world, packet.source, packet.target)
 }
 
 function rejected(
@@ -89,4 +91,3 @@ function rejected(
         reason,
     }
 }
-

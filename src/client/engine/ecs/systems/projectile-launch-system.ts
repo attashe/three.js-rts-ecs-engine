@@ -40,6 +40,7 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
                     y: arrowLift,
                     z: forwardZ * arrowSpeed,
                 },
+                player,
             )
         },
     }

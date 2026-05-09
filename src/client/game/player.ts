@@ -10,6 +10,7 @@ import {
     Position,
     Renderable,
     Rotation,
+    Shield,
     Velocity,
 } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
@@ -18,6 +19,7 @@ import {
     createBow,
     createMainCharacter,
     createQuiver,
+    createShield,
     createSword,
     MAIN_CHARACTER_COLLIDER_HALF_HEIGHT,
     MAIN_CHARACTER_COLLIDER_RADIUS,
@@ -56,6 +58,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
         BoxCollider,
         Health,
         Faction,
+        Shield,
         PlayerControlled,
         Renderable,
         CameraTarget,
@@ -71,6 +74,10 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     Health.max[eid] = 100
     Health.current[eid] = 100
     Faction.id[eid] = FactionId.Player
+    Shield.raised[eid] = 0
+    Shield.blockArcCos[eid] = Math.cos(Math.PI * 0.42)
+    Shield.minY[eid] = 0.45
+    Shield.maxY[eid] = 1.45
 
     const root = new Group()
     root.name = 'PlayerRoot'
@@ -79,11 +86,21 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
         cloakColor: opts.rimColor ?? 0x7a2430,
     }))
     root.add(createEquippedSword())
+    root.add(createEquippedShield())
     root.add(createBackBow())
     root.add(createBackQuiver())
 
     world.object3DByEid.set(eid, root)
     return eid
+}
+
+function createEquippedShield(): Group {
+    const shield = createShield({ width: 0.44, height: 0.68, color: 0x2f5e8f, rimColor: 0xc8b56f })
+    shield.name = 'PlayerShield'
+    shield.position.set(-0.44, 0.68, 0.08)
+    shield.rotation.set(0.72, 0.12, -0.28)
+    shield.scale.setScalar(0.84)
+    return shield
 }
 
 function createEquippedSword(): Group {

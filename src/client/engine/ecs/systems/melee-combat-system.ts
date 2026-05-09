@@ -1,6 +1,6 @@
 import { query } from 'bitecs'
 import { Attackable, Faction, Health, PlayerControlled, Position, Rotation } from '../components'
-import { areEnemies } from '../factions'
+import { areEntitiesEnemies, FactionId } from '../factions'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -42,7 +42,7 @@ export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOpt
             let bestDistSq = Infinity
             for (let i = 0; i < targets.length; i++) {
                 const eid = targets[i]
-                if (!areEnemies(Faction.id[player], Faction.id[eid])) continue
+                if (!canPlayerMeleeTarget(world, player, eid)) continue
 
                 const dx = Position.x[eid] - px
                 const dz = Position.z[eid] - pz
@@ -71,7 +71,7 @@ export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOpt
                 target: best,
                 amount: damage,
                 type: 'physical',
-                targetPolicy: 'enemy',
+                targetPolicy: areEntitiesEnemies(world, player, best) ? 'enemy' : 'any',
             })
             if (!result.applied) return
 
@@ -86,4 +86,10 @@ export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOpt
             }
         },
     }
+}
+
+function canPlayerMeleeTarget(world: Parameters<System['update']>[0], player: number, target: number): boolean {
+    if (areEntitiesEnemies(world, player, target)) return true
+    if (Faction.id[player] !== FactionId.Player) return false
+    return Faction.id[target] !== FactionId.Player
 }

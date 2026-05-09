@@ -22,6 +22,8 @@ const EPSILON = 1e-3
 const PHYSICS_ARRIVAL_RADIUS = 0.16
 const PHYSICS_VERTICAL_ARRIVAL_RADIUS = 0.28
 const WANDERER_JUMP_VELOCITY = 8.4
+const STUCK_SIDESTEP_DELAY_SECONDS = 0.12
+const STUCK_SIDESTEP_INTERVAL_SECONDS = 0.35
 const BLOCKED_WAYPOINT_SKIP_SECONDS = 0.28
 const BLOCKED_REPATH_SECONDS = 0.65
 const MAX_BLOCKED_WAYPOINT_SKIPS = 2
@@ -98,6 +100,8 @@ export const MoveAlongPathSystem: System = {
             }
 
             if (hasVelocity) {
+                const wasActorBlocked = MovementState.value[eid] === MovementStateId.Blocked ||
+                    MovementState.value[eid] === MovementStateId.Repathing
                 // Physics-owned/collidable entities must not bypass collision.
                 const denom = hasCollider ? horizDist : dist
                 let desiredX = denom > EPSILON ? (dx / denom) * state.speed : 0
@@ -120,8 +124,11 @@ export const MoveAlongPathSystem: System = {
                 }
                 Velocity.x[eid] = desiredX
                 Velocity.z[eid] = desiredZ
-                if (hasCollider && hasComponent(world, eid, HorizontalBlocked)) {
+                const blockedByContact = hasCollider && wasActorBlocked
+                const blockedByVoxel = hasCollider && hasComponent(world, eid, HorizontalBlocked)
+                if (blockedByContact || blockedByVoxel) {
                     state.blockedTime = (state.blockedTime ?? 0) + dt
+                    applyStuckSidestep(eid, state.blockedTime, desiredX, desiredZ)
                     if (
                         state.blockedTime > BLOCKED_WAYPOINT_SKIP_SECONDS &&
                         state.index < state.points.length - 1 &&
@@ -161,7 +168,7 @@ export const MoveAlongPathSystem: System = {
                     removeComponent(world, eid, HorizontalBlocked)
                 }
                 if (MovementState.value[eid] !== MovementStateId.Airborne) {
-                    MovementState.value[eid] = hasComponent(world, eid, HorizontalBlocked)
+                    MovementState.value[eid] = blockedByVoxel
                         ? MovementStateId.Blocked
                         : MovementStateId.Moving
                 }
@@ -188,6 +195,27 @@ export const MoveAlongPathSystem: System = {
             }
         }
     },
+}
+
+function applyStuckSidestep(eid: number, blockedTime: number, desiredX: number, desiredZ: number): void {
+    if (blockedTime < STUCK_SIDESTEP_DELAY_SECONDS) return
+
+    const speed = Math.hypot(desiredX, desiredZ)
+    if (speed <= EPSILON) return
+
+    const dirX = desiredX / speed
+    const dirZ = desiredZ / speed
+    const phase = Math.floor(blockedTime / STUCK_SIDESTEP_INTERVAL_SECONDS)
+    const side = ((phase + eid) & 1) === 0 ? 1 : -1
+    const strafeX = -dirZ * side
+    const strafeZ = dirX * side
+    const blendX = dirX * 0.18 + strafeX * 0.82
+    const blendZ = dirZ * 0.18 + strafeZ * 0.82
+    const blendLen = Math.hypot(blendX, blendZ)
+    if (blendLen <= EPSILON) return
+
+    Velocity.x[eid] = (blendX / blendLen) * speed
+    Velocity.z[eid] = (blendZ / blendLen) * speed
 }
 
 function collectAvoidanceActors(world: Parameters<System['update']>[0]): AvoidanceActor[] {

@@ -93,9 +93,12 @@ function separatePair(world: GameWorld, chunks: ChunkManager, a: number, b: numb
     if (bPush > 0) {
         shoveActor(world, chunks, b, nx * bPush, nz * bPush)
     }
-    const yieldEid = chooseYieldingEntity(world, a, b)
-    if (penetration > 0.08 && hasComponent(world, yieldEid, MoveAlongPath)) {
-        MovementState.value[yieldEid] = MovementStateId.Blocked
+    if (penetration > 0.08) {
+        markBlockedMover(world, chooseYieldingEntity(world, a, b))
+        if (hasComponent(world, a, MoveAlongPath) && hasComponent(world, b, MoveAlongPath)) {
+            markBlockedMover(world, a)
+            markBlockedMover(world, b)
+        }
     }
 
     if (hasComponent(world, a, Velocity)) {
@@ -112,6 +115,11 @@ function separatePair(world: GameWorld, chunks: ChunkManager, a: number, b: numb
             Velocity.z[b] += nz * vb
         }
     }
+}
+
+function markBlockedMover(world: GameWorld, eid: number): void {
+    if (!hasComponent(world, eid, MoveAlongPath)) return
+    MovementState.value[eid] = MovementStateId.Blocked
 }
 
 function shoveActor(world: GameWorld, chunks: ChunkManager, eid: number, dx: number, dz: number): void {
