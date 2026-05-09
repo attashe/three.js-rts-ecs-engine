@@ -20,4 +20,18 @@ export {
 } from './creatures'
 export type { CreaturePalette } from './creatures'
 
+export {
+    createBedroll,
+    createBookshelf,
+    createCampfire,
+    createLanternPost,
+    createMarketStall,
+    createRoundStool,
+    createStorageBarrel,
+    createSupplyCrate,
+    createWoodenChair,
+    createWoodenTable,
+} from './world-props'
+export type { WorldPropPalette } from './world-props'
+
 export { createCoinPile, createHealthPotion, createStone, createTrainingDummy } from './props'

@@ -71,6 +71,7 @@ function tickActor(
     const profile = getBehaviourProfile(Behaviour.profileId[eid])
     const blackboard = world.behaviourByEid.get(eid)
     if (!profile || !blackboard) return
+    blackboard.stateTime = Behaviour.stateTime[eid]
 
     const snapshot = buildSnapshot(world, eid, blackboard, profile)
     const next = decideTransition(profile, snapshot)
@@ -133,9 +134,12 @@ function onExitState(world: GameWorld, eid: number, state: BehaviourStateId): vo
     }
 }
 
-function onEnterState(world: GameWorld, eid: number, state: BehaviourStateId, _blackboard: ActorBlackboard): void {
+function onEnterState(world: GameWorld, eid: number, state: BehaviourStateId, blackboard: ActorBlackboard): void {
     if (state === BehaviourStateId.Attack || state === BehaviourStateId.Idle) {
         clearPath(world, eid)
+    }
+    if (state === BehaviourStateId.Chase || state === BehaviourStateId.Wander || state === BehaviourStateId.ReturnHome) {
+        blackboard.pathGoal = null
     }
     if (state === BehaviourStateId.Dead) {
         clearPath(world, eid)
@@ -191,6 +195,7 @@ function handleWander(
             index: 0,
             speed: WANDER_SPEED,
         })
+        blackboard.pathGoal = { ...goal }
         addComponent(world, eid, MoveAlongPath)
         Behaviour.nextRepathAt[eid] = profile.repathCooldown
     } else {
@@ -211,9 +216,9 @@ function handleChase(
     const target = snapshot.targetEid
     faceTowards(eid, Position.x[target], Position.z[target])
 
-    const lastSeen = blackboard.targetLastSeenPosition
-    const targetMoved = lastSeen
-        ? Math.hypot(Position.x[target] - lastSeen.x, Position.z[target] - lastSeen.z)
+    const pathGoal = blackboard.pathGoal
+    const targetMoved = pathGoal
+        ? Math.hypot(Position.x[target] - pathGoal.x, Position.z[target] - pathGoal.z)
         : Infinity
 
     const needsRepath = !hasComponent(world, eid, MoveAlongPath) || targetMoved > TARGET_MOVE_REPATH
@@ -243,6 +248,7 @@ function handleChase(
             index: 0,
             speed: CHASE_SPEED,
         })
+        blackboard.pathGoal = { x: Position.x[target], y: Position.y[target], z: Position.z[target] }
         if (!hasComponent(world, eid, MoveAlongPath)) addComponent(world, eid, MoveAlongPath)
     }
     Behaviour.nextRepathAt[eid] = profile.repathCooldown
@@ -309,6 +315,7 @@ function handleReturnHome(
             index: 0,
             speed: RETURN_SPEED,
         })
+        blackboard.pathGoal = { ...home }
         addComponent(world, eid, MoveAlongPath)
     }
     Behaviour.nextRepathAt[eid] = 0.6
@@ -317,6 +324,8 @@ function handleReturnHome(
 function clearPath(world: GameWorld, eid: number): void {
     if (hasComponent(world, eid, MoveAlongPath)) removeComponent(world, eid, MoveAlongPath)
     world.pathByEid.delete(eid)
+    const blackboard = world.behaviourByEid.get(eid)
+    if (blackboard) blackboard.pathGoal = null
     if (hasComponent(world, eid, Velocity)) {
         Velocity.x[eid] = 0
         Velocity.z[eid] = 0

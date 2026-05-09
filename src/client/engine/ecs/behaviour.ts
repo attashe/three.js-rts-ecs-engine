@@ -52,6 +52,7 @@ export interface ActorBlackboard {
     previousState: BehaviourStateId
     targetEid: number | null
     targetLastSeenPosition: { x: number; y: number; z: number } | null
+    pathGoal: { x: number; y: number; z: number } | null
     home: { x: number; y: number; z: number }
     stateTime: number
 }
@@ -140,6 +141,7 @@ export function assignBehaviourProfile(
         previousState: profile.initialState,
         targetEid: null,
         targetLastSeenPosition: null,
+        pathGoal: null,
         home: { ...home },
         stateTime: 0,
     }

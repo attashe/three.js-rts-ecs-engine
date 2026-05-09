@@ -1,12 +1,31 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { addComponent, addEntity } from 'bitecs'
 import { ChunkManager } from '../src/client/engine/voxel/chunk-manager'
 import { isGrounded, sweepAxis, type AABB, type ObstacleSource } from '../src/client/engine/voxel/voxel-collide'
 import { ObstacleRegistry } from '../src/client/engine/ecs/obstacle-registry'
 import { BLOCK, DEFAULT_PALETTE } from '../src/client/engine/voxel/palette'
+import { createDynamicCollisionSystem } from '../src/client/engine/ecs/systems/dynamic-collision-system'
+import { BoxCollider, PlayerControlled, Position, Velocity } from '../src/client/engine/ecs/components'
+import { createGameWorld, type GameWorld } from '../src/client/engine/ecs/world'
 
 function makeAABB(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number): AABB {
     return { minX, minY, minZ, maxX, maxY, maxZ }
+}
+
+function addMovableActor(world: GameWorld, x: number, y: number, z: number): number {
+    const eid = addEntity(world)
+    addComponent(world, eid, Position)
+    addComponent(world, eid, BoxCollider)
+    addComponent(world, eid, Velocity)
+    addComponent(world, eid, PlayerControlled)
+    Position.x[eid] = x
+    Position.y[eid] = y
+    Position.z[eid] = z
+    BoxCollider.x[eid] = 0.34
+    BoxCollider.y[eid] = 0.9
+    BoxCollider.z[eid] = 0.34
+    return eid
 }
 
 test('ObstacleRegistry: add then intersects matches the AABB', () => {
@@ -197,6 +216,23 @@ test('sweepAxis: actor pair-separation displacement is capped by voxel walls (re
     assert.equal(result.blocked, true)
     // Body's left edge should not cross the wall's east face at x=2: pos.x ≥ 2 + half.x.
     assert.ok(pos.x >= 2.34 - 1e-6, `expected pos.x >= 2.34, got ${pos.x}`)
+})
+
+test('DynamicCollisionSystem: corrective shoves do not double-apply sweep displacement', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(1, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 1, 0, BLOCK.stone)
+
+    const world = createGameWorld()
+    addMovableActor(world, 2.9, 0, 0.5)
+    const wallSideActor = addMovableActor(world, 2.4, 0, 0.5)
+
+    createDynamicCollisionSystem(chunks, { passes: 1, padding: 0.08 }).update(world, 1 / 60)
+
+    assert.ok(
+        Position.x[wallSideActor] >= 2.34 - 1e-6,
+        `expected wall-side actor to stay outside the voxel wall, got x=${Position.x[wallSideActor]}`,
+    )
 })
 
 test('ObstacleSource interface: any object satisfying it works with sweepAxis', () => {

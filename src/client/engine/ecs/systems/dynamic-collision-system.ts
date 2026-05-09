@@ -1,5 +1,6 @@
 import { hasComponent, query } from 'bitecs'
-import { sweepAxis, type ChunkManager } from '../../voxel'
+import type { ChunkManager } from '../../voxel/chunk-manager'
+import { sweepAxis } from '../../voxel/voxel-collide'
 import {
     BoxCollider,
     Interactable,
@@ -117,13 +118,13 @@ function shoveActor(world: GameWorld, chunks: ChunkManager, eid: number, dx: num
     const pos = { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
     const half = { x: BoxCollider.x[eid], y: BoxCollider.y[eid], z: BoxCollider.z[eid] }
     if (dx !== 0) {
-        const moved = sweepAxis(chunks, pos, half, 'x', dx, world.obstacles, eid, 'foot').moved
-        Position.x[eid] = pos.x + moved
+        sweepAxis(chunks, pos, half, 'x', dx, world.obstacles, eid, 'foot')
+        Position.x[eid] = pos.x
     }
     if (dz !== 0) {
-        const startZ = { x: Position.x[eid], y: pos.y, z: pos.z }
-        const moved = sweepAxis(chunks, startZ, half, 'z', dz, world.obstacles, eid, 'foot').moved
-        Position.z[eid] = pos.z + moved
+        pos.x = Position.x[eid]
+        sweepAxis(chunks, pos, half, 'z', dz, world.obstacles, eid, 'foot')
+        Position.z[eid] = pos.z
     }
 }
 
