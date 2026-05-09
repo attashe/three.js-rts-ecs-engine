@@ -11,11 +11,12 @@ export default defineConfig({
       input: {
         game: resolve(__dirname, 'index.html'),
         editor: resolve(__dirname, 'editor.html'),
+        uiDemo: resolve(__dirname, 'ui-demo.html'),
       },
     },
   },
   server: {
-    port: 8080,
+    port: 8000,
     open: '/index.html',
   },
   worker: {

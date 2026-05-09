@@ -18,12 +18,70 @@ An isometric voxel RPG engine built on **three.js + WebGPU + bitecs**, reworked 
 | Asset format | glTF (binary) for characters; custom binary blobs for voxel levels; `.vox` import optional |
 | Server | Out of scope for v1 (single-player) |
 
+## Local pages
+
+Run the Vite dev server on the forwarded port:
+
+```bash
+npm run dev -- --host 0.0.0.0 --port 8000
+```
+
+Available pages:
+- `/index.html` — game demo.
+- `/editor.html` — editor shell.
+- `/ui-demo.html` — shared UI catalog for testing HUD, editor, toasts,
+  command hints, panels, buttons, log panel, and palette controls together.
+
 ## Phase schedule
 
 The original Phase 4/5 sketch has been revised after the ARPG retrofit,
 asset-pass, and architecture audit. The current next-stage plan lives in
 [`docs/roadmap-next.md`](./docs/roadmap-next.md). In short: harden data
 contracts and gameplay boundaries before building the full editor.
+
+### UI foundation branch plan — `feature/ui-foundation`
+Goal: establish a reusable, vanilla TypeScript UI layer that can serve both
+the game HUD and the future voxel editor without introducing a framework.
+
+Planned architecture:
+- Add `src/client/ui/` as the shared UI package for game and editor entries.
+- Keep UI framework-free: components are small DOM factories/classes with
+  explicit `dispose()` methods and stable CSS class names.
+- Centralize visual tokens in one stylesheet (`ui.css`): colors, spacing,
+  typography, z-index layers, panel surfaces, focus states, and compact
+  control sizing.
+- Make UI composition explicit. The game should create a HUD shell and add
+  widgets to named regions; the editor should create an app shell with
+  toolbar/sidebar/status regions.
+- Keep gameplay systems ignorant of UI implementation. Gameplay systems accept
+  callbacks (`notify`, later command/event adapters), while UI owns DOM. The
+  debug overlay is the explicit client-side exception because it already renders
+  diagnostic DOM.
+
+First component library slice:
+- `el` / `button` / `iconButton` / `panel` / `sectionTitle` /
+  `toolbar` primitives for consistent structure.
+- `ToastStack` for transient notifications.
+- `CommandHintBar` for compact input hints.
+- `GameHud` for reusable game overlays.
+- `EditorShell` for the editor page frame, toolbar, side panels, and status bar.
+- `UiLogPanel` for compact debug/game log rendering that can later replace
+  ad-hoc debug DOM.
+
+First integration pass:
+- Replace inline DOM styling in `client.ts` with `GameHud`.
+- Replace the editor placeholder with `EditorShell` and representative
+  disabled tool controls for paint/erase/fill/select/save/load.
+- Add `/ui-demo.html` as a catalog page for testing the shared UI controls,
+  HUD regions, toasts, command hints, log panel, and embedded editor shell.
+- Leave the 3D debug overlay internals intact for now, except where it can
+  consume shared UI classes without changing debug behavior.
+
+Deferred:
+- No React/Vue/Svelte.
+- No editor command system yet; controls are presentational until Phase 5A.
+- No persistence of UI layout.
+- No modal-heavy flows until save/load and validation rules are implemented.
 
 ### Phase 0 — Foundations (mechanical, low-risk) ✅ complete
 Goal: clean slate that compiles and renders an empty scene.

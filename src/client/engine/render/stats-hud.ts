@@ -10,18 +10,7 @@ export class StatsHUD {
     constructor() {
         this.el = document.createElement('div')
         this.el.id = 'stats-hud'
-        this.el.style.cssText = [
-            'position:fixed',
-            'top:6px',
-            'left:6px',
-            'padding:4px 8px',
-            'background:rgba(0,0,0,0.55)',
-            'color:#9fefff',
-            'font:12px/1.2 ui-monospace,Menlo,Consolas,monospace',
-            'border-radius:4px',
-            'pointer-events:none',
-            'z-index:1000',
-        ].join(';')
+        this.el.className = 'ui-stats-hud'
         this.el.textContent = '— fps'
         document.body.appendChild(this.el)
     }

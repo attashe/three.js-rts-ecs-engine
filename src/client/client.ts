@@ -1,5 +1,6 @@
 import { AmbientLight, DirectionalLight, Vector3 } from 'three'
 import { addComponent } from 'bitecs'
+import { GameHud, fatalOverlay } from './ui'
 import { Engine } from './engine/engine'
 import { WebGPUUnavailableError } from './engine/render/renderer'
 import { ChunkManager, ChunkRenderer, DEFAULT_PALETTE, findPath } from './engine/voxel'
@@ -31,93 +32,21 @@ import { spawnSampleNpc, spawnWanderingNpc } from './game/npc'
 import { spawnCoinPile, spawnHealthPotion, spawnTrainingDummy } from './game/props'
 import { registerDoorMechanism, registerPistonMechanism } from './game/mechanisms'
 
-function showFatal(message: string): void {
-    const div = document.createElement('div')
-    div.style.cssText = [
-        'position:fixed',
-        'inset:0',
-        'display:flex',
-        'align-items:center',
-        'justify-content:center',
-        'padding:24px',
-        'background:#101418',
-        'color:#ff8a8a',
-        'font:14px/1.5 ui-sans-serif,system-ui,sans-serif',
-        'text-align:center',
-    ].join(';')
-    div.textContent = message
-    document.body.appendChild(div)
-}
-
-function showHint(message: string): void {
-    const div = document.createElement('div')
-    div.style.cssText = [
-        'position:fixed',
-        'bottom:12px',
-        'left:50%',
-        'transform:translateX(-50%)',
-        'padding:8px 14px',
-        'background:rgba(16,20,24,0.85)',
-        'color:#cfe7ff',
-        'font:13px/1.3 ui-sans-serif,system-ui,sans-serif',
-        'border:1px solid #2a3340',
-        'border-radius:6px',
-        'pointer-events:none',
-        'z-index:1000',
-    ].join(';')
-    div.textContent = message
-    document.body.appendChild(div)
-}
-
-function createNotifier(): (message: string) => void {
-    const div = document.createElement('div')
-    div.style.cssText = [
-        'position:fixed',
-        'top:14px',
-        'left:50%',
-        'transform:translateX(-50%)',
-        'min-width:220px',
-        'max-width:min(520px,calc(100vw - 32px))',
-        'padding:10px 14px',
-        'background:rgba(16,20,24,0.9)',
-        'color:#f4e9c7',
-        'font:13px/1.35 ui-sans-serif,system-ui,sans-serif',
-        'border:1px solid #544832',
-        'border-radius:6px',
-        'box-shadow:0 10px 28px rgba(0,0,0,0.25)',
-        'pointer-events:none',
-        'z-index:1001',
-        'opacity:0',
-        'transition:opacity 120ms ease',
-        'text-align:center',
-    ].join(';')
-    document.body.appendChild(div)
-
-    let timeout = 0
-    return (message: string) => {
-        div.textContent = message
-        div.style.opacity = '1'
-        window.clearTimeout(timeout)
-        timeout = window.setTimeout(() => {
-            div.style.opacity = '0'
-        }, 2200)
-    }
-}
-
 async function main(): Promise<void> {
     let engine: Engine
     try {
         engine = new Engine({ fixedHz: 60 })
     } catch (err) {
         if (err instanceof WebGPUUnavailableError) {
-            showFatal(err.message)
+            fatalOverlay(err.message)
             return
         }
         throw err
     }
 
     const { renderer, world } = engine
-    const notify = createNotifier()
+    const hud = new GameHud()
+    const notify = (message: string) => hud.notify(message)
 
     // Lighting. Sun from south-east, target at the centre of the demo level so
     // the shadow camera covers the whole island.
@@ -206,10 +135,19 @@ async function main(): Promise<void> {
 
     try {
         await engine.start()
-        showHint('WASD / arrows move · Q/R rotate · B shoot arrow · G air push · space jump · E interact · F attack · scroll zoom')
+        hud.setCommandHints([
+            { keys: ['WASD', 'Arrows'], label: 'Move' },
+            { keys: ['Mouse'], label: 'Aim' },
+            { keys: ['Q', 'R'], label: 'Rotate camera' },
+            { keys: ['Space'], label: 'Jump' },
+            { keys: ['F'], label: 'Attack' },
+            { keys: ['B'], label: 'Bow' },
+            { keys: ['E'], label: 'Interact' },
+            { keys: ['Wheel'], label: 'Zoom' },
+        ])
     } catch (err) {
         console.error(err)
-        showFatal(err instanceof Error ? err.message : String(err))
+        hud.fatal(err instanceof Error ? err.message : String(err))
     }
 }
 

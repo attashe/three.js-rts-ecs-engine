@@ -23,6 +23,7 @@ import { movementStateName } from '../movement-state'
 import type { System } from './system'
 import { RenderOrder } from './orders'
 import type { Input } from '../../input/input'
+import { UiLogPanel } from '../../../ui'
 
 export interface DebugOverlayOptions {
     enabled?: boolean
@@ -48,7 +49,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     const labelByEid = new Map<number, LabelState>()
     const boxByEid = new Map<number, Box3Helper>()
     const pathByEid = new Map<number, PathState>()
-    let logDiv: HTMLDivElement | null = null
+    let logPanel: UiLogPanel | null = null
     let lastLogLength = -1
     let accumulator = 0
 
@@ -57,32 +58,14 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         init() {
             scene.add(root)
             root.visible = enabled
-            logDiv = document.createElement('div')
-            logDiv.style.cssText = [
-                'position:fixed',
-                'right:12px',
-                'bottom:12px',
-                'width:280px',
-                'max-height:150px',
-                'overflow:hidden',
-                'padding:8px 10px',
-                'background:rgba(9,12,16,0.72)',
-                'color:#cfe7ff',
-                'font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace',
-                'border:1px solid rgba(110,150,190,0.42)',
-                'border-radius:6px',
-                'pointer-events:none',
-                'z-index:1002',
-                'white-space:pre-wrap',
-            ].join(';')
-            logDiv.style.display = enabled ? 'block' : 'none'
-            document.body.appendChild(logDiv)
+            logPanel = new UiLogPanel()
+            logPanel.setVisible(enabled)
         },
         update(world, dt) {
             if (input.consumeKeyPressed('Backquote')) {
                 enabled = !enabled
                 root.visible = enabled
-                if (logDiv) logDiv.style.display = enabled ? 'block' : 'none'
+                logPanel?.setVisible(enabled)
             }
             if (!enabled) return
             accumulator += dt
@@ -106,7 +89,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             pruneLabels(root, labelByEid, live)
             if (refreshHeavyDebug) {
                 prunePaths(root, pathByEid, live)
-                updateLog(logDiv, world.log, lastLogLength)
+                updateLog(logPanel, world.log, lastLogLength)
                 lastLogLength = world.log.length
             }
         },
@@ -120,8 +103,8 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             root.clear()
             scene.remove(root)
             lineMaterial.dispose()
-            logDiv?.remove()
-            logDiv = null
+            logPanel?.dispose()
+            logPanel = null
         },
     }
 }
@@ -267,9 +250,9 @@ function prunePaths(root: Group, map: Map<number, PathState>, live: Set<number>)
     }
 }
 
-function updateLog(div: HTMLDivElement | null, log: { message: string }[], lastLength: number): void {
-    if (!div || log.length === lastLength) return
-    div.textContent = log.slice(-6).map((entry) => entry.message).join('\n')
+function updateLog(panel: UiLogPanel | null, log: { message: string }[], lastLength: number): void {
+    if (!panel || log.length === lastLength) return
+    panel.setLines(log.slice(-6).map((entry) => entry.message))
 }
 
 function disposePath(state: PathState): void {
