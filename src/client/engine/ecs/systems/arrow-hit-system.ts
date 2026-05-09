@@ -1,11 +1,9 @@
-import { hasComponent, query, removeComponent, removeEntity } from 'bitecs'
+import { hasComponent, query, removeEntity } from 'bitecs'
 import { Vector3 } from 'three'
 import type { ChunkManager } from '../../voxel'
 import { voxelRaycast } from '../../voxel'
 import {
-    Attackable,
     BoxCollider,
-    Faction,
     Health,
     MovingObject,
     PlayerControlled,
@@ -17,6 +15,7 @@ import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
 import type { GameWorld } from '../world'
+import { applyDamagePacket } from '../damage'
 
 export interface ArrowHitOptions {
     /** UI hint callback (also pushed to the in-world combat log). */
@@ -141,16 +140,18 @@ function applyArrowHit(
     damage: number,
     notify: ((message: string) => void) | undefined,
 ): void {
-    Health.current[target] = Math.max(0, Health.current[target] - damage)
-    const name = world.interactionByEid.get(target)?.label ?? targetFallbackName(world, target)
+    const result = applyDamagePacket(world, {
+        target,
+        amount: damage,
+        type: 'physical',
+    })
+    if (!result.applied) return
+
     let message: string
-    if (Health.current[target] <= 0) {
-        message = `Arrow finishes ${name}.`
-        if (hasComponent(world, target, Attackable)) {
-            removeComponent(world, target, Attackable)
-        }
+    if (result.killed) {
+        message = `Arrow finishes ${result.targetLabel}.`
     } else {
-        message = `Arrow strikes ${name} for ${damage.toFixed(1)}.`
+        message = `Arrow strikes ${result.targetLabel} for ${damage.toFixed(1)}.`
     }
     pushGameLog(world, { type: 'combat', message, eid: target })
     notify?.(message)
@@ -169,13 +170,6 @@ function applyArrowHit(
     // scene-graph subtree, not by world.object3DByEid, so don't dispose it.
     world.object3DByEid.delete(arrow)
     removeEntity(world, arrow)
-}
-
-function targetFallbackName(world: GameWorld, target: number): string {
-    if (hasComponent(world, target, Faction)) {
-        return `faction-${Faction.id[target]} target`
-    }
-    return 'target'
 }
 
 /** Slab-method segment-vs-AABB intersection. Returns parametric t in [0, 1]

@@ -1,10 +1,11 @@
-import { query, removeComponent } from 'bitecs'
+import { query } from 'bitecs'
 import { Attackable, Faction, Health, PlayerControlled, Position, Rotation } from '../components'
 import { areEnemies } from '../factions'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
+import { applyDamagePacket } from '../damage'
 
 export interface MeleeCombatOptions {
     range?: number
@@ -65,15 +66,21 @@ export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOpt
                 return
             }
 
-            Health.current[best] = Math.max(0, Health.current[best] - damage)
-            const name = world.interactionByEid.get(best)?.label ?? 'Target'
-            if (Health.current[best] <= 0) {
-                removeComponent(world, best, Attackable)
-                const message = `${name} is defeated.`
+            const result = applyDamagePacket(world, {
+                source: player,
+                target: best,
+                amount: damage,
+                type: 'physical',
+                targetPolicy: 'enemy',
+            })
+            if (!result.applied) return
+
+            if (result.killed) {
+                const message = `${result.targetLabel} is defeated.`
                 pushGameLog(world, { type: 'combat', message, eid: best })
                 opts.notify?.(message)
             } else {
-                const message = `${name} takes ${damage} damage.`
+                const message = `${result.targetLabel} takes ${damage} damage.`
                 pushGameLog(world, { type: 'combat', message, eid: best })
                 opts.notify?.(message)
             }

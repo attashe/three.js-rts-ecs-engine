@@ -1,7 +1,6 @@
 import { hasComponent, query } from 'bitecs'
 import {
     BoxCollider,
-    Faction,
     Health,
     PlayerControlled,
     Position,
@@ -10,6 +9,7 @@ import {
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
+import { applyDamagePacket } from '../damage'
 
 const DAMAGE_COEFF = 0.5
 
@@ -93,8 +93,15 @@ export function createImpactSystem(opts: ImpactSystemOptions = {}): System {
                     const damage = Math.min(maxDamage, ev.mass * ev.speed * DAMAGE_COEFF)
                     if (damage <= 0) continue
 
-                    Health.current[target] = Math.max(0, Health.current[target] - damage)
-                    const message = formatImpactMessage(world, target, damage)
+                    const result = applyDamagePacket(world, {
+                        source: ev.eid,
+                        target,
+                        amount: damage,
+                        type: 'impact',
+                    })
+                    if (!result.applied) continue
+
+                    const message = formatImpactMessage(world, target, result.amount)
                     pushGameLog(world, { type: 'combat', message, eid: target })
                 }
             }
@@ -113,6 +120,5 @@ function formatImpactMessage(
     if (hasComponent(world, target, PlayerControlled)) {
         return `Falling debris hit you for ${dmg}.`
     }
-    const factionId = hasComponent(world, target, Faction) ? Faction.id[target] : 0
-    return `Falling debris struck faction-${factionId} for ${dmg}.`
+    return `Falling debris struck ${world.interactionByEid.get(target)?.label ?? 'target'} for ${dmg}.`
 }

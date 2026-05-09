@@ -18,7 +18,11 @@
     "src/client/engine/voxel/voxel-collide.ts",
     "src/client/engine/voxel/voxel-path.ts",
     "src/client/engine/input/actions.ts",
+    "src/client/engine/ecs/components.ts",
+    "src/client/engine/ecs/damage.ts",
+    "src/client/engine/ecs/factions.ts",
     "src/client/engine/ecs/obstacle-registry.ts",
+    "src/client/engine/ecs/world.ts",
     "tests/**/*.ts"
   ]
 }
