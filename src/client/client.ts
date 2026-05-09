@@ -129,7 +129,7 @@ async function main(): Promise<void> {
         .addSystem(createRigidBodyPairSystem(chunks))
         .addSystem(createImpactSystem())
         .addSystem(createMovingObjectSystem())
-        .addSystem(createDynamicCollisionSystem())
+        .addSystem(createDynamicCollisionSystem(chunks))
         .addSystem(createRenderSyncSystem(renderer.scene))
         .addSystem(chunkRenderSystem)
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input))

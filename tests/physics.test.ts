@@ -177,6 +177,28 @@ test('isGrounded: centre-anchored body probes below its bottom face', () => {
     assert.equal(isGrounded(chunks, airbornePos, half, 0.08, null, undefined, 'center'), false)
 })
 
+test('sweepAxis: actor pair-separation displacement is capped by voxel walls (regression)', () => {
+    // Regression for: dynamic-collision-system used to write Position directly
+    // when separating overlapping actor AABBs, which let one actor shove
+    // another (or the player) through a wall and trap them inside the voxel.
+    // The fix routes the shove through sweepAxis; this test pins that
+    // invariant — even with a 0.5 m corrective push toward a wall, the actor
+    // body cannot end up inside it.
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(1, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 1, 0, BLOCK.stone)
+
+    // Foot-anchored actor (matches NPC + player BoxCollider shape) standing
+    // just east of the wall (cell x=1, voxel span [1, 2]).
+    const pos = { x: 2.4, y: 0, z: 0.5 }
+    const half = { x: 0.34, y: 0.9, z: 0.34 }
+
+    const result = sweepAxis(chunks, pos, half, 'x', -0.5)
+    assert.equal(result.blocked, true)
+    // Body's left edge should not cross the wall's east face at x=2: pos.x ≥ 2 + half.x.
+    assert.ok(pos.x >= 2.34 - 1e-6, `expected pos.x >= 2.34, got ${pos.x}`)
+})
+
 test('ObstacleSource interface: any object satisfying it works with sweepAxis', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     let queried = 0

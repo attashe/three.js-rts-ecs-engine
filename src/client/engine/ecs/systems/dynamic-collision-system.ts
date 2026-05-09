@@ -1,4 +1,5 @@
 import { hasComponent, query } from 'bitecs'
+import { sweepAxis, type ChunkManager } from '../../voxel'
 import {
     BoxCollider,
     Interactable,
@@ -12,6 +13,7 @@ import {
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { MovementStateId } from '../movement-state'
+import type { GameWorld } from '../world'
 
 export interface DynamicCollisionOptions {
     /** Extra horizontal gap between solid character bodies. Default 0.08. */
@@ -19,7 +21,7 @@ export interface DynamicCollisionOptions {
     passes?: number
 }
 
-export function createDynamicCollisionSystem(opts: DynamicCollisionOptions = {}): System {
+export function createDynamicCollisionSystem(chunks: ChunkManager, opts: DynamicCollisionOptions = {}): System {
     const padding = opts.padding ?? 0.08
     const passes = opts.passes ?? 3
 
@@ -38,7 +40,7 @@ export function createDynamicCollisionSystem(opts: DynamicCollisionOptions = {})
                     const a = eids[i]
                     for (let j = i + 1; j < eids.length; j++) {
                         const b = eids[j]
-                        separatePair(world, a, b, padding)
+                        separatePair(world, chunks, a, b, padding)
                     }
                 }
             }
@@ -52,7 +54,7 @@ function isSolidCharacter(world: Parameters<System['update']>[0], eid: number): 
         hasComponent(world, eid, Interactable)
 }
 
-function separatePair(world: Parameters<System['update']>[0], a: number, b: number, padding: number): void {
+function separatePair(world: GameWorld, chunks: ChunkManager, a: number, b: number, padding: number): void {
     const aMinY = Position.y[a]
     const aMaxY = aMinY + BoxCollider.y[a] * 2
     const bMinY = Position.y[b]
@@ -81,10 +83,15 @@ function separatePair(world: Parameters<System['update']>[0], a: number, b: numb
     if (movableCount === 0) return
     const aPush = aMovable ? penetration / movableCount : 0
     const bPush = bMovable ? penetration / movableCount : 0
-    Position.x[a] -= nx * aPush
-    Position.z[a] -= nz * aPush
-    Position.x[b] += nx * bPush
-    Position.z[b] += nz * bPush
+    // Route the corrective shoves through sweepAxis so a wall (or a registered
+    // obstacle from a settled rigid body) caps the displacement instead of
+    // letting one actor push another through solid voxels.
+    if (aPush > 0) {
+        shoveActor(world, chunks, a, -nx * aPush, -nz * aPush)
+    }
+    if (bPush > 0) {
+        shoveActor(world, chunks, b, nx * bPush, nz * bPush)
+    }
     const yieldEid = chooseYieldingEntity(world, a, b)
     if (penetration > 0.08 && hasComponent(world, yieldEid, MoveAlongPath)) {
         MovementState.value[yieldEid] = MovementStateId.Blocked
@@ -103,6 +110,20 @@ function separatePair(world: Parameters<System['update']>[0], a: number, b: numb
             Velocity.x[b] += nx * vb
             Velocity.z[b] += nz * vb
         }
+    }
+}
+
+function shoveActor(world: GameWorld, chunks: ChunkManager, eid: number, dx: number, dz: number): void {
+    const pos = { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
+    const half = { x: BoxCollider.x[eid], y: BoxCollider.y[eid], z: BoxCollider.z[eid] }
+    if (dx !== 0) {
+        const moved = sweepAxis(chunks, pos, half, 'x', dx, world.obstacles, eid, 'foot').moved
+        Position.x[eid] = pos.x + moved
+    }
+    if (dz !== 0) {
+        const startZ = { x: Position.x[eid], y: pos.y, z: pos.z }
+        const moved = sweepAxis(chunks, startZ, half, 'z', dz, world.obstacles, eid, 'foot').moved
+        Position.z[eid] = pos.z + moved
     }
 }
 
