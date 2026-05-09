@@ -16,6 +16,9 @@ The current prototype has:
 Historical phase notes and completed work have moved to
 [`CHANGELOG.md`](./CHANGELOG.md).
 
+Detailed feature research lives in
+[`docs/engine-feature-research.md`](./docs/engine-feature-research.md).
+
 ## Local Pages
 
 Run the Vite dev server on the forwarded port:
@@ -53,6 +56,7 @@ Available pages:
 ├── vite.config.ts              # Vite multi-entry build and dev server config
 ├── tests/                      # node test suite for engine subsystems
 ├── docs/
+│   ├── engine-feature-research.md
 │   ├── roadmap-next.md          # earlier architecture roadmap notes
 │   └── shaders/                 # TSL material notes and examples
 └── src/
@@ -213,6 +217,7 @@ changes before implementation branches.
 Deliverables:
 - Keep this README focused on structure and future plan.
 - Keep completed phase detail in `CHANGELOG.md`.
+- Keep detailed feature candidates in `docs/engine-feature-research.md`.
 - Review current engine seams: action/input, mechanisms, AI, collision,
   serialization, UI binding, and editor readiness.
 - Produce implementation issues or branch plans from this review.
