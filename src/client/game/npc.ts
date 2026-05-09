@@ -3,6 +3,7 @@ import { addComponents } from 'bitecs'
 import type { GameWorld } from '../engine/ecs/world'
 import {
     BoxCollider,
+    Behaviour,
     Faction,
     Health,
     Interactable,
@@ -18,17 +19,19 @@ import {
 } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
 import { FactionId } from '../engine/ecs/factions'
+import { BehaviourProfileId, assignBehaviourProfile } from '../engine/ecs/behaviour'
 import { createSampleNpc } from './assets'
 
 export interface NpcOptions {
     position: { x: number; y: number; z: number }
     yaw?: number
     faction?: FactionId
+    behaviourProfile?: BehaviourProfileId
 }
 
 export function spawnSampleNpc(world: GameWorld, opts: NpcOptions): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, Renderable, BoxCollider, Faction, Health, Interactable, InteractionRange])
+    addComponents(world, eid, [Position, Rotation, Renderable, BoxCollider, Faction, Health, Interactable, InteractionRange, Behaviour])
 
     Position.x[eid] = opts.position.x
     Position.y[eid] = opts.position.y
@@ -48,6 +51,7 @@ export function spawnSampleNpc(world: GameWorld, opts: NpcOptions): number {
     })
 
     world.object3DByEid.set(eid, createForwardFacingNpc())
+    assignBehaviourProfile(world, eid, opts.behaviourProfile ?? BehaviourProfileId.NeutralMerchant, opts.position)
     return eid
 }
 
@@ -63,6 +67,7 @@ export function spawnWanderingNpc(world: GameWorld, opts: NpcOptions & { radius?
         Health,
         Interactable,
         InteractionRange,
+        Behaviour,
         Wanderer,
         WanderHome,
         WanderRadius,
@@ -96,6 +101,7 @@ export function spawnWanderingNpc(world: GameWorld, opts: NpcOptions & { radius?
         apronColor: 0xc58b45,
         hatColor: 0x34495c,
     }))
+    assignBehaviourProfile(world, eid, opts.behaviourProfile ?? BehaviourProfileId.NeutralWanderer, opts.position)
     return eid
 }
 

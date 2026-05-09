@@ -45,6 +45,20 @@ export const MovementState = {
     value: new Uint8Array(MAX_ENTITIES),
 }
 
+export const Behaviour = {
+    /** BehaviourProfileId. Profile data lives outside ECS arrays. */
+    profileId: new Uint16Array(MAX_ENTITIES),
+    /** BehaviourStateId. High-level AI intent, separate from MovementState. */
+    state: new Uint8Array(MAX_ENTITIES),
+    previousState: new Uint8Array(MAX_ENTITIES),
+    /** Target eid + 1; 0 means no target. */
+    target: new Uint32Array(MAX_ENTITIES),
+    stateTime: new Float32Array(MAX_ENTITIES),
+    nextThinkAt: new Float32Array(MAX_ENTITIES),
+    nextRepathAt: new Float32Array(MAX_ENTITIES),
+    blockedTime: new Float32Array(MAX_ENTITIES),
+}
+
 export const WanderHome = vec3()
 export const WanderRadius = {
     value: new Float32Array(MAX_ENTITIES),

@@ -1,6 +1,7 @@
 import { createWorld, type World } from 'bitecs'
 import type { Object3D, Vector3 } from 'three'
 import { ObstacleRegistry } from './obstacle-registry'
+import type { ActorBlackboard } from './behaviour'
 
 export interface VoxelCoord {
     x: number
@@ -82,6 +83,7 @@ export interface ImpactEvent {
 export interface GameContext {
     object3DByEid: Map<number, Object3D>
     pathByEid: Map<number, PathState>
+    behaviourByEid: Map<number, ActorBlackboard>
     interactionByEid: Map<number, InteractionState>
     pickupByEid: Map<number, PickupState>
     mechanismByEid: Map<number, VoxelMechanism>
@@ -99,6 +101,7 @@ export function createGameWorld(): GameWorld {
     return createWorld<GameContext>({
         object3DByEid: new Map<number, Object3D>(),
         pathByEid: new Map<number, PathState>(),
+        behaviourByEid: new Map<number, ActorBlackboard>(),
         interactionByEid: new Map<number, InteractionState>(),
         pickupByEid: new Map<number, PickupState>(),
         mechanismByEid: new Map<number, VoxelMechanism>(),

@@ -17,8 +17,9 @@ import {
     Vector3,
     type Scene,
 } from 'three'
-import { query } from 'bitecs'
-import { BoxCollider, Faction, MovementState, Position, Wanderer } from '../components'
+import { hasComponent, query } from 'bitecs'
+import { Behaviour, BoxCollider, Faction, MovementState, Position } from '../components'
+import { behaviourStateName } from '../behaviour'
 import { movementStateName } from '../movement-state'
 import type { System } from './system'
 import { RenderOrder } from './orders'
@@ -72,13 +73,13 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             const refreshHeavyDebug = accumulator >= updateDt
             if (refreshHeavyDebug) accumulator %= updateDt
 
-            const eids = query(world, [Wanderer, Position, BoxCollider])
+            const eids = query(world, [Behaviour, Position, BoxCollider])
             const live = new Set<number>()
             for (let i = 0; i < eids.length; i++) {
                 const eid = eids[i]
                 live.add(eid)
                 updateBox(root, boxByEid, eid)
-                updateLabel(root, labelByEid, eid, refreshHeavyDebug)
+                updateLabel(world, root, labelByEid, eid, refreshHeavyDebug)
                 if (refreshHeavyDebug) {
                     updatePath(root, pathByEid, lineMaterial, eid, world.pathByEid.get(eid)?.points)
                 } else {
@@ -185,8 +186,15 @@ function updatePathOrigin(map: Map<number, PathState>, eid: number): void {
     attribute.needsUpdate = true
 }
 
-function updateLabel(root: Group, map: Map<number, LabelState>, eid: number, refreshText: boolean): void {
-    const text = `F${Faction.id[eid]} ${movementStateName(MovementState.value[eid])}`
+function updateLabel(
+    world: Parameters<System['update']>[0],
+    root: Group,
+    map: Map<number, LabelState>,
+    eid: number,
+    refreshText: boolean,
+): void {
+    const faction = hasComponent(world, eid, Faction) ? Faction.id[eid] : 0
+    const text = `F${faction} ${behaviourStateName(Behaviour.state[eid])}/${movementStateName(MovementState.value[eid])}`
     let state = map.get(eid)
     if (!state) {
         const sprite = new Sprite(new SpriteMaterial({ transparent: true, depthTest: false }))
