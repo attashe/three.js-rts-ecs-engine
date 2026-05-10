@@ -25,14 +25,52 @@ export function createRigidBodyPairSystem(chunks: ChunkManager): System {
         order: FixedOrder.rigidbodyPairs,
         update(world) {
             const eids = query(world, [Position, Velocity, BoxCollider, RigidBody])
-            for (let i = 0; i < eids.length; i++) {
-                const a = eids[i]
-                for (let j = i + 1; j < eids.length; j++) {
-                    resolvePair(chunks, world, a, eids[j])
-                }
-            }
+            const pairCount = forEachCandidatePair(eids, (a, b) => resolvePair(chunks, world, a, b))
+            world.metrics.setGauge('rigidBodyPairs.bodies', eids.length)
+            world.metrics.setGauge('rigidBodyPairs.pairs', pairCount)
         },
     }
+}
+
+function forEachCandidatePair(eids: ArrayLike<number>, visit: (a: number, b: number) => void): number {
+    let maxRadius = 0
+    for (let i = 0; i < eids.length; i++) {
+        const eid = eids[i]!
+        maxRadius = Math.max(maxRadius, BoxCollider.x[eid], BoxCollider.z[eid])
+    }
+    const cellSize = Math.max(1, maxRadius * 2)
+    const buckets = new Map<string, number[]>()
+    for (let i = 0; i < eids.length; i++) {
+        const eid = eids[i]!
+        const key = pairCellKey(Position.x[eid], Position.z[eid], cellSize)
+        const bucket = buckets.get(key)
+        if (bucket) bucket.push(eid)
+        else buckets.set(key, [eid])
+    }
+
+    let pairCount = 0
+    for (let i = 0; i < eids.length; i++) {
+        const a = eids[i]!
+        const cx = Math.floor(Position.x[a] / cellSize)
+        const cz = Math.floor(Position.z[a] / cellSize)
+        for (let oz = -1; oz <= 1; oz++) {
+            for (let ox = -1; ox <= 1; ox++) {
+                const bucket = buckets.get(`${cx + ox},${cz + oz}`)
+                if (!bucket) continue
+                for (let j = 0; j < bucket.length; j++) {
+                    const b = bucket[j]!
+                    if (b <= a) continue
+                    visit(a, b)
+                    pairCount++
+                }
+            }
+        }
+    }
+    return pairCount
+}
+
+function pairCellKey(x: number, z: number, cellSize: number): string {
+    return `${Math.floor(x / cellSize)},${Math.floor(z / cellSize)}`
 }
 
 function resolvePair(chunks: ChunkManager, world: GameWorld, a: number, b: number): void {

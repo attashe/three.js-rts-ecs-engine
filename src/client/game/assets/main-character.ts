@@ -1,13 +1,17 @@
 import {
-    BoxGeometry,
     CapsuleGeometry,
-    ConeGeometry,
-    CylinderGeometry,
     Group,
     Mesh,
     MeshStandardMaterial,
-    SphereGeometry,
 } from 'three'
+import {
+    sharedBoxGeometry,
+    sharedCapsuleGeometry,
+    sharedConeGeometry,
+    sharedCylinderGeometry,
+    sharedMaterial,
+    sharedSphereGeometry,
+} from './shared-primitives'
 
 export const MAIN_CHARACTER_COLLIDER_RADIUS = 0.35
 export const MAIN_CHARACTER_COLLIDER_HEIGHT = 1.6
@@ -26,7 +30,7 @@ const BODY_RADIUS = 0.25
 const HEAD_RADIUS = 0.18
 
 function material(color: number, roughness = 0.7, metalness = 0): MeshStandardMaterial {
-    return new MeshStandardMaterial({ color, roughness, metalness })
+    return sharedMaterial(color, roughness, metalness)
 }
 
 function setShadow(mesh: Mesh): Mesh {
@@ -53,40 +57,40 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
     const bootsY = 0.16
     addPair(
         root,
-        setShadow(new Mesh(new BoxGeometry(0.17, 0.32, 0.22), leather)),
-        setShadow(new Mesh(new BoxGeometry(0.17, 0.32, 0.22), leather)),
+        setShadow(new Mesh(sharedBoxGeometry(0.17, 0.32, 0.22), leather)),
+        setShadow(new Mesh(sharedBoxGeometry(0.17, 0.32, 0.22), leather)),
     )
     root.children[0].position.set(-0.11, bootsY, 0.02)
     root.children[1].position.set(0.11, bootsY, 0.02)
 
-    const hem = setShadow(new Mesh(new CylinderGeometry(0.3, 0.34, 0.18, 8), tunic))
+    const hem = setShadow(new Mesh(sharedCylinderGeometry(0.3, 0.34, 0.18, 8), tunic))
     hem.name = 'TunicHem'
     hem.position.y = 0.44
     root.add(hem)
 
-    const body = setShadow(new Mesh(new CapsuleGeometry(BODY_RADIUS, BODY_HEIGHT, 5, 10), tunic))
+    const body = setShadow(new Mesh(sharedCapsuleGeometry(BODY_RADIUS, BODY_HEIGHT, 5, 10), tunic))
     body.name = 'Body'
     body.position.y = 0.86
     body.scale.set(0.95, 1, 0.78)
     root.add(body)
 
-    const belt = setShadow(new Mesh(new BoxGeometry(0.58, 0.08, 0.46), leather))
+    const belt = setShadow(new Mesh(sharedBoxGeometry(0.58, 0.08, 0.46), leather))
     belt.name = 'Belt'
     belt.position.y = 0.7
     root.add(belt)
 
-    const buckle = setShadow(new Mesh(new BoxGeometry(0.12, 0.09, 0.05), metal))
+    const buckle = setShadow(new Mesh(sharedBoxGeometry(0.12, 0.09, 0.05), metal))
     buckle.name = 'Buckle'
     buckle.position.set(0, 0.7, 0.25)
     root.add(buckle)
 
-    const head = setShadow(new Mesh(new SphereGeometry(HEAD_RADIUS, 16, 10), skin))
+    const head = setShadow(new Mesh(sharedSphereGeometry(HEAD_RADIUS, 16, 10), skin))
     head.name = 'Head'
     head.position.y = 1.38
     head.scale.set(0.9, 1.04, 0.9)
     root.add(head)
 
-    const hair = setShadow(new Mesh(new SphereGeometry(0.19, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), dark))
+    const hair = setShadow(new Mesh(sharedSphereGeometry(0.19, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), dark))
     hair.name = 'Hair'
     hair.position.set(0, 1.45, -0.02)
     hair.rotation.x = -0.18
@@ -94,8 +98,8 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
 
     addPair(
         root,
-        setShadow(new Mesh(new CapsuleGeometry(0.055, 0.44, 4, 8), skin)),
-        setShadow(new Mesh(new CapsuleGeometry(0.055, 0.44, 4, 8), skin)),
+        setShadow(new Mesh(sharedCapsuleGeometry(0.055, 0.44, 4, 8), skin)),
+        setShadow(new Mesh(sharedCapsuleGeometry(0.055, 0.44, 4, 8), skin)),
     )
     const leftArm = root.children[root.children.length - 2]
     const rightArm = root.children[root.children.length - 1]
@@ -108,8 +112,8 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
 
     addPair(
         root,
-        setShadow(new Mesh(new SphereGeometry(0.08, 10, 8), metal)),
-        setShadow(new Mesh(new SphereGeometry(0.08, 10, 8), metal)),
+        setShadow(new Mesh(sharedSphereGeometry(0.08, 10, 8), metal)),
+        setShadow(new Mesh(sharedSphereGeometry(0.08, 10, 8), metal)),
     )
     const leftPauldron = root.children[root.children.length - 2]
     const rightPauldron = root.children[root.children.length - 1]
@@ -120,20 +124,20 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
     leftPauldron.scale.set(1.45, 0.58, 1)
     rightPauldron.scale.set(1.45, 0.58, 1)
 
-    const mantle = setShadow(new Mesh(new CylinderGeometry(0.34, 0.3, 0.14, 8), cloak))
+    const mantle = setShadow(new Mesh(sharedCylinderGeometry(0.34, 0.3, 0.14, 8), cloak))
     mantle.name = 'CloakMantle'
     mantle.position.set(0, 1.12, -0.05)
     mantle.scale.z = 0.64
     root.add(mantle)
 
-    const cape = setShadow(new Mesh(new ConeGeometry(0.36, 0.92, 4), cloak))
+    const cape = setShadow(new Mesh(sharedConeGeometry(0.36, 0.92, 4), cloak))
     cape.name = 'Cloak'
     cape.position.set(0, 0.68, -0.2)
     cape.rotation.y = Math.PI * 0.25
     cape.scale.set(0.95, 1, 0.42)
     root.add(cape)
 
-    const nose = setShadow(new Mesh(new ConeGeometry(0.035, 0.08, 8), skin))
+    const nose = setShadow(new Mesh(sharedConeGeometry(0.035, 0.08, 8), skin))
     nose.name = 'Nose'
     nose.position.set(0, 1.38, 0.18)
     nose.rotation.x = Math.PI * 0.5

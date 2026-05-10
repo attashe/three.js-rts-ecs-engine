@@ -1,12 +1,15 @@
 import {
-    BoxGeometry,
-    ConeGeometry,
-    CylinderGeometry,
     Group,
     Mesh,
     MeshStandardMaterial,
-    SphereGeometry,
 } from 'three'
+import {
+    sharedBoxGeometry,
+    sharedConeGeometry,
+    sharedCylinderGeometry,
+    sharedMaterial,
+    sharedSphereGeometry,
+} from './shared-primitives'
 
 export interface SampleNpcOptions {
     tunicColor?: number
@@ -83,7 +86,7 @@ export function createSampleNpc(options: SampleNpcOptions = {}): Group {
 }
 
 function material(color: number, roughness: number, metalness = 0.02): MeshStandardMaterial {
-    return new MeshStandardMaterial({ color, roughness, metalness })
+    return sharedMaterial(color, roughness, metalness)
 }
 
 function addBox(
@@ -96,7 +99,7 @@ function addBox(
     rotationY = 0,
     rotationZ = 0,
 ): Mesh {
-    const mesh = new Mesh(new BoxGeometry(scale[0], scale[1], scale[2]), meshMaterial)
+    const mesh = new Mesh(sharedBoxGeometry(scale[0], scale[1], scale[2]), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     mesh.rotation.set(rotationX, rotationY, rotationZ)
@@ -111,7 +114,7 @@ function addSphere(
     scale: [number, number, number],
     meshMaterial: MeshStandardMaterial,
 ): Mesh {
-    const mesh = new Mesh(new SphereGeometry(1, 16, 10), meshMaterial)
+    const mesh = new Mesh(sharedSphereGeometry(1, 16, 10), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     mesh.scale.set(scale[0], scale[1], scale[2])
@@ -128,7 +131,7 @@ function addCylinder(
     height: number,
     meshMaterial: MeshStandardMaterial,
 ): Mesh {
-    const mesh = new Mesh(new CylinderGeometry(radiusTop, radiusBottom, height, 20), meshMaterial)
+    const mesh = new Mesh(sharedCylinderGeometry(radiusTop, radiusBottom, height, 20), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     parent.add(mesh)
@@ -143,7 +146,7 @@ function addCone(
     height: number,
     meshMaterial: MeshStandardMaterial,
 ): Mesh {
-    const mesh = new Mesh(new ConeGeometry(radius, height, 20), meshMaterial)
+    const mesh = new Mesh(sharedConeGeometry(radius, height, 20), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     parent.add(mesh)

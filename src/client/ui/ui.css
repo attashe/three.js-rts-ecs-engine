@@ -605,6 +605,14 @@
     pointer-events: none;
 }
 
+.ui-metrics-panel {
+    top: 36px;
+    bottom: auto;
+    max-height: 220px;
+    color: #d6f7d4;
+    border-color: rgba(120, 190, 120, 0.46);
+}
+
 .ui-stats-hud {
     position: fixed;
     top: 6px;

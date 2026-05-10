@@ -139,6 +139,7 @@ export class UiMeter implements UiWidget {
     readonly element: HTMLDivElement
     private readonly fill: HTMLDivElement
     private readonly value: HTMLSpanElement
+    private valueKey = ''
 
     constructor(options: MeterOptions) {
         this.fill = el('div', {
@@ -164,6 +165,9 @@ export class UiMeter implements UiWidget {
     setValue(current: number, max: number): void {
         const safeMax = Math.max(1, max)
         const safeCurrent = Math.max(0, Math.min(safeMax, current))
+        const nextKey = `${safeCurrent.toFixed(3)}|${safeMax.toFixed(3)}`
+        if (nextKey === this.valueKey) return
+        this.valueKey = nextKey
         const pct = safeCurrent / safeMax
         this.fill.style.transform = `scaleX(${pct.toFixed(4)})`
         this.value.textContent = `${Math.ceil(safeCurrent)} / ${Math.ceil(safeMax)}`
@@ -192,8 +196,21 @@ export class UiSlot implements UiWidget {
     private readonly keycap: HTMLElement | null
     private readonly count: HTMLSpanElement
     private readonly label: HTMLSpanElement
+    private iconText: string
+    private labelText: string
+    private keyText: string
+    private countText = '\0'
+    private active: boolean
+    private muted: boolean
+    private selected = false
+    private compatible = false
 
     constructor(options: SlotOptions) {
+        this.iconText = options.icon
+        this.labelText = options.label
+        this.keyText = options.key ?? ''
+        this.active = !!options.active
+        this.muted = !!options.muted
         this.icon = el('span', { className: 'ui-slot__icon', text: options.icon })
         this.keycap = options.key ? kbd(options.key) : null
         this.count = el('span', { className: 'ui-slot__count' })
@@ -217,34 +234,51 @@ export class UiSlot implements UiWidget {
     }
 
     setContent(options: Partial<SlotOptions>): void {
-        if (options.icon !== undefined) this.icon.textContent = options.icon
-        if (options.label !== undefined) {
+        if (options.icon !== undefined && options.icon !== this.iconText) {
+            this.iconText = options.icon
+            this.icon.textContent = options.icon
+        }
+        if (options.label !== undefined && options.label !== this.labelText) {
+            this.labelText = options.label
             this.label.textContent = options.label
             this.element.title = options.label
         }
-        if (options.key !== undefined && this.keycap) this.keycap.textContent = options.key
+        if (options.key !== undefined && this.keycap && options.key !== this.keyText) {
+            this.keyText = options.key
+            this.keycap.textContent = options.key
+        }
         if (options.count !== undefined) this.setCount(options.count)
     }
 
     setCount(value: number | string): void {
         const text = typeof value === 'number' ? String(value) : value
+        if (text === this.countText) return
+        this.countText = text
         this.count.textContent = text
         this.count.hidden = text.length === 0
     }
 
     setActive(active: boolean): void {
+        if (active === this.active) return
+        this.active = active
         this.element.classList.toggle('ui-slot--active', active)
     }
 
     setMuted(muted: boolean): void {
+        if (muted === this.muted) return
+        this.muted = muted
         this.element.classList.toggle('ui-slot--muted', muted)
     }
 
     setSelected(selected: boolean): void {
+        if (selected === this.selected) return
+        this.selected = selected
         this.element.classList.toggle('ui-slot--selected', selected)
     }
 
     setCompatible(compatible: boolean): void {
+        if (compatible === this.compatible) return
+        this.compatible = compatible
         this.element.classList.toggle('ui-slot--compatible', compatible)
     }
 

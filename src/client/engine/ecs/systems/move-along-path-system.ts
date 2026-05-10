@@ -42,7 +42,9 @@ export const MoveAlongPathSystem: System = {
     order: FixedOrder.movement,
     update(world, dt) {
         const eids = query(world, [MoveAlongPath, Position])
-        const avoidanceActors = collectAvoidanceActors(world)
+        const avoidance = collectAvoidanceActors(world)
+        const nearbyActors: AvoidanceActor[] = []
+        let avoidanceChecks = 0
         for (let i = 0; i < eids.length; i++) {
             const eid = eids[i]
             const state = world.pathByEid.get(eid)
@@ -107,17 +109,26 @@ export const MoveAlongPathSystem: System = {
                 let desiredX = denom > EPSILON ? (dx / denom) * state.speed : 0
                 let desiredZ = denom > EPSILON ? (dz / denom) * state.speed : 0
                 if (hasCollider && denom > EPSILON) {
+                    const radius = Math.max(BoxCollider.x[eid], BoxCollider.z[eid])
+                    nearbyActors.length = 0
+                    avoidance.queryInto(
+                        Position.x[eid],
+                        Position.z[eid],
+                        radius + avoidance.maxRadius + 0.73,
+                        nearbyActors,
+                    )
+                    avoidanceChecks += nearbyActors.length
                     const steered = steerAroundActors(
                         {
                             eid,
                             x: Position.x[eid],
                             y: Position.y[eid],
                             z: Position.z[eid],
-                            radius: Math.max(BoxCollider.x[eid], BoxCollider.z[eid]),
+                            radius,
                         },
                         desiredX,
                         desiredZ,
-                        avoidanceActors,
+                        nearbyActors,
                     )
                     desiredX = steered.x
                     desiredZ = steered.z
@@ -194,6 +205,8 @@ export const MoveAlongPathSystem: System = {
                 }
             }
         }
+        world.metrics.setGauge('movePath.actors', eids.length)
+        world.metrics.setGauge('movePath.avoidanceChecks', avoidanceChecks)
     },
 }
 
@@ -218,25 +231,63 @@ function applyStuckSidestep(eid: number, blockedTime: number, desiredX: number, 
     Velocity.z[eid] = (blendZ / blendLen) * speed
 }
 
-function collectAvoidanceActors(world: Parameters<System['update']>[0]): AvoidanceActor[] {
+interface AvoidanceIndex {
+    maxRadius: number
+    queryInto(x: number, z: number, radius: number, out: AvoidanceActor[]): void
+}
+
+const AVOIDANCE_CELL_SIZE = 4
+
+function collectAvoidanceActors(world: Parameters<System['update']>[0]): AvoidanceIndex {
     const eids = query(world, [Position, BoxCollider])
-    const actors: AvoidanceActor[] = []
+    const buckets = new Map<string, AvoidanceActor[]>()
+    let maxRadius = 0
     for (let i = 0; i < eids.length; i++) {
         const eid = eids[i]
         if (!isAvoidanceActor(world, eid)) continue
-        actors.push({
+        const actor = {
             eid,
             x: Position.x[eid],
             y: Position.y[eid],
             z: Position.z[eid],
             radius: Math.max(BoxCollider.x[eid], BoxCollider.z[eid]),
-        })
+        }
+        maxRadius = Math.max(maxRadius, actor.radius)
+        const key = avoidanceCellKey(actor.x, actor.z)
+        const bucket = buckets.get(key)
+        if (bucket) bucket.push(actor)
+        else buckets.set(key, [actor])
     }
-    return actors
+    return {
+        maxRadius,
+        queryInto(x, z, radius, out) {
+            const minX = Math.floor((x - radius) / AVOIDANCE_CELL_SIZE)
+            const maxX = Math.floor((x + radius) / AVOIDANCE_CELL_SIZE)
+            const minZ = Math.floor((z - radius) / AVOIDANCE_CELL_SIZE)
+            const maxZ = Math.floor((z + radius) / AVOIDANCE_CELL_SIZE)
+            const radiusSq = radius * radius
+            for (let cz = minZ; cz <= maxZ; cz++) {
+                for (let cx = minX; cx <= maxX; cx++) {
+                    const bucket = buckets.get(`${cx},${cz}`)
+                    if (!bucket) continue
+                    for (let i = 0; i < bucket.length; i++) {
+                        const actor = bucket[i]!
+                        const dx = actor.x - x
+                        const dz = actor.z - z
+                        if (dx * dx + dz * dz <= radiusSq) out.push(actor)
+                    }
+                }
+            }
+        },
+    }
 }
 
 function isAvoidanceActor(world: Parameters<System['update']>[0], eid: number): boolean {
     return hasComponent(world, eid, PlayerControlled) ||
         hasComponent(world, eid, Wanderer) ||
         hasComponent(world, eid, Interactable)
+}
+
+function avoidanceCellKey(x: number, z: number): string {
+    return `${Math.floor(x / AVOIDANCE_CELL_SIZE)},${Math.floor(z / AVOIDANCE_CELL_SIZE)}`
 }

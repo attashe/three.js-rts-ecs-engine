@@ -1,6 +1,6 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import type { ChunkManager } from '../../voxel/chunk-manager'
-import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis, type AABB, type ColliderAnchor } from '../../voxel/voxel-collide'
+import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis, voxelAABBOverlap, type AABB, type ColliderAnchor } from '../../voxel/voxel-collide'
 import {
     BoxCollider,
     Grounded,
@@ -9,9 +9,11 @@ import {
     MovementState,
     MovingObject,
     Position,
+    Renderable,
     RigidBody,
     Rotation,
     Sleeping,
+    StaticRenderable,
     Velocity,
 } from '../components'
 import type { System } from './system'
@@ -27,6 +29,7 @@ const DEAD_BODY_GROUND_DAMPING = 4.5
 const DEAD_BODY_STOP_SPEED_SQ = 0.0025
 const STALLED_BODY_MOVE_RATIO = 0.04
 const STALLED_BODY_MIN_INTENT_SQ = 0.000001
+const STUCK_RECOVERY_STEP = 0.05
 /** Below this inbound speed (m/s) we don't bother emitting an impact event,
  *  even if restitution is non-zero. Avoids per-frame noise from gentle landings. */
 const IMPACT_MIN_SPEED = 3.0
@@ -72,6 +75,10 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
         update(world, dt) {
             const obstacles = world.obstacles
             const eids = query(world, [Position, Velocity, BoxCollider])
+            let sleepChecks = 0
+            let sleptBodies = 0
+            let recoveredBodies = 0
+            let stuckBodies = 0
             for (let i = 0; i < eids.length; i++) {
                 const eid = eids[i]
                 const hasRb = hasComponent(world, eid, RigidBody)
@@ -134,6 +141,19 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                     }
                 }
                 Velocity.y[eid] = vy
+
+                if (hasRb && RigidBody.rollOnGround[eid] === 1) {
+                    const recovered = recoverVoxelOverlap(chunks, world, eid, pos, half, anchor)
+                    if (recovered === 'recovered') {
+                        Velocity.x[eid] = 0
+                        Velocity.y[eid] = 0
+                        Velocity.z[eid] = 0
+                        vy = 0
+                        recoveredBodies++
+                    } else if (recovered === 'stuck') {
+                        stuckBodies++
+                    }
+                }
 
                 Position.x[eid] = pos.x
                 Position.y[eid] = pos.y
@@ -219,8 +239,10 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                     ? RigidBody.sleepDelay[eid]
                     : DEFAULT_SLEEP_DELAY
                 if (RigidBody.sleepTimer[eid] >= delay) {
+                    sleepChecks++
                     if (canSleepHere(world, eid, half, anchor)) {
                         sleepBody(world, eid, half, anchor)
+                        sleptBodies++
                     } else {
                         // Some other entity (player, NPC, another stone) is
                         // overlapping where the obstacle AABB would land — if
@@ -232,12 +254,29 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                     }
                 }
             }
+            world.metrics.setGauge('physics.active', eids.length)
+            world.metrics.setGauge('physics.sleepChecks', sleepChecks)
+            world.metrics.setGauge('physics.slept', sleptBodies)
+            world.metrics.setGauge('physics.recovered', recoveredBodies)
+            world.metrics.setGauge('physics.stuck', stuckBodies)
         },
     }
 }
 
 const tmpAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 const tmpOther: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpRecoveryAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpRecoveryPos = { x: 0, y: 0, z: 0 }
+const HORIZONTAL_RECOVERY_DIRS = [
+    { x: 1, z: 0 },
+    { x: -1, z: 0 },
+    { x: 0, z: 1 },
+    { x: 0, z: -1 },
+    { x: Math.SQRT1_2, z: Math.SQRT1_2 },
+    { x: -Math.SQRT1_2, z: Math.SQRT1_2 },
+    { x: Math.SQRT1_2, z: -Math.SQRT1_2 },
+    { x: -Math.SQRT1_2, z: -Math.SQRT1_2 },
+] as const
 
 function isDeadBody(world: Parameters<System['update']>[0], eid: number): boolean {
     return hasComponent(world, eid, Health) && Health.current[eid] <= 0
@@ -253,6 +292,81 @@ function isHorizontallyStalled(
     if (intendedSq < STALLED_BODY_MIN_INTENT_SQ) return false
     const actualSq = actualX * actualX + actualZ * actualZ
     return actualSq < intendedSq * STALLED_BODY_MOVE_RATIO
+}
+
+function recoverVoxelOverlap(
+    chunks: ChunkManager,
+    world: Parameters<System['update']>[0],
+    eid: number,
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+): 'clear' | 'recovered' | 'stuck' {
+    if (!overlapsVoxels(chunks, pos, half, anchor)) return 'clear'
+
+    const maxHalf = Math.max(half.x, half.y, half.z)
+    const maxDistance = Math.max(0.75, maxHalf * 2 + 0.25)
+    for (let d = STUCK_RECOVERY_STEP; d <= maxDistance + 0.0001; d += STUCK_RECOVERY_STEP) {
+        if (tryRecoveryOffset(chunks, world, eid, pos, half, anchor, 0, d, 0)) return 'recovered'
+    }
+
+    for (let d = STUCK_RECOVERY_STEP; d <= maxDistance + 0.0001; d += STUCK_RECOVERY_STEP) {
+        for (let i = 0; i < HORIZONTAL_RECOVERY_DIRS.length; i++) {
+            const dir = HORIZONTAL_RECOVERY_DIRS[i]!
+            if (tryRecoveryOffset(chunks, world, eid, pos, half, anchor, dir.x * d, 0, dir.z * d)) {
+                return 'recovered'
+            }
+            if (tryRecoveryOffset(chunks, world, eid, pos, half, anchor, dir.x * d, STUCK_RECOVERY_STEP, dir.z * d)) {
+                return 'recovered'
+            }
+        }
+    }
+
+    return 'stuck'
+}
+
+function tryRecoveryOffset(
+    chunks: ChunkManager,
+    world: Parameters<System['update']>[0],
+    eid: number,
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+    dx: number,
+    dy: number,
+    dz: number,
+): boolean {
+    tmpRecoveryPos.x = pos.x + dx
+    tmpRecoveryPos.y = pos.y + dy
+    tmpRecoveryPos.z = pos.z + dz
+    aabbForAnchor(tmpRecoveryPos, half, anchor, tmpRecoveryAABB)
+    if (voxelAABBOverlap(chunks, tmpRecoveryAABB)) return false
+    if (world.obstacles.intersects(tmpRecoveryAABB, eid)) return false
+    pos.x = tmpRecoveryPos.x
+    pos.y = tmpRecoveryPos.y
+    pos.z = tmpRecoveryPos.z
+    return true
+}
+
+function overlapsVoxels(
+    chunks: ChunkManager,
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+): boolean {
+    aabbForAnchor(pos, half, anchor, tmpRecoveryAABB)
+    return voxelAABBOverlap(chunks, tmpRecoveryAABB)
+}
+
+function aabbForAnchor(
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+    out: AABB,
+): AABB {
+    return anchor === 'center'
+        ? aabbFromCenter(pos, half, out)
+        : aabbFromFoot(pos, half, out)
 }
 
 function canSleepHere(
@@ -355,6 +469,7 @@ function sleepBody(
     removeComponent(world, eid, Velocity)
     if (hasComponent(world, eid, HorizontalBlocked)) removeComponent(world, eid, HorizontalBlocked)
     addComponent(world, eid, Sleeping)
+    if (hasComponent(world, eid, Renderable)) addComponent(world, eid, StaticRenderable)
     const out: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     const pos = { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
     const aabb = anchor === 'center'

@@ -1,12 +1,15 @@
 import {
-    BoxGeometry,
-    ConeGeometry,
-    CylinderGeometry,
     Group,
     Mesh,
     MeshStandardMaterial,
-    SphereGeometry,
 } from 'three'
+import {
+    sharedBoxGeometry,
+    sharedConeGeometry,
+    sharedCylinderGeometry,
+    sharedMaterial,
+    sharedSphereGeometry,
+} from './shared-primitives'
 
 export interface WorldPropPalette {
     wood?: number
@@ -218,7 +221,7 @@ function finalize(root: Group): Group {
 }
 
 function material(color: number, roughness = 0.7, metalness = 0): MeshStandardMaterial {
-    return new MeshStandardMaterial({ color, roughness, metalness })
+    return sharedMaterial(color, roughness, metalness)
 }
 
 function addBox(
@@ -231,7 +234,7 @@ function addBox(
     rotationY = 0,
     rotationZ = 0,
 ): Mesh {
-    const mesh = new Mesh(new BoxGeometry(scale[0], scale[1], scale[2]), meshMaterial)
+    const mesh = new Mesh(sharedBoxGeometry(scale[0], scale[1], scale[2]), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     mesh.rotation.set(rotationX, rotationY, rotationZ)
@@ -246,7 +249,7 @@ function addSphere(
     scale: [number, number, number],
     meshMaterial: MeshStandardMaterial,
 ): Mesh {
-    const mesh = new Mesh(new SphereGeometry(1, 12, 8), meshMaterial)
+    const mesh = new Mesh(sharedSphereGeometry(1, 12, 8), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     mesh.scale.set(scale[0], scale[1], scale[2])
@@ -266,7 +269,7 @@ function addCylinder(
     rotationY = 0,
     rotationZ = 0,
 ): Mesh {
-    const mesh = new Mesh(new CylinderGeometry(radiusTop, radiusBottom, height, 16), meshMaterial)
+    const mesh = new Mesh(sharedCylinderGeometry(radiusTop, radiusBottom, height, 16), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     mesh.rotation.set(rotationX, rotationY, rotationZ)
@@ -282,7 +285,7 @@ function addCone(
     height: number,
     meshMaterial: MeshStandardMaterial,
 ): Mesh {
-    const mesh = new Mesh(new ConeGeometry(radius, height, 10), meshMaterial)
+    const mesh = new Mesh(sharedConeGeometry(radius, height, 10), meshMaterial)
     mesh.name = name
     mesh.position.set(position[0], position[1], position[2])
     parent.add(mesh)

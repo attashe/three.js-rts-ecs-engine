@@ -4,6 +4,7 @@ import Signals from './signals'
 import { createGameWorld, type GameWorld } from './ecs/world'
 import type { System } from './ecs/systems/system'
 import { Input } from './input/input'
+import type { MetricsPhase } from './metrics'
 
 export interface EngineOptions {
     fixedHz?: number
@@ -18,6 +19,7 @@ export class Engine {
 
     private readonly fixedSystems: System[] = []
     private readonly renderSystems: System[] = []
+    private readonly systemLabels = new WeakMap<System, string>()
     private started = false
     private disposed = false
 
@@ -29,15 +31,16 @@ export class Engine {
         this.input = new Input(this.renderer.webgpu.domElement)
     }
 
-    addSystem(system: System): this {
+    addSystem(system: System, name?: string): this {
         if (this.disposed) {
             throw new Error('Engine.addSystem: cannot register a system after stop()')
         }
         if (this.started) {
             throw new Error('Engine.addSystem: cannot register a system after start()')
         }
-        if (system.fixed) this.fixedSystems.push(system)
-        else this.renderSystems.push(system)
+        const bucket = system.fixed ? this.fixedSystems : this.renderSystems
+        bucket.push(system)
+        this.systemLabels.set(system, name ?? system.name ?? fallbackSystemLabel(system, bucket.length - 1))
         this.fixedSystems.sort(compareSystems)
         this.renderSystems.sort(compareSystems)
         return this
@@ -70,12 +73,14 @@ export class Engine {
         this.started = true
         this.scheduler.start({
             fixed: (dt) => {
-                for (const s of this.fixedSystems) s.update(this.world, dt)
+                this.world.metrics.recordFixedStep()
+                for (const s of this.fixedSystems) this.updateSystem('fixed', s, dt)
             },
             render: (dt) => {
-                for (const s of this.renderSystems) s.update(this.world, dt)
-                this.renderer.update(dt)
-                this.renderer.render()
+                this.world.metrics.recordRenderFrame(dt)
+                for (const s of this.renderSystems) this.updateSystem('render', s, dt)
+                this.world.metrics.timeSystem('render', 'renderer.update', () => this.renderer.update(dt))
+                this.world.metrics.timeSystem('render', 'renderer.render', () => this.renderer.render())
             },
         })
     }
@@ -90,8 +95,18 @@ export class Engine {
         this.started = false
         this.disposed = true
     }
+
+    private updateSystem(phase: MetricsPhase, system: System, dt: number): void {
+        const label = this.systemLabels.get(system) ?? fallbackSystemLabel(system, 0)
+        this.world.metrics.timeSystem(phase, label, () => system.update(this.world, dt))
+    }
 }
 
 function compareSystems(a: System, b: System): number {
     return (a.order ?? 0) - (b.order ?? 0)
+}
+
+function fallbackSystemLabel(system: System, index: number): string {
+    if (system.update.name && system.update.name !== 'update') return system.update.name
+    return `${system.fixed ? 'fixed' : 'render'}:${system.order ?? 0}:${index}`
 }

@@ -1,16 +1,10 @@
 import {
-    Box3,
-    Box3Helper,
     BufferGeometry,
-    Color,
     Float32BufferAttribute,
     Group,
     Line,
     LineBasicMaterial,
-    Mesh,
-    MeshBasicMaterial,
-    Object3D,
-    PlaneGeometry,
+    LineSegments,
     Sprite,
     SpriteMaterial,
     Texture,
@@ -41,16 +35,25 @@ interface PathState {
     pointCount: number
 }
 
+interface BoxBatchState {
+    lines: LineSegments
+    capacity: number
+    count: number
+}
+
 export function createDebugOverlaySystem(scene: Scene, input: Input, opts: DebugOverlayOptions = {}): System {
     let enabled = opts.enabled ?? true
     const updateDt = 1 / (opts.updateHz ?? 6)
     const root = new Group()
     root.name = 'DebugOverlay'
+    const boxMaterial = new LineBasicMaterial({ color: 0x9cff57 })
     const lineMaterial = new LineBasicMaterial({ color: 0x55d6ff })
+    const boxBatch = createBoxBatch(boxMaterial)
+    const textTextureByKey = new Map<string, Texture>()
     const labelByEid = new Map<number, LabelState>()
-    const boxByEid = new Map<number, Box3Helper>()
     const pathByEid = new Map<number, PathState>()
     let logPanel: UiLogPanel | null = null
+    let metricsPanel: UiLogPanel | null = null
     let lastLogLength = -1
     let accumulator = 0
 
@@ -58,15 +61,20 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         order: RenderOrder.debug,
         init() {
             scene.add(root)
+            root.add(boxBatch.lines)
             root.visible = enabled
             logPanel = new UiLogPanel()
             logPanel.setVisible(enabled)
+            metricsPanel = new UiLogPanel()
+            metricsPanel.element.classList.add('ui-metrics-panel')
+            metricsPanel.setVisible(enabled)
         },
         update(world, dt) {
             if (input.consumeKeyPressed('Backquote')) {
                 enabled = !enabled
                 root.visible = enabled
                 logPanel?.setVisible(enabled)
+                metricsPanel?.setVisible(enabled)
             }
             if (!enabled) return
             accumulator += dt
@@ -75,58 +83,118 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
 
             const eids = query(world, [Behaviour, Position, BoxCollider])
             const live = new Set<number>()
+            updateBoxes(boxBatch, eids)
             for (let i = 0; i < eids.length; i++) {
                 const eid = eids[i]
                 live.add(eid)
-                updateBox(root, boxByEid, eid)
-                updateLabel(world, root, labelByEid, eid, refreshHeavyDebug)
+                updateLabel(world, root, labelByEid, textTextureByKey, eid, refreshHeavyDebug)
                 if (refreshHeavyDebug) {
                     updatePath(root, pathByEid, lineMaterial, eid, world.pathByEid.get(eid)?.points)
                 } else {
                     updatePathOrigin(pathByEid, eid)
                 }
             }
-            prune(root, boxByEid, live)
             pruneLabels(root, labelByEid, live)
             if (refreshHeavyDebug) {
                 prunePaths(root, pathByEid, live)
+                world.metrics.setGauge('debug.boxes', boxBatch.count)
+                world.metrics.setGauge('debug.labels', labelByEid.size)
+                world.metrics.setGauge('debug.paths', pathByEid.size)
                 updateLog(logPanel, world.log, lastLogLength)
+                updateMetrics(metricsPanel, world.metrics.summaryLines({ systemCount: 5, gaugeCount: 20 }))
                 lastLogLength = world.log.length
             }
         },
         dispose() {
-            for (const obj of boxByEid.values()) disposeDebugObject(obj)
             for (const state of pathByEid.values()) disposePath(state)
             for (const state of labelByEid.values()) disposeLabel(state)
-            boxByEid.clear()
+            for (const texture of textTextureByKey.values()) texture.dispose()
             pathByEid.clear()
             labelByEid.clear()
+            textTextureByKey.clear()
             root.clear()
             scene.remove(root)
+            boxBatch.lines.geometry.dispose()
+            boxMaterial.dispose()
             lineMaterial.dispose()
             logPanel?.dispose()
+            metricsPanel?.dispose()
             logPanel = null
+            metricsPanel = null
         },
     }
 }
 
-function updateBox(root: Group, map: Map<number, Box3Helper>, eid: number): void {
-    let helper = map.get(eid)
-    if (!helper) {
-        helper = new Box3Helper(new Box3(), new Color(0x9cff57))
-        map.set(eid, helper)
-        root.add(helper)
+function createBoxBatch(material: LineBasicMaterial): BoxBatchState {
+    const lines = new LineSegments(new BufferGeometry(), material)
+    lines.name = 'DebugBoxBatch'
+    lines.frustumCulled = false
+    return { lines, capacity: 0, count: 0 }
+}
+
+function updateBoxes(batch: BoxBatchState, eids: ArrayLike<number>): void {
+    const count = eids.length
+    ensureBoxCapacity(batch, count)
+    batch.count = count
+    batch.lines.geometry.setDrawRange(0, count * 24)
+    const attribute = batch.lines.geometry.getAttribute('position') as Float32BufferAttribute | undefined
+    if (!attribute) return
+    const coords = attribute.array
+    for (let i = 0; i < count; i++) {
+        writeBox(coords, i * 72, eids[i]!)
     }
-    helper.box.min.set(
-        Position.x[eid] - BoxCollider.x[eid],
-        Position.y[eid],
-        Position.z[eid] - BoxCollider.z[eid],
-    )
-    helper.box.max.set(
-        Position.x[eid] + BoxCollider.x[eid],
-        Position.y[eid] + BoxCollider.y[eid] * 2,
-        Position.z[eid] + BoxCollider.z[eid],
-    )
+    attribute.needsUpdate = true
+}
+
+function ensureBoxCapacity(batch: BoxBatchState, count: number): void {
+    if (count <= batch.capacity) return
+    let capacity = Math.max(8, batch.capacity)
+    while (capacity < count) capacity *= 2
+    batch.lines.geometry.dispose()
+    batch.lines.geometry = new BufferGeometry()
+    batch.lines.geometry.setAttribute('position', new Float32BufferAttribute(capacity * 72, 3))
+    batch.capacity = capacity
+}
+
+function writeBox(coords: ArrayLike<number>, offset: number, eid: number): void {
+    const out = coords as unknown as number[]
+    const minX = Position.x[eid] - BoxCollider.x[eid]
+    const minY = Position.y[eid]
+    const minZ = Position.z[eid] - BoxCollider.z[eid]
+    const maxX = Position.x[eid] + BoxCollider.x[eid]
+    const maxY = Position.y[eid] + BoxCollider.y[eid] * 2
+    const maxZ = Position.z[eid] + BoxCollider.z[eid]
+
+    writeEdge(out, offset, minX, minY, minZ, maxX, minY, minZ)
+    writeEdge(out, offset + 6, maxX, minY, minZ, maxX, minY, maxZ)
+    writeEdge(out, offset + 12, maxX, minY, maxZ, minX, minY, maxZ)
+    writeEdge(out, offset + 18, minX, minY, maxZ, minX, minY, minZ)
+    writeEdge(out, offset + 24, minX, maxY, minZ, maxX, maxY, minZ)
+    writeEdge(out, offset + 30, maxX, maxY, minZ, maxX, maxY, maxZ)
+    writeEdge(out, offset + 36, maxX, maxY, maxZ, minX, maxY, maxZ)
+    writeEdge(out, offset + 42, minX, maxY, maxZ, minX, maxY, minZ)
+    writeEdge(out, offset + 48, minX, minY, minZ, minX, maxY, minZ)
+    writeEdge(out, offset + 54, maxX, minY, minZ, maxX, maxY, minZ)
+    writeEdge(out, offset + 60, maxX, minY, maxZ, maxX, maxY, maxZ)
+    writeEdge(out, offset + 66, minX, minY, maxZ, minX, maxY, maxZ)
+}
+
+function writeEdge(
+    coords: number[],
+    offset: number,
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+): void {
+    coords[offset] = ax
+    coords[offset + 1] = ay
+    coords[offset + 2] = az
+    coords[offset + 3] = bx
+    coords[offset + 4] = by
+    coords[offset + 5] = bz
 }
 
 function updatePath(
@@ -190,6 +258,7 @@ function updateLabel(
     world: Parameters<System['update']>[0],
     root: Group,
     map: Map<number, LabelState>,
+    textureCache: Map<string, Texture>,
     eid: number,
     refreshText: boolean,
 ): void {
@@ -212,12 +281,19 @@ function updateLabel(
     }
     if (state.text !== text && (refreshText || state.text.length === 0)) {
         const material = state.sprite.material as SpriteMaterial
-        material.map?.dispose()
-        material.map = makeTextTexture(text)
+        material.map = cachedTextTexture(textureCache, text)
         material.needsUpdate = true
         state.text = text
     }
     state.sprite.position.set(Position.x[eid], Position.y[eid] + BoxCollider.y[eid] * 2 + 0.45, Position.z[eid])
+}
+
+function cachedTextTexture(cache: Map<string, Texture>, text: string): Texture {
+    const existing = cache.get(text)
+    if (existing) return existing
+    const texture = makeTextTexture(text)
+    cache.set(text, texture)
+    return texture
 }
 
 function makeTextTexture(text: string): Texture {
@@ -240,15 +316,6 @@ function makeTextTexture(text: string): Texture {
     const texture = new Texture(canvas)
     texture.needsUpdate = true
     return texture
-}
-
-function prune<T extends Object3D>(root: Group, map: Map<number, T>, live: Set<number>): void {
-    for (const [eid, obj] of map) {
-        if (live.has(eid)) continue
-        root.remove(obj)
-        disposeDebugObject(obj)
-        map.delete(eid)
-    }
 }
 
 function pruneLabels(root: Group, map: Map<number, LabelState>, live: Set<number>): void {
@@ -274,27 +341,15 @@ function updateLog(panel: UiLogPanel | null, log: { message: string }[], lastLen
     panel.setLines(log.slice(-6).map((entry) => entry.message))
 }
 
+function updateMetrics(panel: UiLogPanel | null, lines: string[]): void {
+    if (!panel) return
+    panel.setLines(lines, 12)
+}
+
 function disposePath(state: PathState): void {
     state.line.geometry.dispose()
 }
 
 function disposeLabel(state: LabelState): void {
-    state.sprite.material.map?.dispose()
     state.sprite.material.dispose()
-}
-
-function disposeDebugObject(obj: Object3D): void {
-    if (obj instanceof Box3Helper) {
-        obj.geometry.dispose()
-        if (obj.material instanceof LineBasicMaterial) obj.material.dispose()
-    }
-    if (obj instanceof Line) obj.geometry.dispose()
-    if (obj instanceof Sprite) {
-        obj.material.map?.dispose()
-        obj.material.dispose()
-    }
-    if (obj instanceof Mesh) {
-        if (obj.geometry instanceof PlaneGeometry) obj.geometry.dispose()
-        if (obj.material instanceof MeshBasicMaterial) obj.material.dispose()
-    }
 }

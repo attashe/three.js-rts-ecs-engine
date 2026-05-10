@@ -14,6 +14,7 @@ import {
 } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
 import { createArrow, createStone } from './assets'
+import { mergeGroupByMaterial } from './assets/merge-group'
 
 export const MovingObjectKind = {
     Arrow: 1,
@@ -140,7 +141,7 @@ export function spawnArrowProjectile(
     MovingObject.age[eid] = 0
     if (owner !== undefined) world.projectileOwnerByEid.set(eid, owner)
 
-    const obj = createArrow()
+    const obj = mergeGroupByMaterial(createArrow())
     obj.scale.setScalar(0.9)
     world.object3DByEid.set(eid, obj)
     addComponent(world, eid, Renderable)
@@ -186,11 +187,11 @@ export function spawnFallingStone(
     MovingObject.kind[eid] = MovingObjectKind.Stone
     MovingObject.age[eid] = 0
 
-    world.object3DByEid.set(eid, createStone({
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createStone({
         scale: cfg.radius / DEFAULT_STONE.radius,
         color: cfg.color,
         chipColor: cfg.chipColor,
-    }))
+    })))
     addComponent(world, eid, Renderable)
     return eid
 }

@@ -1,12 +1,11 @@
 import { addComponents } from 'bitecs'
 import type { GameWorld } from '../engine/ecs/world'
 import {
-    BoxGeometry,
     Group,
     Mesh,
-    MeshStandardMaterial,
     Object3D,
 } from 'three'
+import { sharedBoxGeometry, sharedMaterial } from './assets/shared-primitives'
 import {
     Attackable,
     Faction,
@@ -18,11 +17,13 @@ import {
     Position,
     Renderable,
     Rotation,
+    StaticRenderable,
 } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
 import type { PlayerInventoryItem } from '../engine/ecs/world'
 import { FactionId } from '../engine/ecs/factions'
 import { createArrow, createBow, createCoinPile, createHealthPotion, createShield, createSword, createTrainingDummy } from './assets'
+import { mergeGroupByMaterial } from './assets/merge-group'
 
 export interface PropOptions {
     position: { x: number; y: number; z: number }
@@ -31,7 +32,7 @@ export interface PropOptions {
 
 export function spawnCoinPile(world: GameWorld, opts: PropOptions): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, Renderable, Pickup, PickupValue])
+    addComponents(world, eid, [Position, Rotation, Renderable, StaticRenderable, Pickup, PickupValue])
     setTransform(eid, opts)
     PickupValue.kind[eid] = 1
     PickupValue.amount[eid] = 12
@@ -39,13 +40,13 @@ export function spawnCoinPile(world: GameWorld, opts: PropOptions): number {
         label: 'Coins',
         message: 'Picked up 12 gold.',
     })
-    world.object3DByEid.set(eid, createCoinPile())
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createCoinPile()))
     return eid
 }
 
 export function spawnHealthPotion(world: GameWorld, opts: PropOptions): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, Renderable, Pickup, PickupValue])
+    addComponents(world, eid, [Position, Rotation, Renderable, StaticRenderable, Pickup, PickupValue])
     setTransform(eid, opts)
     PickupValue.kind[eid] = 2
     PickupValue.amount[eid] = 25
@@ -53,20 +54,20 @@ export function spawnHealthPotion(world: GameWorld, opts: PropOptions): number {
         label: 'Health Potion',
         message: 'Picked up a health potion.',
     })
-    world.object3DByEid.set(eid, createHealthPotion())
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createHealthPotion()))
     return eid
 }
 
 export function spawnDroppedInventoryItem(world: GameWorld, item: PlayerInventoryItem, opts: PropOptions): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, Renderable, Pickup])
+    addComponents(world, eid, [Position, Rotation, Renderable, StaticRenderable, Pickup])
     setTransform(eid, opts)
     world.pickupByEid.set(eid, {
         label: item.label,
         message: `Picked up ${item.label}.`,
         item: { ...item },
     })
-    world.object3DByEid.set(eid, createDroppedObject(item))
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createDroppedObject(item)))
     return eid
 }
 
@@ -76,6 +77,7 @@ export function spawnTrainingDummy(world: GameWorld, opts: PropOptions): number 
         Position,
         Rotation,
         Renderable,
+        StaticRenderable,
         Interactable,
         InteractionRange,
         Health,
@@ -91,7 +93,7 @@ export function spawnTrainingDummy(world: GameWorld, opts: PropOptions): number 
         label: 'Training Dummy',
         message: 'A battered practice target. Press F nearby to test your sword.',
     })
-    world.object3DByEid.set(eid, createTrainingDummy())
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createTrainingDummy()))
     return eid
 }
 
@@ -105,8 +107,7 @@ function createDroppedObject(item: PlayerInventoryItem): Object3D {
 
     const root = new Group()
     root.name = `Dropped${item.label.replace(/\s+/g, '')}`
-    const material = new MeshStandardMaterial({ color: 0x8fa6b8, roughness: 0.7 })
-    const mesh = new Mesh(new BoxGeometry(0.34, 0.18, 0.34), material)
+    const mesh = new Mesh(sharedBoxGeometry(0.34, 0.18, 0.34), sharedMaterial(0x8fa6b8, 0.7))
     mesh.name = 'DroppedItemBox'
     mesh.position.y = 0.12
     mesh.castShadow = true

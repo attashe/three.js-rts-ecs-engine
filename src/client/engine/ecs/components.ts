@@ -124,6 +124,9 @@ export const RigidBody = {
 
 // Tag components — empty objects, used purely as identity in queries.
 export const Renderable = {}
+/** Renderable whose ECS transform is fixed after spawn. RenderSync applies its
+ *  transform once on add/init and skips it during per-frame transform mirroring. */
+export const StaticRenderable = {}
 export const MoveAlongPath = {}
 export const CameraTarget = {}
 export const PlayerControlled = {}

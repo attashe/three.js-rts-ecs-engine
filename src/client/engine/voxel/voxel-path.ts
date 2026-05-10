@@ -93,14 +93,16 @@ export function findPath(
         y: number
         g: number
         f: number
+        order: number
         parent: Node | null
     }
 
-    const open: Node[] = []  // simple array; we extract-min linearly. OK for small searches.
+    const open = new BinaryMinHeap<Node>((a, b) => a.f === b.f ? a.order - b.order : a.f - b.f)
     const gScore = new Map<string, number>()
+    let pushOrder = 0
     const startNode: Node = {
         x: start.x, z: start.z, y: startStand,
-        g: 0, f: heuristic(start.x, start.z), parent: null,
+        g: 0, f: heuristic(start.x, start.z), order: pushOrder++, parent: null,
     }
     open.push(startNode)
     gScore.set(key(start.x, startStand, start.z), 0)
@@ -111,12 +113,8 @@ export function findPath(
     while (open.length > 0) {
         if (visited++ > maxNodes) return null
 
-        // Extract node with lowest f.
-        let bestIdx = 0
-        for (let i = 1; i < open.length; i++) {
-            if (open[i]!.f < open[bestIdx]!.f) bestIdx = i
-        }
-        const cur = open.splice(bestIdx, 1)[0]!
+        const cur = open.pop()!
+        if (gScore.get(key(cur.x, cur.y, cur.z)) !== cur.g) continue
 
         if (cur.x === goal.x && cur.z === goal.z && cur.y === goalStand) {
             // Reconstruct path.
@@ -145,9 +143,64 @@ export function findPath(
                 x: nx, z: nz, y: ny,
                 g: tentative,
                 f: tentative + heuristic(nx, nz),
+                order: pushOrder++,
                 parent: cur,
             })
         }
     }
     return null
+}
+
+class BinaryMinHeap<T> {
+    private readonly items: T[] = []
+
+    constructor(private readonly compare: (a: T, b: T) => number) {}
+
+    get length(): number {
+        return this.items.length
+    }
+
+    push(item: T): void {
+        this.items.push(item)
+        this.bubbleUp(this.items.length - 1)
+    }
+
+    pop(): T | undefined {
+        if (this.items.length === 0) return undefined
+        const first = this.items[0]!
+        const last = this.items.pop()!
+        if (this.items.length > 0) {
+            this.items[0] = last
+            this.sinkDown(0)
+        }
+        return first
+    }
+
+    private bubbleUp(index: number): void {
+        while (index > 0) {
+            const parent = (index - 1) >> 1
+            if (this.compare(this.items[index]!, this.items[parent]!) >= 0) return
+            this.swap(index, parent)
+            index = parent
+        }
+    }
+
+    private sinkDown(index: number): void {
+        for (;;) {
+            const left = index * 2 + 1
+            const right = left + 1
+            let best = index
+            if (left < this.items.length && this.compare(this.items[left]!, this.items[best]!) < 0) best = left
+            if (right < this.items.length && this.compare(this.items[right]!, this.items[best]!) < 0) best = right
+            if (best === index) return
+            this.swap(index, best)
+            index = best
+        }
+    }
+
+    private swap(a: number, b: number): void {
+        const tmp = this.items[a]!
+        this.items[a] = this.items[b]!
+        this.items[b] = tmp
+    }
 }

@@ -30,23 +30,79 @@ export function createDynamicCollisionSystem(chunks: ChunkManager, opts: Dynamic
         fixed: true,
         order: FixedOrder.dynamicCollision,
         update(world) {
-            const allColliders = query(world, [Position, BoxCollider])
-            const eids: number[] = []
-            for (let i = 0; i < allColliders.length; i++) {
-                const eid = allColliders[i]
-                if (isSolidCharacter(world, eid)) eids.push(eid)
-            }
+            const eids = collectSolidCharacters(world)
+            const cellSize = collisionCellSize(eids, padding)
+            let pairCount = 0
             for (let pass = 0; pass < passes; pass++) {
-                for (let i = 0; i < eids.length; i++) {
-                    const a = eids[i]
-                    for (let j = i + 1; j < eids.length; j++) {
-                        const b = eids[j]
-                        separatePair(world, chunks, a, b, padding)
-                    }
+                const pairs = collectCandidatePairs(eids, cellSize)
+                pairCount += pairs.length
+                for (let i = 0; i < pairs.length; i++) {
+                    const pair = pairs[i]!
+                    separatePair(world, chunks, pair.a, pair.b, padding)
                 }
             }
+            world.metrics.setGauge('dynamicCollision.actors', eids.length)
+            world.metrics.setGauge('dynamicCollision.pairs', pairCount)
         },
     }
+}
+
+interface CandidatePair {
+    a: number
+    b: number
+}
+
+function collectSolidCharacters(world: Parameters<System['update']>[0]): number[] {
+    const allColliders = query(world, [Position, BoxCollider])
+    const eids: number[] = []
+    for (let i = 0; i < allColliders.length; i++) {
+        const eid = allColliders[i]
+        if (isSolidCharacter(world, eid)) eids.push(eid)
+    }
+    return eids
+}
+
+function collisionCellSize(eids: number[], padding: number): number {
+    let maxRadius = 0
+    for (let i = 0; i < eids.length; i++) {
+        const eid = eids[i]!
+        maxRadius = Math.max(maxRadius, BoxCollider.x[eid], BoxCollider.z[eid])
+    }
+    return Math.max(1, maxRadius * 2 + padding)
+}
+
+function collectCandidatePairs(eids: number[], cellSize: number): CandidatePair[] {
+    const buckets = new Map<string, number[]>()
+    for (let i = 0; i < eids.length; i++) {
+        const eid = eids[i]!
+        const key = pairCellKey(Position.x[eid], Position.z[eid], cellSize)
+        const bucket = buckets.get(key)
+        if (bucket) bucket.push(eid)
+        else buckets.set(key, [eid])
+    }
+
+    const pairs: CandidatePair[] = []
+    for (let i = 0; i < eids.length; i++) {
+        const a = eids[i]!
+        const cx = Math.floor(Position.x[a] / cellSize)
+        const cz = Math.floor(Position.z[a] / cellSize)
+        for (let oz = -1; oz <= 1; oz++) {
+            for (let ox = -1; ox <= 1; ox++) {
+                const bucket = buckets.get(`${cx + ox},${cz + oz}`)
+                if (!bucket) continue
+                for (let j = 0; j < bucket.length; j++) {
+                    const b = bucket[j]!
+                    if (b <= a) continue
+                    pairs.push({ a, b })
+                }
+            }
+        }
+    }
+    return pairs
+}
+
+function pairCellKey(x: number, z: number, cellSize: number): string {
+    return `${Math.floor(x / cellSize)},${Math.floor(z / cellSize)}`
 }
 
 function isSolidCharacter(world: Parameters<System['update']>[0], eid: number): boolean {

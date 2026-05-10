@@ -1,4 +1,4 @@
-import { hasComponent, query, removeComponent } from 'bitecs'
+import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import {
     BoxCollider,
     Grounded,
@@ -7,6 +7,7 @@ import {
     RigidBody,
     Rotation,
     Sleeping,
+    StaticRenderable,
     Velocity,
 } from '../components'
 import type { System } from './system'
@@ -130,6 +131,7 @@ function convertArrowToPickup(
         world.obstacles.remove(eid)
     }
     turnArrowIntoPickup(world, eid)
+    addComponent(world, eid, StaticRenderable)
     removeComponent(world, eid, MovingObject)
 }
 

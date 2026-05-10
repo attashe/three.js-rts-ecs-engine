@@ -17,6 +17,7 @@ import { createDynamicCollisionSystem } from './engine/ecs/systems/dynamic-colli
 import { createRigidBodyPairSystem } from './engine/ecs/systems/rigidbody-pair-system'
 import { createImpactSystem } from './engine/ecs/systems/impact-system'
 import { createDebugOverlaySystem } from './engine/ecs/systems/debug-overlay-system'
+import { createRenderMetricsSystem } from './engine/ecs/systems/render-metrics-system'
 import { createVoxelMechanismSystem } from './engine/ecs/systems/voxel-mechanism-system'
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
@@ -155,6 +156,7 @@ async function main(): Promise<void> {
 
     // Wrap chunk-meshing as a render-step system so it integrates with the engine loop.
     const chunkRenderSystem: System = {
+        name: 'chunkRender',
         order: RenderOrder.worldRender,
         update: () => chunkRenderer.update(),
         dispose: () => chunkRenderer.dispose(),
@@ -162,51 +164,52 @@ async function main(): Promise<void> {
 
     // Systems declare their own phase order; call order here is no longer the scheduling contract.
     engine
-        .addSystem(createVoxelMechanismSystem(chunks, actions))
-        .addSystem(createPlayerLoadoutSystem(actions))
-        .addSystem(createShieldSystem(actions))
-        .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso))
+        .addSystem(createVoxelMechanismSystem(chunks, actions), 'voxelMechanism')
+        .addSystem(createPlayerLoadoutSystem(actions), 'playerLoadout')
+        .addSystem(createShieldSystem(actions), 'shield')
+        .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso), 'playerControl')
         .addSystem(createProjectileLaunchSystem(actions, {
             actionId: GameAction.BowShot,
             canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'bow',
-        }))
-        .addSystem(createArrowHitSystem(chunks, { notify }))
+        }), 'projectileLaunch')
+        .addSystem(createArrowHitSystem(chunks, { notify }), 'arrowHit')
         .addSystem(createAirPushSystem(actions, {
             actionId: GameAction.AirPush,
             canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'airPush',
             notify,
-        }))
+        }), 'airPush')
         .addSystem(createHighJumpSystem(actions, {
             actionId: GameAction.HighJump,
             canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'highJump',
             notify,
-        }))
-        .addSystem(createInteractionSystem(actions, { notify }))
+        }), 'highJump')
+        .addSystem(createInteractionSystem(actions, { notify }), 'interaction')
         .addSystem(createMeleeCombatSystem(actions, {
             actionId: GameAction.AttackPrimary,
             canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'sword',
             notify,
-        }))
-        .addSystem(createPickupSystem({ notify }))
-        .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 14 }))
-        .addSystem(createPerceptionSystem())
-        .addSystem(createBehaviourSystem(chunks))
-        .addSystem(MoveAlongPathSystem)
-        .addSystem(createPhysicsSystem(chunks))
-        .addSystem(createRigidBodyPairSystem(chunks))
-        .addSystem(createImpactSystem())
-        .addSystem(createMovingObjectSystem())
-        .addSystem(createDynamicCollisionSystem(chunks))
-        .addSystem(createRenderSyncSystem(renderer.scene))
-        .addSystem(chunkRenderSystem)
-        .addSystem(createGameHudSystem(hud, actions))
-        .addSystem(createDebugOverlaySystem(renderer.scene, engine.input))
+        }), 'meleeCombat')
+        .addSystem(createPickupSystem({ notify }), 'pickup')
+        .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 14 }), 'stoneSpawner')
+        .addSystem(createPerceptionSystem(), 'perception')
+        .addSystem(createBehaviourSystem(chunks), 'behaviour')
+        .addSystem(MoveAlongPathSystem, 'moveAlongPath')
+        .addSystem(createPhysicsSystem(chunks), 'physics')
+        .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')
+        .addSystem(createImpactSystem(), 'impact')
+        .addSystem(createMovingObjectSystem(), 'movingObjects')
+        .addSystem(createDynamicCollisionSystem(chunks), 'dynamicCollision')
+        .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
+        .addSystem(chunkRenderSystem, 'chunkRender')
+        .addSystem(createGameHudSystem(hud, actions), 'gameHud')
+        .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
+        .addSystem(createDebugOverlaySystem(renderer.scene, engine.input), 'debugOverlay')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,
             edgePan: false,
             wheelZoom: true,
-        }))
-        .addSystem(createCameraFollowSystem(renderer.iso, { smoothing: 8 }))
+        }), 'cameraControl')
+        .addSystem(createCameraFollowSystem(renderer.iso, { smoothing: 8 }), 'cameraFollow')
 
     try {
         await engine.start()

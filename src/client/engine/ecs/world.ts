@@ -2,6 +2,7 @@ import { createWorld, type World } from 'bitecs'
 import type { Object3D, Vector3 } from 'three'
 import { ObstacleRegistry } from './obstacle-registry'
 import type { ActorBlackboard } from './behaviour'
+import { EngineMetrics } from '../metrics'
 
 export interface VoxelCoord {
     x: number
@@ -124,6 +125,7 @@ export interface ImpactEvent {
 // reference type (Object3D, path arrays, palette indices for level metadata)
 // lives here keyed by entity id.
 export interface GameContext {
+    metrics: EngineMetrics
     object3DByEid: Map<number, Object3D>
     pathByEid: Map<number, PathState>
     behaviourByEid: Map<number, ActorBlackboard>
@@ -146,6 +148,7 @@ export type GameWorld = World<GameContext>
 
 export function createGameWorld(): GameWorld {
     return createWorld<GameContext>({
+        metrics: new EngineMetrics(),
         object3DByEid: new Map<number, Object3D>(),
         pathByEid: new Map<number, PathState>(),
         behaviourByEid: new Map<number, ActorBlackboard>(),

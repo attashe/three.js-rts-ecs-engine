@@ -515,7 +515,12 @@ export function decideTransition(
  * Visibility is purely radius-based for now — line of sight against voxels is
  * a later upgrade per §"Perception Model".
  */
-export function findNearestEnemy(world: GameWorld, self: number, sightRadius: number): number | null {
+export function findNearestEnemy(
+    world: GameWorld,
+    self: number,
+    sightRadius: number,
+    candidates: Iterable<number> = query(world, [Position, Faction, Health]),
+): number | null {
     if (sightRadius <= 0) return null
     if (!hasComponent(world, self, Faction)) return null
 
@@ -524,11 +529,9 @@ export function findNearestEnemy(world: GameWorld, self: number, sightRadius: nu
     const sz = Position.z[self]
     const sightSq = sightRadius * sightRadius
 
-    const candidates = query(world, [Position, Faction, Health])
     let bestEid = -1
     let bestDistSq = Infinity
-    for (let i = 0; i < candidates.length; i++) {
-        const eid = candidates[i]
+    for (const eid of candidates) {
         if (eid === self) continue
         if (Health.current[eid] <= 0) continue
         if (!areEntitiesEnemies(world, self, eid)) continue

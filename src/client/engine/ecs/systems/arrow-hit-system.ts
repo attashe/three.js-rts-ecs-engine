@@ -67,6 +67,9 @@ export function createArrowHitSystem(
 
             const targets = query(world, [Position, BoxCollider, Health])
             if (targets.length === 0) return
+            const targetIndex = createTargetIndex(world, targets, targetPadding)
+            const candidates: number[] = []
+            let candidateChecks = 0
 
             for (let i = 0; i < arrows.length; i++) {
                 const arrow = arrows[i]
@@ -90,8 +93,11 @@ export function createArrowHitSystem(
                 let bestT = Infinity
                 let bestTarget = -1
                 const owner = world.projectileOwnerByEid.get(arrow)
-                for (let j = 0; j < targets.length; j++) {
-                    const t = targets[j]
+                candidates.length = 0
+                targetIndex.querySegmentInto(sx, sz, sx + dx, sz + dz, candidates)
+                candidateChecks += candidates.length
+                for (let j = 0; j < candidates.length; j++) {
+                    const t = candidates[j]!
                     if (t === arrow) continue
                     if (t === owner) continue
                     if (Health.current[t] <= 0) continue
@@ -138,8 +144,64 @@ export function createArrowHitSystem(
                 const damage = baseDamage + speedBonus * speedFactor
                 applyArrowHit(world, arrow, bestTarget, damage, opts.notify)
             }
+            world.metrics.setGauge('arrowHit.arrows', arrows.length)
+            world.metrics.setGauge('arrowHit.candidates', candidateChecks)
         },
     }
+}
+
+const TARGET_CELL_SIZE = 4
+
+class HitTargetIndex {
+    private readonly buckets = new Map<string, number[]>()
+
+    insert(eid: number, padding: number): void {
+        const halfX = BoxCollider.x[eid] + padding
+        const halfZ = BoxCollider.z[eid] + padding
+        const minX = Math.floor((Position.x[eid] - halfX) / TARGET_CELL_SIZE)
+        const maxX = Math.floor((Position.x[eid] + halfX) / TARGET_CELL_SIZE)
+        const minZ = Math.floor((Position.z[eid] - halfZ) / TARGET_CELL_SIZE)
+        const maxZ = Math.floor((Position.z[eid] + halfZ) / TARGET_CELL_SIZE)
+        for (let z = minZ; z <= maxZ; z++) {
+            for (let x = minX; x <= maxX; x++) {
+                const key = `${x},${z}`
+                const bucket = this.buckets.get(key)
+                if (bucket) bucket.push(eid)
+                else this.buckets.set(key, [eid])
+            }
+        }
+    }
+
+    querySegmentInto(ax: number, az: number, bx: number, bz: number, out: number[]): void {
+        const minX = Math.floor(Math.min(ax, bx) / TARGET_CELL_SIZE)
+        const maxX = Math.floor(Math.max(ax, bx) / TARGET_CELL_SIZE)
+        const minZ = Math.floor(Math.min(az, bz) / TARGET_CELL_SIZE)
+        const maxZ = Math.floor(Math.max(az, bz) / TARGET_CELL_SIZE)
+        const seen = new Set<number>()
+        for (let z = minZ; z <= maxZ; z++) {
+            for (let x = minX; x <= maxX; x++) {
+                const bucket = this.buckets.get(`${x},${z}`)
+                if (!bucket) continue
+                for (let i = 0; i < bucket.length; i++) {
+                    const eid = bucket[i]!
+                    if (seen.has(eid)) continue
+                    seen.add(eid)
+                    out.push(eid)
+                }
+            }
+        }
+    }
+}
+
+function createTargetIndex(world: GameWorld, targets: ArrayLike<number>, padding: number): HitTargetIndex {
+    const index = new HitTargetIndex()
+    for (let i = 0; i < targets.length; i++) {
+        const eid = targets[i]!
+        if (Health.current[eid] <= 0) continue
+        if (hasComponent(world, eid, MovingObject)) continue
+        index.insert(eid, padding)
+    }
+    return index
 }
 
 function isBlockedByShield(

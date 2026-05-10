@@ -5,6 +5,7 @@ import type { GameWorld } from '../world'
 // Subscribe to entity lifecycle (gained / lost a component set) via bitecs
 // `observe(world, onAdd(C), cb)` directly inside `init()` if you need it.
 export interface System {
+    readonly name?: string
     readonly fixed?: boolean
     /** Lower orders run first inside the fixed/render bucket. Default 0. */
     readonly order?: number

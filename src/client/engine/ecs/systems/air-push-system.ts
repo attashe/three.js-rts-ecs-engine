@@ -9,6 +9,7 @@ import {
     RigidBody,
     Rotation,
     Sleeping,
+    StaticRenderable,
     Velocity,
 } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
@@ -170,6 +171,7 @@ function interruptPathFollower(world: GameWorld, eid: number, recoveryDelay: num
 
 function wakeSleepingBody(world: GameWorld, eid: number): void {
     removeComponent(world, eid, Sleeping)
+    if (hasComponent(world, eid, StaticRenderable)) removeComponent(world, eid, StaticRenderable)
     world.obstacles.remove(eid)
     if (hasComponent(world, eid, RigidBody)) {
         RigidBody.sleepTimer[eid] = 0

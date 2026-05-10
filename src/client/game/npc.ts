@@ -20,6 +20,7 @@ import { createEntity } from '../engine/ecs/entity'
 import { FactionId } from '../engine/ecs/factions'
 import { BehaviourProfileId, assignBehaviourProfile } from '../engine/ecs/behaviour'
 import { createBanditEnemy, createBow, createQuiver, createRabbit, createSampleNpc, createTownGuardNpc } from './assets'
+import { mergeGroupByMaterial } from './assets/merge-group'
 
 export interface NpcOptions {
     position: { x: number; y: number; z: number }
@@ -49,7 +50,7 @@ export function spawnSampleNpc(world: GameWorld, opts: NpcOptions): number {
         message: 'Roads are quiet today. Bring coins when trade is wired in.',
     })
 
-    world.object3DByEid.set(eid, createForwardFacingNpc())
+    world.object3DByEid.set(eid, createMergedForwardFacingNpc())
     assignBehaviourProfile(world, eid, opts.behaviourProfile ?? BehaviourProfileId.NeutralMerchant, opts.position)
     return eid
 }
@@ -88,7 +89,7 @@ export function spawnWanderingNpc(world: GameWorld, opts: NpcOptions & { radius?
         label: 'Wandering Scout',
         message: 'I am testing the paths around these blocked wards.',
     })
-    world.object3DByEid.set(eid, createForwardFacingNpc({
+    world.object3DByEid.set(eid, createMergedForwardFacingNpc({
         tunicColor: 0x486a88,
         apronColor: 0xc58b45,
         hatColor: 0x34495c,
@@ -135,7 +136,7 @@ export function spawnVillagerNpc(world: GameWorld, opts: VillagerNpcOptions): nu
         label: opts.label ?? 'Villager',
         message: 'A villager going about daily work.',
     })
-    world.object3DByEid.set(eid, createForwardFacingNpc({
+    world.object3DByEid.set(eid, createMergedForwardFacingNpc({
         tunicColor: 0x6f7f4a,
         apronColor: 0xc8a86a,
         hatColor: 0x6b4a2e,
@@ -186,7 +187,7 @@ export function spawnHostileMeleeNpc(world: GameWorld, opts: HostileNpcOptions):
         label: opts.label ?? 'Hostile Marauder',
         message: 'Hostile — strikes on sight.',
     })
-    world.object3DByEid.set(eid, createForwardFacingActor(createBanditEnemy(combatPalette(Faction.id[eid]))))
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createForwardFacingActor(createBanditEnemy(combatPalette(Faction.id[eid])))))
     assignBehaviourProfile(world, eid, opts.behaviourProfile ?? BehaviourProfileId.HostileMeleeGrunt, opts.position)
     return eid
 }
@@ -222,7 +223,7 @@ export function spawnHostileArcherNpc(world: GameWorld, opts: HostileNpcOptions)
         label: opts.label ?? 'Bandit Archer',
         message: 'Hostile archer — keeps distance and fires arrows.',
     })
-    world.object3DByEid.set(eid, createForwardFacingArcher(Faction.id[eid]))
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createForwardFacingArcher(Faction.id[eid])))
     assignBehaviourProfile(world, eid, opts.behaviourProfile ?? BehaviourProfileId.HostileArcher, opts.position)
     return eid
 }
@@ -365,13 +366,17 @@ export function spawnRabbitNpc(world: GameWorld, opts: RabbitNpcOptions): number
         label: opts.label ?? 'Rabbit',
         message: 'A skittish rabbit.',
     })
-    world.object3DByEid.set(eid, createForwardFacingActor(createRabbit()))
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createForwardFacingActor(createRabbit())))
     assignBehaviourProfile(world, eid, opts.behaviourProfile ?? BehaviourProfileId.Rabbit, opts.position)
     return eid
 }
 
 function createForwardFacingNpc(opts?: Parameters<typeof createSampleNpc>[0]): Group {
     return createForwardFacingActor(createSampleNpc(opts))
+}
+
+function createMergedForwardFacingNpc(opts?: Parameters<typeof createSampleNpc>[0]): Group {
+    return mergeGroupByMaterial(createForwardFacingNpc(opts))
 }
 
 function createForwardFacingArcher(faction: FactionId): Group {

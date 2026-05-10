@@ -49,6 +49,54 @@ test('PhysicsSystem: pushed stone with no actual translation stops rolling and s
     assert.equal(hasComponent(world, pushed, Sleeping), true)
 })
 
+test('PhysicsSystem: embedded rolling stone recovers out of terrain surface', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = -1; x <= 1; x++) {
+        for (let z = -1; z <= 1; z++) {
+            chunks.setVoxel(x, 0, z, BLOCK.stone)
+        }
+    }
+
+    const world = createGameWorld()
+    const stone = addRestingStone(world, 0.5, 0.72, 0.5)
+    RigidBody.rollOnGround[stone] = 1
+    Velocity.x[stone] = 0.25
+    Velocity.z[stone] = 0.15
+
+    const physics = createPhysicsSystem(chunks)
+    physics.update(world, 1 / 60)
+
+    assert.ok(Position.y[stone] >= 1.48)
+    assert.equal(Velocity.x[stone], 0)
+    assert.equal(Velocity.y[stone], 0)
+    assert.equal(Velocity.z[stone], 0)
+})
+
+test('PhysicsSystem: embedded rolling stone recovers out of voxel wall', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = -2; x <= 2; x++) {
+        for (let z = -2; z <= 2; z++) {
+            chunks.setVoxel(x, 0, z, BLOCK.stone)
+        }
+    }
+    for (let y = 1; y <= 3; y++) {
+        chunks.setVoxel(0, y, 0, BLOCK.stone)
+    }
+
+    const world = createGameWorld()
+    const stone = addRestingStone(world, 0.5, 1.48, 0.5)
+    RigidBody.rollOnGround[stone] = 1
+    Velocity.x[stone] = 0.2
+
+    const physics = createPhysicsSystem(chunks)
+    physics.update(world, 1 / 60)
+
+    assert.ok(Position.x[stone] > 1)
+    assert.equal(Velocity.x[stone], 0)
+    assert.equal(Velocity.y[stone], 0)
+    assert.equal(Velocity.z[stone], 0)
+})
+
 function addRestingStone(world: GameWorld, x: number, y: number, z: number): number {
     const eid = addEntity(world)
     addComponent(world, eid, Position)
