@@ -30,6 +30,49 @@ export interface InteractionState {
 export interface PickupState {
     label: string
     message: string
+    item?: PlayerInventoryItem
+}
+
+export interface PlayerInventory {
+    gold: number
+    potions: number
+    arrows: number
+}
+
+export type PlayerLoadoutSlotKind = 'sword' | 'bow' | 'airPush' | 'highJump' | 'empty'
+export type PlayerItemCategory = 'weapon' | 'armor' | 'spell' | 'consumable' | 'currency' | 'ammo'
+export type PlayerEquipmentSlot = 'weapon' | 'head' | 'chest' | 'hands' | 'boots' | 'shield' | 'charm'
+
+export interface PlayerInventoryItem {
+    id: string
+    category: PlayerItemCategory
+    label: string
+    icon: string
+    count?: number
+    equipSlot?: PlayerEquipmentSlot
+    loadoutKind?: PlayerLoadoutSlotKind
+}
+
+export interface PlayerLoadoutSlot {
+    kind: PlayerLoadoutSlotKind
+    label: string
+    icon: string
+    item?: PlayerInventoryItem
+}
+
+export interface PlayerArmorySlot {
+    slot: PlayerEquipmentSlot
+    label: string
+    icon: string
+    item: PlayerInventoryItem | null
+}
+
+export interface PlayerLoadout {
+    activeSlot: number
+    weaponSlots: PlayerLoadoutSlot[]
+    armorySlots: PlayerArmorySlot[]
+    backpackSlots: Array<PlayerInventoryItem | null>
+    spellSlots: PlayerInventoryItem[]
 }
 
 export interface DoorBlock {
@@ -88,6 +131,8 @@ export interface GameContext {
     projectileOwnerByEid: Map<number, number>
     interactionByEid: Map<number, InteractionState>
     pickupByEid: Map<number, PickupState>
+    playerInventory: PlayerInventory
+    playerLoadout: PlayerLoadout
     mechanismByEid: Map<number, VoxelMechanism>
     voxelMechanisms: VoxelMechanism[]
     log: GameLogEntry[]
@@ -108,12 +153,98 @@ export function createGameWorld(): GameWorld {
         projectileOwnerByEid: new Map<number, number>(),
         interactionByEid: new Map<number, InteractionState>(),
         pickupByEid: new Map<number, PickupState>(),
+        playerInventory: { gold: 0, potions: 0, arrows: 0 },
+        playerLoadout: createDefaultPlayerLoadout(),
         mechanismByEid: new Map<number, VoxelMechanism>(),
         voxelMechanisms: [],
         log: [],
         impactEvents: [],
         obstacles: new ObstacleRegistry(),
     })
+}
+
+export function createDefaultPlayerLoadout(): PlayerLoadout {
+    const sword = item('training-sword', 'weapon', 'Sword', 'SW', { equipSlot: 'weapon', loadoutKind: 'sword' })
+    const bow = item('hunter-bow', 'weapon', 'Bow', 'BW', { equipSlot: 'weapon', loadoutKind: 'bow' })
+    const airPush = item('air-push', 'spell', 'Air Push', 'AP', { equipSlot: 'weapon', loadoutKind: 'airPush' })
+    const highJump = item('high-jump', 'spell', 'High Jump', 'HJ', { equipSlot: 'weapon', loadoutKind: 'highJump' })
+    const chest = item('tunic', 'armor', 'Tunic', 'CH', { equipSlot: 'chest' })
+    const gloves = item('gloves', 'armor', 'Gloves', 'HN', { equipSlot: 'hands' })
+    const boots = item('boots', 'armor', 'Boots', 'BT', { equipSlot: 'boots' })
+    const shield = item('round-shield', 'armor', 'Round shield', 'SH', { equipSlot: 'shield' })
+    const helm = item('iron-helm', 'armor', 'Iron helm', 'HD', { equipSlot: 'head' })
+    const charm = item('wind-charm', 'armor', 'Wind charm', 'CR', { equipSlot: 'charm' })
+
+    return {
+        activeSlot: 0,
+        weaponSlots: [
+            loadoutSlot(sword),
+            loadoutSlot(bow),
+            loadoutSlot(airPush),
+            loadoutSlot(highJump),
+        ],
+        armorySlots: [
+            { slot: 'head', label: 'Head', icon: 'HD', item: null },
+            { slot: 'chest', label: 'Chest', icon: 'CH', item: chest },
+            { slot: 'hands', label: 'Hands', icon: 'HN', item: gloves },
+            { slot: 'boots', label: 'Boots', icon: 'BT', item: boots },
+            { slot: 'shield', label: 'Shield', icon: 'SH', item: shield },
+            { slot: 'charm', label: 'Charm', icon: 'CR', item: null },
+        ],
+        backpackSlots: padBackpack([
+            item('health-potion', 'consumable', 'Potion', '+', { count: 2 }),
+            item('arrows', 'ammo', 'Arrows', 'AR', { count: 12 }),
+            helm,
+            charm,
+            item('spare-sword', 'weapon', 'Spare sword', 'SW', { equipSlot: 'weapon', loadoutKind: 'sword' }),
+            item('practice-bow', 'weapon', 'Practice bow', 'BW', { equipSlot: 'weapon', loadoutKind: 'bow' }),
+        ]),
+        spellSlots: [airPush, highJump],
+    }
+}
+
+export function activePlayerLoadoutKind(world: GameWorld): PlayerLoadoutSlotKind {
+    return world.playerLoadout.weaponSlots[world.playerLoadout.activeSlot]?.kind ?? 'empty'
+}
+
+export function addItemToBackpack(world: GameWorld, itemToAdd: PlayerInventoryItem): boolean {
+    const slots = world.playerLoadout.backpackSlots
+    const stack = itemToAdd.count !== undefined
+        ? slots.find((slot) => slot?.id === itemToAdd.id)
+        : undefined
+    if (stack) {
+        stack.count = (stack.count ?? 1) + (itemToAdd.count ?? 1)
+        return true
+    }
+
+    const index = slots.findIndex((slot) => slot === null)
+    if (index < 0) return false
+    slots[index] = { ...itemToAdd }
+    return true
+}
+
+export function loadoutSlot(itemToEquip: PlayerInventoryItem | null): PlayerLoadoutSlot {
+    if (!itemToEquip?.loadoutKind) return { kind: 'empty', label: 'Empty', icon: '.' }
+    return {
+        kind: itemToEquip.loadoutKind,
+        label: itemToEquip.label,
+        icon: itemToEquip.icon,
+        item: { ...itemToEquip },
+    }
+}
+
+export function item(
+    id: string,
+    category: PlayerItemCategory,
+    label: string,
+    icon: string,
+    opts: Partial<Omit<PlayerInventoryItem, 'id' | 'category' | 'label' | 'icon'>> = {},
+): PlayerInventoryItem {
+    return { id, category, label, icon, ...opts }
+}
+
+function padBackpack(items: PlayerInventoryItem[], size = 24): Array<PlayerInventoryItem | null> {
+    return [...items, ...Array.from({ length: Math.max(0, size - items.length) }, () => null)]
 }
 
 export function pushGameLog(world: GameWorld, entry: Omit<GameLogEntry, 'time'>): void {

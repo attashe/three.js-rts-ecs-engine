@@ -20,6 +20,7 @@ import { createDebugOverlaySystem } from './engine/ecs/systems/debug-overlay-sys
 import { createVoxelMechanismSystem } from './engine/ecs/systems/voxel-mechanism-system'
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
+import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { MoveAlongPathSystem } from './engine/ecs/systems/move-along-path-system'
@@ -30,6 +31,8 @@ import { createPerceptionSystem } from './engine/ecs/systems/perception-system'
 import { createBehaviourSystem } from './engine/ecs/systems/behaviour-system'
 import { generateLevel, type LevelId } from './game/level'
 import { spawnPlayer } from './game/player'
+import { createGameHudSystem } from './game/hud-system'
+import { createPlayerLoadoutSystem } from './game/player-loadout-system'
 import {
     spawnGuardNpc,
     spawnHostileArcherNpc,
@@ -42,7 +45,8 @@ import {
 } from './game/npc'
 import { spawnCoinPile, spawnHealthPotion, spawnTrainingDummy } from './game/props'
 import { registerDoorMechanism, registerPistonMechanism } from './game/mechanisms'
-import { GAME_COMMAND_HINT_ACTIONS, createGameActionMap } from './game/actions'
+import { GAME_COMMAND_HINT_ACTIONS, GameAction, createGameActionMap } from './game/actions'
+import { activePlayerLoadoutKind } from './engine/ecs/world'
 
 async function main(): Promise<void> {
     let engine: Engine
@@ -159,13 +163,30 @@ async function main(): Promise<void> {
     // Systems declare their own phase order; call order here is no longer the scheduling contract.
     engine
         .addSystem(createVoxelMechanismSystem(chunks, actions))
+        .addSystem(createPlayerLoadoutSystem(actions))
         .addSystem(createShieldSystem(actions))
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso))
-        .addSystem(createProjectileLaunchSystem(actions))
+        .addSystem(createProjectileLaunchSystem(actions, {
+            actionId: GameAction.BowShot,
+            canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'bow',
+        }))
         .addSystem(createArrowHitSystem(chunks, { notify }))
-        .addSystem(createAirPushSystem(actions, { notify }))
+        .addSystem(createAirPushSystem(actions, {
+            actionId: GameAction.AirPush,
+            canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'airPush',
+            notify,
+        }))
+        .addSystem(createHighJumpSystem(actions, {
+            actionId: GameAction.HighJump,
+            canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'highJump',
+            notify,
+        }))
         .addSystem(createInteractionSystem(actions, { notify }))
-        .addSystem(createMeleeCombatSystem(actions, { notify }))
+        .addSystem(createMeleeCombatSystem(actions, {
+            actionId: GameAction.AttackPrimary,
+            canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'sword',
+            notify,
+        }))
         .addSystem(createPickupSystem({ notify }))
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 14 }))
         .addSystem(createPerceptionSystem())
@@ -178,6 +199,7 @@ async function main(): Promise<void> {
         .addSystem(createDynamicCollisionSystem(chunks))
         .addSystem(createRenderSyncSystem(renderer.scene))
         .addSystem(chunkRenderSystem)
+        .addSystem(createGameHudSystem(hud, actions))
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input))
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,

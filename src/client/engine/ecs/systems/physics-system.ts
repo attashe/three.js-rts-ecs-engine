@@ -5,7 +5,9 @@ import {
     BoxCollider,
     Grounded,
     HorizontalBlocked,
+    Health,
     MovementState,
+    MovingObject,
     Position,
     RigidBody,
     Rotation,
@@ -21,6 +23,10 @@ const DEFAULT_GRAVITY_SCALE = 1
 const DEFAULT_MASS = 1
 const DEFAULT_SLEEP_THRESHOLD_SQ = 0.04
 const DEFAULT_SLEEP_DELAY = 0.6
+const DEAD_BODY_GROUND_DAMPING = 4.5
+const DEAD_BODY_STOP_SPEED_SQ = 0.0025
+const STALLED_BODY_MOVE_RATIO = 0.04
+const STALLED_BODY_MIN_INTENT_SQ = 0.000001
 /** Below this inbound speed (m/s) we don't bother emitting an impact event,
  *  even if restitution is non-zero. Avoids per-frame noise from gentle landings. */
 const IMPACT_MIN_SPEED = 3.0
@@ -83,6 +89,8 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                 pos.x = Position.x[eid]
                 pos.y = Position.y[eid]
                 pos.z = Position.z[eid]
+                const startX = pos.x
+                const startZ = pos.z
                 half.x = BoxCollider.x[eid]
                 half.y = BoxCollider.y[eid]
                 half.z = BoxCollider.z[eid]
@@ -135,6 +143,14 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                 const had = hasComponent(world, eid, Grounded)
                 if (grounded && !had) addComponent(world, eid, Grounded)
                 else if (!grounded && had) removeComponent(world, eid, Grounded)
+                if (
+                    hasRb &&
+                    grounded &&
+                    Velocity.y[eid] < 0 &&
+                    isOverlappingCompatibleSleepingBody(world, eid, half, anchor)
+                ) {
+                    Velocity.y[eid] = 0
+                }
                 if (!grounded && Math.abs(Velocity.y[eid]) > 0.1) {
                     MovementState.value[eid] = MovementStateId.Airborne
                 } else if (horizontalBlocked) {
@@ -147,6 +163,19 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                     const damp = Math.exp(-RigidBody.linearDamping[eid] * dt)
                     Velocity.x[eid] *= damp
                     Velocity.z[eid] *= damp
+                    if (RigidBody.rollOnGround[eid] === 1 && isHorizontallyStalled(dx, dz, pos.x - startX, pos.z - startZ)) {
+                        Velocity.x[eid] = 0
+                        Velocity.z[eid] = 0
+                    }
+                } else if (isDeadBody(world, eid) && grounded) {
+                    const damp = Math.exp(-DEAD_BODY_GROUND_DAMPING * dt)
+                    Velocity.x[eid] *= damp
+                    Velocity.z[eid] *= damp
+                    const horizontalSpeedSq = Velocity.x[eid] * Velocity.x[eid] + Velocity.z[eid] * Velocity.z[eid]
+                    if (horizontalSpeedSq < DEAD_BODY_STOP_SPEED_SQ) {
+                        Velocity.x[eid] = 0
+                        Velocity.z[eid] = 0
+                    }
                 }
 
                 // Visual rolling tumble for stone-like bodies.
@@ -210,6 +239,22 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
 const tmpAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 const tmpOther: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 
+function isDeadBody(world: Parameters<System['update']>[0], eid: number): boolean {
+    return hasComponent(world, eid, Health) && Health.current[eid] <= 0
+}
+
+function isHorizontallyStalled(
+    intendedX: number,
+    intendedZ: number,
+    actualX: number,
+    actualZ: number,
+): boolean {
+    const intendedSq = intendedX * intendedX + intendedZ * intendedZ
+    if (intendedSq < STALLED_BODY_MIN_INTENT_SQ) return false
+    const actualSq = actualX * actualX + actualZ * actualZ
+    return actualSq < intendedSq * STALLED_BODY_MOVE_RATIO
+}
+
 function canSleepHere(
     world: Parameters<System['update']>[0],
     eid: number,
@@ -238,6 +283,7 @@ function canSleepHere(
         const otherBox = otherAnchor === 'center'
             ? aabbFromCenter(otherPos, otherHalf, tmpOther)
             : aabbFromFoot(otherPos, otherHalf, tmpOther)
+        if (isSleepCompatibleRigidBodyOverlap(world, eid, other)) continue
         if (
             aabb.maxX > otherBox.minX && aabb.minX < otherBox.maxX &&
             aabb.maxY > otherBox.minY && aabb.minY < otherBox.maxY &&
@@ -247,6 +293,54 @@ function canSleepHere(
         }
     }
     return true
+}
+
+function isSleepCompatibleRigidBodyOverlap(
+    world: Parameters<System['update']>[0],
+    eid: number,
+    other: number,
+): boolean {
+    if (!hasComponent(world, eid, RigidBody) || !hasComponent(world, other, RigidBody)) return false
+    if (!hasComponent(world, eid, MovingObject) || !hasComponent(world, other, MovingObject)) return false
+    return MovingObject.kind[eid] === MovingObject.kind[other]
+}
+
+function isOverlappingCompatibleSleepingBody(
+    world: Parameters<System['update']>[0],
+    eid: number,
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+): boolean {
+    const pos = { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
+    const aabb = anchor === 'center'
+        ? aabbFromCenter(pos, half, tmpAABB)
+        : aabbFromFoot(pos, half, tmpAABB)
+    const others = query(world, [Position, BoxCollider, Sleeping])
+    for (let i = 0; i < others.length; i++) {
+        const other = others[i]
+        if (other === eid || !isSleepCompatibleRigidBodyOverlap(world, eid, other)) continue
+        const otherAnchor: ColliderAnchor =
+            hasComponent(world, other, RigidBody) && RigidBody.centerAnchored[other] === 1
+                ? 'center'
+                : 'foot'
+        const otherHalf = {
+            x: BoxCollider.x[other],
+            y: BoxCollider.y[other],
+            z: BoxCollider.z[other],
+        }
+        const otherPos = { x: Position.x[other], y: Position.y[other], z: Position.z[other] }
+        const otherBox = otherAnchor === 'center'
+            ? aabbFromCenter(otherPos, otherHalf, tmpOther)
+            : aabbFromFoot(otherPos, otherHalf, tmpOther)
+        if (
+            aabb.maxX > otherBox.minX && aabb.minX < otherBox.maxX &&
+            aabb.maxY > otherBox.minY && aabb.minY < otherBox.maxY &&
+            aabb.maxZ > otherBox.minZ && aabb.minZ < otherBox.maxZ
+        ) {
+            return true
+        }
+    }
+    return false
 }
 
 function sleepBody(

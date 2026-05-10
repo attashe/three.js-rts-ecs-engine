@@ -126,6 +126,133 @@ export function kbd(text: string): HTMLElement {
     return el('kbd', { className: 'ui-kbd', text })
 }
 
+export type MeterTone = 'health' | 'mana' | 'stamina' | 'neutral'
+
+export interface MeterOptions {
+    label: string
+    tone?: MeterTone
+    current?: number
+    max?: number
+}
+
+export class UiMeter implements UiWidget {
+    readonly element: HTMLDivElement
+    private readonly fill: HTMLDivElement
+    private readonly value: HTMLSpanElement
+
+    constructor(options: MeterOptions) {
+        this.fill = el('div', {
+            className: `ui-meter__fill ui-meter__fill--${options.tone ?? 'neutral'}`,
+        })
+        this.value = el('span', { className: 'ui-meter__value' })
+        this.element = el('div', {
+            className: 'ui-meter',
+            children: [
+                el('div', {
+                    className: 'ui-meter__header',
+                    children: [
+                        el('span', { className: 'ui-meter__label', text: options.label }),
+                        this.value,
+                    ],
+                }),
+                el('div', { className: 'ui-meter__track', children: [this.fill] }),
+            ],
+        })
+        this.setValue(options.current ?? 0, options.max ?? 1)
+    }
+
+    setValue(current: number, max: number): void {
+        const safeMax = Math.max(1, max)
+        const safeCurrent = Math.max(0, Math.min(safeMax, current))
+        const pct = safeCurrent / safeMax
+        this.fill.style.transform = `scaleX(${pct.toFixed(4)})`
+        this.value.textContent = `${Math.ceil(safeCurrent)} / ${Math.ceil(safeMax)}`
+        this.element.setAttribute('aria-valuenow', safeCurrent.toFixed(0))
+        this.element.setAttribute('aria-valuemax', safeMax.toFixed(0))
+    }
+
+    dispose(): void {
+        this.element.remove()
+    }
+}
+
+export interface SlotOptions {
+    icon: string
+    label: string
+    key?: string
+    count?: number | string
+    active?: boolean
+    muted?: boolean
+    onClick?: (event: MouseEvent) => void
+}
+
+export class UiSlot implements UiWidget {
+    readonly element: HTMLDivElement
+    private readonly icon: HTMLSpanElement
+    private readonly keycap: HTMLElement | null
+    private readonly count: HTMLSpanElement
+    private readonly label: HTMLSpanElement
+
+    constructor(options: SlotOptions) {
+        this.icon = el('span', { className: 'ui-slot__icon', text: options.icon })
+        this.keycap = options.key ? kbd(options.key) : null
+        this.count = el('span', { className: 'ui-slot__count' })
+        this.label = el('span', { className: 'ui-slot__label', text: options.label })
+        this.element = el('div', {
+            className: [
+                'ui-slot',
+                options.active ? 'ui-slot--active' : '',
+                options.muted ? 'ui-slot--muted' : '',
+            ].filter(Boolean).join(' '),
+            title: options.label,
+            onClick: options.onClick,
+            children: [
+                this.icon,
+                this.keycap,
+                this.count,
+                this.label,
+            ],
+        })
+        this.setCount(options.count ?? '')
+    }
+
+    setContent(options: Partial<SlotOptions>): void {
+        if (options.icon !== undefined) this.icon.textContent = options.icon
+        if (options.label !== undefined) {
+            this.label.textContent = options.label
+            this.element.title = options.label
+        }
+        if (options.key !== undefined && this.keycap) this.keycap.textContent = options.key
+        if (options.count !== undefined) this.setCount(options.count)
+    }
+
+    setCount(value: number | string): void {
+        const text = typeof value === 'number' ? String(value) : value
+        this.count.textContent = text
+        this.count.hidden = text.length === 0
+    }
+
+    setActive(active: boolean): void {
+        this.element.classList.toggle('ui-slot--active', active)
+    }
+
+    setMuted(muted: boolean): void {
+        this.element.classList.toggle('ui-slot--muted', muted)
+    }
+
+    setSelected(selected: boolean): void {
+        this.element.classList.toggle('ui-slot--selected', selected)
+    }
+
+    setCompatible(compatible: boolean): void {
+        this.element.classList.toggle('ui-slot--compatible', compatible)
+    }
+
+    dispose(): void {
+        this.element.remove()
+    }
+}
+
 export function fatalOverlay(message: string): HTMLDivElement {
     const node = el('div', { className: 'ui-fatal', text: message })
     document.body.appendChild(node)

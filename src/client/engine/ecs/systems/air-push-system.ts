@@ -33,6 +33,7 @@ export interface AirPushOptions {
     /** Seconds an AI path follower waits before repathing after being shoved. */
     actorRecoveryDelay?: number
     actionId?: ActionId
+    canUse?: (world: Parameters<System['update']>[0], player: number) => boolean
     /** UI hint callback. Combat-log entry is always pushed regardless. */
     notify?: (message: string) => void
 }
@@ -69,6 +70,7 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             const players = query(world, [PlayerControlled, Position, Rotation])
             if (players.length === 0) return
             const player = players[0]
+            if (opts.canUse && !opts.canUse(world, player)) return
             if (!actions.consumePressed(actionId, player)) return
 
             const px = Position.x[player]

@@ -6,7 +6,8 @@ import { isGrounded, sweepAxis, type AABB, type ObstacleSource } from '../src/cl
 import { ObstacleRegistry } from '../src/client/engine/ecs/obstacle-registry'
 import { BLOCK, DEFAULT_PALETTE } from '../src/client/engine/voxel/palette'
 import { createDynamicCollisionSystem } from '../src/client/engine/ecs/systems/dynamic-collision-system'
-import { BoxCollider, MoveAlongPath, MovementState, PlayerControlled, Position, Velocity } from '../src/client/engine/ecs/components'
+import { createPhysicsSystem } from '../src/client/engine/ecs/systems/physics-system'
+import { BoxCollider, Health, MoveAlongPath, MovementState, PlayerControlled, Position, Velocity } from '../src/client/engine/ecs/components'
 import { MovementStateId } from '../src/client/engine/ecs/movement-state'
 import { createGameWorld, type GameWorld } from '../src/client/engine/ecs/world'
 
@@ -248,6 +249,73 @@ test('DynamicCollisionSystem: overlapping moving actors both report blocked for 
 
     assert.equal(MovementState.value[a], MovementStateId.Blocked)
     assert.equal(MovementState.value[b], MovementStateId.Blocked)
+})
+
+test('PhysicsSystem: dead non-rigidbody actors lose ground velocity to corpse drag', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = -1; x <= 4; x++) {
+        for (let z = -1; z <= 1; z++) {
+            chunks.setVoxel(x, 0, z, BLOCK.stone)
+        }
+    }
+
+    const world = createGameWorld()
+    const corpse = addEntity(world)
+    addComponent(world, corpse, Position)
+    addComponent(world, corpse, BoxCollider)
+    addComponent(world, corpse, Velocity)
+    addComponent(world, corpse, Health)
+    Position.x[corpse] = 0.5
+    Position.y[corpse] = 1
+    Position.z[corpse] = 0.5
+    BoxCollider.x[corpse] = 0.34
+    BoxCollider.y[corpse] = 0.9
+    BoxCollider.z[corpse] = 0.34
+    Velocity.x[corpse] = 2
+    Velocity.y[corpse] = 0
+    Velocity.z[corpse] = 0
+    Health.max[corpse] = 10
+    Health.current[corpse] = 0
+
+    const physics = createPhysicsSystem(chunks)
+    physics.update(world, 1 / 60)
+    assert.ok(Velocity.x[corpse] < 2, `expected corpse velocity to damp, got ${Velocity.x[corpse]}`)
+
+    for (let i = 0; i < 180; i++) physics.update(world, 1 / 60)
+    assert.equal(Velocity.x[corpse], 0)
+    assert.equal(Velocity.z[corpse], 0)
+})
+
+test('PhysicsSystem: living non-rigidbody actors keep controller velocity without corpse drag', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = -1; x <= 4; x++) {
+        for (let z = -1; z <= 1; z++) {
+            chunks.setVoxel(x, 0, z, BLOCK.stone)
+        }
+    }
+
+    const world = createGameWorld()
+    const actor = addEntity(world)
+    addComponent(world, actor, Position)
+    addComponent(world, actor, BoxCollider)
+    addComponent(world, actor, Velocity)
+    addComponent(world, actor, Health)
+    Position.x[actor] = 0.5
+    Position.y[actor] = 1
+    Position.z[actor] = 0.5
+    BoxCollider.x[actor] = 0.34
+    BoxCollider.y[actor] = 0.9
+    BoxCollider.z[actor] = 0.34
+    Velocity.x[actor] = 2
+    Velocity.y[actor] = 0
+    Velocity.z[actor] = 0
+    Health.max[actor] = 10
+    Health.current[actor] = 10
+
+    createPhysicsSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Velocity.x[actor], 2)
+    assert.equal(Velocity.z[actor], 0)
 })
 
 test('ObstacleSource interface: any object satisfying it works with sweepAxis', () => {

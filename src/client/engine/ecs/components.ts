@@ -40,6 +40,13 @@ export const PickupValue = {
     amount: new Uint16Array(MAX_ENTITIES),
 }
 
+export const PlayerResources = {
+    mana: new Float32Array(MAX_ENTITIES),
+    maxMana: new Float32Array(MAX_ENTITIES),
+    stamina: new Float32Array(MAX_ENTITIES),
+    maxStamina: new Float32Array(MAX_ENTITIES),
+}
+
 export const MovementState = {
     /** 0 idle, 1 moving, 2 jumping/falling, 3 blocked, 4 repathing. */
     value: new Uint8Array(MAX_ENTITIES),

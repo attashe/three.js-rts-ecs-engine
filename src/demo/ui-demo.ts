@@ -3,6 +3,8 @@ import {
     EditorShell,
     GameHud,
     ToastStack,
+    UiMeter,
+    UiSlot,
     button,
     el,
     fatalOverlay,
@@ -13,42 +15,27 @@ import {
     toolbar,
     toolbarSeparator,
 } from '../client/ui'
+import { createDefaultPlayerLoadout } from '../client/engine/ecs/world'
 
 const app = el('main', { className: 'ui-root ui-demo-page' })
 document.body.appendChild(app)
 
 const toast = new ToastStack()
 const hud = new GameHud()
-hud.add('top-left', panel({
-    title: 'Party',
-    children: [
-        meter('Health', 72, 'ok'),
-        meter('Focus', 46, 'accent'),
-    ],
-}))
-hud.add('top-right', panel({
-    title: 'Quest',
-    children: [
-        el('div', { className: 'ui-demo-muted', text: 'Find the cliff path' }),
-        el('div', { className: 'ui-demo-muted', text: 'Avoid moving pistons' }),
-    ],
-}))
-hud.add('bottom-left', panel({
-    title: 'Debug',
-    children: [
-        el('div', { className: 'ui-demo-log-line', text: '[path] npc_02 repath ok' }),
-        el('div', { className: 'ui-demo-log-line', text: '[physics] stone settled' }),
-        el('div', { className: 'ui-demo-log-line', text: '[combat] target neutral' }),
-    ],
-}))
+hud.setVitals({ health: 72, maxHealth: 100, mana: 46, maxMana: 60, stamina: 83, maxStamina: 100 })
+hud.setInventory({ gold: 128, potions: 2, arrows: 11 })
+hud.setLoadout(createDefaultPlayerLoadout())
+hud.setInventoryOpen(true)
+hud.setShieldRaised(true)
 hud.setCommandHints([
     { keys: ['WASD', 'Arrows'], label: 'Move' },
     { keys: ['Mouse'], label: 'Aim' },
     { keys: ['Q', 'R'], label: 'Rotate camera' },
     { keys: ['Space'], label: 'Jump' },
-    { keys: ['F'], label: 'Attack' },
-    { keys: ['B'], label: 'Bow' },
+    { keys: ['F'], label: 'Use weapon' },
+    { keys: ['1', '2', '3', '4'], label: 'Select weapon' },
     { keys: ['E'], label: 'Interact' },
+    { keys: ['I'], label: 'Inventory' },
 ])
 
 const editorShellMount = el('section', { className: 'ui-demo-shell-mount' })
@@ -109,6 +96,7 @@ function controlsPanel(): HTMLElement {
                     button({ label: 'Primary', primary: true }),
                     button({ label: 'Disabled', disabled: true }),
                     button({ label: 'With icon', icon: '+', onClick: () => toast.show('Button clicked') }),
+                    button({ label: 'Toggle inventory', onClick: () => hud.setInventoryOpen(!hud.isInventoryOpen()) }),
                 ],
             }),
             sectionTitle('Keyboard'),
@@ -157,22 +145,26 @@ function commandPanel(): HTMLElement {
 }
 
 function hudPanel(): HTMLElement {
+    const health = new UiMeter({ label: 'Health', tone: 'health', current: 84, max: 100 })
+    const mana = new UiMeter({ label: 'Mana', tone: 'mana', current: 52, max: 60 })
+    const stamina = new UiMeter({ label: 'Stamina', tone: 'stamina', current: 58, max: 100 })
     return panel({
         title: 'HUD Widgets',
         children: [
             sectionTitle('Meters'),
-            meter('Health', 84, 'ok'),
-            meter('Stamina', 58, 'accent'),
-            meter('Threat', 33, 'danger'),
-            sectionTitle('Inventory'),
+            health.element,
+            mana.element,
+            stamina.element,
+            sectionTitle('Slots'),
             el('div', {
-                className: 'ui-demo-slots',
-                children: ['Sword', 'Bow', 'Potion', 'Stone', 'Key'].map((label, index) => el('button', {
-                    className: 'ui-demo-slot',
-                    title: label,
-                    text: String(index + 1),
-                    onClick: () => toast.show(`${label} selected`),
-                })),
+                className: 'ui-slot-grid ui-slot-grid--skills',
+                children: [
+                    new UiSlot({ icon: 'SW', label: 'Sword', key: '1' }).element,
+                    new UiSlot({ icon: 'BW', label: 'Bow', key: '2', active: true }).element,
+                    new UiSlot({ icon: 'AP', label: 'Air Push', key: '3' }).element,
+                    new UiSlot({ icon: '.', label: 'Empty', key: '4', muted: true }).element,
+                    new UiSlot({ icon: 'SH', label: 'Shield', key: 'Shift' }).element,
+                ],
             }),
         ],
     })
@@ -215,30 +207,6 @@ function logPanel(): HTMLElement {
                     '[toast] notifications ready',
                     '[editor] shell controls ready',
                 ].join('\n'),
-            }),
-        ],
-    })
-}
-
-function meter(label: string, value: number, tone: 'ok' | 'accent' | 'danger'): HTMLElement {
-    return el('div', {
-        className: 'ui-demo-meter',
-        children: [
-            el('div', {
-                className: 'ui-demo-meter__label',
-                children: [
-                    el('span', { text: label }),
-                    el('span', { text: `${value}%` }),
-                ],
-            }),
-            el('div', {
-                className: 'ui-demo-meter__track',
-                children: [
-                    el('span', {
-                        className: `ui-demo-meter__fill ui-demo-meter__fill--${tone}`,
-                        attrs: { style: `width:${value}%` },
-                    }),
-                ],
             }),
         ],
     })

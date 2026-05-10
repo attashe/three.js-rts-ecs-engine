@@ -147,7 +147,14 @@ function countMovingStones(world: Parameters<System['update']>[0]): number {
     const eids = query(world, [MovingObject])
     let count = 0
     for (let i = 0; i < eids.length; i++) {
-        if (MovingObject.kind[eids[i]] === MovingObjectKind.Stone) count++
+        const eid = eids[i]
+        if (
+            MovingObject.kind[eid] === MovingObjectKind.Stone &&
+            hasComponent(world, eid, Velocity) &&
+            !hasComponent(world, eid, Sleeping)
+        ) {
+            count++
+        }
     }
     return count
 }

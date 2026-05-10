@@ -7,6 +7,7 @@ import {
     Faction,
     Health,
     PlayerControlled,
+    PlayerResources,
     Position,
     Renderable,
     Rotation,
@@ -59,6 +60,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
         Health,
         Faction,
         Shield,
+        PlayerResources,
         PlayerControlled,
         Renderable,
         CameraTarget,
@@ -73,6 +75,10 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     BoxCollider.z[eid] = MAIN_CHARACTER_COLLIDER_RADIUS
     Health.max[eid] = 100
     Health.current[eid] = 100
+    PlayerResources.maxMana[eid] = 60
+    PlayerResources.mana[eid] = 60
+    PlayerResources.maxStamina[eid] = 100
+    PlayerResources.stamina[eid] = 100
     Faction.id[eid] = FactionId.Player
     Shield.raised[eid] = 0
     Shield.blockArcCos[eid] = Math.cos(Math.PI * 0.42)

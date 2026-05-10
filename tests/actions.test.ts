@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ActionMap, type ActionDefinition, type ActionInputSource } from '../src/client/engine/input/actions'
 import { GAME_ACTIONS, GAME_COMMAND_HINT_ACTIONS, GameAction } from '../src/client/game/actions'
+import { createPlayerLoadoutSystem } from '../src/client/game/player-loadout-system'
+import { createGameWorld } from '../src/client/engine/ecs/world'
 
 class FakeInput implements ActionInputSource {
     held = new Set<string>()
@@ -138,4 +140,40 @@ test('game actions expose held shield input and command hint', () => {
         actions.commandHints(GAME_COMMAND_HINT_ACTIONS).find((hint) => hint.label === 'Shield'),
         { keys: ['Shift'], label: 'Shield' },
     )
+})
+
+test('game actions select weapons through number keys and expose inventory hint', () => {
+    let now = 0
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(GAME_ACTIONS, input, { now: () => now })
+
+    input.pressedAt.set('Digit3', now)
+
+    assert.equal(actions.consumePressed(GameAction.SelectWeapon3, 'loadout')?.key, 'Digit3')
+    assert.equal(actions.get(GameAction.BowShot).bindings?.[0]?.keys[0], 'KeyF')
+    assert.equal(actions.get(GameAction.AirPush).bindings?.[0]?.keys[0], 'KeyF')
+    assert.deepEqual(actions.commandHints(GAME_COMMAND_HINT_ACTIONS), [
+        { keys: ['WASD', 'Arrows'], label: 'Move' },
+        { keys: ['Mouse'], label: 'Aim' },
+        { keys: ['Q', 'R'], label: 'Rotate camera' },
+        { keys: ['Space'], label: 'Jump' },
+        { keys: ['F'], label: 'Use weapon' },
+        { keys: ['Shift'], label: 'Shield' },
+        { keys: ['1', '2', '3', '4'], label: 'Select weapon' },
+        { keys: ['E'], label: 'Interact' },
+        { keys: ['I'], label: 'Inventory' },
+        { keys: ['Wheel'], label: 'Zoom' },
+    ])
+})
+
+test('PlayerLoadoutSystem updates active weapon slot from number keys', () => {
+    let now = 0
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(GAME_ACTIONS, input, { now: () => now })
+    const world = createGameWorld()
+
+    input.pressedAt.set('Digit2', now)
+    createPlayerLoadoutSystem(actions).update(world, 1 / 60)
+
+    assert.equal(world.playerLoadout.activeSlot, 1)
 })

@@ -13,6 +13,7 @@ export interface MeleeCombatOptions {
     damage?: number
     notify?: (message: string) => void
     actionId?: ActionId
+    canUse?: (world: Parameters<System['update']>[0], player: number) => boolean
 }
 
 export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOptions = {}): System {
@@ -29,6 +30,7 @@ export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOpt
             const players = query(world, [PlayerControlled, Position])
             if (players.length === 0) return
             const player = players[0]
+            if (opts.canUse && !opts.canUse(world, player)) return
             if (!actions.consumePressed(actionId, player)) return
 
             const px = Position.x[player]

@@ -1,9 +1,9 @@
-import { query } from 'bitecs'
-import { Pickup, PlayerControlled, Position } from '../components'
+import { hasComponent, query } from 'bitecs'
+import { Pickup, PickupValue, PlayerControlled, Position } from '../components'
 import { despawnEntity } from '../entity'
 import type { System } from './system'
 import { FixedOrder } from './orders'
-import { pushGameLog } from '../world'
+import { addItemToBackpack, item, pushGameLog } from '../world'
 
 export interface PickupSystemOptions {
     radius?: number
@@ -35,10 +35,33 @@ export function createPickupSystem(opts: PickupSystemOptions = {}): System {
 
                 const state = world.pickupByEid.get(eid)
                 const message = state?.message ?? 'Picked up an item.'
+                addToInventory(world, eid)
                 pushGameLog(world, { type: 'pickup', message, eid })
                 opts.notify?.(message)
                 despawnEntity(world, eid)
             }
         },
+    }
+}
+
+function addToInventory(world: Parameters<System['update']>[0], eid: number): void {
+    const state = world.pickupByEid.get(eid)
+    if (state?.item) {
+        addItemToBackpack(world, state.item)
+        return
+    }
+    if (!hasComponent(world, eid, PickupValue)) return
+
+    const kind = PickupValue.kind[eid]
+    const amount = PickupValue.amount[eid]
+    if (kind === 1) {
+        world.playerInventory.gold += amount
+        addItemToBackpack(world, item('gold', 'currency', 'Gold', 'G', { count: amount }))
+    } else if (kind === 2) {
+        world.playerInventory.potions += 1
+        addItemToBackpack(world, item('health-potion', 'consumable', 'Potion', '+', { count: 1 }))
+    } else if (kind === 3) {
+        world.playerInventory.arrows += Math.max(1, amount)
+        addItemToBackpack(world, item('arrows', 'ammo', 'Arrows', 'AR', { count: Math.max(1, amount) }))
     }
 }

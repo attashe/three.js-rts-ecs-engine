@@ -9,6 +9,7 @@ export interface ProjectileLaunchOptions {
     arrowSpeed?: number
     arrowLift?: number
     actionId?: ActionId
+    canUse?: (world: Parameters<System['update']>[0], player: number) => boolean
 }
 
 export function createProjectileLaunchSystem(actions: ActionMap, opts: ProjectileLaunchOptions = {}): System {
@@ -24,6 +25,7 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
             if (players.length === 0) return
 
             const player = players[0]
+            if (opts.canUse && !opts.canUse(world, player)) return
             if (!actions.consumePressed(actionId, player)) return
             const yaw = Rotation.y[player]
             const forwardX = Math.sin(yaw)
