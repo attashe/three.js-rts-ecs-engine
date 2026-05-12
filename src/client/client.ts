@@ -30,7 +30,7 @@ import { createMeleeCombatSystem } from './engine/ecs/systems/melee-combat-syste
 import { createPickupSystem } from './engine/ecs/systems/pickup-system'
 import { createPerceptionSystem } from './engine/ecs/systems/perception-system'
 import { createBehaviourSystem } from './engine/ecs/systems/behaviour-system'
-import { generateLevel, type LevelId } from './game/level'
+import { generateLevel, type LevelId, type LevelMeta } from './game/level'
 import { spawnPlayer } from './game/player'
 import { createGameHudSystem } from './game/hud-system'
 import { createPlayerLoadoutSystem } from './game/player-loadout-system'
@@ -47,7 +47,13 @@ import {
 import { spawnCoinPile, spawnHealthPotion, spawnTrainingDummy } from './game/props'
 import { registerDoorMechanism, registerPistonMechanism } from './game/mechanisms'
 import { GAME_COMMAND_HINT_ACTIONS, GameAction, createGameActionMap } from './game/actions'
-import { activePlayerLoadoutKind } from './engine/ecs/world'
+import { activePlayerLoadoutKind, type GameWorld } from './engine/ecs/world'
+import {
+    assignAiSchedule,
+    defineAiSchedule,
+    defineAiZone,
+    type AiPoint,
+} from './engine/ecs/ai'
 
 async function main(): Promise<void> {
     let engine: Engine
@@ -86,6 +92,7 @@ async function main(): Promise<void> {
     // Voxel world + level + chunk renderer.
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const meta = generateLevel(chunks, selectedLevel())
+    defineLevelAi(world, meta)
     sun.target.position.set(meta.size / 2, 0, meta.size / 2)
     const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
     chunkRenderer.rebuildAll()
@@ -112,26 +119,29 @@ async function main(): Promise<void> {
     spawnCoinPile(world, { position: meta.coins })
     spawnHealthPotion(world, { position: meta.potion })
     for (let i = 0; i < meta.villagers.length; i++) {
-        spawnVillagerNpc(world, {
+        const villager = spawnVillagerNpc(world, {
             position: meta.villagers[i]!,
             yaw: Math.PI * (0.15 + i * 0.17),
             label: `Villager ${i + 1}`,
         })
+        assignAiSchedule(world, villager, meta.villagerSchedules[i] ? `villager-${i + 1}-day` : 'village-civilian-day')
     }
     for (let i = 0; i < meta.guards.length; i++) {
-        spawnGuardNpc(world, {
+        const guard = spawnGuardNpc(world, {
             position: meta.guards[i]!,
             yaw: Math.PI * (0.5 + i * 0.25),
             label: `Village Guard ${i + 1}`,
         })
+        assignAiSchedule(world, guard, 'village-guard-patrol')
     }
     for (let i = 0; i < meta.hunters.length; i++) {
-        spawnHunterNpc(world, {
+        const hunter = spawnHunterNpc(world, {
             position: meta.hunters[i]!.home,
             huntingGround: meta.hunters[i]!.huntingGround,
             yaw: Math.PI,
             label: `Hunter ${i + 1}`,
         })
+        assignAiSchedule(world, hunter, 'hunter-field-loop')
     }
     for (let i = 0; i < meta.rabbits.length; i++) {
         spawnRabbitNpc(world, {
@@ -141,10 +151,16 @@ async function main(): Promise<void> {
         })
     }
     for (const hostile of meta.hostiles) {
-        spawnHostileMeleeNpc(world, hostile)
+        const eid = spawnHostileMeleeNpc(world, hostile)
+        if (hostile.faction === undefined && meta.villagers.length > 0) {
+            assignAiSchedule(world, eid, 'bandit-assault-village')
+        }
     }
     for (const archer of meta.archers) {
-        spawnHostileArcherNpc(world, archer)
+        const eid = spawnHostileArcherNpc(world, archer)
+        if (archer.faction === undefined && meta.villagers.length > 0) {
+            assignAiSchedule(world, eid, 'bandit-assault-village')
+        }
     }
     for (const door of meta.doors) registerDoorMechanism(world, door)
     for (const piston of meta.pistons) registerPistonMechanism(world, piston)
@@ -225,6 +241,128 @@ void main()
 function selectedLevel(): LevelId {
     const value = new URLSearchParams(window.location.search).get('map')
     return value === 'village' ? 'village' : 'playground'
+}
+
+function defineLevelAi(world: GameWorld, meta: LevelMeta): void {
+    const villageCenter = averagePoint([meta.spawn, meta.npc, ...meta.villagers, ...meta.guards])
+    const huntingCenter = averagePoint([
+        ...meta.rabbits,
+        ...meta.hunters.map((hunter) => hunter.huntingGround),
+    ])
+    const workCenter = averagePoint([meta.dummy, meta.coins, meta.potion])
+    const guardRoute = meta.guards.length > 0
+        ? [...meta.guards, meta.spawn]
+        : [meta.spawn, meta.dummy, meta.npc]
+
+    defineAiZone(world, {
+        id: 'village-center',
+        label: 'Village Center',
+        center: villageCenter,
+        rect: rectAround(villageCenter, meta.villagers.length > 0 ? 11 : 6, meta.villagers.length > 0 ? 11 : 6),
+    })
+    defineAiZone(world, {
+        id: 'village-work',
+        label: 'Village Work Area',
+        center: workCenter,
+        rect: rectAround(workCenter, 5, 4),
+    })
+    defineAiZone(world, {
+        id: 'hunting-field',
+        label: 'Hunting Field',
+        center: huntingCenter,
+        rect: rectAround(huntingCenter, 9, 7),
+    })
+
+    defineAiSchedule(world, {
+        id: 'village-civilian-day',
+        label: 'Civilian Day Loop',
+        steps: [
+            { id: 'home-idle', kind: 'idle', duration: 3 },
+            { id: 'village-wander', kind: 'wanderZone', zoneId: 'village-center', duration: 18 },
+            { id: 'go-work', kind: 'travelZone', zoneId: 'village-work' },
+            { id: 'work-wander', kind: 'wanderZone', zoneId: 'village-work', duration: 20 },
+        ],
+    })
+    for (let i = 0; i < meta.villagerSchedules.length; i++) {
+        const schedule = meta.villagerSchedules[i]!
+        const n = i + 1
+        const homeZone = `villager-${n}-home`
+        const workZone = `villager-${n}-work`
+        defineAiZone(world, {
+            id: homeZone,
+            label: `Villager ${n} Home`,
+            center: schedule.home,
+            rect: rectAround(schedule.home, 2, 2),
+        })
+        defineAiZone(world, {
+            id: workZone,
+            label: `Villager ${n} Work`,
+            center: schedule.work,
+            rect: rectAround(schedule.work, 2.5, 2.5),
+        })
+        defineAiSchedule(world, {
+            id: `villager-${n}-day`,
+            label: `Villager ${n} Home/Work Loop`,
+            steps: [
+                { id: 'home-morning', kind: 'wanderZone', zoneId: homeZone, duration: 8 + i },
+                { id: 'to-work', kind: 'travelZone', zoneId: workZone },
+                { id: 'work-shift', kind: 'wanderZone', zoneId: workZone, duration: 18 + i * 2 },
+                { id: 'to-home', kind: 'travelZone', zoneId: homeZone },
+            ],
+        })
+    }
+    defineAiSchedule(world, {
+        id: 'village-guard-patrol',
+        label: 'Village Guard Patrol',
+        steps: [{
+            id: 'guard-route',
+            kind: 'patrolRoute',
+            points: guardRoute,
+        }],
+    })
+    defineAiSchedule(world, {
+        id: 'hunter-field-loop',
+        label: 'Hunter Field Loop',
+        steps: [
+            { id: 'to-hunting-field', kind: 'travelZone', zoneId: 'hunting-field' },
+            { id: 'hunt-field', kind: 'wanderZone', zoneId: 'hunting-field', duration: 30 },
+        ],
+    })
+    defineAiSchedule(world, {
+        id: 'bandit-assault-village',
+        label: 'Bandit Assault Village',
+        loop: false,
+        steps: [
+            { id: 'assault-village', kind: 'assaultZone', zoneId: 'village-center' },
+            { id: 'raid-village', kind: 'wanderZone', zoneId: 'village-center' },
+        ],
+    })
+}
+
+function averagePoint(points: AiPoint[]): AiPoint {
+    if (points.length === 0) return { x: 0, y: 1, z: 0 }
+    let x = 0
+    let y = 0
+    let z = 0
+    for (const point of points) {
+        x += point.x
+        y += point.y
+        z += point.z
+    }
+    return {
+        x: x / points.length,
+        y: y / points.length,
+        z: z / points.length,
+    }
+}
+
+function rectAround(center: AiPoint, halfX: number, halfZ: number): { minX: number; minZ: number; maxX: number; maxZ: number } {
+    return {
+        minX: center.x - halfX,
+        minZ: center.z - halfZ,
+        maxX: center.x + halfX,
+        maxZ: center.z + halfZ,
+    }
 }
 
 function seedPistonTesterPath(

@@ -28,6 +28,17 @@ import {
     type BehaviourProfile,
     type BehaviourSnapshot,
 } from '../behaviour'
+import {
+    advancePatrolPoint,
+    advanceScheduleStep,
+    currentAiScheduleStep,
+    isPointInZone,
+    resolveScheduleZonePoint,
+    schedulePatrolPoint,
+    tickAiSchedule,
+    type AiScheduleAssignment,
+    type AiScheduleStep,
+} from '../ai'
 import { applyDamagePacket } from '../damage'
 import { MovementStateId } from '../movement-state'
 import type { System } from './system'
@@ -41,8 +52,10 @@ const TRAVEL_SPEED = 2.45
 const CHASE_SPEED = 2.9
 const FLEE_SPEED = 3.35
 const RETURN_SPEED = 2.6
+const PATROL_SPEED = 2.45
 const TARGET_MOVE_REPATH = 1.5
 const SLOT_MOVE_REPATH = 0.65
+const PATROL_ARRIVAL_RADIUS = 0.75
 const ARROW_MUZZLE_HEIGHT = 1.08
 const ARROW_MUZZLE_FORWARD = 0.55
 const ARROW_TARGET_LEAD = 0.65
@@ -65,10 +78,13 @@ export function createBehaviourSystem(chunks: ChunkManager): System {
         update(world, dt) {
             const eids = query(world, [Behaviour, Position])
             const blockers = collectDynamicBlockers(world)
+            let scheduledActors = 0
             for (let i = 0; i < eids.length; i++) {
                 const eid = eids[i]
-                tickActor(world, eid, dt, chunks, blockers)
+                if (tickActor(world, eid, dt, chunks, blockers)) scheduledActors++
             }
+            world.metrics.setGauge('ai.actors', eids.length)
+            world.metrics.setGauge('ai.scheduled', scheduledActors)
         },
     }
 }
@@ -79,20 +95,21 @@ function tickActor(
     dt: number,
     chunks: ChunkManager,
     blockers: DynamicBlocker[],
-): void {
+): boolean {
     Behaviour.stateTime[eid] += dt
     Behaviour.nextThinkAt[eid] = Math.max(0, Behaviour.nextThinkAt[eid] - dt)
     Behaviour.nextRepathAt[eid] = Math.max(0, Behaviour.nextRepathAt[eid] - dt)
 
     const profile = getBehaviourProfile(Behaviour.profileId[eid])
     const blackboard = world.behaviourByEid.get(eid)
-    if (!profile || !blackboard) return
+    if (!profile || !blackboard) return false
     blackboard.stateTime = Behaviour.stateTime[eid]
     if (blackboard.threatTime > 0) {
         blackboard.threatTime = Math.max(0, blackboard.threatTime - dt)
         if (blackboard.threatTime === 0) blackboard.threatEid = null
     }
 
+    const scheduleApplied = applyScheduleIntent(world, eid, dt, blackboard, profile)
     const snapshot = buildSnapshot(world, eid, blackboard, profile)
     const next = decideTransition(profile, snapshot)
     if (next !== null && next !== snapshot.state) {
@@ -104,6 +121,7 @@ function tickActor(
     const active = Behaviour.state[eid] as BehaviourStateId
     switch (active) {
         case BehaviourStateId.Wander: handleWander(world, eid, blackboard, profile, chunks, blockers); break
+        case BehaviourStateId.Patrol: handlePatrol(world, eid, blackboard, profile, chunks, blockers); break
         case BehaviourStateId.TravelToActivity: handleTravelToActivity(world, eid, blackboard, profile, chunks, blockers); break
         case BehaviourStateId.Chase: handleChase(world, eid, blackboard, profile, chunks, blockers, snapshot); break
         case BehaviourStateId.Reposition: handleReposition(world, eid, blackboard, profile, chunks, blockers, snapshot); break
@@ -114,6 +132,102 @@ function tickActor(
         case BehaviourStateId.Idle: handleIdle(world, eid); break
         case BehaviourStateId.Dead: /* nothing */ break
     }
+    return scheduleApplied
+}
+
+function applyScheduleIntent(
+    world: GameWorld,
+    eid: number,
+    dt: number,
+    blackboard: ActorBlackboard,
+    profile: BehaviourProfile,
+): boolean {
+    const current = Behaviour.state[eid] as BehaviourStateId
+    const tick = tickAiSchedule(world, eid, dt)
+    if (!tick) return false
+
+    const step = tick.step
+    const isAssault = step.kind === 'assaultZone'
+    if (!canScheduleControl(current) && !canAssaultOverride(current, isAssault)) return false
+    if (step.kind === 'idle') {
+        blackboard.activity = null
+        if (current !== BehaviourStateId.Idle) {
+            clearPath(world, eid)
+            setBehaviourState(world, eid, BehaviourStateId.Idle)
+        }
+        return true
+    }
+
+    if (step.kind === 'patrolRoute') {
+        blackboard.activity = null
+        if (current !== BehaviourStateId.Patrol) {
+            clearPath(world, eid)
+            setBehaviourState(world, eid, BehaviourStateId.Patrol)
+        }
+        return true
+    }
+
+    const zonePoint = resolveZoneIntentPoint(world, eid, tick.assignment, step)
+    if (!zonePoint) return true
+    blackboard.activity = zonePoint
+
+    const zone = step.zoneId ? world.aiZones.get(step.zoneId) : undefined
+    const insideZone = zone ? isPointInZone(zone, { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }) : false
+    const arrived = insideZone ||
+        distanceXZ(Position.x[eid], Position.z[eid], zonePoint.x, zonePoint.z) <= Math.max(0.75, profile.activityRadius)
+    if (isAssault && !arrived) {
+        setBehaviourTarget(world, eid, null)
+        blackboard.threatEid = null
+        blackboard.threatTime = 0
+        if (current !== BehaviourStateId.TravelToActivity) {
+            clearPath(world, eid)
+            setBehaviourState(world, eid, BehaviourStateId.TravelToActivity)
+        }
+        return true
+    }
+    if (arrived && (step.kind === 'travelZone' || step.kind === 'assaultZone')) {
+        advanceScheduleStep(tick.assignment, tick.schedule)
+    }
+    const shouldTravel = !arrived
+    const targetState = shouldTravel
+        ? BehaviourStateId.TravelToActivity
+        : step.kind === 'wanderZone'
+            ? BehaviourStateId.Wander
+            : BehaviourStateId.Idle
+
+    if (current !== targetState) {
+        clearPath(world, eid)
+        setBehaviourState(world, eid, targetState)
+    }
+    return true
+}
+
+function canScheduleControl(state: BehaviourStateId): boolean {
+    return state === BehaviourStateId.Idle ||
+        state === BehaviourStateId.Wander ||
+        state === BehaviourStateId.TravelToActivity ||
+        state === BehaviourStateId.Patrol
+}
+
+function canAssaultOverride(state: BehaviourStateId, isAssault: boolean): boolean {
+    if (!isAssault) return false
+    return state === BehaviourStateId.Chase ||
+        state === BehaviourStateId.Attack ||
+        state === BehaviourStateId.Recover ||
+        state === BehaviourStateId.Reposition
+}
+
+function resolveZoneIntentPoint(
+    world: GameWorld,
+    eid: number,
+    assignment: AiScheduleAssignment,
+    step: AiScheduleStep,
+): { x: number; y: number; z: number } | null {
+    if (step.kind === 'assaultZone' && step.zoneId) {
+        const zone = world.aiZones.get(step.zoneId)
+        if (zone) return zone.center
+    }
+    return resolveScheduleZonePoint(world, eid, assignment, step)
 }
 
 function buildSnapshot(
@@ -168,6 +282,7 @@ function buildSnapshot(
 function onExitState(world: GameWorld, eid: number, state: BehaviourStateId): void {
     if (
         state === BehaviourStateId.Wander ||
+        state === BehaviourStateId.Patrol ||
         state === BehaviourStateId.TravelToActivity ||
         state === BehaviourStateId.Chase ||
         state === BehaviourStateId.Reposition ||
@@ -187,6 +302,7 @@ function onEnterState(world: GameWorld, eid: number, state: BehaviourStateId, bl
         state === BehaviourStateId.Reposition ||
         state === BehaviourStateId.Flee ||
         state === BehaviourStateId.Wander ||
+        state === BehaviourStateId.Patrol ||
         state === BehaviourStateId.TravelToActivity ||
         state === BehaviourStateId.ReturnHome
     ) {
@@ -262,6 +378,53 @@ function handleWander(
     } else {
         Behaviour.nextRepathAt[eid] = profile.repathCooldown * 0.5
     }
+}
+
+function handlePatrol(
+    world: GameWorld,
+    eid: number,
+    blackboard: ActorBlackboard,
+    profile: BehaviourProfile,
+    chunks: ChunkManager,
+    blockers: DynamicBlocker[],
+): void {
+    const tick = currentAiScheduleStep(world, eid)
+    if (!tick || tick.step.kind !== 'patrolRoute') {
+        setBehaviourState(world, eid, BehaviourStateId.Idle)
+        return
+    }
+    if (hasComponent(world, eid, MoveAlongPath)) return
+    if (Behaviour.nextRepathAt[eid] > 0) return
+
+    let point = schedulePatrolPoint(tick.assignment, tick.step)
+    if (!point) {
+        setBehaviourState(world, eid, BehaviourStateId.Idle)
+        return
+    }
+
+    if (distanceXZ(Position.x[eid], Position.z[eid], point.x, point.z) <= PATROL_ARRIVAL_RADIUS) {
+        advancePatrolPoint(tick.assignment, tick.step)
+        point = schedulePatrolPoint(tick.assignment, tick.step)
+        if (!point) return
+    }
+
+    const goal = voxelGoal(point)
+    requestPathTo(
+        world,
+        eid,
+        blackboard,
+        chunks,
+        point,
+        PATROL_SPEED,
+        profile.repathCooldown,
+        {
+            maxNodes: 2048,
+            maxStepUp: 1,
+            maxDrop: 2,
+            surfaceSearchRange: 8,
+            isBlocked: (x, y, z) => isDynamicallyBlocked(blockers, eid, x, y, z, goal),
+        },
+    )
 }
 
 function handleTravelToActivity(
@@ -668,6 +831,10 @@ function voxelGoal(target: { x: number; y: number; z: number }): { x: number; y:
         y: Math.floor(target.y),
         z: Math.floor(target.z),
     }
+}
+
+function distanceXZ(ax: number, az: number, bx: number, bz: number): number {
+    return Math.hypot(bx - ax, bz - az)
 }
 
 function chooseAttackSlot(

@@ -24,6 +24,7 @@ import { createPhysicsSystem } from '../src/client/engine/ecs/systems/physics-sy
 import { ChunkManager } from '../src/client/engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../src/client/engine/voxel/palette'
 import { applyDamagePacket } from '../src/client/engine/ecs/damage'
+import { assignAiSchedule, defineAiSchedule, defineAiZone } from '../src/client/engine/ecs/ai'
 
 const HOSTILE = getBehaviourProfile(BehaviourProfileId.HostileMeleeGrunt)!
 const WANDERER = getBehaviourProfile(BehaviourProfileId.NeutralWanderer)!
@@ -561,6 +562,113 @@ test('BehaviourSystem: travel paths route around dynamic actor blockers', () => 
     assert.equal(path.points.some((p) => Math.floor(p.x) === 3 && Math.floor(p.z) === 2), false)
 })
 
+test('BehaviourSystem: scheduled actor travels toward a zone sample', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = 0; x <= 8; x++) {
+        for (let z = 0; z <= 4; z++) chunks.setVoxel(x, 0, z, BLOCK.plank)
+    }
+    defineAiZone(world, {
+        id: 'workshop',
+        center: { x: 7.5, y: 1, z: 2.5 },
+        radius: 0,
+    })
+    defineAiSchedule(world, {
+        id: 'worker-day',
+        steps: [{ id: 'go-work', kind: 'travelZone', zoneId: 'workshop' }],
+    })
+
+    const worker = addEntity(world)
+    addComponent(world, worker, Position); addComponent(world, worker, Behaviour)
+    Position.x[worker] = 0.5; Position.y[worker] = 1; Position.z[worker] = 2.5
+    assignBehaviourProfile(world, worker, BehaviourProfileId.NeutralWanderer, { x: 0.5, y: 1, z: 2.5 })
+    assignAiSchedule(world, worker, 'worker-day')
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Behaviour.state[worker], BehaviourStateId.TravelToActivity)
+    assert.equal(hasComponent(world, worker, MoveAlongPath), true)
+    assert.deepEqual(world.behaviourByEid.get(worker)?.activity, { x: 7.5, y: 1, z: 2.5 })
+})
+
+test('BehaviourSystem: scheduled patrol actor follows authored route points', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = 0; x <= 8; x++) {
+        for (let z = 0; z <= 4; z++) chunks.setVoxel(x, 0, z, BLOCK.plank)
+    }
+    defineAiSchedule(world, {
+        id: 'guard-route',
+        steps: [{
+            id: 'patrol',
+            kind: 'patrolRoute',
+            points: [
+                { x: 2.5, y: 1, z: 2.5 },
+                { x: 7.5, y: 1, z: 2.5 },
+            ],
+        }],
+    })
+
+    const guard = addEntity(world)
+    addComponent(world, guard, Position); addComponent(world, guard, Behaviour)
+    Position.x[guard] = 0.5; Position.y[guard] = 1; Position.z[guard] = 2.5
+    assignBehaviourProfile(world, guard, BehaviourProfileId.Guard, { x: 0.5, y: 1, z: 2.5 })
+    assignAiSchedule(world, guard, 'guard-route')
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Behaviour.state[guard], BehaviourStateId.Patrol)
+    assert.equal(hasComponent(world, guard, MoveAlongPath), true)
+    const path = world.pathByEid.get(guard)
+    assert.ok(path)
+    assert.ok(path.points.some((p) => Math.floor(p.x) === 2 && Math.floor(p.z) === 2))
+})
+
+test('BehaviourSystem: assault schedule keeps attacker moving to zone before ranged combat', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = 0; x <= 14; x++) {
+        for (let z = 0; z <= 4; z++) chunks.setVoxel(x, 0, z, BLOCK.plank)
+    }
+    defineAiZone(world, {
+        id: 'village',
+        center: { x: 12.5, y: 1, z: 2.5 },
+        rect: { minX: 10, minZ: 1, maxX: 14, maxZ: 4 },
+    })
+    defineAiSchedule(world, {
+        id: 'assault',
+        loop: false,
+        steps: [
+            { id: 'push-in', kind: 'assaultZone', zoneId: 'village' },
+            { id: 'raid', kind: 'wanderZone', zoneId: 'village' },
+        ],
+    })
+
+    const archer = addEntity(world)
+    addComponent(world, archer, Position); addComponent(world, archer, Behaviour)
+    addComponent(world, archer, Faction); addComponent(world, archer, Health)
+    Position.x[archer] = 0.5; Position.y[archer] = 1; Position.z[archer] = 2.5
+    Faction.id[archer] = FactionId.Hostile
+    Health.max[archer] = 42; Health.current[archer] = 42
+    assignBehaviourProfile(world, archer, BehaviourProfileId.HostileArcher, { x: 0.5, y: 1, z: 2.5 })
+    assignAiSchedule(world, archer, 'assault')
+    setBehaviourState(world, archer, BehaviourStateId.Attack)
+
+    const villager = addEntity(world)
+    addComponent(world, villager, Position); addComponent(world, villager, Faction); addComponent(world, villager, Health)
+    Position.x[villager] = 8.5; Position.y[villager] = 1; Position.z[villager] = 2.5
+    Faction.id[villager] = FactionId.Neutral
+    Health.max[villager] = 45; Health.current[villager] = 45
+    setBehaviourTarget(world, archer, villager)
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Behaviour.state[archer], BehaviourStateId.TravelToActivity)
+    assert.equal(getBehaviourTarget(archer), null)
+    assert.deepEqual(world.behaviourByEid.get(archer)?.activity, { x: 12.5, y: 1, z: 2.5 })
+    assert.equal(hasComponent(world, archer, MoveAlongPath), true)
+})
+
 test('behaviourStateName names every supported state and returns "unknown" for unknowns', () => {
     assert.equal(behaviourStateName(BehaviourStateId.Idle), 'idle')
     assert.equal(behaviourStateName(BehaviourStateId.Wander), 'wander')
@@ -572,5 +680,6 @@ test('behaviourStateName names every supported state and returns "unknown" for u
     assert.equal(behaviourStateName(BehaviourStateId.Flee), 'flee')
     assert.equal(behaviourStateName(BehaviourStateId.Reposition), 'reposition')
     assert.equal(behaviourStateName(BehaviourStateId.Recover), 'recover')
+    assert.equal(behaviourStateName(BehaviourStateId.Patrol), 'patrol')
     assert.equal(behaviourStateName(99), 'unknown')
 })

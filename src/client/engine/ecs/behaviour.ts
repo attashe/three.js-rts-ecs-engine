@@ -14,6 +14,7 @@ export const enum BehaviourStateId {
     Flee = 7,
     Reposition = 8,
     Recover = 9,
+    Patrol = 10,
 }
 
 export const enum BehaviourProfileId {
@@ -322,9 +323,10 @@ export function behaviourStateName(state: number): string {
         case BehaviourStateId.Dead: return 'dead'
         case BehaviourStateId.TravelToActivity: return 'travel'
         case BehaviourStateId.Flee: return 'flee'
-        case BehaviourStateId.Reposition: return 'reposition'
-        case BehaviourStateId.Recover: return 'recover'
-        default: return 'unknown'
+    case BehaviourStateId.Reposition: return 'reposition'
+    case BehaviourStateId.Recover: return 'recover'
+    case BehaviourStateId.Patrol: return 'patrol'
+    default: return 'unknown'
     }
 }
 
@@ -502,7 +504,11 @@ export function decideTransition(
         return profile.wanderRadius > 0 ? BehaviourStateId.Wander : BehaviourStateId.Idle
     }
 
-    if (profile.wanderRadius > 0 && snapshot.state === BehaviourStateId.Idle) {
+    if (
+        profile.wanderRadius > 0 &&
+        snapshot.state === BehaviourStateId.Idle &&
+        !snapshot.hasActivity
+    ) {
         return BehaviourStateId.Wander
     }
 

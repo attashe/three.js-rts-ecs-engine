@@ -2,6 +2,7 @@ import { createWorld, type World } from 'bitecs'
 import type { Object3D, Vector3 } from 'three'
 import { ObstacleRegistry } from './obstacle-registry'
 import type { ActorBlackboard } from './behaviour'
+import type { AiSchedule, AiScheduleAssignment, AiZone } from './ai'
 import { EngineMetrics } from '../metrics'
 
 export interface VoxelCoord {
@@ -129,6 +130,9 @@ export interface GameContext {
     object3DByEid: Map<number, Object3D>
     pathByEid: Map<number, PathState>
     behaviourByEid: Map<number, ActorBlackboard>
+    aiZones: Map<string, AiZone>
+    aiSchedules: Map<string, AiSchedule>
+    aiScheduleByEid: Map<number, AiScheduleAssignment>
     hostilityByEid: Map<number, Set<number>>
     projectileOwnerByEid: Map<number, number>
     interactionByEid: Map<number, InteractionState>
@@ -152,6 +156,9 @@ export function createGameWorld(): GameWorld {
         object3DByEid: new Map<number, Object3D>(),
         pathByEid: new Map<number, PathState>(),
         behaviourByEid: new Map<number, ActorBlackboard>(),
+        aiZones: new Map<string, AiZone>(),
+        aiSchedules: new Map<string, AiSchedule>(),
+        aiScheduleByEid: new Map<number, AiScheduleAssignment>(),
         hostilityByEid: new Map<number, Set<number>>(),
         projectileOwnerByEid: new Map<number, number>(),
         interactionByEid: new Map<number, InteractionState>(),

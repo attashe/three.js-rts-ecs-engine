@@ -19,6 +19,7 @@ import type { System } from './system'
 import { RenderOrder } from './orders'
 import type { Input } from '../../input/input'
 import { UiLogPanel } from '../../../ui'
+import type { AiZone } from '../ai'
 
 export interface DebugOverlayOptions {
     enabled?: boolean
@@ -41,6 +42,12 @@ interface BoxBatchState {
     count: number
 }
 
+interface ZoneDebugState {
+    line: LineSegments
+    label: Sprite
+    signature: string
+}
+
 export function createDebugOverlaySystem(scene: Scene, input: Input, opts: DebugOverlayOptions = {}): System {
     let enabled = opts.enabled ?? true
     const updateDt = 1 / (opts.updateHz ?? 6)
@@ -48,10 +55,12 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     root.name = 'DebugOverlay'
     const boxMaterial = new LineBasicMaterial({ color: 0x9cff57 })
     const lineMaterial = new LineBasicMaterial({ color: 0x55d6ff })
+    const zoneMaterial = new LineBasicMaterial({ color: 0xffcf5a, transparent: true, opacity: 0.85, depthTest: false })
     const boxBatch = createBoxBatch(boxMaterial)
     const textTextureByKey = new Map<string, Texture>()
     const labelByEid = new Map<number, LabelState>()
     const pathByEid = new Map<number, PathState>()
+    const zoneById = new Map<string, ZoneDebugState>()
     let logPanel: UiLogPanel | null = null
     let metricsPanel: UiLogPanel | null = null
     let lastLogLength = -1
@@ -84,6 +93,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             const eids = query(world, [Behaviour, Position, BoxCollider])
             const live = new Set<number>()
             updateBoxes(boxBatch, eids)
+            if (refreshHeavyDebug) updateZones(root, zoneById, zoneMaterial, textTextureByKey, world.aiZones)
             for (let i = 0; i < eids.length; i++) {
                 const eid = eids[i]
                 live.add(eid)
@@ -100,6 +110,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
                 world.metrics.setGauge('debug.boxes', boxBatch.count)
                 world.metrics.setGauge('debug.labels', labelByEid.size)
                 world.metrics.setGauge('debug.paths', pathByEid.size)
+                world.metrics.setGauge('debug.zones', zoneById.size)
                 updateLog(logPanel, world.log, lastLogLength)
                 updateMetrics(metricsPanel, world.metrics.summaryLines({ systemCount: 5, gaugeCount: 20 }))
                 lastLogLength = world.log.length
@@ -108,15 +119,18 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         dispose() {
             for (const state of pathByEid.values()) disposePath(state)
             for (const state of labelByEid.values()) disposeLabel(state)
+            for (const state of zoneById.values()) disposeZone(state)
             for (const texture of textTextureByKey.values()) texture.dispose()
             pathByEid.clear()
             labelByEid.clear()
+            zoneById.clear()
             textTextureByKey.clear()
             root.clear()
             scene.remove(root)
             boxBatch.lines.geometry.dispose()
             boxMaterial.dispose()
             lineMaterial.dispose()
+            zoneMaterial.dispose()
             logPanel?.dispose()
             metricsPanel?.dispose()
             logPanel = null
@@ -254,6 +268,99 @@ function updatePathOrigin(map: Map<number, PathState>, eid: number): void {
     attribute.needsUpdate = true
 }
 
+function updateZones(
+    root: Group,
+    map: Map<string, ZoneDebugState>,
+    material: LineBasicMaterial,
+    textureCache: Map<string, Texture>,
+    zones: ReadonlyMap<string, AiZone>,
+): void {
+    const live = new Set<string>()
+    for (const [id, zone] of zones) {
+        live.add(id)
+        const signature = zoneSignature(zone)
+        let state = map.get(id)
+        if (!state) {
+            const line = new LineSegments(new BufferGeometry(), material)
+            line.name = `ZoneDebug:${id}`
+            line.frustumCulled = false
+            const label = new Sprite(new SpriteMaterial({ transparent: true, depthTest: false }))
+            label.name = `ZoneLabel:${id}`
+            label.scale.set(2.1, 0.42, 1)
+            state = { line, label, signature: '' }
+            map.set(id, state)
+            root.add(line)
+            root.add(label)
+        }
+
+        if (state.signature !== signature) {
+            writeZoneGeometry(state.line.geometry, zone)
+            state.signature = signature
+        }
+        state.label.material.map = cachedTextTexture(textureCache, zone.label ? `${zone.label}\n${id}` : id)
+        state.label.material.needsUpdate = true
+        const center = zoneCenter(zone)
+        state.label.position.set(center.x, center.y + 0.22, center.z)
+    }
+
+    for (const [id, state] of map) {
+        if (live.has(id)) continue
+        root.remove(state.line)
+        root.remove(state.label)
+        disposeZone(state)
+        map.delete(id)
+    }
+}
+
+function writeZoneGeometry(geometry: BufferGeometry, zone: AiZone): void {
+    const y = zone.center.y + 0.06
+    const coords = zone.rect
+        ? rectZoneCoords(zone.rect.minX, zone.rect.minZ, zone.rect.maxX, zone.rect.maxZ, y)
+        : circleZoneCoords(zone.center.x, zone.center.z, zone.radius ?? 0.35, y)
+    geometry.setAttribute('position', new Float32BufferAttribute(coords, 3))
+    geometry.computeBoundingSphere()
+}
+
+function rectZoneCoords(minX: number, minZ: number, maxX: number, maxZ: number, y: number): number[] {
+    return [
+        minX, y, minZ, maxX, y, minZ,
+        maxX, y, minZ, maxX, y, maxZ,
+        maxX, y, maxZ, minX, y, maxZ,
+        minX, y, maxZ, minX, y, minZ,
+    ]
+}
+
+function circleZoneCoords(x: number, z: number, radius: number, y: number): number[] {
+    const segmentCount = 48
+    const coords: number[] = []
+    const r = Math.max(0.2, radius)
+    for (let i = 0; i < segmentCount; i++) {
+        const a = i * Math.PI * 2 / segmentCount
+        const b = (i + 1) * Math.PI * 2 / segmentCount
+        coords.push(
+            x + Math.sin(a) * r, y, z + Math.cos(a) * r,
+            x + Math.sin(b) * r, y, z + Math.cos(b) * r,
+        )
+    }
+    return coords
+}
+
+function zoneCenter(zone: AiZone): { x: number; y: number; z: number } {
+    if (!zone.rect) return zone.center
+    return {
+        x: (zone.rect.minX + zone.rect.maxX) * 0.5,
+        y: zone.center.y,
+        z: (zone.rect.minZ + zone.rect.maxZ) * 0.5,
+    }
+}
+
+function zoneSignature(zone: AiZone): string {
+    if (zone.rect) {
+        return `r:${zone.rect.minX},${zone.rect.minZ},${zone.rect.maxX},${zone.rect.maxZ},${zone.center.y},${zone.label ?? ''}`
+    }
+    return `c:${zone.center.x},${zone.center.y},${zone.center.z},${zone.radius ?? 0},${zone.label ?? ''}`
+}
+
 function updateLabel(
     world: Parameters<System['update']>[0],
     root: Group,
@@ -352,4 +459,9 @@ function disposePath(state: PathState): void {
 
 function disposeLabel(state: LabelState): void {
     state.sprite.material.dispose()
+}
+
+function disposeZone(state: ZoneDebugState): void {
+    state.line.geometry.dispose()
+    state.label.material.dispose()
 }

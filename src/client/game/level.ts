@@ -11,6 +11,11 @@ export interface CombatSpawn {
     faction?: FactionId
 }
 
+export interface VillagerScheduleMeta {
+    home: { x: number; y: number; z: number }
+    work: { x: number; y: number; z: number }
+}
+
 export interface LevelMeta {
     /** World-space spawn position (X, Y, Z). Y is standing height (one above topmost solid). */
     spawn: { x: number; y: number; z: number }
@@ -19,6 +24,7 @@ export interface LevelMeta {
     dummy: { x: number; y: number; z: number }
     wanderers: { x: number; y: number; z: number }[]
     villagers: { x: number; y: number; z: number }[]
+    villagerSchedules: VillagerScheduleMeta[]
     guards: { x: number; y: number; z: number }[]
     hunters: {
         home: { x: number; y: number; z: number }
@@ -156,6 +162,7 @@ export function generateDemoLevel(chunks: ChunkManager): LevelMeta {
         dummy,
         wanderers,
         villagers: [],
+        villagerSchedules: [],
         guards: [],
         hunters,
         rabbits,
@@ -194,13 +201,16 @@ export function generateVillageLevel(chunks: ChunkManager): LevelMeta {
     flattenRect(chunks, heights, size, 46, 24, 56, 40, top, BLOCK.plank)
     flattenRect(chunks, heights, size, 6, 24, 18, 40, top, BLOCK.grass)
 
-    const doors = [
-        placeHut(chunks, heightAt, 22, 25),
-        placeHut(chunks, heightAt, 22, 39),
-        placeHut(chunks, heightAt, 36, 25),
-        placeHut(chunks, heightAt, 36, 39),
-        placeHut(chunks, heightAt, 14, 33),
-    ]
+    const houseCenters = [
+        [22, 25],
+        [22, 39],
+        [36, 25],
+        [36, 39],
+        [14, 33],
+    ] as const
+    for (const [x, z] of houseCenters) {
+        placeHut(chunks, heightAt, x, z, { roof: false, door: false, lantern: false })
+    }
 
     placeFence(chunks, 43, top + 1, 21, 59, 45)
     placeGateGap(chunks, 44, top + 1, 32, 45, 32)
@@ -215,6 +225,14 @@ export function generateVillageLevel(chunks: ChunkManager): LevelMeta {
         standingPoint(heightAt, 26, 37),
         standingPoint(heightAt, 38, 30),
         standingPoint(heightAt, 29, 39),
+    ]
+    const villagerSchedules: VillagerScheduleMeta[] = [
+        { home: standingPoint(heightAt, 22, 25), work: standingPoint(heightAt, 48, 27) },
+        { home: standingPoint(heightAt, 22, 39), work: standingPoint(heightAt, 50, 31) },
+        { home: standingPoint(heightAt, 36, 25), work: standingPoint(heightAt, 54, 34) },
+        { home: standingPoint(heightAt, 36, 39), work: standingPoint(heightAt, 49, 39) },
+        { home: standingPoint(heightAt, 14, 33), work: standingPoint(heightAt, 33, 32) },
+        { home: standingPoint(heightAt, 22, 39), work: standingPoint(heightAt, 31, 38) },
     ]
     const guards = [
         standingPoint(heightAt, 31, 22),
@@ -237,10 +255,16 @@ export function generateVillageLevel(chunks: ChunkManager): LevelMeta {
     const hostiles = [
         { position: standingPoint(heightAt, 8, 30), yaw: Math.PI * 0.5, label: 'Forest Raider' },
         { position: standingPoint(heightAt, 9, 36), yaw: Math.PI * 0.5, label: 'Road Bandit' },
+        { position: standingPoint(heightAt, 5, 28), yaw: Math.PI * 0.5, label: 'Wave Raider 1' },
+        { position: standingPoint(heightAt, 5, 32), yaw: Math.PI * 0.5, label: 'Wave Raider 2' },
+        { position: standingPoint(heightAt, 5, 36), yaw: Math.PI * 0.5, label: 'Wave Raider 3' },
+        { position: standingPoint(heightAt, 7, 40), yaw: Math.PI * 0.5, label: 'Wave Raider 4' },
     ]
     const archers = [
         { position: standingPoint(heightAt, 12, 26), yaw: Math.PI * 0.5, label: 'Road Archer' },
         { position: standingPoint(heightAt, 12, 39), yaw: Math.PI * 0.5, label: 'Forest Archer' },
+        { position: standingPoint(heightAt, 3, 31), yaw: Math.PI * 0.5, label: 'Wave Bowman 1' },
+        { position: standingPoint(heightAt, 3, 37), yaw: Math.PI * 0.5, label: 'Wave Bowman 2' },
     ]
 
     return {
@@ -249,6 +273,7 @@ export function generateVillageLevel(chunks: ChunkManager): LevelMeta {
         dummy: standingPoint(heightAt, 34, 30),
         wanderers: [],
         villagers,
+        villagerSchedules,
         guards,
         hunters,
         rabbits,
@@ -259,7 +284,7 @@ export function generateVillageLevel(chunks: ChunkManager): LevelMeta {
         stoneSpawners: [],
         coins: standingPoint(heightAt, 33, 33),
         potion: standingPoint(heightAt, 31, 33),
-        doors,
+        doors: [],
         pistons: [],
         size,
     }
@@ -526,7 +551,11 @@ function placeHut(
     heightAt: (x: number, z: number) => number,
     cx: number,
     cz: number,
+    opts: { roof?: boolean; door?: boolean; lantern?: boolean } = {},
 ): DoorMechanismConfig {
+    const roof = opts.roof ?? true
+    const door = opts.door ?? true
+    const lantern = opts.lantern ?? true
     const ground = heightAt(cx, cz)
     const yFloor = ground
     // 5×5 plank floor replaces the pad surface so it stays walkable by the
@@ -546,23 +575,29 @@ function placeHut(
             chunks.setVoxel(cx + 2, yFloor + dy, cz + i, BLOCK.brick)
         }
     }
-    // Plank roof (flat).
-    for (let dz = -2; dz <= 2; dz++) {
-        for (let dx = -2; dx <= 2; dx++) {
-            chunks.setVoxel(cx + dx, yFloor + 4, cz + dz, BLOCK.plank)
+    if (roof) {
+        // Plank roof (flat).
+        for (let dz = -2; dz <= 2; dz++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                chunks.setVoxel(cx + dx, yFloor + 4, cz + dz, BLOCK.plank)
+            }
         }
     }
-    // Glow lantern hanging from the centre of the roof.
-    chunks.setVoxel(cx, yFloor + 3, cz, BLOCK.glow)
+    if (lantern) {
+        // Glow lantern hanging from the centre of the roof.
+        chunks.setVoxel(cx, yFloor + 3, cz, BLOCK.glow)
+    }
 
     const blocks = [
         { pos: { x: cx, y: yFloor + 1, z: cz - 2 }, block: BLOCK.door },
         { pos: { x: cx, y: yFloor + 2, z: cz - 2 }, block: BLOCK.door },
     ]
-    for (const { pos, block } of blocks) chunks.setVoxel(pos.x, pos.y, pos.z, block)
+    if (door) {
+        for (const { pos, block } of blocks) chunks.setVoxel(pos.x, pos.y, pos.z, block)
+    }
     return {
         position: { x: cx, y: yFloor + 1, z: cz - 2 },
-        blocks,
+        blocks: door ? blocks : [],
     }
 }
 

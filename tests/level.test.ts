@@ -22,6 +22,16 @@ test('generateVillageLevel places village actors on walkable clear cells', () =>
     assert.ok(meta.guards.length >= 3)
     assert.ok(meta.hunters.length >= 3)
     assert.ok(meta.rabbits.length >= 6)
+    assert.equal(meta.doors.length, 0)
+    assert.equal(meta.villagerSchedules.length, meta.villagers.length)
+    for (let i = 0; i < meta.villagerSchedules.length; i++) {
+        const home = meta.villagerSchedules[i]!.home
+        assert.equal(
+            chunks.getVoxel(Math.floor(home.x), Math.floor(home.y + 3), Math.floor(home.z)),
+            BLOCK.air,
+            `villager ${i} home should not have a roof over the center`,
+        )
+    }
     assertWalkableMeta(chunks, meta)
 })
 
@@ -36,6 +46,10 @@ function assertWalkableMeta(chunks: ChunkManager, meta: LevelMeta): void {
         ...(meta.pistonTesterGoal ? [['pistonTesterGoal', meta.pistonTesterGoal] as const] : []),
         ...meta.wanderers.map((point, i) => [`wanderer ${i}`, point] as const),
         ...meta.villagers.map((point, i) => [`villager ${i}`, point] as const),
+        ...meta.villagerSchedules.flatMap((schedule, i) => [
+            [`villager ${i} home zone`, schedule.home] as const,
+            [`villager ${i} work zone`, schedule.work] as const,
+        ]),
         ...meta.guards.map((point, i) => [`guard ${i}`, point] as const),
         ...meta.hunters.flatMap((hunter, i) => [
             [`hunter ${i} home`, hunter.home] as const,
