@@ -472,7 +472,11 @@ test('BehaviourSystem: archer shot can land on another archer at duel range', ()
         physicsSystem.update(world, 1 / 60)
     }
 
-    assert.equal(Health.current[target], 90)
+    // The arrow should have landed; the exact damage now comes from the
+    // archer's BehaviourProfile.attackDamage, not the arrow-hit system's
+    // baseDamage option. Asserting "<100" keeps the test about hit detection
+    // (which is what this test really covers) and decoupled from damage tuning.
+    assert.ok(Health.current[target] < 100, `expected archer to land a hit, target HP = ${Health.current[target]}`)
 })
 
 test('BehaviourSystem: damaged villager flees from a neutral attacker via threat memory', () => {

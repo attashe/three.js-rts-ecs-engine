@@ -6,6 +6,7 @@ import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
 import { applyDamagePacket } from '../damage'
+import { activePlayerWeaponDef } from '../../../game/items'
 
 export interface MeleeCombatOptions {
     range?: number
@@ -17,11 +18,10 @@ export interface MeleeCombatOptions {
 }
 
 export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOptions = {}): System {
-    const range = opts.range ?? 1.35
-    const arc = opts.arcRadians ?? Math.PI * 0.65
-    const damage = opts.damage ?? 25
+    const fallbackRange = opts.range ?? 1.35
+    const fallbackArc = opts.arcRadians ?? Math.PI * 0.65
+    const fallbackDamage = opts.damage ?? 25
     const actionId = opts.actionId ?? 'attack.primary'
-    const cosHalfArc = Math.cos(arc * 0.5)
 
     return {
         fixed: true,
@@ -32,6 +32,16 @@ export function createMeleeCombatSystem(actions: ActionMap, opts: MeleeCombatOpt
             const player = players[0]
             if (opts.canUse && !opts.canUse(world, player)) return
             if (!actions.consumePressed(actionId, player)) return
+
+            // Pull damage/reach/arc from the active weapon item if present;
+            // otherwise fall back to the system defaults so empty-hand or
+            // test setups still produce sensible numbers.
+            const def = activePlayerWeaponDef(world)
+            const stats = def?.weapon
+            const damage = stats?.damage ?? fallbackDamage
+            const range = stats?.range ?? fallbackRange
+            const arc = stats?.arcRadians ?? fallbackArc
+            const cosHalfArc = Math.cos(arc * 0.5)
 
             const px = Position.x[player]
             const pz = Position.z[player]

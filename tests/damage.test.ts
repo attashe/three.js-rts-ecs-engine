@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponent, addEntity, hasComponent } from 'bitecs'
-import { Attackable, Behaviour, Faction, Health, Position } from '../src/client/engine/ecs/components'
+import { Attackable, Behaviour, Faction, Health, PlayerControlled, Position } from '../src/client/engine/ecs/components'
 import { applyDamagePacket } from '../src/client/engine/ecs/damage'
 import { areEntitiesEnemies, FactionId } from '../src/client/engine/ecs/factions'
 import { createGameWorld } from '../src/client/engine/ecs/world'
@@ -11,6 +11,7 @@ import {
     assignBehaviourProfile,
     getBehaviourTarget,
 } from '../src/client/engine/ecs/behaviour'
+import { populateDefaultPlayerLoadout, recomputePlayerStats } from '../src/client/game/items'
 
 test('applyDamagePacket reduces health and removes Attackable on death', () => {
     const world = createGameWorld()
@@ -160,6 +161,64 @@ test('applyDamagePacket alerts nearby village defenders when a villager is attac
     assert.equal(Behaviour.state[hunter], BehaviourStateId.Chase)
     assert.equal(getBehaviourTarget(guard), player)
     assert.equal(getBehaviourTarget(hunter), player)
+})
+
+test('applyDamagePacket subtracts the player\'s aggregate armor defense, with a min-damage floor', () => {
+    const world = createGameWorld()
+    populateDefaultPlayerLoadout(world)
+
+    const player = addEntity(world)
+    addComponent(world, player, Position)
+    addComponent(world, player, Health)
+    addComponent(world, player, Faction)
+    addComponent(world, player, PlayerControlled)
+    Health.max[player] = 100; Health.current[player] = 100
+    Faction.id[player] = FactionId.Player
+
+    const attacker = addEntity(world)
+    addComponent(world, attacker, Position)
+    addComponent(world, attacker, Faction)
+    Faction.id[attacker] = FactionId.Hostile
+
+    // Default kit: tunic+gloves+boots+shield = 7 defense. An 8-damage hit
+    // (hostile melee grunt's attackDamage) should land for 1.
+    const result = applyDamagePacket(world, {
+        source: attacker,
+        target: player,
+        amount: 8,
+        type: 'physical',
+        targetPolicy: 'enemy',
+    })
+    assert.equal(result.applied, true)
+    assert.equal(result.amount, 1)
+    assert.equal(Health.current[player], 99)
+
+    // Strip armor and the same hit should land for full 8.
+    for (const slot of world.playerLoadout.armorySlots) slot.item = null
+    recomputePlayerStats(world)
+    const naked = applyDamagePacket(world, {
+        source: attacker,
+        target: player,
+        amount: 8,
+        type: 'physical',
+        targetPolicy: 'enemy',
+    })
+    assert.equal(naked.amount, 8)
+    assert.equal(Health.current[player], 91)
+})
+
+test('applyDamagePacket leaves non-player targets unaffected by player armor', () => {
+    const world = createGameWorld()
+    populateDefaultPlayerLoadout(world)
+
+    const dummy = addEntity(world)
+    addComponent(world, dummy, Position)
+    addComponent(world, dummy, Health)
+    Health.max[dummy] = 100; Health.current[dummy] = 100
+
+    const result = applyDamagePacket(world, { target: dummy, amount: 25, type: 'physical' })
+    assert.equal(result.amount, 25)
+    assert.equal(Health.current[dummy], 75)
 })
 
 function addDefender(

@@ -3,7 +3,8 @@ import { Pickup, PickupValue, PlayerControlled, Position } from '../components'
 import { despawnEntity } from '../entity'
 import type { System } from './system'
 import { FixedOrder } from './orders'
-import { addItemToBackpack, item, pushGameLog } from '../world'
+import { addItemToBackpack, pushGameLog } from '../world'
+import { createInventoryItem, recomputePlayerStats } from '../../../game/items'
 
 export interface PickupSystemOptions {
     radius?: number
@@ -47,7 +48,10 @@ export function createPickupSystem(opts: PickupSystemOptions = {}): System {
 function addToInventory(world: Parameters<System['update']>[0], eid: number): void {
     const state = world.pickupByEid.get(eid)
     if (state?.item) {
-        addItemToBackpack(world, state.item)
+        const picked = addItemToBackpack(world, state.item)
+        if (picked && (state.item.equipSlot || state.item.loadoutKind)) {
+            recomputePlayerStats(world)
+        }
         return
     }
     if (!hasComponent(world, eid, PickupValue)) return
@@ -56,12 +60,12 @@ function addToInventory(world: Parameters<System['update']>[0], eid: number): vo
     const amount = PickupValue.amount[eid]
     if (kind === 1) {
         world.playerInventory.gold += amount
-        addItemToBackpack(world, item('gold', 'currency', 'Gold', 'G', { count: amount }))
+        addItemToBackpack(world, createInventoryItem('gold', amount))
     } else if (kind === 2) {
         world.playerInventory.potions += 1
-        addItemToBackpack(world, item('health-potion', 'consumable', 'Potion', '+', { count: 1 }))
+        addItemToBackpack(world, createInventoryItem('health-potion', 1))
     } else if (kind === 3) {
         world.playerInventory.arrows += Math.max(1, amount)
-        addItemToBackpack(world, item('arrows', 'ammo', 'Arrows', 'AR', { count: Math.max(1, amount) }))
+        addItemToBackpack(world, createInventoryItem('arrows', Math.max(1, amount)))
     }
 }

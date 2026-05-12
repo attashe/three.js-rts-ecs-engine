@@ -91,8 +91,12 @@ export function createPlayerControlSystem(
                 dirX /= dirLen
                 dirZ /= dirLen
             }
-            const targetVx = dirX * moveSpeed
-            const targetVz = dirZ * moveSpeed
+            // Armor weight scales the base walk speed. world.playerStats is
+            // recomputed by hud-system whenever the armory changes; this just
+            // reads the cached multiplier.
+            const effectiveSpeed = moveSpeed * world.playerStats.moveSpeedMult
+            const targetVx = dirX * effectiveSpeed
+            const targetVz = dirZ * effectiveSpeed
 
             // Frame-rate independent exponential smoothing.
             const alpha = 1 - Math.exp(-accel * dt)

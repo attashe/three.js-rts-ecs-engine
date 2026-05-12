@@ -1,8 +1,12 @@
 import { hasComponent, removeComponent } from 'bitecs'
-import { Attackable, Health } from './components'
+import { Attackable, Health, PlayerControlled } from './components'
 import { areEntitiesEnemies } from './factions'
 import { applyDamageSocialResponse } from './social'
 import type { GameWorld } from './world'
+
+/** Minimum damage that gets through full armor — defense never trivializes a
+ *  hit to 0, otherwise certain encounters become unloseable. */
+const MIN_PLAYER_DAMAGE = 1
 
 export type DamageType = 'physical' | 'impact' | 'fire' | 'cold' | 'lightning' | 'poison' | 'force' | 'arcane'
 export type DamageTargetPolicy = 'any' | 'enemy'
@@ -28,7 +32,7 @@ export interface DamageResult {
 
 export function applyDamagePacket(world: GameWorld, packet: DamagePacket): DamageResult {
     const target = packet.target
-    const amount = Math.max(0, packet.amount)
+    const incoming = Math.max(0, packet.amount)
     const label = targetLabel(world, target)
 
     if (!hasComponent(world, target, Health)) {
@@ -38,12 +42,18 @@ export function applyDamagePacket(world: GameWorld, packet: DamagePacket): Damag
     if (previousHealth <= 0) {
         return rejected(label, 'dead', previousHealth)
     }
-    if (amount <= 0) {
+    if (incoming <= 0) {
         return rejected(label, 'invalid-amount', previousHealth)
     }
     if (!passesTargetPolicy(world, packet)) {
         return rejected(label, 'friendly-fire', previousHealth)
     }
+
+    // Player armor reduction. Cached aggregate lives on world.playerStats and
+    // is recomputed by recomputePlayerStats whenever the loadout mutates.
+    const amount = hasComponent(world, target, PlayerControlled)
+        ? Math.max(MIN_PLAYER_DAMAGE, incoming - world.playerStats.defense)
+        : incoming
 
     const currentHealth = Math.max(0, previousHealth - amount)
     Health.current[target] = currentHealth

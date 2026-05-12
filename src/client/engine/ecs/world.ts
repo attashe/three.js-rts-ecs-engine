@@ -77,6 +77,19 @@ export interface PlayerLoadout {
     spellSlots: PlayerInventoryItem[]
 }
 
+/**
+ * Cached aggregate of the player's equipped armor. Recomputed by
+ * `recomputePlayerStats` (game/items.ts) whenever the loadout mutates so
+ * combat and movement systems can read the totals in O(1) instead of
+ * walking the armory each tick.
+ */
+export interface PlayerStats {
+    defense: number
+    weight: number
+    /** Movement speed multiplier, in (0, 1]. 1.0 = unarmored baseline. */
+    moveSpeedMult: number
+}
+
 export interface DoorBlock {
     pos: VoxelCoord
     block: number
@@ -139,6 +152,7 @@ export interface GameContext {
     pickupByEid: Map<number, PickupState>
     playerInventory: PlayerInventory
     playerLoadout: PlayerLoadout
+    playerStats: PlayerStats
     mechanismByEid: Map<number, VoxelMechanism>
     voxelMechanisms: VoxelMechanism[]
     log: GameLogEntry[]
@@ -164,7 +178,8 @@ export function createGameWorld(): GameWorld {
         interactionByEid: new Map<number, InteractionState>(),
         pickupByEid: new Map<number, PickupState>(),
         playerInventory: { gold: 0, potions: 0, arrows: 0 },
-        playerLoadout: createDefaultPlayerLoadout(),
+        playerLoadout: createEmptyPlayerLoadout(),
+        playerStats: { defense: 0, weight: 0, moveSpeedMult: 1 },
         mechanismByEid: new Map<number, VoxelMechanism>(),
         voxelMechanisms: [],
         log: [],
@@ -173,43 +188,30 @@ export function createGameWorld(): GameWorld {
     })
 }
 
-export function createDefaultPlayerLoadout(): PlayerLoadout {
-    const sword = item('training-sword', 'weapon', 'Sword', 'SW', { equipSlot: 'weapon', loadoutKind: 'sword' })
-    const bow = item('hunter-bow', 'weapon', 'Bow', 'BW', { equipSlot: 'weapon', loadoutKind: 'bow' })
-    const airPush = item('air-push', 'spell', 'Air Push', 'AP', { equipSlot: 'weapon', loadoutKind: 'airPush' })
-    const highJump = item('high-jump', 'spell', 'High Jump', 'HJ', { equipSlot: 'weapon', loadoutKind: 'highJump' })
-    const chest = item('tunic', 'armor', 'Tunic', 'CH', { equipSlot: 'chest' })
-    const gloves = item('gloves', 'armor', 'Gloves', 'HN', { equipSlot: 'hands' })
-    const boots = item('boots', 'armor', 'Boots', 'BT', { equipSlot: 'boots' })
-    const shield = item('round-shield', 'armor', 'Round shield', 'SH', { equipSlot: 'shield' })
-    const helm = item('iron-helm', 'armor', 'Iron helm', 'HD', { equipSlot: 'head' })
-    const charm = item('wind-charm', 'armor', 'Wind charm', 'CR', { equipSlot: 'charm' })
-
+/**
+ * World-side bootstrap: the loadout is created empty so the world module
+ * doesn't have to import the item registry. `game/items.populateDefault
+ * PlayerLoadout(world)` fills it with the starting kit during spawnPlayer.
+ */
+export function createEmptyPlayerLoadout(): PlayerLoadout {
     return {
         activeSlot: 0,
         weaponSlots: [
-            loadoutSlot(sword),
-            loadoutSlot(bow),
-            loadoutSlot(airPush),
-            loadoutSlot(highJump),
+            { kind: 'empty', label: 'Empty', icon: '.' },
+            { kind: 'empty', label: 'Empty', icon: '.' },
+            { kind: 'empty', label: 'Empty', icon: '.' },
+            { kind: 'empty', label: 'Empty', icon: '.' },
         ],
         armorySlots: [
             { slot: 'head', label: 'Head', icon: 'HD', item: null },
-            { slot: 'chest', label: 'Chest', icon: 'CH', item: chest },
-            { slot: 'hands', label: 'Hands', icon: 'HN', item: gloves },
-            { slot: 'boots', label: 'Boots', icon: 'BT', item: boots },
-            { slot: 'shield', label: 'Shield', icon: 'SH', item: shield },
+            { slot: 'chest', label: 'Chest', icon: 'CH', item: null },
+            { slot: 'hands', label: 'Hands', icon: 'HN', item: null },
+            { slot: 'boots', label: 'Boots', icon: 'BT', item: null },
+            { slot: 'shield', label: 'Shield', icon: 'SH', item: null },
             { slot: 'charm', label: 'Charm', icon: 'CR', item: null },
         ],
-        backpackSlots: padBackpack([
-            item('health-potion', 'consumable', 'Potion', '+', { count: 2 }),
-            item('arrows', 'ammo', 'Arrows', 'AR', { count: 12 }),
-            helm,
-            charm,
-            item('spare-sword', 'weapon', 'Spare sword', 'SW', { equipSlot: 'weapon', loadoutKind: 'sword' }),
-            item('practice-bow', 'weapon', 'Practice bow', 'BW', { equipSlot: 'weapon', loadoutKind: 'bow' }),
-        ]),
-        spellSlots: [airPush, highJump],
+        backpackSlots: Array.from({ length: 24 }, () => null),
+        spellSlots: [],
     }
 }
 
@@ -241,20 +243,6 @@ export function loadoutSlot(itemToEquip: PlayerInventoryItem | null): PlayerLoad
         icon: itemToEquip.icon,
         item: { ...itemToEquip },
     }
-}
-
-export function item(
-    id: string,
-    category: PlayerItemCategory,
-    label: string,
-    icon: string,
-    opts: Partial<Omit<PlayerInventoryItem, 'id' | 'category' | 'label' | 'icon'>> = {},
-): PlayerInventoryItem {
-    return { id, category, label, icon, ...opts }
-}
-
-function padBackpack(items: PlayerInventoryItem[], size = 24): Array<PlayerInventoryItem | null> {
-    return [...items, ...Array.from({ length: Math.max(0, size - items.length) }, () => null)]
 }
 
 export function pushGameLog(world: GameWorld, entry: Omit<GameLogEntry, 'time'>): void {

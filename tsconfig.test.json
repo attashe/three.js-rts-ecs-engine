@@ -25,6 +25,7 @@
     "src/client/engine/ecs/factions.ts",
     "src/client/engine/ecs/obstacle-registry.ts",
     "src/client/engine/ecs/world.ts",
+    "src/client/game/items.ts",
     "tests/**/*.ts"
   ]
 }

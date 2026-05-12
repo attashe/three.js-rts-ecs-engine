@@ -4,22 +4,26 @@ import type { Object3D } from 'three'
 import type { ChunkManager } from '../../voxel/chunk-manager'
 import { voxelRaycast } from '../../voxel/voxel-raycast'
 import {
+    Behaviour,
     BoxCollider,
     Faction,
     Health,
     MovingObject,
+    PlayerControlled,
     Position,
     Rotation,
     Shield,
     Velocity,
 } from '../components'
 import { FactionId } from '../factions'
+import { getBehaviourProfile } from '../behaviour'
 import { MovingObjectKind } from '../../../game/moving-objects'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
 import type { GameWorld } from '../world'
 import { applyDamagePacket } from '../damage'
+import { activePlayerWeaponDef } from '../../../game/items'
 
 export interface ArrowHitOptions {
     /** UI hint callback (also pushed to the in-world combat log). */
@@ -142,7 +146,7 @@ export function createArrowHitSystem(
 
                 const speed = Math.sqrt(speedSq)
                 const speedFactor = Math.min(1, speed / referenceSpeed)
-                const damage = baseDamage + speedBonus * speedFactor
+                const damage = arrowDamage(world, arrow, speedFactor, baseDamage, speedBonus)
                 applyArrowHit(world, arrow, bestTarget, damage, opts.notify)
             }
             world.metrics.setGauge('arrowHit.arrows', arrows.length)
@@ -323,6 +327,38 @@ function arrowTargetPolicy(world: GameWorld, arrow: number): 'any' | 'enemy' {
     if (owner === undefined) return 'any'
     if (!hasComponent(world, owner, Faction)) return 'any'
     return Faction.id[owner] === FactionId.Player ? 'any' : 'enemy'
+}
+
+/**
+ * Resolve the damage an arrow should deal. The arrow's owner determines the
+ * source of stats:
+ *  - Player-owned: active bow item's WeaponStats (damage + speedBonus).
+ *  - AI-owned with a Behaviour profile: profile.attackDamage (flat — the
+ *    bow archer profile didn't actually feed into damage before this).
+ *  - Anything else: fall back to the system defaults (legacy contract).
+ */
+function arrowDamage(
+    world: GameWorld,
+    arrow: number,
+    speedFactor: number,
+    fallbackBase: number,
+    fallbackBonus: number,
+): number {
+    const owner = world.projectileOwnerByEid.get(arrow)
+    if (owner !== undefined && hasComponent(world, owner, PlayerControlled)) {
+        const stats = activePlayerWeaponDef(world)?.weapon
+        if (stats) {
+            const bonus = stats.speedBonus ?? 0
+            return stats.damage + bonus * speedFactor
+        }
+    }
+    if (owner !== undefined && hasComponent(world, owner, Behaviour)) {
+        const profile = getBehaviourProfile(Behaviour.profileId[owner])
+        if (profile && profile.attackKind === 'bow' && profile.attackDamage > 0) {
+            return profile.attackDamage
+        }
+    }
+    return fallbackBase + fallbackBonus * speedFactor
 }
 
 /** Slab-method segment-vs-AABB intersection. Returns parametric t in [0, 1]

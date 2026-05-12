@@ -25,6 +25,7 @@ import {
     MAIN_CHARACTER_COLLIDER_HALF_HEIGHT,
     MAIN_CHARACTER_COLLIDER_RADIUS,
 } from './assets'
+import { populateDefaultPlayerLoadout } from './items'
 
 export interface PlayerOptions {
     spawn: { x: number; y: number; z: number }
@@ -97,6 +98,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     root.add(createBackQuiver())
 
     world.object3DByEid.set(eid, root)
+    populateDefaultPlayerLoadout(world)
     return eid
 }
 

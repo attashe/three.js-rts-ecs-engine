@@ -15,16 +15,19 @@ import {
     toolbar,
     toolbarSeparator,
 } from '../client/ui'
-import { createDefaultPlayerLoadout } from '../client/engine/ecs/world'
+import { createGameWorld } from '../client/engine/ecs/world'
+import { populateDefaultPlayerLoadout } from '../client/game/items'
 
 const app = el('main', { className: 'ui-root ui-demo-page' })
 document.body.appendChild(app)
 
 const toast = new ToastStack()
 const hud = new GameHud()
+const demoWorld = createGameWorld()
+populateDefaultPlayerLoadout(demoWorld)
 hud.setVitals({ health: 72, maxHealth: 100, mana: 46, maxMana: 60, stamina: 83, maxStamina: 100 })
 hud.setInventory({ gold: 128, potions: 2, arrows: 11 })
-hud.setLoadout(createDefaultPlayerLoadout())
+hud.setLoadout(demoWorld.playerLoadout)
 hud.setInventoryOpen(true)
 hud.setShieldRaised(true)
 hud.setCommandHints([

@@ -6,6 +6,7 @@ import type { ActionMap } from '../engine/input/actions'
 import type { GameHud, HudInventoryRequest } from '../ui'
 import { addItemToBackpack, loadoutSlot, type GameWorld, type PlayerInventoryItem } from '../engine/ecs/world'
 import { GameAction } from './actions'
+import { recomputePlayerStats } from './items'
 import { spawnDroppedInventoryItem } from './props'
 
 export function createGameHudSystem(hud: GameHud, actions?: ActionMap): System {
@@ -20,9 +21,12 @@ export function createGameHudSystem(hud: GameHud, actions?: ActionMap): System {
             if (players.length === 0) return
 
             const player = players[0]
-            for (const request of hud.consumeInventoryRequests()) {
-                applyInventoryRequest(world, player, request)
+            const requests = hud.consumeInventoryRequests()
+            let armoryTouched = false
+            for (const request of requests) {
+                if (applyInventoryRequest(world, player, request)) armoryTouched = true
             }
+            if (armoryTouched) recomputePlayerStats(world)
             hud.setVitals({
                 health: Health.current[player],
                 maxHealth: Health.max[player],
@@ -38,59 +42,67 @@ export function createGameHudSystem(hud: GameHud, actions?: ActionMap): System {
     }
 }
 
-function applyInventoryRequest(world: GameWorld, player: number, request: HudInventoryRequest): void {
+/**
+ * Apply a single HUD inventory request. Returns true when the change
+ * touched the armory slots, so the caller can recompute aggregated player
+ * stats (defense / weight). Weapon slot swaps don't yet feed back into
+ * stats — that's the C-track combat hookup which reads the active item
+ * directly at attack time.
+ */
+function applyInventoryRequest(world: GameWorld, player: number, request: HudInventoryRequest): boolean {
     const loadout = world.playerLoadout
     if (request.type === 'equipBackpack') {
         const item = loadout.backpackSlots[request.index]
-        if (!item) return
+        if (!item) return false
         if (request.target === 'weapon') {
-            if (!isWeaponCompatible(item)) return
+            if (!isWeaponCompatible(item)) return false
             const existing = loadout.weaponSlots[request.slotIndex]?.item ?? null
             loadout.weaponSlots[request.slotIndex] = loadoutSlot(item)
             loadout.backpackSlots[request.index] = existing
-            return
+            return false
         }
 
         const slot = loadout.armorySlots[request.slotIndex]
-        if (!slot || item.equipSlot !== slot.slot) return
+        if (!slot || item.equipSlot !== slot.slot) return false
         const existing = slot.item
         slot.item = item
         loadout.backpackSlots[request.index] = existing
-        return
+        return true
     }
 
     if (request.type === 'equipSpell') {
         const item = loadout.spellSlots[request.index]
-        if (!item?.loadoutKind) return
+        if (!item?.loadoutKind) return false
         const existing = loadout.weaponSlots[request.slotIndex]?.item ?? null
         if (existing && existing.category !== 'spell') addItemToBackpack(world, existing)
         loadout.weaponSlots[request.slotIndex] = loadoutSlot(item)
-        return
+        return false
     }
 
     if (request.type === 'clearWeapon') {
         const existing = loadout.weaponSlots[request.slotIndex]?.item ?? null
         if (existing && existing.category !== 'spell') addItemToBackpack(world, existing)
         loadout.weaponSlots[request.slotIndex] = loadoutSlot(null)
-        return
+        return false
     }
 
     if (request.type === 'clearArmor') {
         const slot = loadout.armorySlots[request.slotIndex]
-        if (!slot?.item) return
+        if (!slot?.item) return false
         addItemToBackpack(world, slot.item)
         slot.item = null
-        return
+        return true
     }
 
     const item = loadout.backpackSlots[request.index]
-    if (!item) return
+    if (!item) return false
     loadout.backpackSlots[request.index] = null
     decrementInventoryCount(world, item)
     spawnDroppedInventoryItem(world, item, {
         position: dropPosition(player),
         yaw: hasComponent(world, player, Rotation) ? Rotation.y[player] : 0,
     })
+    return false
 }
 
 function dropPosition(player: number): { x: number; y: number; z: number } {
