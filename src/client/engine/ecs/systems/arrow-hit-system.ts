@@ -1,5 +1,6 @@
 import { hasComponent, query, removeEntity } from 'bitecs'
-import { Object3D, Vector3 } from 'three'
+import { Vector3 } from 'three'
+import type { Object3D } from 'three'
 import type { ChunkManager } from '../../voxel/chunk-manager'
 import { voxelRaycast } from '../../voxel/voxel-raycast'
 import {

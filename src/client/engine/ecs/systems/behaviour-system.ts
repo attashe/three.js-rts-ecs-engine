@@ -40,6 +40,7 @@ import {
     type AiScheduleStep,
 } from '../ai'
 import { applyDamagePacket } from '../damage'
+import { clearEntityHostility } from '../factions'
 import { MovementStateId } from '../movement-state'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -310,6 +311,9 @@ function onEnterState(world: GameWorld, eid: number, state: BehaviourStateId, bl
     }
     if (state === BehaviourStateId.Dead) {
         clearPath(world, eid)
+        // Drop the dead actor from the personal-hostility graph so a bitecs-
+        // recycled eid doesn't inherit (or get treated as) the corpse's enmities.
+        clearEntityHostility(world, eid)
         if (hasComponent(world, eid, Velocity)) {
             Velocity.x[eid] = 0
             Velocity.y[eid] = 0

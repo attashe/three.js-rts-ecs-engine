@@ -16,7 +16,7 @@ import {
     setBehaviourTarget,
     type BehaviourSnapshot,
 } from '../src/client/engine/ecs/behaviour'
-import { FactionId } from '../src/client/engine/ecs/factions'
+import { FactionId, markEntityHostile } from '../src/client/engine/ecs/factions'
 import { createGameWorld } from '../src/client/engine/ecs/world'
 import { createBehaviourSystem } from '../src/client/engine/ecs/systems/behaviour-system'
 import { createArrowHitSystem } from '../src/client/engine/ecs/systems/arrow-hit-system'
@@ -530,6 +530,46 @@ test('BehaviourSystem: death leaves a corpse visual and removes actor blocking t
     assert.equal(Velocity.x[actor], 0)
     assert.equal(Velocity.y[actor], 0)
     assert.equal(Velocity.z[actor], 0)
+})
+
+test('BehaviourSystem: death clears the actor from the personal-hostility graph', () => {
+    // Regression: when an actor dies, bitecs may later recycle its eid for a
+    // new spawn. If hostility entries aren't dropped on death, the new spawn
+    // inherits the dead actor's enmities (and is treated as an enemy by every
+    // actor that had been targeting it).
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+
+    const attacker = addEntity(world)
+    addComponent(world, attacker, Position); addComponent(world, attacker, Faction)
+    addComponent(world, attacker, Health); addComponent(world, attacker, Behaviour)
+    Position.x[attacker] = 0; Position.y[attacker] = 1; Position.z[attacker] = 0
+    Faction.id[attacker] = FactionId.Hostile
+    Health.max[attacker] = 50; Health.current[attacker] = 50
+    assignBehaviourProfile(world, attacker, BehaviourProfileId.HostileMeleeGrunt, { x: 0, y: 1, z: 0 })
+
+    const victim = addEntity(world)
+    addComponent(world, victim, Position); addComponent(world, victim, Rotation); addComponent(world, victim, Velocity)
+    addComponent(world, victim, Faction); addComponent(world, victim, Health); addComponent(world, victim, Behaviour)
+    addComponent(world, victim, Attackable); addComponent(world, victim, Wanderer); addComponent(world, victim, Interactable)
+    Position.x[victim] = 1; Position.y[victim] = 1; Position.z[victim] = 0
+    Faction.id[victim] = FactionId.Neutral
+    Health.max[victim] = 10; Health.current[victim] = 0  // already dead, behaviour-system will transition
+    assignBehaviourProfile(world, victim, BehaviourProfileId.NeutralWanderer, { x: 1, y: 1, z: 0 })
+
+    // Both directions of the hostility graph populated: victim hated attacker,
+    // attacker hated victim. After the death tick, both must be gone.
+    markEntityHostile(world, victim, attacker)
+    markEntityHostile(world, attacker, victim)
+    assert.ok(world.hostilityByEid.get(victim)?.has(attacker), 'precondition: victim hates attacker')
+    assert.ok(world.hostilityByEid.get(attacker)?.has(victim), 'precondition: attacker hates victim')
+
+    createBehaviourSystem(chunks).update(world, 1 / 60)
+
+    assert.equal(Behaviour.state[victim], BehaviourStateId.Dead)
+    assert.equal(world.hostilityByEid.has(victim), false, 'dead actor\'s own hostility set must be dropped')
+    assert.equal(world.hostilityByEid.get(attacker)?.has(victim), false,
+        'attacker\'s set must no longer reference the recycled victim eid')
 })
 
 test('BehaviourSystem: travel paths route around dynamic actor blockers', () => {
