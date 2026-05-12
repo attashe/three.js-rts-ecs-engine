@@ -5,6 +5,7 @@ import {
     MoveAlongPath,
     MovementState,
     PlayerControlled,
+    PlayerResources,
     Position,
     RigidBody,
     Rotation,
@@ -18,6 +19,7 @@ import { FixedOrder } from './orders'
 import { pushGameLog } from '../world'
 import type { GameWorld } from '../world'
 import { MovementStateId } from '../movement-state'
+import { activePlayerSpellCost } from '../../../game/items'
 
 export interface AirPushOptions {
     /** Half-angle of the cone in radians. Default ≈ 58° (Math.PI * 0.32). */
@@ -73,6 +75,21 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             const player = players[0]
             if (opts.canUse && !opts.canUse(world, player)) return
             if (!actions.consumePressed(actionId, player)) return
+
+            // Mana gate. Spell cost comes from the registry on the active item;
+            // PlayerResources may be absent in test setups, in which case the
+            // spell is free. Insufficient mana absorbs the press (cooldown
+            // already started above) and reports back to the player.
+            const cost = activePlayerSpellCost(world)
+            if (cost > 0 && hasComponent(world, player, PlayerResources)) {
+                if (PlayerResources.mana[player] < cost) {
+                    const message = 'Not enough mana for Air Push.'
+                    pushGameLog(world, { type: 'combat', message, eid: player })
+                    opts.notify?.(message)
+                    return
+                }
+                PlayerResources.mana[player] -= cost
+            }
 
             const px = Position.x[player]
             // Anchor the cone at chest height so a stone at the player's feet

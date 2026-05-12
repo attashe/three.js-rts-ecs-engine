@@ -8,6 +8,7 @@ import {
     MoveAlongPath,
     MovementState,
     PlayerControlled,
+    PlayerResources,
     Position,
     Rotation,
     Velocity,
@@ -16,6 +17,7 @@ import { BehaviourProfileId, assignBehaviourProfile } from '../src/client/engine
 import { MovementStateId } from '../src/client/engine/ecs/movement-state'
 import { createGameWorld } from '../src/client/engine/ecs/world'
 import { ActionMap, type ActionDefinition, type ActionInputSource } from '../src/client/engine/input/actions'
+import { populateDefaultPlayerLoadout } from '../src/client/game/items'
 
 class FakeInput implements ActionInputSource {
     pressed = true
@@ -81,4 +83,61 @@ test('AirPush interrupts path-following wanderers so movement does not overwrite
     assert.ok(Behaviour.nextRepathAt[wanderer] >= 0.5)
     assert.equal(world.behaviourByEid.get(wanderer)?.pathGoal, null)
     assert.equal(MovementState.value[wanderer], MovementStateId.Airborne)
+})
+
+test('AirPush debits its spell cost from PlayerResources.mana on cast', () => {
+    const world = createGameWorld()
+    populateDefaultPlayerLoadout(world)
+    // The default loadout has airPush in slot 2 — switch to it so
+    // activePlayerSpellCost picks up its 20-cost def.
+    world.playerLoadout.activeSlot = 2
+
+    const input = new FakeInput()
+    const actions = new ActionMap(definitions, input, { now: () => 0 })
+
+    const player = addEntity(world)
+    addComponent(world, player, PlayerControlled)
+    addComponent(world, player, Position)
+    addComponent(world, player, Rotation)
+    addComponent(world, player, PlayerResources)
+    Position.x[player] = 0; Position.y[player] = 0; Position.z[player] = 0
+    PlayerResources.maxMana[player] = 60
+    PlayerResources.mana[player] = 60
+
+    createAirPushSystem(actions, {}).update(world, 1 / 60)
+    assert.equal(PlayerResources.mana[player], 40, 'expected 60 - 20 = 40 mana after one cast')
+})
+
+test('AirPush refuses to cast when PlayerResources.mana is below the spell cost', () => {
+    const world = createGameWorld()
+    populateDefaultPlayerLoadout(world)
+    world.playerLoadout.activeSlot = 2
+
+    const input = new FakeInput()
+    const actions = new ActionMap(definitions, input, { now: () => 0 })
+
+    const player = addEntity(world)
+    addComponent(world, player, PlayerControlled)
+    addComponent(world, player, Position)
+    addComponent(world, player, Rotation)
+    addComponent(world, player, PlayerResources)
+    Position.x[player] = 0; Position.y[player] = 0; Position.z[player] = 0
+    PlayerResources.maxMana[player] = 60
+    PlayerResources.mana[player] = 5  // below the 20-cost Air Push
+
+    // Stone target so we can verify it doesn't get pushed.
+    const stone = addEntity(world)
+    addComponent(world, stone, Position); addComponent(world, stone, BoxCollider); addComponent(world, stone, Velocity)
+    Position.x[stone] = 0; Position.y[stone] = 0; Position.z[stone] = 2
+    BoxCollider.x[stone] = 0.3; BoxCollider.y[stone] = 0.3; BoxCollider.z[stone] = 0.3
+
+    // Velocity is a module-level Float32Array shared across worlds, so a
+    // previous test's push on the same eid bleeds into this stone unless we
+    // clear it explicitly.
+    Velocity.x[stone] = 0; Velocity.y[stone] = 0; Velocity.z[stone] = 0
+
+    createAirPushSystem(actions, {}).update(world, 1 / 60)
+
+    assert.equal(PlayerResources.mana[player], 5, 'mana must be untouched when the cast is rejected')
+    assert.equal(Velocity.z[stone], 0, 'no push impulse should reach the stone when the cast is rejected')
 })

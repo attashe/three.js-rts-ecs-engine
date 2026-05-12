@@ -35,10 +35,13 @@ export interface ArmorStats {
 }
 
 export interface SpellStats {
-    /** Mana cost per cast. Wired into PlayerResources.mana in a later commit. */
+    /** Mana cost per cast. */
     readonly cost: number
     /** Cooldown in milliseconds between casts. */
     readonly cooldownMs: number
+    /** Health restored on cast — used by heal-type spells. Distinct from
+     *  ConsumableStats.heal (which fires on item use, not on cast). */
+    readonly heal?: number
 }
 
 export interface ConsumableStats {
@@ -189,6 +192,16 @@ defineItem({
     spell: { cost: 12, cooldownMs: 800 },
 })
 
+defineItem({
+    id: 'restore',
+    label: 'Restore',
+    icon: 'RS',
+    category: 'spell',
+    equipSlot: 'weapon',
+    loadoutKind: 'heal',
+    spell: { cost: 25, cooldownMs: 2000, heal: 30 },
+})
+
 // ---- Armor ----------------------------------------------------------------
 
 defineItem({
@@ -321,6 +334,7 @@ export function populateDefaultPlayerLoadout(world: GameWorld): void {
     loadout.spellSlots = [
         createInventoryItem('air-push'),
         createInventoryItem('high-jump'),
+        createInventoryItem('restore'),
     ]
     recomputePlayerStats(world)
 }
@@ -373,4 +387,12 @@ export function activePlayerWeaponDef(world: GameWorld): ItemDef | null {
     const slot = world.playerLoadout.weaponSlots[world.playerLoadout.activeSlot]
     if (!slot?.item) return null
     return ITEM_DEFS.get(slot.item.id) ?? null
+}
+
+/**
+ * Mana cost of the active spell, or 0 if the active slot isn't a spell.
+ * Spell systems debit this from `PlayerResources.mana` at cast time.
+ */
+export function activePlayerSpellCost(world: GameWorld): number {
+    return activePlayerWeaponDef(world)?.spell?.cost ?? 0
 }

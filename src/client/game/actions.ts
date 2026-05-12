@@ -13,6 +13,7 @@ export const GameAction = {
     Shield: 'defense.shield',
     AirPush: 'spell.airPush',
     HighJump: 'spell.highJump',
+    HealSpell: 'spell.heal',
     SelectWeapon1: 'weapon.select1',
     SelectWeapon2: 'weapon.select2',
     SelectWeapon3: 'weapon.select3',
@@ -111,6 +112,13 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
         bindings: [{ keys: ['KeyF'] }],
         bufferMs: 160,
         cooldownMs: 900,
+    },
+    {
+        id: GameAction.HealSpell,
+        label: 'Restore',
+        bindings: [{ keys: ['KeyF'] }],
+        bufferMs: 160,
+        cooldownMs: 2000,
     },
     {
         id: GameAction.SelectWeapon1,

@@ -47,7 +47,7 @@ export interface PlayerInventory {
     arrows: number
 }
 
-export type PlayerLoadoutSlotKind = 'sword' | 'bow' | 'airPush' | 'highJump' | 'empty'
+export type PlayerLoadoutSlotKind = 'sword' | 'bow' | 'airPush' | 'highJump' | 'heal' | 'empty'
 export type PlayerItemCategory = 'weapon' | 'armor' | 'spell' | 'consumable' | 'currency' | 'ammo'
 export type PlayerEquipmentSlot = 'weapon' | 'head' | 'chest' | 'hands' | 'boots' | 'shield' | 'charm'
 

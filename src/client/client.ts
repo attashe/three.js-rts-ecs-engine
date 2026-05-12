@@ -16,6 +16,9 @@ import { createPhysicsSystem } from './engine/ecs/systems/physics-system'
 import { createDynamicCollisionSystem } from './engine/ecs/systems/dynamic-collision-system'
 import { createRigidBodyPairSystem } from './engine/ecs/systems/rigidbody-pair-system'
 import { createImpactSystem } from './engine/ecs/systems/impact-system'
+import { createManaRegenSystem } from './engine/ecs/systems/mana-regen-system'
+import { createHealthRegenSystem } from './engine/ecs/systems/health-regen-system'
+import { createHealSpellSystem } from './engine/ecs/systems/heal-spell-system'
 import { createDebugOverlaySystem } from './engine/ecs/systems/debug-overlay-system'
 import { createRenderMetricsSystem } from './engine/ecs/systems/render-metrics-system'
 import { createVoxelMechanismSystem } from './engine/ecs/systems/voxel-mechanism-system'
@@ -199,6 +202,11 @@ async function main(): Promise<void> {
             canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'highJump',
             notify,
         }), 'highJump')
+        .addSystem(createHealSpellSystem(actions, {
+            actionId: GameAction.HealSpell,
+            canUse: (gameWorld) => activePlayerLoadoutKind(gameWorld) === 'heal',
+            notify,
+        }), 'healSpell')
         .addSystem(createInteractionSystem(actions, { notify }), 'interaction')
         .addSystem(createMeleeCombatSystem(actions, {
             actionId: GameAction.AttackPrimary,
@@ -206,6 +214,8 @@ async function main(): Promise<void> {
             notify,
         }), 'meleeCombat')
         .addSystem(createPickupSystem({ notify }), 'pickup')
+        .addSystem(createManaRegenSystem(), 'manaRegen')
+        .addSystem(createHealthRegenSystem(), 'healthRegen')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 14 }), 'stoneSpawner')
         .addSystem(createPerceptionSystem(), 'perception')
         .addSystem(createBehaviourSystem(chunks), 'behaviour')
