@@ -2,11 +2,17 @@ import type {
     GameWorld,
     PlayerArmorySlot,
     PlayerEquipmentSlot,
+    PlayerInventory,
     PlayerInventoryItem,
     PlayerItemCategory,
     PlayerLoadoutSlotKind,
 } from '../engine/ecs/world'
 import { loadoutSlot } from '../engine/ecs/world'
+
+/** Weight units removed from the player's move-speed multiplier per unit. */
+export const WEIGHT_TO_SPEED_PENALTY = 0.025
+/** Hard floor on the player move-speed multiplier so heavy kits stay playable. */
+export const MIN_MOVE_SPEED_MULT = 0.6
 
 export interface WeaponStats {
     /** Damage applied per strike or per projectile hit. */
@@ -55,6 +61,10 @@ export interface ItemDef {
     readonly category: PlayerItemCategory
     readonly equipSlot?: PlayerEquipmentSlot
     readonly loadoutKind?: PlayerLoadoutSlotKind
+    /** Stackable items can carry a `count` > 1 in a single backpack slot.
+     *  Currency, ammo, and consumables stack; weapons, armor, and spells do
+     *  not. `createInventoryItem` enforces this. */
+    readonly stackable?: boolean
     readonly weapon?: WeaponStats
     readonly armor?: ArmorStats
     readonly spell?: SpellStats
@@ -85,6 +95,9 @@ export function getAllItemDefs(): readonly ItemDef[] {
 export function createInventoryItem(id: string, count?: number): PlayerInventoryItem {
     const def = ITEM_DEFS.get(id)
     if (!def) throw new Error(`Unknown item id: ${id}`)
+    if (count !== undefined && count > 1 && !def.stackable) {
+        throw new Error(`Item "${id}" is not stackable; count=${count} is not allowed`)
+    }
     const item: PlayerInventoryItem = {
         id: def.id,
         category: def.category,
@@ -93,7 +106,9 @@ export function createInventoryItem(id: string, count?: number): PlayerInventory
     }
     if (def.equipSlot !== undefined) item.equipSlot = def.equipSlot
     if (def.loadoutKind !== undefined) item.loadoutKind = def.loadoutKind
-    if (count !== undefined) item.count = count
+    // Carry `count` only for stackable items; otherwise it would show up as
+    // a meaningless "1" badge next to single-instance gear in the HUD.
+    if (count !== undefined && def.stackable) item.count = count
     return item
 }
 
@@ -238,6 +253,7 @@ defineItem({
     label: 'Potion',
     icon: '+',
     category: 'consumable',
+    stackable: true,
     consumable: { heal: 25 },
 })
 
@@ -246,6 +262,7 @@ defineItem({
     label: 'Arrows',
     icon: 'AR',
     category: 'ammo',
+    stackable: true,
 })
 
 defineItem({
@@ -253,6 +270,7 @@ defineItem({
     label: 'Gold',
     icon: 'G',
     category: 'currency',
+    stackable: true,
 })
 
 // ---- Loadout seeding + derived stats --------------------------------------
@@ -324,7 +342,26 @@ export function recomputePlayerStats(world: GameWorld): void {
     }
     world.playerStats.defense = defense
     world.playerStats.weight = weight
-    world.playerStats.moveSpeedMult = Math.max(0.6, 1 - weight * 0.025)
+    world.playerStats.moveSpeedMult = Math.max(MIN_MOVE_SPEED_MULT, 1 - weight * WEIGHT_TO_SPEED_PENALTY)
+}
+
+/**
+ * Sum stacked counts in the backpack for the three displayable currencies/
+ * consumables. Backpack stacks are the single source of truth now; the HUD
+ * derives this snapshot every frame instead of reading a duplicate counter.
+ */
+export function aggregateInventoryCounts(world: GameWorld): PlayerInventory {
+    let gold = 0
+    let potions = 0
+    let arrows = 0
+    for (const slot of world.playerLoadout.backpackSlots) {
+        if (!slot) continue
+        const count = slot.count ?? 1
+        if (slot.id === 'gold') gold += count
+        else if (slot.id === 'health-potion') potions += count
+        else if (slot.id === 'arrows') arrows += count
+    }
+    return { gold, potions, arrows }
 }
 
 /**

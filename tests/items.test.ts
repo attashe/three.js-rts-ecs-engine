@@ -2,11 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
     activePlayerWeaponDef,
+    aggregateInventoryCounts,
     createInventoryItem,
     getAllItemDefs,
     getItemDef,
+    MIN_MOVE_SPEED_MULT,
     populateDefaultPlayerLoadout,
     recomputePlayerStats,
+    WEIGHT_TO_SPEED_PENALTY,
 } from '../src/client/game/items'
 import { createGameWorld, loadoutSlot } from '../src/client/engine/ecs/world'
 
@@ -37,6 +40,54 @@ test('createInventoryItem snapshots the registry def, honouring count when given
 
 test('createInventoryItem throws for unknown ids so typos surface at the call site', () => {
     assert.throws(() => createInventoryItem('imaginary-axe'), /Unknown item id/)
+})
+
+test('createInventoryItem rejects count > 1 on non-stackable items and drops count for non-stackables', () => {
+    // Weapons are not stackable.
+    assert.throws(() => createInventoryItem('training-sword', 5), /not stackable/)
+    // count=1 on a non-stackable is harmless — the result simply carries no
+    // count field, so the HUD doesn't render a meaningless "1" badge.
+    const sword = createInventoryItem('training-sword', 1)
+    assert.equal(sword.count, undefined)
+
+    // Ammo stacks; count survives.
+    const arrows = createInventoryItem('arrows', 12)
+    assert.equal(arrows.count, 12)
+})
+
+test('aggregateInventoryCounts derives gold / potion / arrow totals from backpack stacks', () => {
+    const world = createGameWorld()
+    populateDefaultPlayerLoadout(world)
+    // Default kit: 2 potions + 12 arrows in the backpack; no gold.
+    assert.deepEqual(aggregateInventoryCounts(world), {
+        gold: 0,
+        potions: 2,
+        arrows: 12,
+    })
+
+    // Add a 25-gold stack and a second potion stack — both should fold in.
+    const slots = world.playerLoadout.backpackSlots
+    const empty = slots.findIndex((slot) => slot === null)
+    slots[empty] = createInventoryItem('gold', 25)
+    const empty2 = slots.findIndex((slot) => slot === null)
+    slots[empty2] = createInventoryItem('health-potion', 3)
+
+    assert.deepEqual(aggregateInventoryCounts(world), {
+        gold: 25,
+        potions: 5,
+        arrows: 12,
+    })
+})
+
+test('recomputePlayerStats uses the exported tuning constants for the speed multiplier', () => {
+    const world = createGameWorld()
+    populateDefaultPlayerLoadout(world)
+    // Default kit weight = 4.8 → mult = 1 - 0.025 * 4.8 = 0.88.
+    const expected = 1 - WEIGHT_TO_SPEED_PENALTY * world.playerStats.weight
+    assert.ok(Math.abs(world.playerStats.moveSpeedMult - expected) < 1e-9,
+        `expected ${expected}, got ${world.playerStats.moveSpeedMult}`)
+    assert.ok(world.playerStats.moveSpeedMult >= MIN_MOVE_SPEED_MULT,
+        `default kit must not fall below the speed floor (${MIN_MOVE_SPEED_MULT})`)
 })
 
 test('populateDefaultPlayerLoadout fills weapon, armor, and backpack slots from the registry', () => {

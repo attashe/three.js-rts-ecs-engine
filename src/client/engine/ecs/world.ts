@@ -35,6 +35,12 @@ export interface PickupState {
     item?: PlayerInventoryItem
 }
 
+/**
+ * Aggregated counts of stackable consumables, surfaced by the HUD. This is
+ * no longer a stored field on the world — it's derived from the backpack on
+ * demand by `aggregateInventoryCounts` in game/items.ts. Kept as a type so
+ * HUD code and the UI layer can share the shape.
+ */
 export interface PlayerInventory {
     gold: number
     potions: number
@@ -150,7 +156,6 @@ export interface GameContext {
     projectileOwnerByEid: Map<number, number>
     interactionByEid: Map<number, InteractionState>
     pickupByEid: Map<number, PickupState>
-    playerInventory: PlayerInventory
     playerLoadout: PlayerLoadout
     playerStats: PlayerStats
     mechanismByEid: Map<number, VoxelMechanism>
@@ -177,7 +182,6 @@ export function createGameWorld(): GameWorld {
         projectileOwnerByEid: new Map<number, number>(),
         interactionByEid: new Map<number, InteractionState>(),
         pickupByEid: new Map<number, PickupState>(),
-        playerInventory: { gold: 0, potions: 0, arrows: 0 },
         playerLoadout: createEmptyPlayerLoadout(),
         playerStats: { defense: 0, weight: 0, moveSpeedMult: 1 },
         mechanismByEid: new Map<number, VoxelMechanism>(),

@@ -22,6 +22,13 @@ export interface HudVitals {
     maxStamina: number
 }
 
+/** Aggregated player armor stats surfaced in the status panel. */
+export interface HudPlayerStats {
+    defense: number
+    weight: number
+    moveSpeedMult: number
+}
+
 export interface HudInventory {
     gold: number
     potions: number
@@ -82,6 +89,7 @@ export class GameHud implements Disposable {
     private readonly regions = new Map<HudRegion, HTMLDivElement>()
     private readonly disposables: Disposable[] = []
     private readonly meters: Record<'health' | 'mana' | 'stamina', UiMeter>
+    private readonly statValues: Record<'defense' | 'weight' | 'speed', HTMLSpanElement>
     private readonly inventorySlots: Record<'gold' | 'potions' | 'arrows', UiSlot>
     private readonly weaponSlots: UiSlot[]
     private readonly inventoryWeaponSlots: UiSlot[]
@@ -115,6 +123,7 @@ export class GameHud implements Disposable {
 
         const built = this.createDefaultLayout()
         this.meters = built.meters
+        this.statValues = built.statValues
         this.inventorySlots = built.inventorySlots
         this.weaponSlots = built.weaponSlots
         this.inventoryWeaponSlots = built.inventoryWeaponSlots
@@ -149,6 +158,12 @@ export class GameHud implements Disposable {
         this.meters.health.setValue(vitals.health, vitals.maxHealth)
         this.meters.mana.setValue(vitals.mana, vitals.maxMana)
         this.meters.stamina.setValue(vitals.stamina, vitals.maxStamina)
+    }
+
+    setPlayerStats(stats: HudPlayerStats): void {
+        this.statValues.defense.textContent = formatStat(stats.defense)
+        this.statValues.weight.textContent = formatStat(stats.weight)
+        this.statValues.speed.textContent = `${formatStat(stats.moveSpeedMult)}×`
     }
 
     setInventory(inventory: HudInventory): void {
@@ -243,6 +258,7 @@ export class GameHud implements Disposable {
 
     private createDefaultLayout(): {
         meters: Record<'health' | 'mana' | 'stamina', UiMeter>
+        statValues: Record<'defense' | 'weight' | 'speed', HTMLSpanElement>
         inventorySlots: Record<'gold' | 'potions' | 'arrows', UiSlot>
         weaponSlots: UiSlot[]
         inventoryWeaponSlots: UiSlot[]
@@ -258,6 +274,37 @@ export class GameHud implements Disposable {
             mana: new UiMeter({ label: 'Mana', tone: 'mana', current: 60, max: 60 }),
             stamina: new UiMeter({ label: 'Stamina', tone: 'stamina', current: 100, max: 100 }),
         }
+        const statValues = {
+            defense: el('span', { className: 'ui-hud-status__stat-value', text: '0' }),
+            weight: el('span', { className: 'ui-hud-status__stat-value', text: '0' }),
+            speed: el('span', { className: 'ui-hud-status__stat-value', text: '1.00×' }),
+        }
+        const statLine = el('div', {
+            className: 'ui-hud-status__stats',
+            children: [
+                el('span', {
+                    className: 'ui-hud-status__stat',
+                    children: [
+                        el('span', { className: 'ui-hud-status__stat-label', text: 'Def' }),
+                        statValues.defense,
+                    ],
+                }),
+                el('span', {
+                    className: 'ui-hud-status__stat',
+                    children: [
+                        el('span', { className: 'ui-hud-status__stat-label', text: 'Wt' }),
+                        statValues.weight,
+                    ],
+                }),
+                el('span', {
+                    className: 'ui-hud-status__stat',
+                    children: [
+                        el('span', { className: 'ui-hud-status__stat-label', text: 'Spd' }),
+                        statValues.speed,
+                    ],
+                }),
+            ],
+        })
         const statusPanel = panel({
             className: 'ui-hud-panel ui-hud-status',
             children: [
@@ -278,6 +325,7 @@ export class GameHud implements Disposable {
                     className: 'ui-hud-status__meters',
                     children: [meters.health.element, meters.mana.element, meters.stamina.element],
                 }),
+                statLine,
             ],
         })
 
@@ -385,6 +433,7 @@ export class GameHud implements Disposable {
 
         return {
             meters,
+            statValues,
             inventorySlots,
             weaponSlots,
             inventoryWeaponSlots,
@@ -479,4 +528,11 @@ export class GameHud implements Disposable {
 
 function isWeaponCompatible(item: HudInventoryItem): boolean {
     return item.equipSlot === 'weapon' || item.category === 'spell' || !!item.loadoutKind
+}
+
+function formatStat(value: number): string {
+    if (!Number.isFinite(value)) return '0'
+    if (Math.abs(value) < 0.1) return value.toFixed(2)
+    if (Math.abs(value) < 10) return value.toFixed(2).replace(/\.?0+$/, '')
+    return value.toFixed(1)
 }

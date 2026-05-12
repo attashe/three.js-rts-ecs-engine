@@ -302,6 +302,31 @@
     gap: 6px;
 }
 
+.ui-hud-status__stats {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.ui-hud-status__stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.ui-hud-status__stat-label {
+    color: rgba(232, 240, 248, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.ui-hud-status__stat-value {
+    color: rgba(232, 240, 248, 0.95);
+    font-weight: 600;
+}
+
 .ui-meter {
     display: grid;
     gap: 3px;

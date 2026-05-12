@@ -6,7 +6,7 @@ import type { ActionMap } from '../engine/input/actions'
 import type { GameHud, HudInventoryRequest } from '../ui'
 import { addItemToBackpack, loadoutSlot, type GameWorld, type PlayerInventoryItem } from '../engine/ecs/world'
 import { GameAction } from './actions'
-import { recomputePlayerStats } from './items'
+import { aggregateInventoryCounts, recomputePlayerStats } from './items'
 import { spawnDroppedInventoryItem } from './props'
 
 export function createGameHudSystem(hud: GameHud, actions?: ActionMap): System {
@@ -35,8 +35,9 @@ export function createGameHudSystem(hud: GameHud, actions?: ActionMap): System {
                 stamina: hasComponent(world, player, PlayerResources) ? PlayerResources.stamina[player] : 0,
                 maxStamina: hasComponent(world, player, PlayerResources) ? PlayerResources.maxStamina[player] : 1,
             })
-            hud.setInventory(world.playerInventory)
+            hud.setInventory(aggregateInventoryCounts(world))
             hud.setLoadout(world.playerLoadout)
+            hud.setPlayerStats(world.playerStats)
             hud.setShieldRaised(hasComponent(world, player, Shield) && Shield.raised[player] === 1)
         },
     }
@@ -97,7 +98,9 @@ function applyInventoryRequest(world: GameWorld, player: number, request: HudInv
     const item = loadout.backpackSlots[request.index]
     if (!item) return false
     loadout.backpackSlots[request.index] = null
-    decrementInventoryCount(world, item)
+    // No separate counter to decrement — backpackSlots is the single source
+    // of truth for stack counts now; the HUD reads aggregated counts via
+    // aggregateInventoryCounts each frame.
     spawnDroppedInventoryItem(world, item, {
         position: dropPosition(player),
         yaw: hasComponent(world, player, Rotation) ? Rotation.y[player] : 0,
@@ -112,13 +115,6 @@ function dropPosition(player: number): { x: number; y: number; z: number } {
         y: Position.y[player],
         z: Position.z[player] + Math.cos(yaw) * 1.1,
     }
-}
-
-function decrementInventoryCount(world: GameWorld, item: PlayerInventoryItem): void {
-    const count = Math.max(1, item.count ?? 1)
-    if (item.id === 'gold') world.playerInventory.gold = Math.max(0, world.playerInventory.gold - count)
-    else if (item.id === 'health-potion') world.playerInventory.potions = Math.max(0, world.playerInventory.potions - count)
-    else if (item.id === 'arrows') world.playerInventory.arrows = Math.max(0, world.playerInventory.arrows - count)
 }
 
 function isWeaponCompatible(item: PlayerInventoryItem): boolean {
