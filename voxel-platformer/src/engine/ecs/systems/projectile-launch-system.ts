@@ -3,6 +3,7 @@ import { PlayerControlled, Position, Rotation } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+import { pushLog } from '../world'
 import { spawnArrowProjectile } from '../../../game/moving-objects'
 
 export interface ProjectileLaunchOptions {
@@ -43,6 +44,7 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
                     z: forwardZ * arrowSpeed,
                 },
             )
+            pushLog(world, 'Arrow loosed.')
         },
     }
 }

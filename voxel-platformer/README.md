@@ -32,8 +32,15 @@ platformer needs to bootstrap a level + player + a few interactive props.
 - **Air Push** — KeyG, a chest-height cone in front of the player that
   shoves stones and other rigid bodies. Useful for puzzles (knock a stone
   into a pit, blow loot off a ledge).
-- **Debug overlay** — backtick toggles a render-side overlay showing the
-  player AABB and scene counts. Tweak as you go.
+- **Collectables** — proximity pickup. Coin piles (gold, +N to
+  `world.inventory.gold`) seeded by the level meta; arrows that settle
+  after being shot become collectable in place (+1 to
+  `world.inventory.arrows`). Debug overlay shows the live counts.
+- **Debug overlay** — wireframe AABB outlines around every body (including
+  the player) + a metrics panel, on by default; backtick toggles. A
+  second always-visible log panel (top-right) shows pickup notifications
+  and spell-cast confirmations sourced from `world.log` (push messages
+  with the `pushLog(world, message)` helper).
 
 ## Run
 

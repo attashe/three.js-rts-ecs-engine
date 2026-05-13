@@ -12,7 +12,7 @@ export type { MainCharacterOptions } from './main-character'
 export { createArrow, createBow, createQuiver } from './weapons'
 export type { BowOptions, QuiverOptions } from './weapons'
 
-export { createStone } from './props'
+export { createCoinPile, createStone } from './props'
 export type { StoneVisualOptions } from './props'
 
 export { mergeGroupByMaterial } from './merge-group'

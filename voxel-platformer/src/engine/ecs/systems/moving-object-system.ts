@@ -4,6 +4,8 @@ import {
     Grounded,
     HorizontalBlocked,
     MovingObject,
+    Pickup,
+    PickupValue,
     RigidBody,
     Rotation,
     Sleeping,
@@ -12,6 +14,7 @@ import {
 } from '../components'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+import { PickupKind } from './pickup-system'
 import {
     MovingObjectKind,
     spawnFallingStone,
@@ -137,6 +140,12 @@ function embedArrow(
     // every frame. The arrow remains in `world.object3DByEid` and in the
     // scene as a frozen mesh embedded in the surface.
     if (!hasComponent(world, eid, StaticRenderable)) addComponent(world, eid, StaticRenderable)
+    // Make the embedded arrow collectable — pickup-system will pick it up
+    // when the player walks close enough.
+    if (!hasComponent(world, eid, Pickup)) addComponent(world, eid, Pickup)
+    if (!hasComponent(world, eid, PickupValue)) addComponent(world, eid, PickupValue)
+    PickupValue.kind[eid] = PickupKind.Arrow
+    PickupValue.amount[eid] = 1
     removeComponent(world, eid, MovingObject)
 }
 

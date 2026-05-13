@@ -3,6 +3,7 @@ import { Grounded, PlayerControlled, Position, Velocity } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+import { pushLog } from '../world'
 
 export interface HighJumpOptions {
     actionId?: ActionId
@@ -32,10 +33,14 @@ export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions =
             const player = players[0]!
             if (!actions.consumePressed(actionId, player)) return
 
-            if (!hasComponent(world, player, Grounded)) return
+            if (!hasComponent(world, player, Grounded)) {
+                pushLog(world, 'High Jump needs solid ground.')
+                return
+            }
 
             Velocity.y[player] = Math.max(Velocity.y[player], jumpVelocity)
             removeComponent(world, player, Grounded)
+            pushLog(world, 'High Jump!')
         },
     }
 }

@@ -25,6 +25,18 @@ export const MovementState = {
     value: new Uint8Array(MAX_ENTITIES),
 }
 
+/** Tag for "collectable on contact" entities. Picked up by pickup-system
+ *  when the player gets within its radius. */
+export const Pickup = {}
+
+/** Categorises a pickup. `kind` is one of the PickupKind values in
+ *  pickup-system.ts (1 = gold, 2 = arrow); `amount` is added to the
+ *  matching slot on world.inventory at collection time. */
+export const PickupValue = {
+    kind: new Uint8Array(MAX_ENTITIES),
+    amount: new Uint16Array(MAX_ENTITIES),
+}
+
 export const MovingObject = {
     /** 1 = arrow, 2 = stone. */
     kind: new Uint8Array(MAX_ENTITIES),

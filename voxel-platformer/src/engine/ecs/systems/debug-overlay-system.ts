@@ -32,14 +32,19 @@ interface BoxBatchState {
  * Re-add visualisation layers (paths, zones, etc) as the project grows.
  */
 export function createDebugOverlaySystem(scene: Scene, input: Input, opts: DebugOverlayOptions = {}): System {
-    let enabled = opts.enabled ?? false
+    // Default to ON — this is a development-focused project, so we want the
+    // player AABB and the metric/log panels visible right away. Backquote
+    // toggles when you want a clean view.
+    let enabled = opts.enabled ?? true
     const updateDt = 1 / (opts.updateHz ?? 6)
     const root = new Group()
     root.name = 'DebugOverlay'
     const boxMaterial = new LineBasicMaterial({ color: 0x9cff57 })
     const boxBatch = createBoxBatch(boxMaterial)
-    let panel: HTMLDivElement | null = null
+    let metricsPanel: HTMLDivElement | null = null
+    let logPanel: HTMLDivElement | null = null
     let accumulator = 0
+    let lastLogLength = -1
 
     return {
         order: RenderOrder.debug,
@@ -48,51 +53,80 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             root.add(boxBatch.lines)
             root.visible = enabled
 
-            panel = document.createElement('div')
-            panel.id = 'voxel-platformer-debug'
-            Object.assign(panel.style, {
-                position: 'fixed', top: '8px', left: '8px',
-                font: '11px ui-monospace, monospace',
-                padding: '6px 8px',
-                background: 'rgba(8, 12, 16, 0.72)',
-                color: '#d9f7ff',
-                pointerEvents: 'none',
-                whiteSpace: 'pre',
-                lineHeight: '1.5',
-                zIndex: '1000',
-                display: enabled ? 'block' : 'none',
-            } as Partial<CSSStyleDeclaration>)
-            document.body.appendChild(panel)
+            metricsPanel = makePanel('voxel-platformer-debug', { top: '8px', left: '8px' })
+            metricsPanel.style.display = enabled ? 'block' : 'none'
+            document.body.appendChild(metricsPanel)
+
+            // The log panel stays always-visible — it's the primary
+            // feedback channel for pickups and spell casts, which players
+            // want regardless of whether they're inspecting metrics.
+            logPanel = makePanel('voxel-platformer-log', { top: '8px', right: '8px', maxWidth: '320px' })
+            document.body.appendChild(logPanel)
         },
         update(world, dt) {
             if (input.consumeKeyPressed('Backquote')) {
                 enabled = !enabled
                 root.visible = enabled
-                if (panel) panel.style.display = enabled ? 'block' : 'none'
+                if (metricsPanel) metricsPanel.style.display = enabled ? 'block' : 'none'
             }
-            if (!enabled) return
 
-            const eids = query(world, [Position, BoxCollider])
-            updateBoxes(boxBatch, eids)
+            if (enabled) {
+                const eids = query(world, [Position, BoxCollider])
+                updateBoxes(boxBatch, eids)
+            }
 
             accumulator += dt
-            if (accumulator < updateDt) return
+            if (accumulator < updateDt) {
+                if (world.log.length !== lastLogLength) renderLog(logPanel, world.log)
+                lastLogLength = world.log.length
+                return
+            }
             accumulator %= updateDt
-            if (panel) {
-                panel.textContent = world.metrics.summaryLines({
+
+            if (enabled && metricsPanel) {
+                const inv = `inventory  gold:${world.inventory.gold}  arrows:${world.inventory.arrows}`
+                const metrics = world.metrics.summaryLines({
                     systemCount: 6,
                     gaugeCount: 10,
-                }).join('\n')
+                })
+                metricsPanel.textContent = [inv, ...metrics].join('\n')
             }
+            if (world.log.length !== lastLogLength) renderLog(logPanel, world.log)
+            lastLogLength = world.log.length
         },
         dispose() {
             scene.remove(root)
             boxBatch.lines.geometry.dispose()
             boxMaterial.dispose()
-            panel?.remove()
-            panel = null
+            metricsPanel?.remove()
+            logPanel?.remove()
+            metricsPanel = null
+            logPanel = null
         },
     }
+}
+
+function makePanel(id: string, position: Partial<CSSStyleDeclaration>): HTMLDivElement {
+    const panel = document.createElement('div')
+    panel.id = id
+    Object.assign(panel.style, {
+        position: 'fixed',
+        font: '11px ui-monospace, monospace',
+        padding: '6px 8px',
+        background: 'rgba(8, 12, 16, 0.72)',
+        color: '#d9f7ff',
+        pointerEvents: 'none',
+        whiteSpace: 'pre',
+        lineHeight: '1.5',
+        zIndex: '1000',
+        ...position,
+    } as Partial<CSSStyleDeclaration>)
+    return panel
+}
+
+function renderLog(panel: HTMLDivElement | null, log: readonly string[]): void {
+    if (!panel) return
+    panel.textContent = log.slice(-8).join('\n')
 }
 
 function createBoxBatch(material: LineBasicMaterial): BoxBatchState {

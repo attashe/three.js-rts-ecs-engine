@@ -1,11 +1,18 @@
 import { BLOCK, type ChunkManager } from '../engine/voxel'
 import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 
+export interface CoinPileSpawn {
+    position: { x: number; y: number; z: number }
+    amount?: number
+}
+
 export interface LevelMeta {
     /** World-space spawn position (X, Y, Z). Y is standing height (one above topmost solid). */
     spawn: { x: number; y: number; z: number }
     /** Falling-stone emitter configs. */
     stoneSpawners: StoneFallSpawnerConfig[]
+    /** Coin pile placements — pickup-system grants gold on contact. */
+    coinPiles: CoinPileSpawn[]
     /** XZ extent of the generated level, used by the demo to centre the camera. */
     size: number
 }
@@ -96,9 +103,20 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         },
     ]
 
+    // A handful of coin piles to give the player a reason to traverse the
+    // demo: one on the raised platform (needs the staircase OR a high-jump),
+    // one near the cliff base (in the path of falling stones), one tucked
+    // behind the wall.
+    const coinPiles = [
+        { position: { x: 18, y: platformTop + 1, z: 18 }, amount: 20 },
+        { position: { x: 20, y: groundY + 1, z: 4 }, amount: 12 },
+        { position: { x: 4, y: groundY + 1, z: 5 }, amount: 8 },
+    ]
+
     return {
         spawn: { x: size / 2, y: groundY + 1, z: size / 2 },
         stoneSpawners,
+        coinPiles,
         size,
     }
 }

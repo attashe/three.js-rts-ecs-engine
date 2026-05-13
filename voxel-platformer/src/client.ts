@@ -18,8 +18,10 @@ import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-la
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
+import { createPickupSystem } from './engine/ecs/systems/pickup-system'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
+import { spawnCoinPile } from './game/pickups'
 import { createGameActionMap, GameAction } from './game/actions'
 
 async function main(): Promise<void> {
@@ -52,6 +54,7 @@ async function main(): Promise<void> {
     chunkRenderer.rebuildAll()
 
     spawnPlayer(world, { spawn: meta.spawn })
+    for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
 
     // Centre the camera on the player from the very first frame so we don't
     // see a "fly-in" from the world origin.
@@ -72,6 +75,7 @@ async function main(): Promise<void> {
         .addSystem(createArrowHitSystem(chunks), 'arrowHit')
         .addSystem(createHighJumpSystem(actions, { actionId: GameAction.HighJump }), 'highJump')
         .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
+        .addSystem(createPickupSystem(), 'pickup')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks), 'physics')
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')

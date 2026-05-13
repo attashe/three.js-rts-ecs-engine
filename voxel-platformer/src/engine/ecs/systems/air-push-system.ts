@@ -13,7 +13,7 @@ import {
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
-import type { GameWorld } from '../world'
+import { pushLog, type GameWorld } from '../world'
 import { MovementStateId } from '../movement-state'
 
 export interface AirPushOptions {
@@ -77,6 +77,7 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             const fz = Math.cos(yaw)
 
             const candidates = query(world, [Position, BoxCollider])
+            let pushed = 0
 
             for (let i = 0; i < candidates.length; i++) {
                 const eid = candidates[i]!
@@ -136,7 +137,11 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
                 if (hasComponent(world, eid, MovementState)) {
                     MovementState.value[eid] = MovementStateId.Airborne
                 }
+                pushed++
             }
+            pushLog(world, pushed > 0
+                ? `Air Push! ${pushed} object${pushed === 1 ? '' : 's'} sent flying.`
+                : 'Air Push! (nothing in range)')
         },
     }
 }
