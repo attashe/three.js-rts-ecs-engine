@@ -16,6 +16,8 @@ import { createRenderMetricsSystem } from './engine/ecs/systems/render-metrics-s
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
+import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
+import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { createGameActionMap, GameAction } from './game/actions'
@@ -68,6 +70,8 @@ async function main(): Promise<void> {
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso), 'playerControl')
         .addSystem(createProjectileLaunchSystem(actions, { actionId: GameAction.BowShot }), 'projectileLaunch')
         .addSystem(createArrowHitSystem(chunks), 'arrowHit')
+        .addSystem(createHighJumpSystem(actions, { actionId: GameAction.HighJump }), 'highJump')
+        .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks), 'physics')
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')

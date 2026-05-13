@@ -27,6 +27,11 @@ platformer needs to bootstrap a level + player + a few interactive props.
 - **Bow** — KeyF launches an arrow with a small upward arc; arrows are
   RigidBody-driven, sleep on contact, and become a static visual stuck in
   the surface they hit. Useful later for remote item activation.
+- **High Jump** — KeyH, grounded-only, ~13 m/s upward kick. Reach a platform
+  a regular jump can't clear.
+- **Air Push** — KeyG, a chest-height cone in front of the player that
+  shoves stones and other rigid bodies. Useful for puzzles (knock a stone
+  into a pit, blow loot off a ledge).
 - **Debug overlay** — backtick toggles a render-side overlay showing the
   player AABB and scene counts. Tweak as you go.
 
@@ -77,6 +82,8 @@ tests/
 | Move | WASD / arrow keys |
 | Aim | Mouse pointer |
 | Jump | Space (buffered, with coyote time) |
+| High Jump | H (grounded only, 900 ms cooldown) |
+| Air Push | G (1.5 s cooldown) |
 | Bow shot | F |
 | Rotate camera | Q / R |
 | Zoom | Mouse wheel |
