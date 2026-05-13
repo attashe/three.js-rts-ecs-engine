@@ -40,10 +40,14 @@ export function createPistonSystem(chunks: ChunkManager): System {
 function tryFlipPiston(chunks: ChunkManager, world: GameWorld, piston: PistonMechanism): boolean {
     const source = piston.occupied === 'from' ? piston.from : piston.to
     const target = piston.occupied === 'from' ? piston.to : piston.from
+    // Full delta vector, not just a sign. A 2-cell-tall elevator pushing by
+    // only +1 leaves the rider embedded in the freshly-placed block until
+    // physics resolves it next frame — visible jitter. Pushing by the full
+    // delta lands the rider on top of the block in a single step.
     const direction: VoxelCoord = {
-        x: Math.sign(target.x - source.x),
-        y: Math.sign(target.y - source.y),
-        z: Math.sign(target.z - source.z),
+        x: target.x - source.x,
+        y: target.y - source.y,
+        z: target.z - source.z,
     }
 
     if (chunks.getVoxel(target.x, target.y, target.z) !== AIR) return false

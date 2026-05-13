@@ -57,7 +57,7 @@ async function main(): Promise<void> {
 
     spawnPlayer(world, { spawn: meta.spawn })
     for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
-    for (const piston of meta.pistons) registerPistonMechanism(world, piston)
+    for (const piston of meta.pistons) registerPistonMechanism(world, chunks, piston)
 
     // Centre the camera on the player from the very first frame so we don't
     // see a "fly-in" from the world origin.

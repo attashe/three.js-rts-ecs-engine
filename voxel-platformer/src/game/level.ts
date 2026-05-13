@@ -132,10 +132,11 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     //    that swaps between the ground-floor cell and the floating-island
     //    cell. characterPolicy 'push' so a player standing on it gets
     //    carried up. interval 3s gives the player time to step on and ride.
-    //  - Horizontal stepping stone at (12..13, groundY+1, 12): a brick block
-    //    that alternates between two adjacent cells, opening a gap then
-    //    bridging it. characterPolicy 'block' so the puzzle is "time your
-    //    crossing", not "get carried automatically".
+    //  - Horizontal piston near the centre: a brick block that alternates
+    //    between two adjacent cells. characterPolicy 'push' so the block
+    //    shoves the player aside when they're standing in the target spot —
+    //    matching the parent engine's trap-piston feel and demoing the
+    //    push behaviour on the horizontal axis.
     const pistons: PistonMechanismConfig[] = [
         {
             from: { x: 8, y: groundY + 1, z: 21 },
@@ -149,7 +150,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             to: { x: 13, y: groundY + 1, z: 12 },
             block: BLOCK.brick,
             interval: 1.4,
-            characterPolicy: 'block',
+            characterPolicy: 'push',
         },
     ]
 

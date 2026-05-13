@@ -22,14 +22,15 @@ function placePlayer(world: GameWorld, x: number, y: number, z: number): number 
 test('PistonSystem: timer flips the block between from and to', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()
-    chunks.setVoxel(5, 1, 0, BLOCK.plank)
-    registerPistonMechanism(world, {
+    registerPistonMechanism(world, chunks, {
         from: { x: 5, y: 1, z: 0 },
         to: { x: 5, y: 3, z: 0 },
         block: BLOCK.plank,
         interval: 1,
         initial: 'from',
     })
+    // registerPistonMechanism seeds the initial cell.
+    assert.equal(chunks.getVoxel(5, 1, 0), BLOCK.plank)
 
     const system = createPistonSystem(chunks)
     // Two half-second ticks to consume the interval.
@@ -43,8 +44,7 @@ test('PistonSystem: timer flips the block between from and to', () => {
 test('PistonSystem: characterPolicy "block" refuses to flip when the player overlaps the target', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()
-    chunks.setVoxel(5, 1, 0, BLOCK.brick)
-    registerPistonMechanism(world, {
+    registerPistonMechanism(world, chunks, {
         from: { x: 5, y: 1, z: 0 },
         to: { x: 6, y: 1, z: 0 },
         block: BLOCK.brick,
@@ -60,11 +60,10 @@ test('PistonSystem: characterPolicy "block" refuses to flip when the player over
     assert.equal(chunks.getVoxel(5, 1, 0), BLOCK.brick, 'source cell still holds the block')
 })
 
-test('PistonSystem: characterPolicy "push" carries the player in the flip direction', () => {
+test('PistonSystem: characterPolicy "push" carries the player along the full flip delta', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()
-    chunks.setVoxel(5, 1, 0, BLOCK.plank)
-    registerPistonMechanism(world, {
+    registerPistonMechanism(world, chunks, {
         from: { x: 5, y: 1, z: 0 },
         to: { x: 5, y: 3, z: 0 },
         block: BLOCK.plank,
@@ -76,18 +75,18 @@ test('PistonSystem: characterPolicy "push" carries the player in the flip direct
 
     createPistonSystem(chunks).update(world, 1)
     assert.equal(chunks.getVoxel(5, 3, 0), BLOCK.plank, 'piston extended into the target cell')
-    // Player gets nudged +1 along Y (the flip direction).
-    assert.ok(Math.abs(Position.y[player] - 4) < 1e-5, `expected player.y ≈ 4, got ${Position.y[player]}`)
+    // Push uses the full delta vector (target - source = (0, +2, 0)) so the
+    // player lands on top of the newly-placed block, not embedded in it.
+    assert.ok(Math.abs(Position.y[player] - 5) < 1e-5, `expected player.y ≈ 5, got ${Position.y[player]}`)
 })
 
 test('PistonSystem: "push" refuses the flip if the displaced player would land in a wall', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()
-    chunks.setVoxel(5, 1, 0, BLOCK.plank)
     // Wall above the player's would-be landing spot.
-    chunks.setVoxel(5, 4, 0, BLOCK.stone)
     chunks.setVoxel(5, 5, 0, BLOCK.stone)
-    registerPistonMechanism(world, {
+    chunks.setVoxel(5, 6, 0, BLOCK.stone)
+    registerPistonMechanism(world, chunks, {
         from: { x: 5, y: 1, z: 0 },
         to: { x: 5, y: 3, z: 0 },
         block: BLOCK.plank,
@@ -106,8 +105,7 @@ test('PistonSystem: "push" refuses the flip if the displaced player would land i
 test('PistonSystem: blocked flip retries sooner than a full interval', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()
-    chunks.setVoxel(5, 1, 0, BLOCK.brick)
-    const piston = registerPistonMechanism(world, {
+    const piston = registerPistonMechanism(world, chunks, {
         from: { x: 5, y: 1, z: 0 },
         to: { x: 6, y: 1, z: 0 },
         block: BLOCK.brick,

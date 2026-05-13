@@ -1,3 +1,4 @@
+import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import type { GameWorld, PistonMechanism, VoxelCoord } from '../engine/ecs/world'
 
 export interface PistonMechanismConfig {
@@ -14,11 +15,19 @@ export interface PistonMechanismConfig {
 }
 
 /**
- * Register a moving-platform piston. The system in `piston-system.ts` ticks
- * `world.pistons` every fixed step and toggles the block between the two
- * cells once the timer hits zero.
+ * Register a moving-platform piston AND seed its initial voxel into the
+ * world. Pistons mutate `chunks` on flip but they don't auto-populate the
+ * initial cell — without this seeding the player has nothing to stand on
+ * (elevators) or sees the block "appear out of nowhere" on the first tick.
+ *
+ * Past the initial cell, `piston-system.ts` owns all voxel writes via
+ * `chunks.applyBulk` so the renderer remeshes once per flip.
  */
-export function registerPistonMechanism(world: GameWorld, config: PistonMechanismConfig): PistonMechanism {
+export function registerPistonMechanism(
+    world: GameWorld,
+    chunks: ChunkManager,
+    config: PistonMechanismConfig,
+): PistonMechanism {
     const interval = config.interval ?? 2
     const piston: PistonMechanism = {
         from: { ...config.from },
@@ -29,6 +38,8 @@ export function registerPistonMechanism(world: GameWorld, config: PistonMechanis
         timer: interval,
         characterPolicy: config.characterPolicy ?? 'block',
     }
+    const initialCell = piston.occupied === 'from' ? piston.from : piston.to
+    chunks.setVoxel(initialCell.x, initialCell.y, initialCell.z, piston.block)
     world.pistons.push(piston)
     return piston
 }
