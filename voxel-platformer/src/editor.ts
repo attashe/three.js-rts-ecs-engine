@@ -71,7 +71,12 @@ async function main(): Promise<void> {
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
-        .addSystem(createDebugOverlaySystem(renderer.scene, engine.input), 'debugOverlay')
+        // Editor panel lives top-right; push debug metrics / log to the
+        // bottom corners so the four panels don't collide.
+        .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
+            metricsPosition: { bottom: '8px', left: '8px' },
+            logPosition: { bottom: '8px', right: '8px', maxWidth: '320px' },
+        }), 'debugOverlay')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: true,
             edgePan: false,

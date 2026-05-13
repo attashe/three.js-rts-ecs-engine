@@ -12,9 +12,24 @@ import type { System } from './system'
 import { RenderOrder } from './orders'
 import type { Input } from '../../input/input'
 
+/** CSS positioning hints for the floating panels. Each accepts any subset of
+ *  the standard offset properties (top / bottom / left / right) so callers
+ *  can pin the panel to any corner without dealing with raw CSSStyle. */
+export interface PanelPosition {
+    top?: string
+    bottom?: string
+    left?: string
+    right?: string
+    maxWidth?: string
+}
+
 export interface DebugOverlayOptions {
     enabled?: boolean
     updateHz?: number
+    /** Where the metrics/inventory panel docks. Default top-left. */
+    metricsPosition?: PanelPosition
+    /** Where the always-on log panel docks. Default top-right. */
+    logPosition?: PanelPosition
 }
 
 interface BoxBatchState {
@@ -53,14 +68,14 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             root.add(boxBatch.lines)
             root.visible = enabled
 
-            metricsPanel = makePanel('voxel-platformer-debug', { top: '8px', left: '8px' })
+            metricsPanel = makePanel('voxel-platformer-debug', opts.metricsPosition ?? { top: '8px', left: '8px' })
             metricsPanel.style.display = enabled ? 'block' : 'none'
             document.body.appendChild(metricsPanel)
 
             // The log panel stays always-visible — it's the primary
             // feedback channel for pickups and spell casts, which players
             // want regardless of whether they're inspecting metrics.
-            logPanel = makePanel('voxel-platformer-log', { top: '8px', right: '8px', maxWidth: '320px' })
+            logPanel = makePanel('voxel-platformer-log', opts.logPosition ?? { top: '8px', right: '8px', maxWidth: '320px' })
             document.body.appendChild(logPanel)
         },
         update(world, dt) {
@@ -106,7 +121,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     }
 }
 
-function makePanel(id: string, position: Partial<CSSStyleDeclaration>): HTMLDivElement {
+function makePanel(id: string, position: PanelPosition): HTMLDivElement {
     const panel = document.createElement('div')
     panel.id = id
     Object.assign(panel.style, {

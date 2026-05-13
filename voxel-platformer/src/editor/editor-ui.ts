@@ -7,7 +7,11 @@ import { saveLevelDownload, loadLevelFromFile } from './save-load'
 
 const PANEL_CSS = `
 .vpe-panel {
-    position: fixed; top: 8px; left: 8px; width: 240px;
+    /* Dock top-right so it doesn't fight the debug overlay's metrics panel
+     * (top-left) on the editor page. The debug log panel is pushed to the
+     * bottom on the editor page via createDebugOverlaySystem options. */
+    position: fixed; top: 8px; right: 8px; width: 240px;
+    max-height: calc(100vh - 16px); overflow-y: auto;
     font: 12px ui-sans-serif, system-ui, sans-serif;
     background: rgba(8, 12, 16, 0.86); color: #d9f7ff;
     padding: 10px 12px; border-radius: 6px;
