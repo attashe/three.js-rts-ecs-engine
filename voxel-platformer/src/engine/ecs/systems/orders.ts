@@ -1,4 +1,7 @@
 export const FixedOrder = {
+    /** Mechanism updates (pistons / moving platforms) — runs first so their
+     *  voxel writes are visible to physics in the same step. */
+    mechanisms: 90,
     input: 100,
     movement: 300,
     physics: 400,

@@ -19,9 +19,11 @@ import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { createPickupSystem } from './engine/ecs/systems/pickup-system'
+import { createPistonSystem } from './engine/ecs/systems/piston-system'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { spawnCoinPile } from './game/pickups'
+import { registerPistonMechanism } from './game/mechanisms'
 import { createGameActionMap, GameAction } from './game/actions'
 
 async function main(): Promise<void> {
@@ -55,6 +57,7 @@ async function main(): Promise<void> {
 
     spawnPlayer(world, { spawn: meta.spawn })
     for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
+    for (const piston of meta.pistons) registerPistonMechanism(world, piston)
 
     // Centre the camera on the player from the very first frame so we don't
     // see a "fly-in" from the world origin.
@@ -76,6 +79,7 @@ async function main(): Promise<void> {
         .addSystem(createHighJumpSystem(actions, { actionId: GameAction.HighJump }), 'highJump')
         .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
         .addSystem(createPickupSystem(), 'pickup')
+        .addSystem(createPistonSystem(chunks), 'piston')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks), 'physics')
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')

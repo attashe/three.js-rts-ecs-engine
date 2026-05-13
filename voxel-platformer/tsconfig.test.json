@@ -20,6 +20,7 @@
     "src/engine/ecs/components.ts",
     "src/engine/ecs/obstacle-registry.ts",
     "src/engine/ecs/world.ts",
+    "src/editor/brush.ts",
     "tests/**/*.ts"
   ]
 }

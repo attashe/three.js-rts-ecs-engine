@@ -1,4 +1,5 @@
 import { BLOCK, type ChunkManager } from '../engine/voxel'
+import type { PistonMechanismConfig } from './mechanisms'
 import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 
 export interface CoinPileSpawn {
@@ -13,6 +14,8 @@ export interface LevelMeta {
     stoneSpawners: StoneFallSpawnerConfig[]
     /** Coin pile placements — pickup-system grants gold on contact. */
     coinPiles: CoinPileSpawn[]
+    /** Piston / moving-platform configs registered by client.ts. */
+    pistons: PistonMechanismConfig[]
     /** XZ extent of the generated level, used by the demo to centre the camera. */
     size: number
 }
@@ -106,17 +109,55 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     // A handful of coin piles to give the player a reason to traverse the
     // demo: one on the raised platform (needs the staircase OR a high-jump),
     // one near the cliff base (in the path of falling stones), one tucked
-    // behind the wall.
+    // behind the wall, one isolated on a small island reachable only by the
+    // vertical elevator piston below.
     const coinPiles = [
         { position: { x: 18, y: platformTop + 1, z: 18 }, amount: 20 },
         { position: { x: 20, y: groundY + 1, z: 4 }, amount: 12 },
         { position: { x: 4, y: groundY + 1, z: 5 }, amount: 8 },
+        { position: { x: 8, y: groundY + 4, z: 21 }, amount: 25 },
+    ]
+
+    // Carve a small floating island to host the elevator-target coin pile.
+    // The island has no stairs, so the player must ride the vertical piston
+    // up to it (or use high-jump if they can clear ~3 m).
+    for (let x = 7; x <= 9; x++) {
+        for (let z = 20; z <= 22; z++) {
+            chunks.setVoxel(x, groundY + 3, z, BLOCK.stone)
+        }
+    }
+
+    // Pistons:
+    //  - Vertical elevator at (8, groundY+1..groundY+3, 21): a plank block
+    //    that swaps between the ground-floor cell and the floating-island
+    //    cell. characterPolicy 'push' so a player standing on it gets
+    //    carried up. interval 3s gives the player time to step on and ride.
+    //  - Horizontal stepping stone at (12..13, groundY+1, 12): a brick block
+    //    that alternates between two adjacent cells, opening a gap then
+    //    bridging it. characterPolicy 'block' so the puzzle is "time your
+    //    crossing", not "get carried automatically".
+    const pistons: PistonMechanismConfig[] = [
+        {
+            from: { x: 8, y: groundY + 1, z: 21 },
+            to: { x: 8, y: groundY + 3, z: 21 },
+            block: BLOCK.plank,
+            interval: 3,
+            characterPolicy: 'push',
+        },
+        {
+            from: { x: 12, y: groundY + 1, z: 12 },
+            to: { x: 13, y: groundY + 1, z: 12 },
+            block: BLOCK.brick,
+            interval: 1.4,
+            characterPolicy: 'block',
+        },
     ]
 
     return {
         spawn: { x: size / 2, y: groundY + 1, z: size / 2 },
         stoneSpawners,
         coinPiles,
+        pistons,
         size,
     }
 }

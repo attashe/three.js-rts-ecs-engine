@@ -49,7 +49,9 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:8001`.
+Game: `http://localhost:8001` (or `/index.html`).
+Editor: `http://localhost:8001/editor.html` — voxel painting, brushes, pickup
+placement, binary save/load. See `docs/editor.md` for the full roadmap.
 
 ## Test + typecheck + build
 
