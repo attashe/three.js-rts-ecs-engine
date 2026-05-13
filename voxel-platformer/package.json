@@ -1,0 +1,25 @@
+{
+  "name": "voxel-platformer",
+  "version": "0.1.0",
+  "description": "Voxel platformer foundation — level rendering, character movement + jumps, swept-AABB physics, bow shooting. Distilled from voxel-rpg-engine without NPCs / AI / inventory / HUD.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "tsc -p tsconfig.test.json && cp tests/package.cjs.json .tmp/test-build/package.json && node --test .tmp/test-build/tests/*.test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "bitecs": "^0.4.0",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.1",
+    "@types/three": "^0.184.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.11"
+  }
+}

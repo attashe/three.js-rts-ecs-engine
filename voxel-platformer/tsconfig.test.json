@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "noEmit": false,
+    "outDir": ".tmp/test-build",
+    "rootDir": ".",
+    "types": ["node"],
+    "sourceMap": true
+  },
+  "include": [
+    "src/engine/voxel/chunk.ts",
+    "src/engine/voxel/chunk-manager.ts",
+    "src/engine/voxel/level-serializer.ts",
+    "src/engine/voxel/palette.ts",
+    "src/engine/voxel/voxel-collide.ts",
+    "src/engine/input/actions.ts",
+    "src/engine/ecs/components.ts",
+    "src/engine/ecs/obstacle-registry.ts",
+    "src/engine/ecs/world.ts",
+    "tests/**/*.ts"
+  ]
+}
