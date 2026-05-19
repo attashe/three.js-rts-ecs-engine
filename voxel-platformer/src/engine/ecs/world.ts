@@ -2,6 +2,7 @@ import { createWorld, type World } from 'bitecs'
 import type { Object3D } from 'three'
 import { ObstacleRegistry } from './obstacle-registry'
 import { EngineMetrics } from '../metrics'
+import type { Zone, ZoneTriggerEvent } from './zones'
 
 export interface VoxelCoord {
     x: number
@@ -67,9 +68,10 @@ export interface PistonMechanism {
 
 /** Why the level should restart. Set by gameplay systems; consumed by
  *  `restart-system` which calls `location.reload()`. */
-export type DeathReason = 'fell-into-void' | 'crushed-by-piston' | 'manual-restart'
+export type DeathReason = 'fell-into-void' | 'crushed-by-piston' | 'manual-restart' | 'killed-by-zone-script'
 
 const MAX_LOG_ENTRIES = 12
+const MAX_ZONE_EVENTS = 64
 
 // Side-tables. bitecs components hold only numeric data; anything that's a
 // reference type (Object3D, registry side tables) lives here keyed by entity id.
@@ -81,6 +83,14 @@ export interface GameContext {
     inventory: PickupInventory
     /** Active piston mechanisms — voxel-toggling moving platforms. */
     pistons: PistonMechanism[]
+    /** Named AABB regions placed by the editor (or seeded by `level.ts`).
+     *  Gameplay can query these via `isPointInZone` / `findZoneAtPoint`. */
+    zones: Map<string, Zone>
+    /** Trigger activations emitted by zone-trigger-system. Consumers may read
+     *  and drain this array in insertion order. Capped to the most recent
+     *  `MAX_ZONE_EVENTS` entries via `pushZoneEvent` so it can't grow
+     *  unbounded if no consumer is wired up. */
+    zoneEvents: ZoneTriggerEvent[]
     /** Capped ring of recent gameplay messages — pickup notifications, spell
      *  casts, etc. Rendered by debug-overlay-system. */
     log: string[]
@@ -98,6 +108,8 @@ export function createGameWorld(): GameWorld {
         obstacles: new ObstacleRegistry(),
         inventory: { gold: 0, arrows: 0 },
         pistons: [],
+        zones: new Map<string, Zone>(),
+        zoneEvents: [],
         log: [],
         deathSignal: null,
     })
@@ -108,5 +120,15 @@ export function pushLog(world: GameWorld, message: string): void {
     world.log.push(message)
     if (world.log.length > MAX_LOG_ENTRIES) {
         world.log.splice(0, world.log.length - MAX_LOG_ENTRIES)
+    }
+}
+
+/** Append a zone trigger event, evicting oldest entries past the cap.
+ *  Use this instead of pushing onto `world.zoneEvents` directly so the
+ *  queue stays bounded even when no consumer is draining it. */
+export function pushZoneEvent(world: GameWorld, event: ZoneTriggerEvent): void {
+    world.zoneEvents.push(event)
+    if (world.zoneEvents.length > MAX_ZONE_EVENTS) {
+        world.zoneEvents.splice(0, world.zoneEvents.length - MAX_ZONE_EVENTS)
     }
 }

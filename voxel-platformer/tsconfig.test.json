@@ -20,6 +20,7 @@
     "src/engine/ecs/components.ts",
     "src/engine/ecs/obstacle-registry.ts",
     "src/engine/ecs/world.ts",
+    "src/engine/ecs/zones.ts",
     "src/editor/brush.ts",
     "src/editor/piston-direction.ts",
     "tests/**/*.ts"

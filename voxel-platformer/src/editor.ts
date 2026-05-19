@@ -16,6 +16,8 @@ import { createPistonPlaceSystem } from './editor/systems/piston-place-system'
 import { createSpawnPlaceSystem } from './editor/systems/spawn-place-system'
 import { createSpawnMarkerSystem } from './editor/systems/spawn-marker-system'
 import { createPistonMarkerSystem } from './editor/systems/piston-marker-system'
+import { createZonePlaceSystem } from './editor/systems/zone-place-system'
+import { createZoneRenderSystem } from './editor/systems/zone-render-system'
 import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
 import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
 import { createViewModeSystem } from './editor/systems/view-mode-system'
@@ -85,6 +87,7 @@ async function main(): Promise<void> {
         .addSystem(createPickupSpawnSystem(engine.input, editorState), 'pickupSpawn')
         .addSystem(createPistonPlaceSystem(chunks, engine.input, editorState), 'pistonPlace')
         .addSystem(createSpawnPlaceSystem(engine.input, editorState), 'spawnPlace')
+        .addSystem(createZonePlaceSystem(engine.input, editorState), 'zonePlace')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
@@ -92,6 +95,7 @@ async function main(): Promise<void> {
         .addSystem(createWorkingPlaneOutlinesSystem(renderer.scene, chunks, editorState), 'workingPlaneOutlines')
         .addSystem(createSpawnMarkerSystem(renderer.scene, editorState), 'spawnMarker')
         .addSystem(createPistonMarkerSystem(renderer.scene, editorState), 'pistonMarker')
+        .addSystem(createZoneRenderSystem(renderer.scene, editorState), 'zoneRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Editor panel lives top-right; push debug metrics / log to the
         // bottom corners so the four panels don't collide.

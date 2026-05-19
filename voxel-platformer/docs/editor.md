@@ -139,6 +139,42 @@ Three pieces tied together so a user can author and immediately try a level:
   playtest mode is active, so the user can bounce back to the editor in
   one click.
 
+## Stage 2.7 — Zone placement *(landed)*
+
+Ported the parent codebase's `AiZone` concept down to a generic 3-D AABB
+**Zone** (id, kind, optional label, `min`/`max` in world cells). Zones are
+saved metadata plus a runtime registry on `world.zones`; gameplay systems
+can call `isPointInZone` / `findZoneAtPoint` / `sampleZonePoint`, and
+`kind: "trigger"` zones can now emit activation events.
+
+Editor surface:
+- New mode **Zone**. LMB drops a zone of `XZ size × Y height` cells centred
+  on the cursor at the working plane Y. RMB pops the last placed zone.
+- UI section "Zone (active in Zone mode)": kind tag (free-form string),
+  optional label, XZ size, Y height, trigger source (player, arrow, or
+  both), and a live list of placed zones with a per-row "remove" button.
+- `zone-render-system` draws a magenta wireframe box per zone (depth-test
+  off, render order 998) so it floats over the scene without being
+  hidden by voxels.
+- `voxel-cursor-system` previews the would-be XZ footprint as outlines on
+  the working plane so the user can see what they're about to drop.
+
+Round-trips via the same save/load path as everything else:
+- `EditorLevelMeta.zones?` carries the array.
+- `levelMetaFromEditor` translates it to runtime `Zone[]` on `LevelMeta`.
+- `client.ts` calls `defineZone(world, …)` for each on load.
+- `zone-trigger-system` emits `world.zoneEvents[]` when an allowed source
+  collides with a trigger zone. Player triggers fire on enter; arrow
+  triggers fire once per arrow/zone and use a swept segment for fast arrows.
+- Trigger zones may carry `script.actions[]`. The first supported actions
+  are `message`, `kill-player`, `set-block`, and `fill-blocks`; editor UI
+  exposes message, kill, spawn-one-block, and erase-one-block actions for
+  newly placed zones.
+
+Tests cover the inclusive-min / exclusive-max AABB rule, deterministic
+`sampleZonePoint`, trigger source filtering, player enter activation,
+swept arrow activation, and the starter trigger-script actions.
+
 ## Stage 3 — Chunk management *(planned)*
 
 Per the latest design call, chunk management for v0 is **"extend the level

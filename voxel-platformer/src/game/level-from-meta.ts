@@ -1,4 +1,5 @@
-import type { EditorLevelMeta } from '../editor/editor-state'
+import { copyZoneScriptAction, type EditorLevelMeta } from '../editor/editor-state'
+import type { Zone } from '../engine/ecs/zones'
 import type { LevelMeta, CoinPileSpawn } from './level'
 import type { PistonMechanismConfig } from './mechanisms'
 
@@ -26,11 +27,24 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         travelTime: p.travelTime ?? 1,
     }))
 
+    const zones: Zone[] = (meta.zones ?? []).map((z) => ({
+        id: z.id,
+        kind: z.kind ?? 'generic',
+        label: z.label,
+        min: { ...z.min },
+        max: { ...z.max },
+        triggerSources: z.triggerSources ? [...z.triggerSources] : undefined,
+        script: z.script ? {
+            actions: z.script.actions.map(copyZoneScriptAction),
+        } : undefined,
+    }))
+
     return {
         spawn: { x: meta.spawn.x, y: meta.spawn.y, z: meta.spawn.z },
         stoneSpawners: [],
         coinPiles,
         pistons,
+        zones,
         size: fallbackSize,
     }
 }

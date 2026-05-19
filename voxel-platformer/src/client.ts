@@ -20,12 +20,14 @@ import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { createPickupSystem } from './engine/ecs/systems/pickup-system'
 import { createPistonSystem } from './engine/ecs/systems/piston-system'
+import { createZoneTriggerSystem } from './engine/ecs/systems/zone-trigger-system'
 import { createPlayerDeathSystem } from './engine/ecs/systems/player-death-system'
 import { createRestartSystem } from './engine/ecs/systems/restart-system'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
+import { defineZone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
 import { deserializeLevel } from './engine/voxel/level-serializer'
 import { consumePlaytestLevel } from './editor/playtest'
@@ -66,6 +68,7 @@ async function main(): Promise<void> {
     spawnPlayer(world, { spawn: meta.spawn })
     for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
     for (const piston of meta.pistons) registerPistonMechanism(world, chunks, piston)
+    for (const zone of meta.zones) defineZone(world, zone)
 
     // Centre the camera on the player from the very first frame so we don't
     // see a "fly-in" from the world origin.
@@ -88,6 +91,7 @@ async function main(): Promise<void> {
         .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
         .addSystem(createPickupSystem(), 'pickup')
         .addSystem(createPistonSystem(chunks), 'piston')
+        .addSystem(createZoneTriggerSystem(chunks), 'zoneTrigger')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks), 'physics')
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')

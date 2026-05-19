@@ -1,11 +1,12 @@
 import { DEFAULT_PALETTE, type PaletteEntry } from '../engine/voxel/palette'
 import { BRUSHES, type BrushKind } from './brush'
-import type { EditorState, EditorMode, EditorPiston, EditorViewMode } from './editor-state'
+import type { EditorState, EditorMode, EditorPiston, EditorViewMode, EditorZoneTriggerMode } from './editor-state'
 import { PISTON_DIRECTIONS, type PistonDirection } from './piston-direction'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import type { GameWorld } from '../engine/ecs/world'
 import { saveLevelDownload, loadLevelFromFile } from './save-load'
 import { launchPlaytest } from './playtest'
+import type { ZoneScriptAction } from '../engine/ecs/zones'
 
 const PANEL_CSS = `
 .vpe-panel {
@@ -84,6 +85,8 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
     root.appendChild(pickupSection.element)
     const pistonSection = buildPistonSection(opts.editorState)
     root.appendChild(pistonSection.element)
+    const zoneSection = buildZoneSection(opts.editorState)
+    root.appendChild(zoneSection.element)
     root.appendChild(buildSaveLoadSection(opts))
     root.appendChild(buildHintSection())
 
@@ -94,6 +97,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
     const interval = window.setInterval(() => {
         pickupSection.refresh()
         pistonSection.refresh()
+        zoneSection.refresh()
         planeSection.refresh()
     }, 250)
 
@@ -163,6 +167,7 @@ function buildModeSection(state: EditorState): HTMLElement {
         { mode: 'spawn-pickup', label: 'Pickup' },
         { mode: 'place-piston', label: 'Piston' },
         { mode: 'place-spawn', label: 'Spawn' },
+        { mode: 'place-zone', label: 'Zone' },
     ]
     const buttons: { mode: EditorMode; btn: HTMLButtonElement }[] = []
     for (const m of modes) {
@@ -483,6 +488,304 @@ function buildPistonSection(state: EditorState): { element: HTMLElement; refresh
     refresh()
 
     return { element: section, refresh }
+}
+
+function buildZoneSection(state: EditorState): { element: HTMLElement; refresh: () => void } {
+    const section = sectionEl('Zone (active in Zone mode)')
+
+    const kindRow = document.createElement('div')
+    kindRow.className = 'vpe-row'
+    kindRow.style.alignItems = 'center'
+    const kindLabel = document.createElement('span')
+    kindLabel.textContent = 'Kind:'
+    kindLabel.style.flex = '1'
+    const kindInput = document.createElement('input')
+    kindInput.className = 'vpe-input'
+    kindInput.type = 'text'
+    kindInput.value = state.zoneKind
+    kindInput.style.flex = '2'
+    kindInput.placeholder = 'generic'
+    kindInput.oninput = () => { state.zoneKind = kindInput.value || 'generic' }
+    kindRow.append(kindLabel, kindInput)
+    section.appendChild(kindRow)
+
+    const labelRow = document.createElement('div')
+    labelRow.className = 'vpe-row'
+    labelRow.style.alignItems = 'center'
+    const labelLabel = document.createElement('span')
+    labelLabel.textContent = 'Label:'
+    labelLabel.style.flex = '1'
+    const labelInput = document.createElement('input')
+    labelInput.className = 'vpe-input'
+    labelInput.type = 'text'
+    labelInput.value = state.zoneLabel
+    labelInput.style.flex = '2'
+    labelInput.placeholder = '(optional)'
+    labelInput.oninput = () => { state.zoneLabel = labelInput.value }
+    labelRow.append(labelLabel, labelInput)
+    section.appendChild(labelRow)
+
+    const sizeRow = document.createElement('div')
+    sizeRow.className = 'vpe-row'
+    sizeRow.style.alignItems = 'center'
+    const sizeLabel = document.createElement('span')
+    sizeLabel.textContent = 'XZ size:'
+    sizeLabel.style.flex = '1'
+    const sizeInput = document.createElement('input')
+    sizeInput.className = 'vpe-input'
+    sizeInput.type = 'number'
+    sizeInput.min = '1'
+    sizeInput.max = '32'
+    sizeInput.value = String(state.zoneSize)
+    sizeInput.style.width = '60px'
+    sizeInput.oninput = () => {
+        const v = parseInt(sizeInput.value, 10)
+        if (Number.isFinite(v) && v >= 1) state.zoneSize = v
+    }
+    sizeRow.append(sizeLabel, sizeInput)
+    section.appendChild(sizeRow)
+
+    const heightRow = document.createElement('div')
+    heightRow.className = 'vpe-row'
+    heightRow.style.alignItems = 'center'
+    const heightLabel = document.createElement('span')
+    heightLabel.textContent = 'Y height:'
+    heightLabel.style.flex = '1'
+    const heightInput = document.createElement('input')
+    heightInput.className = 'vpe-input'
+    heightInput.type = 'number'
+    heightInput.min = '1'
+    heightInput.max = '32'
+    heightInput.value = String(state.zoneHeight)
+    heightInput.style.width = '60px'
+    heightInput.oninput = () => {
+        const v = parseInt(heightInput.value, 10)
+        if (Number.isFinite(v) && v >= 1) state.zoneHeight = v
+    }
+    heightRow.append(heightLabel, heightInput)
+    section.appendChild(heightRow)
+
+    const triggerRow = document.createElement('div')
+    triggerRow.className = 'vpe-row'
+    const triggerModes: { id: EditorZoneTriggerMode; label: string }[] = [
+        { id: 'player', label: 'Player' },
+        { id: 'arrow', label: 'Arrow' },
+        { id: 'both', label: 'Both' },
+    ]
+    const triggerButtons: { id: EditorZoneTriggerMode; btn: HTMLButtonElement }[] = []
+    for (const mode of triggerModes) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.textContent = mode.label
+        btn.onclick = () => {
+            state.zoneTriggerMode = mode.id
+            for (const { btn: b } of triggerButtons) b.classList.remove('active')
+            btn.classList.add('active')
+        }
+        if (mode.id === state.zoneTriggerMode) btn.classList.add('active')
+        triggerButtons.push({ id: mode.id, btn })
+        triggerRow.appendChild(btn)
+    }
+    section.appendChild(triggerRow)
+
+    const scriptLabel = document.createElement('div')
+    scriptLabel.className = 'vpe-hint'
+    scriptLabel.textContent = 'Script for new zones'
+    section.appendChild(scriptLabel)
+
+    const msgRow = document.createElement('div')
+    msgRow.className = 'vpe-row'
+    msgRow.style.alignItems = 'center'
+    const msgInput = document.createElement('input')
+    msgInput.className = 'vpe-input'
+    msgInput.type = 'text'
+    msgInput.value = state.zoneScriptMessage
+    msgInput.placeholder = 'message'
+    msgInput.style.flex = '1'
+    msgInput.oninput = () => { state.zoneScriptMessage = msgInput.value }
+    const addMsgBtn = document.createElement('button')
+    addMsgBtn.className = 'vpe-button'
+    addMsgBtn.textContent = 'Msg'
+    addMsgBtn.onclick = () => {
+        const message = state.zoneScriptMessage.trim()
+        if (!message) return
+        state.zoneScriptActions.push({ type: 'message', message })
+        renderScriptList()
+    }
+    msgRow.append(msgInput, addMsgBtn)
+    section.appendChild(msgRow)
+
+    const offsetRow = document.createElement('div')
+    offsetRow.className = 'vpe-row'
+    offsetRow.style.alignItems = 'center'
+    const offsetLabel = document.createElement('span')
+    offsetLabel.textContent = 'Offset:'
+    offsetLabel.style.flex = '1'
+    const offsetInputs = (['x', 'y', 'z'] as const).map((axis) => {
+        const input = document.createElement('input')
+        input.className = 'vpe-input'
+        input.type = 'number'
+        input.value = String(state.zoneScriptOffset[axis])
+        input.style.width = '42px'
+        input.title = `${axis.toUpperCase()} offset from zone min`
+        input.oninput = () => {
+            const v = parseInt(input.value, 10)
+            if (Number.isFinite(v)) state.zoneScriptOffset[axis] = v
+        }
+        return input
+    })
+    offsetRow.append(offsetLabel, ...offsetInputs)
+    section.appendChild(offsetRow)
+
+    const scriptActionRow = document.createElement('div')
+    scriptActionRow.className = 'vpe-row'
+    const killBtn = document.createElement('button')
+    killBtn.className = 'vpe-button'
+    killBtn.textContent = 'Kill'
+    killBtn.onclick = () => {
+        const message = state.zoneScriptMessage.trim()
+        state.zoneScriptActions.push(message
+            ? { type: 'kill-player', message }
+            : { type: 'kill-player' })
+        renderScriptList()
+    }
+    const spawnBtn = document.createElement('button')
+    spawnBtn.className = 'vpe-button'
+    spawnBtn.textContent = 'Spawn'
+    spawnBtn.onclick = () => {
+        state.zoneScriptActions.push({
+            type: 'set-block',
+            position: { ...state.zoneScriptOffset },
+            block: state.activeBlock,
+            relativeTo: 'zone-min',
+        })
+        renderScriptList()
+    }
+    const eraseBtn = document.createElement('button')
+    eraseBtn.className = 'vpe-button'
+    eraseBtn.textContent = 'Erase'
+    eraseBtn.onclick = () => {
+        state.zoneScriptActions.push({
+            type: 'set-block',
+            position: { ...state.zoneScriptOffset },
+            block: 0,
+            relativeTo: 'zone-min',
+        })
+        renderScriptList()
+    }
+    const clearBtn = document.createElement('button')
+    clearBtn.className = 'vpe-button'
+    clearBtn.textContent = 'Clear'
+    clearBtn.onclick = () => {
+        state.zoneScriptActions.length = 0
+        renderScriptList()
+    }
+    scriptActionRow.append(killBtn, spawnBtn, eraseBtn, clearBtn)
+    section.appendChild(scriptActionRow)
+
+    const scriptList = document.createElement('div')
+    scriptList.className = 'vpe-pickup-list'
+    section.appendChild(scriptList)
+
+    const list = document.createElement('div')
+    list.className = 'vpe-pickup-list'
+    section.appendChild(list)
+
+    let scriptFingerprint: string | null = null
+    let zoneFingerprint: string | null = null
+
+    function renderScriptList(): void {
+        const fp = state.zoneScriptActions.map((action) => JSON.stringify(action)).join('|')
+        if (fp === scriptFingerprint) return
+        scriptFingerprint = fp
+        scriptList.innerHTML = ''
+        if (state.zoneScriptActions.length === 0) {
+            const empty = document.createElement('span')
+            empty.textContent = 'No script actions.'
+            empty.style.color = 'rgba(217,247,255,0.45)'
+            scriptList.appendChild(empty)
+            return
+        }
+        for (const action of state.zoneScriptActions) {
+            const row = document.createElement('div')
+            row.className = 'vpe-pickup-item'
+            const span = document.createElement('span')
+            span.textContent = formatZoneScriptAction(action)
+            const removeBtn = document.createElement('button')
+            removeBtn.textContent = 'remove'
+            removeBtn.onclick = () => {
+                const i = state.zoneScriptActions.indexOf(action)
+                if (i >= 0) state.zoneScriptActions.splice(i, 1)
+                renderScriptList()
+            }
+            row.append(span, removeBtn)
+            scriptList.appendChild(row)
+        }
+    }
+
+    function refresh(): void {
+        renderScriptList()
+        const fp = state.zones.map((zone) => JSON.stringify(zone)).join('|')
+        if (fp === zoneFingerprint) return
+        zoneFingerprint = fp
+        list.innerHTML = ''
+        if (state.zones.length === 0) {
+            const empty = document.createElement('span')
+            empty.textContent = 'No zones placed yet.'
+            empty.style.color = 'rgba(217,247,255,0.45)'
+            list.appendChild(empty)
+            return
+        }
+        for (const zone of state.zones) {
+            const row = document.createElement('div')
+            row.className = 'vpe-pickup-item'
+            const span = document.createElement('span')
+            const w = zone.max.x - zone.min.x
+            const h = zone.max.y - zone.min.y
+            const d = zone.max.z - zone.min.z
+            const title = zone.label ?? zone.id
+            const sources = (zone.triggerSources ?? ['player']).join('+')
+            const scripts = zone.script?.actions.length ?? 0
+            span.textContent = `${title} [${zone.kind}] ${sources} ${w}×${h}×${d} @ (${zone.min.x},${zone.min.y},${zone.min.z}) · ${scripts} script`
+            const removeBtn = document.createElement('button')
+            removeBtn.textContent = 'remove'
+            removeBtn.onclick = () => {
+                const i = state.zones.indexOf(zone)
+                if (i >= 0) state.zones.splice(i, 1)
+                refresh()
+            }
+            row.append(span, removeBtn)
+            list.appendChild(row)
+        }
+    }
+    refresh()
+
+    return { element: section, refresh }
+}
+
+function formatZoneScriptAction(action: ZoneScriptAction): string {
+    if (action.type === 'message') return `message "${trimForList(action.message)}"`
+    if (action.type === 'kill-player') return action.message
+        ? `kill + "${trimForList(action.message)}"`
+        : 'kill player'
+    if (action.type === 'set-block') {
+        const block = action.block === 0
+            ? 'air'
+            : (DEFAULT_PALETTE.entries[action.block]?.name ?? `block ${action.block}`)
+        return `${action.block === 0 ? 'erase' : 'spawn'} ${block} @ ${formatCoord(action.position)}`
+    }
+    const block = action.block === 0
+        ? 'air'
+        : (DEFAULT_PALETTE.entries[action.block]?.name ?? `block ${action.block}`)
+    return `fill ${block} ${formatCoord(action.min)}..${formatCoord(action.max)}`
+}
+
+function formatCoord(p: { x: number; y: number; z: number }): string {
+    return `${p.x},${p.y},${p.z}`
+}
+
+function trimForList(text: string): string {
+    return text.length > 22 ? `${text.slice(0, 21)}…` : text
 }
 
 function buildSaveLoadSection(opts: MountEditorPanelOptions): HTMLElement {

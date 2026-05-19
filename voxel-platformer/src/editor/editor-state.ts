@@ -1,14 +1,16 @@
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import type { VoxelCoord } from '../engine/ecs/world'
+import type { ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
 import type { BrushKind } from './brush'
 import type { PistonDirection } from './piston-direction'
 
-export type EditorMode = 'paint' | 'erase' | 'spawn-pickup' | 'place-piston' | 'place-spawn'
+export type EditorMode = 'paint' | 'erase' | 'spawn-pickup' | 'place-piston' | 'place-spawn' | 'place-zone'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut. */
 export type EditorViewMode = 'iso' | 'top-down'
 export type EditorPistonMotion = 'teleport' | 'physical'
+export type EditorZoneTriggerMode = ZoneTriggerSource | 'both'
 
 export interface EditorPickup {
     /** World-space pickup position (foot of the visual). Stored in editor
@@ -21,6 +23,21 @@ export interface EditorPickup {
     /** Live entity id of the preview mesh in the editor scene, so we can
      *  despawn it when the metadata entry is removed. -1 when not spawned. */
     eid: number
+}
+
+/** Editor-side mirror of a `Zone`. Stored in metadata + drives the
+ *  zone-render-system. Same shape as the runtime `Zone`, but the editor
+ *  generates `id` on placement so the user only worries about kind/label. */
+export interface EditorZone {
+    id: string
+    kind: string
+    label?: string
+    min: VoxelCoord
+    max: VoxelCoord
+    triggerSources?: ZoneTriggerSource[]
+    script?: {
+        actions: ZoneScriptAction[]
+    }
 }
 
 export interface EditorPiston {
@@ -69,6 +86,26 @@ export interface EditorState {
     /** Character handling on flip — see PistonMechanism.characterPolicy. */
     pistonPolicy: 'block' | 'push'
 
+    /** Zones placed in the editor — serialised into the level metadata. */
+    zones: EditorZone[]
+    /** Kind tag applied to the next placed zone. Free-form string; the
+     *  game side decides what it means. */
+    zoneKind: string
+    /** Optional human-readable label applied to the next placed zone. */
+    zoneLabel: string
+    /** XZ extent in cells for the next placed zone (centred on the cursor). */
+    zoneSize: number
+    /** Y extent in cells for the next placed zone (starting at the working plane). */
+    zoneHeight: number
+    /** Collision source that activates the next placed trigger zone. */
+    zoneTriggerMode: EditorZoneTriggerMode
+    /** Script actions attached to the next placed trigger zone. */
+    zoneScriptActions: ZoneScriptAction[]
+    /** Draft message used by the zone script UI. */
+    zoneScriptMessage: string
+    /** Draft block offset from zone min used by spawn/erase script actions. */
+    zoneScriptOffset: VoxelCoord
+
     /** Y-row of the working plane. Used by the cursor system as the placement
      *  Y when no voxel is hit, and (when planeLock is on) overrides voxel
      *  hits so the user can paint a specific layer through existing geometry. */
@@ -101,6 +138,15 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         pistonMotion: 'teleport',
         pistonTravelTime: 1,
         pistonPolicy: 'push',
+        zones: [],
+        zoneKind: 'generic',
+        zoneLabel: '',
+        zoneSize: 4,
+        zoneHeight: 3,
+        zoneTriggerMode: 'player',
+        zoneScriptActions: [],
+        zoneScriptMessage: '',
+        zoneScriptOffset: { x: 0, y: 0, z: 0 },
         workingPlaneY: Math.floor(spawn.y),
         planeLock: false,
         viewMode: 'iso',
@@ -120,6 +166,7 @@ export interface EditorLevelMeta {
         amount: number
     }>
     pistons: EditorPiston[]
+    zones?: EditorZone[]
 }
 
 export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
@@ -140,8 +187,39 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             motion: p.motion ?? 'teleport',
             travelTime: p.travelTime ?? 1,
         })),
+        zones: state.zones.map((z) => ({
+            id: z.id,
+            kind: z.kind,
+            label: z.label,
+            min: { ...z.min },
+            max: { ...z.max },
+            triggerSources: z.triggerSources ? [...z.triggerSources] : undefined,
+            script: z.script ? {
+                actions: z.script.actions.map(copyZoneScriptAction),
+            } : undefined,
+        })),
     }
 }
 
 /** Re-export so editor-ui only needs editor-state to know default block ids. */
 export { BLOCK }
+
+export function copyZoneScriptAction(action: ZoneScriptAction): ZoneScriptAction {
+    if (action.type === 'message') return { type: 'message', message: action.message }
+    if (action.type === 'kill-player') return { type: 'kill-player', message: action.message }
+    if (action.type === 'set-block') {
+        return {
+            type: 'set-block',
+            position: { ...action.position },
+            block: action.block,
+            relativeTo: action.relativeTo,
+        }
+    }
+    return {
+        type: 'fill-blocks',
+        min: { ...action.min },
+        max: { ...action.max },
+        block: action.block,
+        relativeTo: action.relativeTo,
+    }
+}

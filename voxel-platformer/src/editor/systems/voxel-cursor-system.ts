@@ -160,12 +160,26 @@ function resolveCursorCell(
 }
 
 /** Cells the active operation will affect. Place-piston shows two outlines
- *  (from + to); pickups show one; paint / erase show the brush footprint. */
+ *  (from + to); pickups / spawn show one; place-zone shows the full XZ
+ *  footprint at the working plane; paint / erase show the brush footprint. */
 function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; z: number }): { x: number; y: number; z: number }[] {
     if (state.mode === 'spawn-pickup' || state.mode === 'place-spawn') return [cursor]
     if (state.mode === 'place-piston') {
         const target = addOffset(cursor, pistonOffset(state.pistonDirection, state.pistonDistance))
         return [cursor, target]
+    }
+    if (state.mode === 'place-zone') {
+        const size = Math.max(1, Math.floor(state.zoneSize))
+        const halfBefore = Math.floor((size - 1) / 2)
+        const minX = cursor.x - halfBefore
+        const minZ = cursor.z - halfBefore
+        const cells: { x: number; y: number; z: number }[] = []
+        for (let dz = 0; dz < size; dz++) {
+            for (let dx = 0; dx < size; dx++) {
+                cells.push({ x: minX + dx, y: state.workingPlaneY, z: minZ + dz })
+            }
+        }
+        return cells
     }
     return brushFootprint(state.brush, cursor)
 }
@@ -191,6 +205,7 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'spawn-pickup': return PICKUP_OUTLINE_COLOUR
         case 'place-piston': return PISTON_FROM_COLOUR
         case 'place-spawn': return SPAWN_OUTLINE_COLOUR
+        case 'place-zone': return 0xff66cc
     }
 }
 
@@ -199,6 +214,7 @@ function ghostColour(state: EditorState): [number, number, number] {
     if (state.mode === 'spawn-pickup') return [0.56, 0.71, 1]
     if (state.mode === 'place-piston') return [1, 0.82, 0.4]
     if (state.mode === 'place-spawn') return [0.34, 0.88, 1]
+    if (state.mode === 'place-zone') return [1, 0.4, 0.8]
     const entry = DEFAULT_PALETTE.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]

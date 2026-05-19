@@ -1,4 +1,5 @@
 import { BLOCK, type ChunkManager } from '../engine/voxel'
+import type { Zone } from '../engine/ecs/zones'
 import type { PistonMechanismConfig } from './mechanisms'
 import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 
@@ -16,6 +17,8 @@ export interface LevelMeta {
     coinPiles: CoinPileSpawn[]
     /** Piston / moving-platform configs registered by client.ts. */
     pistons: PistonMechanismConfig[]
+    /** Named AABB regions — registered into `world.zones` by client.ts. */
+    zones: Zone[]
     /** XZ extent of the generated level, used by the demo to centre the camera. */
     size: number
 }
@@ -164,6 +167,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         stoneSpawners,
         coinPiles,
         pistons,
+        zones: [],
         size,
     }
 }

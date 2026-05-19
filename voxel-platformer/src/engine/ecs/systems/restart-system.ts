@@ -6,6 +6,7 @@ const REASON_LABEL: Record<DeathReason, string> = {
     'fell-into-void': 'You fell off the world',
     'crushed-by-piston': 'Crushed by a piston',
     'manual-restart': 'Restarting…',
+    'killed-by-zone-script': 'Killed by a trigger',
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { deserializeLevel, serializeLevel } from '../engine/voxel/level-serializer'
-import type { EditorState, EditorLevelMeta } from './editor-state'
+import { copyZoneScriptAction, type EditorState, type EditorLevelMeta } from './editor-state'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
 import { toLevelMeta } from './editor-state'
 import { despawnEntity } from '../engine/ecs/entity'
@@ -109,6 +109,9 @@ export function loadLevelFromBuffer(
     }
     world.pistons.length = 0
     editorState.pistons = []
+    world.zones.clear()
+    world.zoneEvents.length = 0
+    editorState.zones = []
 
     if (loaded.metadata) {
         editorState.spawn = { ...loaded.metadata.spawn }
@@ -134,6 +137,19 @@ export function loadLevelFromBuffer(
                 motion: p.motion ?? 'teleport',
                 travelTime: p.travelTime ?? 1,
                 characterPolicy: p.characterPolicy,
+            })
+        }
+        for (const z of loaded.metadata.zones ?? []) {
+            editorState.zones.push({
+                id: z.id,
+                kind: z.kind ?? 'generic',
+                label: z.label,
+                min: { ...z.min },
+                max: { ...z.max },
+                triggerSources: z.triggerSources ? [...z.triggerSources] : undefined,
+                script: z.script ? {
+                    actions: z.script.actions.map(copyZoneScriptAction),
+                } : undefined,
             })
         }
     }
