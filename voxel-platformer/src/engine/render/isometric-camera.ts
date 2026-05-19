@@ -14,6 +14,8 @@ export interface IsometricCameraOptions {
     target?: Vector3
 }
 
+export type ViewMode = 'iso' | 'top-down'
+
 /**
  * Fixed-angle isometric camera rig built on OrthographicCamera. Phase 2 ships
  * with manual pan/zoom; Phase 5 adds entity-follow.
@@ -26,17 +28,26 @@ export class IsometricCamera {
     readonly target: Vector3
 
     private readonly viewSize: number
-    private readonly pitch: number
+    private readonly isoPitch: number
     private readonly distance: number
     private readonly offset: Vector3
     private yaw: number
+    private pitch: number
+    private mode: ViewMode = 'iso'
+    /** When set (and `mode === 'top-down'`), the near plane is tightened so
+     *  any voxel above `cutPlaneY` is clipped. Use to peek at a specific
+     *  layer without geometry above it in the way. */
+    private cutPlaneY: number | null = null
+    private readonly defaultNear: number
 
     constructor(opts: IsometricCameraOptions = {}) {
         this.viewSize = opts.viewSize ?? 12
         this.yaw = opts.yaw ?? Math.PI / 4
-        this.pitch = opts.pitch ?? Math.PI / 6
+        this.isoPitch = opts.pitch ?? Math.PI / 6
+        this.pitch = this.isoPitch
         this.distance = opts.distance ?? 60
         this.target = opts.target?.clone() ?? new Vector3(0, 0, 0)
+        this.defaultNear = 0.1
 
         const cosP = Math.cos(this.pitch)
         this.offset = new Vector3(
@@ -51,11 +62,31 @@ export class IsometricCamera {
             this.viewSize * aspect,
             this.viewSize,
             -this.viewSize,
-            0.1,
+            this.defaultNear,
             this.distance * 4,
         )
         this.camera.up.set(0, 1, 0)
         this.syncPosition()
+    }
+
+    getViewMode(): ViewMode { return this.mode }
+
+    /** Switch between fixed-iso and straight-down ortho views. The top-down
+     *  view sets `camera.up` from the current yaw so screen-up matches the
+     *  iso view's pan-forward direction — keyboard pan keeps the same feel. */
+    setViewMode(mode: ViewMode): void {
+        if (this.mode === mode) return
+        this.mode = mode
+        this.pitch = mode === 'top-down' ? Math.PI / 2 : this.isoPitch
+        this.recomputeOffset()
+        this.syncPosition()
+    }
+
+    /** Show only voxels at or below world Y = `y` (top-down only). Pass
+     *  `null` to disable the cut. */
+    setCutPlaneY(y: number | null): void {
+        this.cutPlaneY = y
+        this.applyCutPlane()
     }
 
     /** World-space basis vectors for "right" and "forward" in screen pan space.
@@ -80,8 +111,31 @@ export class IsometricCamera {
 
     /** Re-place the camera so it sits at the fixed offset from the current target. */
     syncPosition(): void {
+        if (this.mode === 'top-down') {
+            // Set up to -pan-forward so screen-right aligns with
+            // getPanRight (D moves view right, S moves view down, etc).
+            this.camera.up.set(-Math.cos(this.yaw), 0, -Math.sin(this.yaw))
+        } else {
+            this.camera.up.set(0, 1, 0)
+        }
         this.camera.position.copy(this.target).add(this.offset)
         this.camera.lookAt(this.target)
+        this.applyCutPlane()
+    }
+
+    private applyCutPlane(): void {
+        if (this.mode === 'top-down' && this.cutPlaneY !== null) {
+            // Camera looks straight down; distance from camera to a point
+            // at world Y = y is (cameraY - y). We want anything above
+            // cutPlaneY+1 (top of the cut cell) clipped → near plane sits
+            // at exactly that distance. Voxel back-face culling handles
+            // the otherwise-coincident upper-cell bottom faces.
+            const targetDistance = this.camera.position.y - (this.cutPlaneY + 1)
+            this.camera.near = Math.max(this.defaultNear, targetDistance)
+        } else {
+            this.camera.near = this.defaultNear
+        }
+        this.camera.updateProjectionMatrix()
     }
 
     /** Recompute frustum on viewport resize. Preserves zoom. */

@@ -131,6 +131,14 @@ export class Input {
         return d
     }
 
+    /** True while the given mouse button is currently held down (between
+     *  pointerdown and pointerup, regardless of drag distance or duration).
+     *  Use this for continuous gestures like drag-to-paint where the
+     *  discrete "click" filter would drop most events. */
+    isMouseButtonDown(button: number): boolean {
+        return this.downAt?.button === button
+    }
+
     /** Read and clear queued click events. A "click" is a pointerdown+pointerup
      *  pair without significant drag and within ~350 ms. */
     consumeClicks(): ClickEvent[] {

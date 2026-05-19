@@ -121,8 +121,13 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     // Carve a small floating island to host the elevator-target coin pile.
     // The island has no stairs, so the player must ride the vertical piston
     // up to it (or use high-jump if they can clear ~3 m).
+    //
+    // Leave a hole at the piston target cell (8, groundY+3, 21) — that's
+    // where the elevator block extends to, and if we paved over it the
+    // piston could never flip (target permanently solid).
     for (let x = 7; x <= 9; x++) {
         for (let z = 20; z <= 22; z++) {
+            if (x === 8 && z === 21) continue
             chunks.setVoxel(x, groundY + 3, z, BLOCK.stone)
         }
     }
@@ -131,7 +136,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     //  - Vertical elevator at (8, groundY+1..groundY+3, 21): a plank block
     //    that swaps between the ground-floor cell and the floating-island
     //    cell. characterPolicy 'push' so a player standing on it gets
-    //    carried up. interval 3s gives the player time to step on and ride.
+    //    carried up. delay 3s gives the player time to step on and ride.
     //  - Horizontal piston near the centre: a brick block that alternates
     //    between two adjacent cells. characterPolicy 'push' so the block
     //    shoves the player aside when they're standing in the target spot —
@@ -142,14 +147,14 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             from: { x: 8, y: groundY + 1, z: 21 },
             to: { x: 8, y: groundY + 3, z: 21 },
             block: BLOCK.plank,
-            interval: 3,
+            delay: 3,
             characterPolicy: 'push',
         },
         {
             from: { x: 12, y: groundY + 1, z: 12 },
             to: { x: 13, y: groundY + 1, z: 12 },
             block: BLOCK.brick,
-            interval: 1.4,
+            delay: 1.4,
             characterPolicy: 'push',
         },
     ]

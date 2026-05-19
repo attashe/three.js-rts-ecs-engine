@@ -5,6 +5,7 @@ import { spawnPickupPreview } from './systems/pickup-spawn-system'
 import { toLevelMeta } from './editor-state'
 import { despawnEntity } from '../engine/ecs/entity'
 import type { GameWorld } from '../engine/ecs/world'
+import { registerPistonMechanism } from '../game/mechanisms'
 
 /**
  * Save the current editor state to a binary level file the user downloads.
@@ -36,8 +37,23 @@ export async function loadLevelFromFile(
     chunks: ChunkManager,
     editorState: EditorState,
 ): Promise<EditorLevelMeta> {
-    const buffer = new Uint8Array(await file.arrayBuffer())
-    const loaded = deserializeLevel<EditorLevelMeta>(buffer.buffer)
+    return loadLevelFromBuffer(await file.arrayBuffer(), world, chunks, editorState)
+}
+
+/**
+ * Apply a level binary already in memory. Used by the editor's session
+ * restore path (reading back a playtest snapshot from sessionStorage) where
+ * we don't have a `File` handle — just bytes. Same semantics as
+ * `loadLevelFromFile`: clears existing chunks + pickups + pistons, then
+ * replays the serialised level on top.
+ */
+export function loadLevelFromBuffer(
+    buffer: ArrayBuffer,
+    world: GameWorld,
+    chunks: ChunkManager,
+    editorState: EditorState,
+): EditorLevelMeta {
+    const loaded = deserializeLevel<EditorLevelMeta>(buffer)
 
     // Wipe the live editor pickups (entities + metadata) before applying.
     for (const p of editorState.pickups) {
@@ -82,11 +98,43 @@ export async function loadLevelFromFile(
         }
     }
 
+    // Pistons need their live world.pistons entries rebuilt too. Physical
+    // pistons own live entities/obstacles, so tear those down before
+    // replacing the registry.
+    for (const p of world.pistons) {
+        if (p.eid >= 0) {
+            world.obstacles.remove(p.eid)
+            despawnEntity(world, p.eid)
+        }
+    }
+    world.pistons.length = 0
+    editorState.pistons = []
+
     if (loaded.metadata) {
         editorState.spawn = { ...loaded.metadata.spawn }
         for (const p of loaded.metadata.pickups ?? []) {
             const eid = spawnPickupPreview(world, p.kind, p.position)
             editorState.pickups.push({ ...p, position: { ...p.position }, eid })
+        }
+        for (const p of loaded.metadata.pistons ?? []) {
+            registerPistonMechanism(world, chunks, {
+                from: { ...p.from },
+                to: { ...p.to },
+                block: p.block,
+                delay: p.delay ?? p.interval ?? 2,
+                motion: p.motion ?? 'teleport',
+                travelTime: p.travelTime ?? 1,
+                characterPolicy: p.characterPolicy,
+            })
+            editorState.pistons.push({
+                from: { ...p.from },
+                to: { ...p.to },
+                block: p.block,
+                delay: p.delay ?? p.interval ?? 2,
+                motion: p.motion ?? 'teleport',
+                travelTime: p.travelTime ?? 1,
+                characterPolicy: p.characterPolicy,
+            })
         }
     }
 

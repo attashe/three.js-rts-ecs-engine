@@ -1,12 +1,16 @@
 import {
+    BoxGeometry,
     BufferGeometry,
     Float32BufferAttribute,
     Group,
     LineBasicMaterial,
     LineSegments,
+    Mesh,
+    MeshBasicMaterial,
     type Scene,
 } from 'three'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
+import { DEFAULT_PALETTE } from '../../engine/voxel/palette'
 import { voxelRaycast } from '../../engine/voxel/voxel-raycast'
 import { makeRay, screenToWorldRay } from '../../engine/input/pointer'
 import type { Input } from '../../engine/input/input'
@@ -15,19 +19,30 @@ import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
 import { brushFootprint } from '../brush'
 import type { EditorState } from '../editor-state'
+import { addOffset, pistonOffset } from '../piston-direction'
 
 const MAX_RAY = 60
 const PAINT_OUTLINE_COLOUR = 0x9cff57
 const ERASE_OUTLINE_COLOUR = 0xff8a5a
-const SPAWN_OUTLINE_COLOUR = 0x8fb6ff
+const PICKUP_OUTLINE_COLOUR = 0x8fb6ff
+const PISTON_FROM_COLOUR = 0xc594ff
+const SPAWN_OUTLINE_COLOUR = 0x57e1ff
 
 /**
- * Renders the brush cursor as a wireframe overlay of every cell the brush
- * will affect, plus an "anchor" outline at the cursor hit cell. Reads the
- * mouse pointer + IsoCamera each frame, raycasts into the voxel grid via
- * `voxelRaycast`, and updates `editorState.cursor` with the hit voxel
- * (offset by the surface normal so painting lands on the empty cell in
- * front of the hit face).
+ * Render-side cursor preview for the editor:
+ *
+ *  - Wireframe outline of every cell the active brush will affect.
+ *  - Translucent ghost block at the anchor cell, tinted with the active
+ *    palette colour so the user can see what they're about to paint.
+ *
+ * Cursor placement: ray-marches the mouse pointer through the voxel grid;
+ * if no solid voxel is hit, falls back to intersecting the ray with the
+ * spawn-Y horizontal plane so the cursor stays visible even when the user
+ * is aiming over empty space.
+ *
+ * Cursor cell is mode-dependent — in paint mode it's the empty cell
+ * adjacent to the hit face (so painting lands on top of the surface), in
+ * erase / spawn-pickup it's the hit cell itself.
  */
 export function createVoxelCursorSystem(
     scene: Scene,
@@ -38,11 +53,29 @@ export function createVoxelCursorSystem(
 ): System {
     const root = new Group()
     root.name = 'EditorVoxelCursor'
-    const material = new LineBasicMaterial({ color: PAINT_OUTLINE_COLOUR, depthTest: false })
-    const lines = new LineSegments(new BufferGeometry(), material)
+
+    const outlineMaterial = new LineBasicMaterial({
+        color: PAINT_OUTLINE_COLOUR,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.95,
+    })
+    const lines = new LineSegments(new BufferGeometry(), outlineMaterial)
     lines.frustumCulled = false
     lines.renderOrder = 999
     root.add(lines)
+
+    const ghostMaterial = new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+    })
+    const ghostGeometry = new BoxGeometry(0.94, 0.94, 0.94)
+    const ghost = new Mesh(ghostGeometry, ghostMaterial)
+    ghost.renderOrder = 998
+    ghost.frustumCulled = false
+    root.add(ghost)
 
     const ray = makeRay()
     let capacity = 0
@@ -57,53 +90,121 @@ export function createVoxelCursorSystem(
             if (!pointer) {
                 editorState.cursor = null
                 lines.visible = false
+                ghost.visible = false
                 return
             }
             screenToWorldRay(pointer.x, pointer.y, iso.camera, ray)
-            const hit = voxelRaycast(chunks, ray.origin, ray.direction, MAX_RAY)
-            if (!hit) {
-                editorState.cursor = null
+
+            const cursorCell = resolveCursorCell(chunks, ray, editorState)
+            editorState.cursor = cursorCell
+            if (!cursorCell) {
                 lines.visible = false
+                ghost.visible = false
                 return
             }
 
-            // For paint mode we want to deposit on the empty cell adjacent to
-            // the hit face. For erase/spawn we target the hit cell itself —
-            // erase wants to remove the block we clicked, spawn wants to
-            // place at the surface we clicked.
-            const cursorCell = editorState.mode === 'paint'
-                ? {
-                    x: hit.voxel.x + hit.normal.x,
-                    y: hit.voxel.y + hit.normal.y,
-                    z: hit.voxel.z + hit.normal.z,
-                }
-                : { ...hit.voxel }
-            editorState.cursor = cursorCell
-
-            const cells = editorState.mode === 'spawn-pickup'
-                ? [cursorCell]
-                : brushFootprint(editorState.brush, cursorCell)
-            material.color.setHex(outlineColour(editorState.mode))
+            const cells = brushAffectedCells(editorState, cursorCell)
+            outlineMaterial.color.setHex(outlineColour(editorState.mode))
             capacity = writeBoxes(lines, cells, capacity)
             lines.visible = true
+
+            // Ghost block sits at the anchor cell, tinted with whatever the
+            // active block will paint (red for erase, sky for spawn, gold
+            // for piston `to` cell).
+            const [gr, gg, gb] = ghostColour(editorState)
+            ghostMaterial.color.setRGB(gr, gg, gb)
+            const ghostCell = editorState.mode === 'place-piston'
+                ? addOffset(cursorCell, pistonOffset(editorState.pistonDirection, editorState.pistonDistance))
+                : cursorCell
+            ghost.position.set(ghostCell.x + 0.5, ghostCell.y + 0.5, ghostCell.z + 0.5)
+            ghost.visible = true
         },
         dispose() {
             scene.remove(root)
             lines.geometry.dispose()
-            material.dispose()
+            outlineMaterial.dispose()
+            ghostGeometry.dispose()
+            ghostMaterial.dispose()
         },
     }
+}
+
+function resolveCursorCell(
+    chunks: ChunkManager,
+    ray: ReturnType<typeof makeRay>,
+    editorState: EditorState,
+): { x: number; y: number; z: number } | null {
+    // Lock-to-plane: even if the ray hits a voxel, force the cursor onto the
+    // working plane so the user can paint a specific layer through existing
+    // geometry.
+    if (editorState.planeLock) {
+        return intersectGroundPlane(ray, editorState.workingPlaneY)
+    }
+    const hit = voxelRaycast(chunks, ray.origin, ray.direction, MAX_RAY)
+    if (hit) {
+        // Paint + spawn want the empty cell adjacent to the hit face — for
+        // paint that's where the new block lands, for spawn it's where the
+        // player stands. Erase / pickup / piston want the hit cell itself.
+        if (editorState.mode === 'paint' || editorState.mode === 'place-spawn') {
+            return {
+                x: hit.voxel.x + hit.normal.x,
+                y: hit.voxel.y + hit.normal.y,
+                z: hit.voxel.z + hit.normal.z,
+            }
+        }
+        return { ...hit.voxel }
+    }
+    // No voxel hit — intersect against the working plane so the cursor
+    // stays visible over empty terrain.
+    return intersectGroundPlane(ray, editorState.workingPlaneY)
+}
+
+/** Cells the active operation will affect. Place-piston shows two outlines
+ *  (from + to); pickups show one; paint / erase show the brush footprint. */
+function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; z: number }): { x: number; y: number; z: number }[] {
+    if (state.mode === 'spawn-pickup' || state.mode === 'place-spawn') return [cursor]
+    if (state.mode === 'place-piston') {
+        const target = addOffset(cursor, pistonOffset(state.pistonDirection, state.pistonDistance))
+        return [cursor, target]
+    }
+    return brushFootprint(state.brush, cursor)
+}
+
+function intersectGroundPlane(
+    ray: ReturnType<typeof makeRay>,
+    planeFloorY: number,
+): { x: number; y: number; z: number } | null {
+    // Plane sits at world y = planeFloorY. Solve origin.y + dir.y * t = planeFloorY;
+    // ignore rays that are parallel or pointing the wrong way.
+    if (Math.abs(ray.direction.y) < 1e-6) return null
+    const t = (planeFloorY - ray.origin.y) / ray.direction.y
+    if (t < 0) return null
+    const hitX = ray.origin.x + ray.direction.x * t
+    const hitZ = ray.origin.z + ray.direction.z * t
+    return { x: Math.floor(hitX), y: planeFloorY, z: Math.floor(hitZ) }
 }
 
 function outlineColour(mode: EditorState['mode']): number {
     switch (mode) {
         case 'paint': return PAINT_OUTLINE_COLOUR
         case 'erase': return ERASE_OUTLINE_COLOUR
-        case 'spawn-pickup': return SPAWN_OUTLINE_COLOUR
+        case 'spawn-pickup': return PICKUP_OUTLINE_COLOUR
+        case 'place-piston': return PISTON_FROM_COLOUR
+        case 'place-spawn': return SPAWN_OUTLINE_COLOUR
     }
 }
 
-/** Build an N-cube wireframe in one geometry. Returns the new capacity. */
+function ghostColour(state: EditorState): [number, number, number] {
+    if (state.mode === 'erase') return [1, 0.4, 0.32]
+    if (state.mode === 'spawn-pickup') return [0.56, 0.71, 1]
+    if (state.mode === 'place-piston') return [1, 0.82, 0.4]
+    if (state.mode === 'place-spawn') return [0.34, 0.88, 1]
+    const entry = DEFAULT_PALETTE.entries[state.activeBlock]
+    if (!entry) return [1, 1, 1]
+    return [entry.color[0], entry.color[1], entry.color[2]]
+}
+
+/** Build N-cube wireframes in one geometry. Returns the new capacity. */
 function writeBoxes(lines: LineSegments, cells: readonly { x: number; y: number; z: number }[], capacity: number): number {
     const count = cells.length
     let cap = capacity

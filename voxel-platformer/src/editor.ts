@@ -12,7 +12,19 @@ import { createEditorState } from './editor/editor-state'
 import { createVoxelCursorSystem } from './editor/systems/voxel-cursor-system'
 import { createVoxelPaintSystem } from './editor/systems/voxel-paint-system'
 import { createPickupSpawnSystem } from './editor/systems/pickup-spawn-system'
+import { createPistonPlaceSystem } from './editor/systems/piston-place-system'
+import { createSpawnPlaceSystem } from './editor/systems/spawn-place-system'
+import { createSpawnMarkerSystem } from './editor/systems/spawn-marker-system'
+import { createPistonMarkerSystem } from './editor/systems/piston-marker-system'
+import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
+import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
+import { createViewModeSystem } from './editor/systems/view-mode-system'
+import { createAxisGizmoSystem } from './editor/systems/axis-gizmo-system'
 import { mountEditorPanel } from './editor/editor-ui'
+import { consumePlaytestLevel } from './editor/playtest'
+import { loadLevelFromBuffer } from './editor/save-load'
+import type { GameWorld } from './engine/ecs/world'
+import type { EditorState } from './editor/editor-state'
 
 async function main(): Promise<void> {
     const engine = new Engine({ fixedHz: 60 })
@@ -36,21 +48,25 @@ async function main(): Promise<void> {
     renderer.scene.add(sun.target)
 
     const chunks = new ChunkManager(DEFAULT_PALETTE)
-
-    // Seed a tiny 12×12 grass pad so the user can see the cursor on landing
-    // and start building from somewhere instead of staring at the void.
     const padY = 4
-    for (let x = 0; x < 12; x++) {
-        for (let z = 0; z < 12; z++) {
-            chunks.setVoxel(x, padY, z, BLOCK.grass)
-            for (let y = 0; y < padY; y++) chunks.setVoxel(x, y, z, BLOCK.dirt)
+    const editorState = createEditorState({ x: 6, y: padY + 1, z: 6 })
+
+    // If we got here via the playtest "← Editor" button, sessionStorage
+    // still holds the level the user was just playtesting — restore that
+    // session so they don't lose their work. Falls back to seeding a fresh
+    // 12×12 grass pad when there's nothing to restore.
+    const restored = restoreSessionLevel(world, chunks, editorState)
+    if (!restored) {
+        for (let x = 0; x < 12; x++) {
+            for (let z = 0; z < 12; z++) {
+                chunks.setVoxel(x, padY, z, BLOCK.grass)
+                for (let y = 0; y < padY; y++) chunks.setVoxel(x, y, z, BLOCK.dirt)
+            }
         }
     }
 
     const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
     chunkRenderer.rebuildAll()
-
-    const editorState = createEditorState({ x: 6, y: padY + 1, z: 6 })
 
     renderer.iso.target.set(editorState.spawn.x, editorState.spawn.y, editorState.spawn.z)
     renderer.iso.syncPosition()
@@ -67,9 +83,15 @@ async function main(): Promise<void> {
     engine
         .addSystem(createVoxelPaintSystem(chunks, engine.input, editorState), 'voxelPaint')
         .addSystem(createPickupSpawnSystem(engine.input, editorState), 'pickupSpawn')
+        .addSystem(createPistonPlaceSystem(chunks, engine.input, editorState), 'pistonPlace')
+        .addSystem(createSpawnPlaceSystem(engine.input, editorState), 'spawnPlace')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
+        .addSystem(createWorkingPlaneSystem(renderer.scene, engine.input, renderer.iso, editorState), 'workingPlane')
+        .addSystem(createWorkingPlaneOutlinesSystem(renderer.scene, chunks, editorState), 'workingPlaneOutlines')
+        .addSystem(createSpawnMarkerSystem(renderer.scene, editorState), 'spawnMarker')
+        .addSystem(createPistonMarkerSystem(renderer.scene, editorState), 'pistonMarker')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Editor panel lives top-right; push debug metrics / log to the
         // bottom corners so the four panels don't collide.
@@ -83,8 +105,22 @@ async function main(): Promise<void> {
             wheelZoom: true,
             panSpeed: 12,
         }), 'cameraControl')
+        .addSystem(createViewModeSystem(renderer.iso, chunkRenderer, chunks, editorState), 'viewMode')
+        .addSystem(createAxisGizmoSystem(renderer.iso), 'axisGizmo')
 
     await engine.start()
+}
+
+function restoreSessionLevel(world: GameWorld, chunks: ChunkManager, editorState: EditorState): boolean {
+    const buffer = consumePlaytestLevel()
+    if (!buffer) return false
+    try {
+        loadLevelFromBuffer(buffer, world, chunks, editorState)
+        return true
+    } catch (err) {
+        console.error('Editor: failed to restore session level — starting fresh.', err)
+        return false
+    }
 }
 
 void main()

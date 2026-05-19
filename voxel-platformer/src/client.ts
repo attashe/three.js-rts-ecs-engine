@@ -20,11 +20,19 @@ import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { createPickupSystem } from './engine/ecs/systems/pickup-system'
 import { createPistonSystem } from './engine/ecs/systems/piston-system'
+import { createPlayerDeathSystem } from './engine/ecs/systems/player-death-system'
+import { createRestartSystem } from './engine/ecs/systems/restart-system'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
 import { createGameActionMap, GameAction } from './game/actions'
+import { deserializeLevel } from './engine/voxel/level-serializer'
+import { consumePlaytestLevel } from './editor/playtest'
+import { levelMetaFromEditor } from './game/level-from-meta'
+import type { EditorLevelMeta } from './editor/editor-state'
+import type { LevelMeta } from './game/level'
+import type { GameWorld } from './engine/ecs/world'
 
 async function main(): Promise<void> {
     const engine = new Engine({ fixedHz: 60 })
@@ -50,7 +58,7 @@ async function main(): Promise<void> {
 
     // Voxel world + level + chunk renderer.
     const chunks = new ChunkManager(DEFAULT_PALETTE)
-    const meta = generatePlatformerLevel(chunks)
+    const meta = loadLevel(chunks)
     sun.target.position.set(meta.size / 2, 0, meta.size / 2)
     const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
     chunkRenderer.rebuildAll()
@@ -86,10 +94,12 @@ async function main(): Promise<void> {
         .addSystem(createImpactSystem(), 'impact')
         .addSystem(createMovingObjectSystem(), 'movingObjects')
         .addSystem(createDynamicCollisionSystem(chunks), 'dynamicCollision')
+        .addSystem(createPlayerDeathSystem(), 'playerDeath')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input), 'debugOverlay')
+        .addSystem(createRestartSystem(), 'restart')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,
             edgePan: false,
@@ -97,7 +107,105 @@ async function main(): Promise<void> {
         }), 'cameraControl')
         .addSystem(createCameraFollowSystem(renderer.iso, { smoothing: 8 }), 'cameraFollow')
 
+    mountRestartButton(world)
+    if (isPlaytestMode()) mountBackToEditorButton()
+
     await engine.start()
+}
+
+/**
+ * Top-right "↻ Restart" button. Sets `world.deathSignal = 'manual-restart'`
+ * which the `restart-system` picks up to trigger a page reload. Always
+ * mounted (works in demo + playtest); when in playtest, sits next to the
+ * "← Editor" button.
+ */
+function mountRestartButton(world: GameWorld): void {
+    const btn = document.createElement('button')
+    btn.textContent = '↻ Restart'
+    btn.onclick = () => { world.deathSignal ??= 'manual-restart' }
+    const offset = isPlaytestMode() ? 'right: 82px' : 'right: 8px'
+    btn.style.cssText = [
+        'position: fixed', 'top: 8px', offset,
+        'z-index: 1000',
+        'padding: 6px 10px',
+        'border-radius: 4px',
+        'background: rgba(8, 12, 16, 0.78)',
+        'color: #d9f7ff',
+        'font: 12px ui-sans-serif, system-ui, sans-serif',
+        'border: 1px solid rgba(217, 247, 255, 0.25)',
+        'box-shadow: 0 4px 16px rgba(0,0,0,0.35)',
+        'cursor: pointer',
+    ].join('; ')
+    document.body.appendChild(btn)
+}
+
+function isPlaytestMode(): boolean {
+    return new URLSearchParams(window.location.search).get('level') === 'playtest'
+}
+
+/**
+ * Pick the level the game should load. In playtest mode we deserialize the
+ * editor-authored level from session storage and translate its metadata into
+ * the runtime `LevelMeta` (mapping editor pickups to coin piles, passing
+ * pistons through). The procedural demo level is the fallback when there's
+ * no playtest snapshot, so the game URL still works as a standalone entry.
+ */
+function loadLevel(chunks: ChunkManager): LevelMeta {
+    if (isPlaytestMode()) {
+        const buffer = consumePlaytestLevel()
+        if (buffer) {
+            try {
+                const loaded = deserializeLevel<EditorLevelMeta>(buffer)
+                copyChunks(loaded.chunks, chunks)
+                const size = Math.max(24, Math.ceil(Math.max(
+                    loaded.metadata.spawn.x,
+                    loaded.metadata.spawn.z,
+                )) * 2)
+                return levelMetaFromEditor(loaded.metadata, size)
+            } catch (err) {
+                console.error('Playtest level failed to load — falling back to demo:', err)
+            }
+        }
+    }
+    return generatePlatformerLevel(chunks)
+}
+
+function copyChunks(src: ChunkManager, dst: ChunkManager): void {
+    for (const chunk of [...src.allChunks()]) {
+        for (let z = 0; z < 32; z++) {
+            for (let y = 0; y < 32; y++) {
+                for (let x = 0; x < 32; x++) {
+                    const v = chunk.getLocal(x, y, z)
+                    if (v !== 0) {
+                        dst.setVoxel(chunk.cx * 32 + x, chunk.cy * 32 + y, chunk.cz * 32 + z, v)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Tiny "← Editor" link in the top-right that ships the player back to the
+ * editor when they're running a playtest. Mounted as a static DOM element
+ * (no Three / ECS plumbing) so it doesn't grow a custom system.
+ */
+function mountBackToEditorButton(): void {
+    const btn = document.createElement('a')
+    btn.href = './editor.html'
+    btn.textContent = '← Editor'
+    btn.style.cssText = [
+        'position: fixed', 'top: 8px', 'right: 8px',
+        'z-index: 1000',
+        'padding: 6px 10px',
+        'border-radius: 4px',
+        'background: rgba(8, 12, 16, 0.78)',
+        'color: #d9f7ff', 'text-decoration: none',
+        'font: 12px ui-sans-serif, system-ui, sans-serif',
+        'border: 1px solid rgba(217, 247, 255, 0.25)',
+        'box-shadow: 0 4px 16px rgba(0,0,0,0.35)',
+    ].join('; ')
+    document.body.appendChild(btn)
 }
 
 void main()

@@ -3,7 +3,7 @@ import type { MeshStandardNodeMaterial } from 'three/webgpu'
 import type { ChunkManager } from './chunk-manager'
 import { Chunk, CHUNK_DIM, chunkKey, type ChunkKey } from './chunk'
 import { greedyMesh } from './greedy-mesher'
-import { createVoxelVertexColor } from '../render/materials/voxel-vertex-color'
+import { createVoxelVertexColor, type VoxelMaterial } from '../render/materials/voxel-vertex-color'
 
 /**
  * Owns the THREE.Mesh per chunk. Each frame, drains `manager.drainDirty()`
@@ -18,13 +18,37 @@ export class ChunkRenderer {
     private readonly scene: Scene
     private readonly manager: ChunkManager
     private readonly material: MeshStandardNodeMaterial
+    private readonly voxelMaterial: VoxelMaterial
     private readonly meshByKey: Map<ChunkKey, Mesh> = new Map()
     private readonly meshedVersion: Map<ChunkKey, number> = new Map()
+    private cutY: number | null = null
 
     constructor(scene: Scene, manager: ChunkManager) {
         this.scene = scene
         this.manager = manager
-        this.material = createVoxelVertexColor({ flatShading: true })
+        this.voxelMaterial = createVoxelVertexColor({ flatShading: true })
+        this.material = this.voxelMaterial.material
+    }
+
+    /** Mark the working-plane row. The material uses this to fade covered
+     *  active-layer cells. The remesh treats cells above this row as air so
+     *  hidden upper layers expose readable faces below them. Pass `null` to
+     *  disable the cut. */
+    setCutY(y: number | null): void {
+        if (this.cutY === y) return
+        this.cutY = y
+        this.voxelMaterial.setCutY(y)
+        for (const c of this.manager.allChunks()) {
+            this.remesh(c)
+        }
+        this.manager.drainDirty()
+    }
+
+    /** Replace the cover mask — world-cell XZ columns that have hidden
+     *  geometry above the working plane. Matching active-layer cells render
+     *  faded so the user can tell upper geometry exists there. */
+    setCoverMaskCells(cells: Iterable<{ x: number; z: number }>): void {
+        this.voxelMaterial.setCoverMaskCells(cells)
     }
 
     /** Force a full remesh (e.g. after bulk level generation). Discards any
@@ -68,6 +92,8 @@ export class ChunkRenderer {
         const baseY = chunk.cy * CHUNK_DIM
         const baseZ = chunk.cz * CHUNK_DIM
         const sample = (lx: number, ly: number, lz: number): number => {
+            const worldY = baseY + ly
+            if (this.cutY !== null && worldY > this.cutY) return 0
             if (lx >= 0 && lx < CHUNK_DIM && ly >= 0 && ly < CHUNK_DIM && lz >= 0 && lz < CHUNK_DIM) {
                 return chunk.getLocal(lx, ly, lz)
             }
@@ -75,6 +101,16 @@ export class ChunkRenderer {
         }
 
         const data = greedyMesh(sample, CHUNK_DIM, this.manager.palette)
+        if (data.vertexCount === 0) {
+            const old = this.meshByKey.get(key)
+            if (old) {
+                this.scene.remove(old)
+                old.geometry.dispose()
+                this.meshByKey.delete(key)
+            }
+            this.meshedVersion.set(key, chunk.version)
+            return
+        }
 
         let mesh = this.meshByKey.get(key)
         if (!mesh) {

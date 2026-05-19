@@ -50,6 +50,95 @@ delta is reviewable.
   player load an editor-built level. Not in this stage — for now the
   editor round-trips through itself.
 
+## Stage 2.5 — Working plane + piston placement *(landed)*
+
+Two additions on top of the Stage 2 foundation, both driven by the same
+editor panel:
+
+### Working plane (Y row)
+
+- `editorState.workingPlaneY` — integer Y row used as the placement Y when
+  the mouse ray doesn't hit a voxel (replaces the previous spawn-Y fallback)
+  and, when `planeLock` is on, *overrides* voxel hits so you can paint a
+  specific layer through existing geometry.
+- `working-plane-system` (render-side) draws a `THREE.GridHelper` at
+  `workingPlaneY`, recentred on the camera target every frame. Colour
+  switches from muted blue to amber when `planeLock` is on — instant visual
+  confirmation that clicks will snap to the plane.
+- Controls:
+  - UI: ± buttons, number input, **Lock cursor to plane** checkbox.
+  - Keyboard: **PageUp / PageDown** = ±1, hold **Shift** for ±4.
+
+### Piston placement mode
+
+- New editor mode `'place-piston'`. Selecting it makes LMB drop a piston
+  whose `from` = clicked cell and `to` = `from + direction × distance`. The
+  block, delay and characterPolicy come from the editor panel.
+- `editor/piston-direction.ts` — pure helper, unit-tested. Defines the six
+  cardinal directions (N/-Z, S/+Z, E/+X, W/-X, Up/+Y, Down/-Y) and the
+  `pistonOffset(dir, distance)` → voxel offset translation.
+- `piston-place-system` registers the piston via
+  `registerPistonMechanism` (which seeds the initial cell so the platform
+  has something for the player to stand on / be carried by). RMB pops the
+  last piston, clearing both its `from` and `to` cells.
+- UI section:
+  - 6 direction buttons (active highlighted).
+  - Distance number input (1–8).
+  - Delay (seconds waited at endpoints) number input.
+  - Travel (seconds spent moving between endpoints) number input.
+  - Push / Block policy radio.
+  - Live list of placed pistons, one row each.
+- `voxel-cursor-system` previews the placement while the cursor is over a
+  cell: shows the source cell *and* the target cell. Ghost block tinted
+  gold for piston mode so it doesn't get confused with the paint preview.
+- Save/Load round-trips pistons through the level metadata (the existing
+  binary serializer's JSON slot).
+
+## Stage 2.6 — Spawn placement, piston direction arrows, playtest *(landed)*
+
+Three pieces tied together so a user can author and immediately try a level:
+
+### Spawn placement
+
+- New editor mode `'place-spawn'` with a dedicated "Spawn" button in the
+  Mode row.
+- `spawn-place-system` (fixed-side): LMB in spawn mode sets
+  `editorState.spawn` to the cursor cell (centred on X/Z, sitting on top of
+  the clicked surface). Already round-trips through `toLevelMeta`, so save /
+  load preserve it.
+- `spawn-marker-system` (render-side): a persistent overlay group at
+  `editorState.spawn` — translucent player-sized column + a small upward
+  cone — so the user always sees where they'll appear in playtest. Cyan to
+  distinguish it from pickups (sky-blue).
+
+### Piston direction arrows
+
+- `piston-marker-system` (render-side): pools `ArrowHelper`s and binds one
+  per placed piston, drawing a yellow arrow from `from` cell centre to `to`
+  cell centre. Updates count + transforms each frame so RMB-undo and
+  per-row deletes show up live.
+- The arrows render with depthTest enabled but renderOrder = 995 so they
+  stay visible through translucent overlays.
+
+### Playtest
+
+- "Playtest" button on the editor's Level section. Click → serialize
+  current chunks + metadata via `level-serializer`, base64-encode into
+  `sessionStorage` under `vp:playtest-level`, then navigate to
+  `index.html?level=playtest`. sessionStorage (not localStorage) so the
+  snapshot dies with the tab.
+- `client.ts` checks `URLSearchParams.get('level') === 'playtest'` and, if
+  present, deserializes the saved level into the runtime `ChunkManager` and
+  builds a `LevelMeta` via `levelMetaFromEditor`. Falls back to the
+  procedural demo level when the snapshot is missing / corrupt, so the
+  game URL still works standalone.
+- `level-from-meta.ts` translates the editor's metadata into the runtime
+  shape (pickups → coinPiles, pistons → PistonMechanismConfig). No stone
+  spawners — the editor doesn't expose those yet.
+- A tiny fixed "← Editor" link is overlaid in the top-right corner when
+  playtest mode is active, so the user can bounce back to the editor in
+  one click.
+
 ## Stage 3 — Chunk management *(planned)*
 
 Per the latest design call, chunk management for v0 is **"extend the level
@@ -93,13 +182,10 @@ For more advanced workflows: select an AABB region, drag to move, optional
 rotate around the Y axis, copy/paste. Layered on top of Stage 3 once the
 basic chunk-extension flow is in.
 
-### Stones + pistons in the editor
+### Stones in the editor
 
-Today only coin pickups can be placed. Once Stage 2 lands, extend the
-pickup placement to support:
-- Falling stone spawners (place an emitter point + tier).
-- Pistons (click `from` cell, click `to` cell, choose block + interval +
-  characterPolicy).
+Pistons landed in Stage 2.5. Still TODO: falling stone spawners (place an
+emitter point + tier).
 
 ### Undo/redo
 

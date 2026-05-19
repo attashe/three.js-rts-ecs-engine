@@ -53,6 +53,7 @@ export function createRenderSyncSystem(scene: Scene): System {
                 if (isStatic && syncedStatic.has(eid)) continue
                 const obj = world.object3DByEid.get(eid)
                 if (!obj) continue
+                if (obj.parent === null) scene.add(obj)
                 syncTransform(world, eid, obj)
                 if (isStatic) {
                     syncedStatic.add(eid)

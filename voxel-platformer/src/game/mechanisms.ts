@@ -1,13 +1,27 @@
+import { addComponent, addComponents } from 'bitecs'
+import { Group, Mesh } from 'three'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
+import { paletteEntry } from '../engine/voxel/palette'
+import { BoxCollider, Position, Renderable, Rotation } from '../engine/ecs/components'
+import { createEntity } from '../engine/ecs/entity'
 import type { GameWorld, PistonMechanism, VoxelCoord } from '../engine/ecs/world'
+import { sharedBoxGeometry, sharedMaterial } from './assets'
 
 export interface PistonMechanismConfig {
     from: VoxelCoord
     to: VoxelCoord
     /** Palette index of the moving block. */
     block: number
-    /** Seconds between flip attempts. Default 2. */
+    /** Seconds spent waiting at each endpoint before moving/flipping.
+     *  Use 0 for continuous back-and-forth motion. Default 2. */
+    delay?: number
+    /** Backward-compatible name for old saves/configs. Prefer `delay`. */
     interval?: number
+    /** `teleport` rewrites voxel cells; `physical` moves a renderable
+     *  collidable block entity between endpoints. Default `teleport`. */
+    motion?: PistonMechanism['motion']
+    /** Seconds spent travelling between endpoints for physical pistons. */
+    travelTime?: number
     /** How to handle a character occupying the target cell. Default 'block'. */
     characterPolicy?: PistonMechanism['characterPolicy']
     /** Which cell holds the block at level load. Default `'from'`. */
@@ -28,18 +42,73 @@ export function registerPistonMechanism(
     chunks: ChunkManager,
     config: PistonMechanismConfig,
 ): PistonMechanism {
-    const interval = config.interval ?? 2
+    const delay = config.delay ?? config.interval ?? 2
+    const motion = config.motion ?? 'teleport'
+    const travelTime = Math.max(0.05, config.travelTime ?? Math.min(delay * 0.6, delay))
     const piston: PistonMechanism = {
         from: { ...config.from },
         to: { ...config.to },
         block: config.block,
+        motion,
         occupied: config.initial ?? 'from',
-        interval,
-        timer: interval,
+        delay,
+        travelTime,
+        // Absolute schedule — the piston-system tracks sim-time from 0
+        // and only flips when sim-time >= nextFlipAt. Starting all pistons
+        // at exactly `delay` means every piston registered before the
+        // first system tick flips together on the same global grid line.
+        nextFlipAt: delay,
+        eid: -1,
+        moving: 0,
+        moveT: 0,
+        moveFrom: config.initial ?? 'from',
         characterPolicy: config.characterPolicy ?? 'block',
     }
     const initialCell = piston.occupied === 'from' ? piston.from : piston.to
-    chunks.setVoxel(initialCell.x, initialCell.y, initialCell.z, piston.block)
+    if (motion === 'physical') {
+        // Physical pistons own their block as an entity. Clear the source
+        // voxel so editor-authored terrain does not overlap the moving block.
+        chunks.setVoxel(initialCell.x, initialCell.y, initialCell.z, 0)
+        piston.eid = spawnPhysicalPistonBlock(world, chunks, piston.block, initialCell)
+    } else {
+        chunks.setVoxel(initialCell.x, initialCell.y, initialCell.z, piston.block)
+    }
     world.pistons.push(piston)
     return piston
+}
+
+function spawnPhysicalPistonBlock(
+    world: GameWorld,
+    chunks: ChunkManager,
+    block: number,
+    cell: VoxelCoord,
+): number {
+    const eid = createEntity(world)
+    addComponents(world, eid, [Position, Rotation, BoxCollider])
+    Position.x[eid] = cell.x + 0.5
+    Position.y[eid] = cell.y
+    Position.z[eid] = cell.z + 0.5
+    BoxCollider.x[eid] = 0.5
+    BoxCollider.y[eid] = 0.5
+    BoxCollider.z[eid] = 0.5
+    world.object3DByEid.set(eid, createPistonBlockVisual(chunks, block))
+    addComponent(world, eid, Renderable)
+    return eid
+}
+
+function createPistonBlockVisual(chunks: ChunkManager, block: number): Group {
+    const entry = paletteEntry(chunks.palette, block)
+    const [r, g, b] = entry.color
+    const color = ((Math.round(r * 255) & 0xff) << 16) |
+        ((Math.round(g * 255) & 0xff) << 8) |
+        (Math.round(b * 255) & 0xff)
+    const root = new Group()
+    root.name = 'PhysicalPistonBlock'
+    const mesh = new Mesh(sharedBoxGeometry(1, 1, 1), sharedMaterial(color, 0.85, 0))
+    mesh.name = `${entry.name}Block`
+    mesh.position.y = 0.5
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    root.add(mesh)
+    return root
 }

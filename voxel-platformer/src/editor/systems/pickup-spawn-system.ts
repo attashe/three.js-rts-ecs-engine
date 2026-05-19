@@ -1,4 +1,4 @@
-import { addComponents } from 'bitecs'
+import { addComponent, addComponents } from 'bitecs'
 import type { GameWorld } from '../../engine/ecs/world'
 import { pushLog } from '../../engine/ecs/world'
 import {
@@ -96,13 +96,14 @@ export function spawnPickupPreview(
     position: { x: number; y: number; z: number },
 ): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, Renderable, StaticRenderable])
+    addComponents(world, eid, [Position, Rotation, StaticRenderable])
     Position.x[eid] = position.x
     Position.y[eid] = position.y
     Position.z[eid] = position.z
     // For now only Gold is supported; the visual is the coin pile asset.
     void kind
     world.object3DByEid.set(eid, mergeGroupByMaterial(createCoinPile()))
+    addComponent(world, eid, Renderable)
     return eid
 }
 
