@@ -8,6 +8,9 @@ import type { GameWorld, PistonMechanism, VoxelCoord } from '../world'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 
+const MIN_PLATFORM_SUPPORT_OVERLAP = 0.12
+const VERTICAL_CONTACT_EPS = 0.03
+
 /**
  * Drives every PistonMechanism in `world.pistons`. Each piston has an
  * *absolute* schedule (`nextFlipAt`) — when sim-time crosses it we attempt a
@@ -188,6 +191,7 @@ function tryPushPlayersWithPhysicalBlock(
     const nextByPlayer = new Map<number, { x: number; y: number; z: number }>()
     const playerBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     const movedBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+    const verticalMove = delta.y !== 0 && delta.x === 0 && delta.z === 0
     for (let i = 0; i < players.length; i++) {
         const eid = players[i]!
         aabbFromFoot(
@@ -199,14 +203,13 @@ function tryPushPlayersWithPhysicalBlock(
         const overlapping = aabbOverlap(playerBox, nextBlock)
         if (!rider && !overlapping) continue
 
-        const dest = {
-            x: Position.x[eid] + delta.x,
-            y: Position.y[eid] + delta.y,
-            z: Position.z[eid] + delta.z,
-        }
+        const contact = resolvePhysicalPistonContact(eid, playerBox, oldBlock, nextBlock, delta, rider, verticalMove)
+        if (contact === null) continue
+
+        const dest = contact.dest
         aabbFromFoot(dest, { x: BoxCollider.x[eid], y: BoxCollider.y[eid], z: BoxCollider.z[eid] }, movedBox)
         if (voxelAABBOverlapExcept(chunks, movedBox, new Set()) || world.obstacles.intersects(movedBox, piston.eid)) {
-            if (delta.y < 0) world.deathSignal ??= 'crushed-by-piston'
+            if (contact.crushOnBlocked) world.deathSignal ??= 'crushed-by-piston'
             return false
         }
         nextByPlayer.set(eid, dest)
@@ -225,14 +228,118 @@ function tryPushPlayersWithPhysicalBlock(
     return true
 }
 
+interface PhysicalPistonContact {
+    dest: { x: number; y: number; z: number }
+    crushOnBlocked: boolean
+}
+
+function resolvePhysicalPistonContact(
+    eid: number,
+    playerBox: AABB,
+    oldBlock: AABB,
+    block: AABB,
+    delta: { x: number; y: number; z: number },
+    rider: boolean,
+    verticalMove: boolean,
+): PhysicalPistonContact | null {
+    if (rider) {
+        return {
+            dest: {
+                x: Position.x[eid] + delta.x,
+                y: Position.y[eid] + delta.y,
+                z: Position.z[eid] + delta.z,
+            },
+            crushOnBlocked: delta.y < 0,
+        }
+    }
+
+    if (!verticalMove) {
+        return {
+            dest: {
+                x: Position.x[eid] + delta.x,
+                y: Position.y[eid] + delta.y,
+                z: Position.z[eid] + delta.z,
+            },
+            crushOnBlocked: delta.y < 0,
+        }
+    }
+
+    if (pistonApproachesPlayerVertically(eid, playerBox, oldBlock, block, delta.y)) {
+        return {
+            dest: {
+                x: Position.x[eid],
+                y: Position.y[eid] + delta.y,
+                z: Position.z[eid],
+            },
+            crushOnBlocked: delta.y < 0,
+        }
+    }
+
+    const sidePush = smallestHorizontalSeparation(playerBox, block)
+    if (!sidePush) return null
+    return {
+        dest: {
+            x: Position.x[eid] + sidePush.x,
+            y: Position.y[eid],
+            z: Position.z[eid] + sidePush.z,
+        },
+        crushOnBlocked: false,
+    }
+}
+
+function pistonApproachesPlayerVertically(
+    eid: number,
+    playerBox: AABB,
+    oldBlock: AABB,
+    nextBlock: AABB,
+    deltaY: number,
+): boolean {
+    if (!playerCenterInsideHorizontalFootprint(eid, nextBlock)) return false
+    if (deltaY > 0) return oldBlock.maxY <= playerBox.minY + VERTICAL_CONTACT_EPS
+    if (deltaY < 0) return oldBlock.minY >= playerBox.maxY - VERTICAL_CONTACT_EPS
+    return false
+}
+
+function playerCenterInsideHorizontalFootprint(eid: number, block: AABB): boolean {
+    return Position.x[eid] > block.minX && Position.x[eid] < block.maxX &&
+        Position.z[eid] > block.minZ && Position.z[eid] < block.maxZ
+}
+
 function playerRidesPhysicalBlock(eid: number, block: AABB): boolean {
     const dy = Position.y[eid] - block.maxY
     if (dy < -0.02 || dy > 0.1) return false
-    if (Position.x[eid] + BoxCollider.x[eid] <= block.minX) return false
-    if (Position.x[eid] - BoxCollider.x[eid] >= block.maxX) return false
-    if (Position.z[eid] + BoxCollider.z[eid] <= block.minZ) return false
-    if (Position.z[eid] - BoxCollider.z[eid] >= block.maxZ) return false
-    return true
+    const playerBox: AABB = {
+        minX: Position.x[eid] - BoxCollider.x[eid],
+        maxX: Position.x[eid] + BoxCollider.x[eid],
+        minY: Position.y[eid],
+        maxY: Position.y[eid] + BoxCollider.y[eid] * 2,
+        minZ: Position.z[eid] - BoxCollider.z[eid],
+        maxZ: Position.z[eid] + BoxCollider.z[eid],
+    }
+    return hasSubstantialHorizontalOverlap(playerBox, block, MIN_PLATFORM_SUPPORT_OVERLAP)
+}
+
+function hasSubstantialHorizontalOverlap(a: AABB, b: AABB, minOverlap: number): boolean {
+    const overlapX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX)
+    const overlapZ = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ)
+    return overlapX >= minOverlap && overlapZ >= minOverlap
+}
+
+function smallestHorizontalSeparation(a: AABB, b: AABB): { x: number; z: number } | null {
+    const pushLeft = b.minX - a.maxX
+    const pushRight = b.maxX - a.minX
+    const pushBack = b.minZ - a.maxZ
+    const pushForward = b.maxZ - a.minZ
+    const candidates = [
+        { x: pushLeft, z: 0, amount: Math.abs(pushLeft) },
+        { x: pushRight, z: 0, amount: Math.abs(pushRight) },
+        { x: 0, z: pushBack, amount: Math.abs(pushBack) },
+        { x: 0, z: pushForward, amount: Math.abs(pushForward) },
+    ].filter((push) => push.amount > 0)
+    if (candidates.length === 0) return null
+    candidates.sort((aPush, bPush) => aPush.amount - bPush.amount)
+    const best = candidates[0]!
+    return { x: best.x, z: best.z }
 }
 
 function cellKey(x: number, y: number, z: number): string {

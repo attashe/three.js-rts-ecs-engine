@@ -287,6 +287,70 @@ test('PistonSystem: physical piston carries a rider during travel', () => {
     assert.ok(Math.abs(Position.y[player] - 4) < 1e-5, `expected rider endpoint y≈4, got ${Position.y[player]}`)
 })
 
+test('PistonSystem: physical vertical piston does not carry a player from tiny side contact', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const player = placePlayer(world, 6.33, 1, 0.5)
+
+    createPistonSystem(chunks).update(world, 0.25)
+
+    assert.equal(world.deathSignal, null, 'side contact should not crush')
+    assert.ok(Math.abs(Position.y[player] - 1) < 1e-5, `side contact should not ride upward, got y=${Position.y[player]}`)
+    assert.ok(Position.x[player] >= 6.34 - 1e-5, `side contact should separate sideways, got x=${Position.x[player]}`)
+})
+
+test('PistonSystem: descending physical piston side contact does not crush', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 3, z: 0 },
+        to: { x: 5, y: 1, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const player = placePlayer(world, 6.33, 1, 0.5)
+
+    createPistonSystem(chunks).update(world, 0.25)
+
+    assert.equal(world.deathSignal, null, 'side graze from descending block should not crush')
+    assert.ok(Math.abs(Position.y[player] - 1) < 1e-5, `side contact should not ride downward, got y=${Position.y[player]}`)
+    assert.ok(Position.x[player] >= 6.34 - 1e-5, `side contact should separate sideways, got x=${Position.x[player]}`)
+})
+
+test('PistonSystem: zero-delay physical piston does not side-stick after repeated reversals', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 0.25,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const player = placePlayer(world, 6.2, 1, 0.5)
+    const system = createPistonSystem(chunks)
+
+    for (let i = 0; i < 12; i++) system.update(world, 0.05)
+
+    assert.equal(world.deathSignal, null, 'repeated zero-delay side contact should not crush')
+    assert.ok(Math.abs(Position.y[player] - 1) < 1e-5, `side contact should not become vertical carry, got y=${Position.y[player]}`)
+    assert.ok(Position.x[player] >= 6.34 - 1e-5, `player should stay separated from piston side, got x=${Position.x[player]}`)
+})
+
 test('PistonSystem: physical piston with zero delay reverses continuously', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()
