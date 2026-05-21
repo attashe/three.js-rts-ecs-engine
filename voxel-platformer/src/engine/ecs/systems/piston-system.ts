@@ -188,7 +188,7 @@ function tryPushPlayersWithPhysicalBlock(
 
     const oldBlock = physicalBlockAabb(oldPos)
     const nextBlock = physicalBlockAabb(nextPos)
-    const nextByPlayer = new Map<number, { x: number; y: number; z: number }>()
+    const contactByPlayer = new Map<number, PhysicalPistonContact>()
     const playerBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     const movedBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     const verticalMove = delta.y !== 0 && delta.x === 0 && delta.z === 0
@@ -212,14 +212,14 @@ function tryPushPlayersWithPhysicalBlock(
             if (contact.crushOnBlocked) world.deathSignal ??= 'crushed-by-piston'
             return false
         }
-        nextByPlayer.set(eid, dest)
+        contactByPlayer.set(eid, contact)
     }
 
-    for (const [eid, dest] of nextByPlayer) {
-        Position.x[eid] = dest.x
-        Position.y[eid] = dest.y
-        Position.z[eid] = dest.z
-        if (hasComponent(world, eid, Velocity)) {
+    for (const [eid, contact] of contactByPlayer) {
+        Position.x[eid] = contact.dest.x
+        Position.y[eid] = contact.dest.y
+        Position.z[eid] = contact.dest.z
+        if (!contact.preserveVelocity && hasComponent(world, eid, Velocity)) {
             Velocity.x[eid] = 0
             Velocity.y[eid] = Math.max(0, Velocity.y[eid])
             Velocity.z[eid] = 0
@@ -231,6 +231,12 @@ function tryPushPlayersWithPhysicalBlock(
 interface PhysicalPistonContact {
     dest: { x: number; y: number; z: number }
     crushOnBlocked: boolean
+    /** When true, the apply step should NOT zero the player's velocity.
+     *  Set for side-graze pushes — the player is merely being nudged out
+     *  of the way, so their own movement / gravity must keep going. The
+     *  rider / vertical-approach / horizontal-shove cases set this false
+     *  because the platform is actively carrying them. */
+    preserveVelocity: boolean
 }
 
 function resolvePhysicalPistonContact(
@@ -250,6 +256,7 @@ function resolvePhysicalPistonContact(
                 z: Position.z[eid] + delta.z,
             },
             crushOnBlocked: delta.y < 0,
+            preserveVelocity: false,
         }
     }
 
@@ -261,6 +268,7 @@ function resolvePhysicalPistonContact(
                 z: Position.z[eid] + delta.z,
             },
             crushOnBlocked: delta.y < 0,
+            preserveVelocity: false,
         }
     }
 
@@ -272,6 +280,7 @@ function resolvePhysicalPistonContact(
                 z: Position.z[eid],
             },
             crushOnBlocked: delta.y < 0,
+            preserveVelocity: false,
         }
     }
 
@@ -284,6 +293,7 @@ function resolvePhysicalPistonContact(
             z: Position.z[eid] + sidePush.z,
         },
         crushOnBlocked: false,
+        preserveVelocity: true,
     }
 }
 

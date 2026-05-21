@@ -351,6 +351,49 @@ test('PistonSystem: zero-delay physical piston does not side-stick after repeate
     assert.ok(Position.x[player] >= 6.34 - 1e-5, `player should stay separated from piston side, got x=${Position.x[player]}`)
 })
 
+test('PistonSystem: side-graze of a physical vertical piston preserves player velocity', () => {
+    // Regression: the old apply loop zeroed X/Z velocity and clamped Y at
+    // Math.max(0, vy) for *every* push contact — including side-grazes.
+    // That made a falling player hang in midair next to a vertical piston
+    // because gravity-applied vy kept getting clamped to 0 on the next
+    // piston tick, and any walking velocity got nuked too. Only riders /
+    // vertical-approach contacts should zero velocity; side-grazes must
+    // leave the player's own physics state untouched.
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const player = placePlayer(world, 6.33, 1, 0.5)
+    // Player is mid-fall + walking away from the piston.
+    const expectedVx = -2.5
+    const expectedVy = -3.0
+    const expectedVz = 1.1
+    Velocity.x[player] = expectedVx
+    Velocity.y[player] = expectedVy
+    Velocity.z[player] = expectedVz
+    // Snapshot what bitecs' Float32 component actually stored — comparing
+    // against the literal would fail on `1.1` because it doesn't round-trip
+    // through Float32Array. The point of the test is that the system
+    // doesn't *mutate* the value, not that it preserves bit-exact decimals.
+    const storedVx = Velocity.x[player]
+    const storedVy = Velocity.y[player]
+    const storedVz = Velocity.z[player]
+
+    createPistonSystem(chunks).update(world, 0.1)
+
+    assert.equal(world.deathSignal, null, 'side graze must not crush')
+    assert.equal(Velocity.x[player], storedVx, 'walking velocity preserved through a side graze')
+    assert.equal(Velocity.y[player], storedVy, 'falling velocity preserved through a side graze')
+    assert.equal(Velocity.z[player], storedVz, 'z velocity preserved through a side graze')
+})
+
 test('PistonSystem: physical piston with zero delay reverses continuously', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()
