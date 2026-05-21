@@ -394,6 +394,30 @@ test('PistonSystem: side-graze of a physical vertical piston preserves player ve
     assert.equal(Velocity.z[player], storedVz, 'z velocity preserved through a side graze')
 })
 
+test('PistonSystem: physical cloud piston gets an alpha-blended material (not alphaHash)', () => {
+    // Regression: `alphaHash` isn't implemented in three.js's WebGPU
+    // renderer, so the previous shared-material config silently produced
+    // fully-opaque cloud blocks. The correct path is classic alpha
+    // blending — `transparent: true` + the palette's opacity — matching
+    // the chunk renderer's behaviour for cloud voxels.
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const piston = registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.cloud,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+    })
+    const visual = world.object3DByEid.get(piston.eid)
+    assert.ok(visual, 'physical piston spawns a renderable')
+    const mesh = (visual!.children[0] as { material?: { transparent?: boolean; opacity?: number; alphaHash?: boolean } })
+    assert.equal(mesh.material?.transparent, true, 'cloud piston uses alpha blending')
+    assert.ok((mesh.material?.opacity ?? 1) < 1, `cloud piston is translucent, got opacity=${mesh.material?.opacity}`)
+    assert.notEqual(mesh.material?.alphaHash, true, 'alphaHash should not be enabled — unsupported in three.js WebGPU')
+})
+
 test('PistonSystem: physical cloud piston does not register an obstacle or push the player', () => {
     // A cloud-block physical piston should render and move but stay
     // non-collidable — the player walks through it just like through the

@@ -18,8 +18,16 @@ export function sharedMaterial(color: number, roughness = 0.7, metalness = 0, op
     const key = `standard:${color}:${roughness}:${metalness}:${opacity}`
     let existing = materialByKey.get(key)
     if (!existing) {
+        // `alphaHash` is unimplemented in three.js's WebGPU renderer — the
+        // build only references it in serialization, not in the rendering
+        // pipeline — so combining it with `transparent: false` left
+        // semi-transparent materials rendering fully opaque (because the
+        // legacy-material adapter only outputs the alpha channel when
+        // `transparent: true`). Stick with classic alpha blending so the
+        // physical piston block matches the chunk renderer's appearance
+        // for the same voxel kind.
         const transparent = opacity < 1
-        existing = new MeshStandardMaterial({ color, roughness, metalness, transparent, opacity })
+        existing = new MeshStandardMaterial({ color, roughness, metalness, opacity, transparent })
         existing.userData[SHARED_ASSET_RESOURCE] = true
         materialByKey.set(key, existing)
     }
