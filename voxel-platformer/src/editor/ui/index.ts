@@ -35,7 +35,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
     injectCss()
 
     const bar = createTabBar([
-        { id: 'edit', label: 'Edit', build: () => buildEditTab(opts.editorState) },
+        { id: 'edit', label: 'Edit', build: () => buildEditTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
         { id: 'help', label: 'Help', build: () => buildHelpTab() },
     ], 'edit')

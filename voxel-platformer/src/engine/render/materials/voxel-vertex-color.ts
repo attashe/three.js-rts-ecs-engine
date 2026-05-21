@@ -102,6 +102,16 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     m.colorNode = select(isCovered, baseColor.mul(darken), baseColor)
     m.opacityNode = base.a.mul(select(isAbove, aboveOpacity, 1.0))
     m.transparent = true
+    // Chunk faces span solid (alpha 1) and translucent (alpha < 1) cells
+    // in the same mesh. With `transparent: true` and the default depth
+    // write, a translucent face rendered first would write depth and
+    // reject solid faces behind it on the next chunk — leaving the back
+    // face's pixels showing only the (alpha-blended-with-black) translucent
+    // contribution, which reads as black. Disabling depth write makes
+    // sorting-by-camera-distance alone determine visibility; opaque-on-
+    // opaque overlap inside a chunk is fine because the greedy mesher
+    // never emits coincident face quads.
+    m.depthWrite = false
 
     return {
         material: m,

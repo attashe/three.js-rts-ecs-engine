@@ -1,6 +1,9 @@
 import { DEFAULT_PALETTE } from '../../engine/voxel/palette'
+import type { ChunkManager } from '../../engine/voxel/chunk-manager'
+import type { GameWorld } from '../../engine/ecs/world'
 import { BRUSHES, type BrushKind } from '../brush'
 import { PISTON_DIRECTIONS, type PistonDirection } from '../piston-direction'
+import { removePistonAt } from '../systems/piston-place-system'
 import type { ZoneScriptAction } from '../../engine/ecs/zones'
 import type {
     EditorMode,
@@ -10,6 +13,12 @@ import type {
     EditorZoneTriggerMode,
 } from '../editor-state'
 import { colorToCss, formatCoord, sectionEl, trimForList, type RefreshableElement } from './common'
+
+export interface EditTabContext {
+    world: GameWorld
+    chunks: ChunkManager
+    editorState: EditorState
+}
 
 interface ModeDef {
     mode: EditorMode
@@ -31,7 +40,8 @@ const MODES: readonly ModeDef[] = [
  *  alongside the palette / mode toolbar rather than behind a separate
  *  tab). Below: palette, mode toolbar, and a contextual settings panel
  *  that rebuilds itself when the mode changes. */
-export function buildEditTab(state: EditorState): RefreshableElement {
+export function buildEditTab(ctx: EditTabContext): RefreshableElement {
+    const state = ctx.editorState
     const root = document.createElement('div')
     root.style.display = 'flex'
     root.style.flexDirection = 'column'
@@ -61,7 +71,7 @@ export function buildEditTab(state: EditorState): RefreshableElement {
         // Tear down whichever contextual builder was last shown so its
         // listeners (refreshes etc.) stop touching detached DOM.
         contextual.innerHTML = ''
-        currentBuilder = buildContextualForMode(state)
+        currentBuilder = buildContextualForMode(ctx)
         if (currentBuilder) contextual.appendChild(currentBuilder.element)
         const def = MODES.find((m) => m.mode === state.mode)
         hint.textContent = def?.hint ?? ''
@@ -173,7 +183,8 @@ function buildCameraPlaneSection(state: EditorState): RefreshableElement {
     }
 }
 
-function buildContextualForMode(state: EditorState): RefreshableElement {
+function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
+    const state = ctx.editorState
     switch (state.mode) {
         case 'paint':
         case 'erase':
@@ -181,7 +192,7 @@ function buildContextualForMode(state: EditorState): RefreshableElement {
         case 'spawn-pickup':
             return buildPickupPanel(state)
         case 'place-piston':
-            return buildPistonPanel(state)
+            return buildPistonPanel(ctx)
         case 'place-spawn':
             return buildSpawnPanel()
         case 'place-zone':
@@ -349,7 +360,8 @@ function buildSpawnPanel(): RefreshableElement {
     return { element: section, refresh: () => {} }
 }
 
-function buildPistonPanel(state: EditorState): RefreshableElement {
+function buildPistonPanel(ctx: EditTabContext): RefreshableElement {
+    const { editorState: state, world, chunks } = ctx
     const root = document.createElement('div')
     root.style.display = 'flex'
     root.style.flexDirection = 'column'
@@ -446,7 +458,11 @@ function buildPistonPanel(state: EditorState): RefreshableElement {
             list.appendChild(empty)
             return
         }
-        for (const piston of state.pistons) {
+        // Snapshot length so callbacks resolve their target by reference
+        // — the index changes when other items are removed during the
+        // same refresh cycle.
+        for (let i = 0; i < state.pistons.length; i++) {
+            const piston = state.pistons[i]!
             const row = document.createElement('div')
             row.className = 'vpe-list-item'
             const span = document.createElement('span')
@@ -454,7 +470,17 @@ function buildPistonPanel(state: EditorState): RefreshableElement {
             const delay = piston.delay ?? piston.interval ?? 2
             const travel = piston.travelTime ?? 1
             span.textContent = `${formatCoord(piston.from)} → ${formatCoord(piston.to)} · ${motion} · delay ${delay}s · travel ${travel}s · ${piston.characterPolicy}`
-            row.append(span)
+            const removeBtn = document.createElement('button')
+            removeBtn.textContent = 'remove'
+            removeBtn.onclick = () => {
+                // Resolve by reference, not index — refresh() may have
+                // re-built the list since this row was created.
+                const idx = state.pistons.indexOf(piston)
+                if (idx >= 0) removePistonAt(world, chunks, state, idx)
+                fingerprint = '' // force the next refresh to rebuild
+                refresh()
+            }
+            row.append(span, removeBtn)
             list.appendChild(row)
         }
     }

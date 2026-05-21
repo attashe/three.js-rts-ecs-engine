@@ -72,20 +72,49 @@ function placePiston(world: GameWorld, chunks: ChunkManager, state: EditorState)
 
 function removeLastPiston(world: GameWorld, chunks: ChunkManager, state: EditorState): void {
     if (state.pistons.length === 0) return
-    const removed = state.pistons.pop()!
-    // Editor metadata index N matches world.pistons index N because the
-    // editor is the only thing appending to world.pistons.
-    const live = world.pistons.pop()
-    // Clear the live cells the piston was occupying so RMB-undo doesn't
-    // leave orphan blocks the user can't easily delete.
+    removePistonAt(world, chunks, state, state.pistons.length - 1)
+}
+
+/**
+ * Remove a specific piston by index. Used by both RMB undo (last index)
+ * and the per-row remove button in the editor UI. Keeps `world.pistons`
+ * and `state.pistons` in lockstep by splicing the same index from both —
+ * the editor is the only thing appending to either, so the index is
+ * meaningful across both arrays.
+ *
+ * Tears down whatever the piston owns: a physical block's entity +
+ * obstacle entry, or a teleport piston's voxel cells. For teleport, only
+ * clears the cell whose block matches the piston — a player who painted
+ * over the cell after placement keeps their paint instead of getting it
+ * wiped to AIR.
+ */
+export function removePistonAt(
+    world: GameWorld,
+    chunks: ChunkManager,
+    state: EditorState,
+    index: number,
+): void {
+    if (index < 0 || index >= state.pistons.length) return
+    const removed = state.pistons.splice(index, 1)[0]!
+    const live = world.pistons.splice(index, 1)[0]
     if (live) {
         if (live.motion === 'physical') {
             world.obstacles.remove(live.eid)
             if (live.eid >= 0) despawnEntity(world, live.eid)
         } else {
-            chunks.setVoxel(live.from.x, live.from.y, live.from.z, AIR)
-            chunks.setVoxel(live.to.x, live.to.y, live.to.z, AIR)
+            // For teleport pistons, the piston could be currently at
+            // `from` *or* `to` (after a flip). Clear whichever cell still
+            // holds the piston's block; leave anything else alone so user
+            // paint over the piston's cells survives the removal.
+            clearIfBlock(chunks, live.from, live.block)
+            clearIfBlock(chunks, live.to, live.block)
         }
     }
-    pushLog(world, `Removed last piston @ (${removed.from.x}, ${removed.from.y}, ${removed.from.z}).`)
+    pushLog(world, `Removed piston @ (${removed.from.x}, ${removed.from.y}, ${removed.from.z}).`)
+}
+
+function clearIfBlock(chunks: ChunkManager, cell: { x: number; y: number; z: number }, block: number): void {
+    if (chunks.getVoxel(cell.x, cell.y, cell.z) === block) {
+        chunks.setVoxel(cell.x, cell.y, cell.z, AIR)
+    }
 }
