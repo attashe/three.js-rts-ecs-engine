@@ -1,4 +1,5 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
+import { BLOCK } from '../engine/voxel/palette'
 import { deserializeLevel, serializeLevel } from '../engine/voxel/level-serializer'
 import { copyZoneScriptAction, type EditorState, type EditorLevelMeta } from './editor-state'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
@@ -6,6 +7,88 @@ import { toLevelMeta } from './editor-state'
 import { despawnEntity } from '../engine/ecs/entity'
 import type { GameWorld } from '../engine/ecs/world'
 import { registerPistonMechanism } from '../game/mechanisms'
+
+/** Default ground height for a fresh pad. Dirt foundation up to `PAD_Y - 1`,
+ *  grass at `PAD_Y`, spawn one cell above. */
+export const NEW_LEVEL_DEFAULT_PAD_Y = 4
+export const NEW_LEVEL_DEFAULT_WIDTH = 12
+export const NEW_LEVEL_DEFAULT_DEPTH = 12
+export const NEW_LEVEL_MAX_DIMENSION = 64
+
+/**
+ * Wipe the current world + editor state and seed a fresh dirt + grass pad
+ * of the given XZ dimensions. Same shape the editor uses on first launch,
+ * just with caller-chosen `width` × `depth`. Spawn is recentered, all
+ * placed pickups / pistons / zones are torn down, and the working plane
+ * snaps to the new ground row.
+ */
+export function newLevel(
+    world: GameWorld,
+    chunks: ChunkManager,
+    editorState: EditorState,
+    width: number = NEW_LEVEL_DEFAULT_WIDTH,
+    depth: number = NEW_LEVEL_DEFAULT_DEPTH,
+): void {
+    const w = Math.max(1, Math.min(NEW_LEVEL_MAX_DIMENSION, Math.floor(width)))
+    const d = Math.max(1, Math.min(NEW_LEVEL_MAX_DIMENSION, Math.floor(depth)))
+    const padY = NEW_LEVEL_DEFAULT_PAD_Y
+
+    clearWorldAndEditorState(world, chunks, editorState)
+    clearAllChunks(chunks)
+
+    for (let x = 0; x < w; x++) {
+        for (let z = 0; z < d; z++) {
+            chunks.setVoxel(x, padY, z, BLOCK.grass)
+            for (let y = 0; y < padY; y++) chunks.setVoxel(x, y, z, BLOCK.dirt)
+        }
+    }
+
+    editorState.spawn = { x: w / 2, y: padY + 1, z: d / 2 }
+    editorState.workingPlaneY = padY
+}
+
+function clearWorldAndEditorState(
+    world: GameWorld,
+    chunks: ChunkManager,
+    editorState: EditorState,
+): void {
+    for (const p of editorState.pickups) {
+        if (p.eid >= 0) despawnEntity(world, p.eid)
+    }
+    editorState.pickups = []
+
+    for (const p of world.pistons) {
+        if (p.eid >= 0) {
+            world.obstacles.remove(p.eid)
+            despawnEntity(world, p.eid)
+        }
+    }
+    world.pistons.length = 0
+    editorState.pistons = []
+
+    world.zones.clear()
+    world.zoneEvents.length = 0
+    editorState.zones = []
+}
+
+function clearAllChunks(chunks: ChunkManager): void {
+    for (const chunk of [...chunks.allChunks()]) {
+        for (let z = 0; z < 32; z++) {
+            for (let y = 0; y < 32; y++) {
+                for (let x = 0; x < 32; x++) {
+                    if (chunk.getLocal(x, y, z) !== 0) {
+                        chunks.setVoxel(
+                            chunk.cx * 32 + x,
+                            chunk.cy * 32 + y,
+                            chunk.cz * 32 + z,
+                            0,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 /**
  * Save the current editor state to a binary level file the user downloads.
@@ -55,31 +138,11 @@ export function loadLevelFromBuffer(
 ): EditorLevelMeta {
     const loaded = deserializeLevel<EditorLevelMeta>(buffer)
 
-    // Wipe the live editor pickups (entities + metadata) before applying.
-    for (const p of editorState.pickups) {
-        if (p.eid >= 0) despawnEntity(world, p.eid)
-    }
-    editorState.pickups = []
+    clearWorldAndEditorState(world, chunks, editorState)
+    clearAllChunks(chunks)
 
-    // Replace voxels: clear everything currently in the manager, then copy
-    // from the loaded chunks. The chunk renderer's drainDirty loop will
-    // catch up on the next render frame.
-    for (const oldChunk of [...chunks.allChunks()]) {
-        for (let z = 0; z < 32; z++) {
-            for (let y = 0; y < 32; y++) {
-                for (let x = 0; x < 32; x++) {
-                    if (oldChunk.getLocal(x, y, z) !== 0) {
-                        chunks.setVoxel(
-                            oldChunk.cx * 32 + x,
-                            oldChunk.cy * 32 + y,
-                            oldChunk.cz * 32 + z,
-                            0,
-                        )
-                    }
-                }
-            }
-        }
-    }
+    // Copy chunk data from the loaded snapshot. The chunk renderer's
+    // drainDirty loop catches up on the next render frame.
     for (const newChunk of [...loaded.chunks.allChunks()]) {
         for (let z = 0; z < 32; z++) {
             for (let y = 0; y < 32; y++) {
@@ -97,21 +160,6 @@ export function loadLevelFromBuffer(
             }
         }
     }
-
-    // Pistons need their live world.pistons entries rebuilt too. Physical
-    // pistons own live entities/obstacles, so tear those down before
-    // replacing the registry.
-    for (const p of world.pistons) {
-        if (p.eid >= 0) {
-            world.obstacles.remove(p.eid)
-            despawnEntity(world, p.eid)
-        }
-    }
-    world.pistons.length = 0
-    editorState.pistons = []
-    world.zones.clear()
-    world.zoneEvents.length = 0
-    editorState.zones = []
 
     if (loaded.metadata) {
         editorState.spawn = { ...loaded.metadata.spawn }

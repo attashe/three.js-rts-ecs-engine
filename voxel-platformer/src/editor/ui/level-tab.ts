@@ -1,7 +1,14 @@
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
 import type { EditorState } from '../editor-state'
-import { saveLevelDownload, loadLevelFromFile } from '../save-load'
+import {
+    NEW_LEVEL_DEFAULT_DEPTH,
+    NEW_LEVEL_DEFAULT_WIDTH,
+    NEW_LEVEL_MAX_DIMENSION,
+    loadLevelFromFile,
+    newLevel,
+    saveLevelDownload,
+} from '../save-load'
 import { launchPlaytest } from '../playtest'
 import { sectionEl, type RefreshableElement } from './common'
 
@@ -11,12 +18,61 @@ export interface LevelTabOptions {
     editorState: EditorState
 }
 
-/** Save / Load / Playtest controls + level name field. */
+/** Save / Load / Playtest controls + level name field + new-level form. */
 export function buildLevelTab(opts: LevelTabOptions): RefreshableElement {
     const root = document.createElement('div')
     root.style.display = 'flex'
     root.style.flexDirection = 'column'
     root.style.gap = '10px'
+
+    // New-level form. Two number inputs (W × D in cells) plus a New
+    // button. Clicking confirms before destroying the current state so
+    // the user doesn't lose work by accident.
+    const newSection = sectionEl('New level')
+    const sizeRow = document.createElement('div')
+    sizeRow.className = 'vpe-field'
+    const sizeLabel = document.createElement('span')
+    sizeLabel.className = 'vpe-field-label'
+    sizeLabel.textContent = 'Size (W × D):'
+    const widthInput = document.createElement('input')
+    widthInput.className = 'vpe-input'
+    widthInput.type = 'number'
+    widthInput.min = '1'
+    widthInput.max = String(NEW_LEVEL_MAX_DIMENSION)
+    widthInput.value = String(NEW_LEVEL_DEFAULT_WIDTH)
+    widthInput.style.width = '52px'
+    widthInput.title = 'Width — number of cells along X'
+    const times = document.createElement('span')
+    times.textContent = '×'
+    times.style.color = 'rgba(217, 247, 255, 0.55)'
+    const depthInput = document.createElement('input')
+    depthInput.className = 'vpe-input'
+    depthInput.type = 'number'
+    depthInput.min = '1'
+    depthInput.max = String(NEW_LEVEL_MAX_DIMENSION)
+    depthInput.value = String(NEW_LEVEL_DEFAULT_DEPTH)
+    depthInput.style.width = '52px'
+    depthInput.title = 'Depth — number of cells along Z'
+    sizeRow.append(sizeLabel, widthInput, times, depthInput)
+    newSection.appendChild(sizeRow)
+
+    const newBtn = document.createElement('button')
+    newBtn.className = 'vpe-button'
+    newBtn.textContent = 'New'
+    newBtn.title = 'Discard the current level and seed a fresh dirt+grass pad'
+    newBtn.onclick = () => {
+        const w = parseInt(widthInput.value, 10)
+        const d = parseInt(depthInput.value, 10)
+        if (!Number.isFinite(w) || !Number.isFinite(d) || w < 1 || d < 1) return
+        const confirmed = window.confirm(
+            `Discard the current level and create a new ${w} × ${d} pad? Unsaved work will be lost.`,
+        )
+        if (!confirmed) return
+        newLevel(opts.world, opts.chunks, opts.editorState, w, d)
+        nameInput.value = 'untitled-level'
+    }
+    newSection.appendChild(newBtn)
+    root.appendChild(newSection)
 
     const section = sectionEl('Level')
 
