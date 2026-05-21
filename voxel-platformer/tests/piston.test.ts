@@ -351,6 +351,48 @@ test('PistonSystem: zero-delay physical piston does not side-stick after repeate
     assert.ok(Position.x[player] >= 6.34 - 1e-5, `player should stay separated from piston side, got x=${Position.x[player]}`)
 })
 
+test('PistonSystem: rider straddling two co-moving physical pistons is pushed once per tick', () => {
+    // Regression: a player standing on the intersection between two
+    // adjacent physical pistons of a co-moving platform was classified
+    // as a rider by *each* piston, and each one applied the full delta.
+    // Net effect: player rose 2× faster than the platform, drifted out
+    // of rider tolerance, and snapped back next tick (visible flicker).
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    registerPistonMechanism(world, chunks, {
+        from: { x: 6, y: 1, z: 0 },
+        to: { x: 6, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    // Player feet on the platform top (y=2), centred on the seam at x=6
+    // so the XZ footprint overlaps *both* pistons. With the bug they'd
+    // each fire and rise the player by deltaY.
+    const player = placePlayer(world, 6, 2, 0.5)
+
+    const dt = 0.1
+    const expectedDeltaY = dt * (2 / 1) // travelTime=1 → 2 cells in 1 s → 0.2/tick
+    createPistonSystem(chunks).update(world, dt)
+
+    assert.ok(
+        Math.abs(Position.y[player] - (2 + expectedDeltaY)) < 1e-5,
+        `expected player to rise once (y≈${2 + expectedDeltaY}), got ${Position.y[player]}`,
+    )
+    assert.equal(world.deathSignal, null, 'no spurious crush from second piston')
+})
+
 test('PistonSystem: side-graze of a physical vertical piston preserves player velocity', () => {
     // Regression: the old apply loop zeroed X/Z velocity and clamped Y at
     // Math.max(0, vy) for *every* push contact — including side-grazes.

@@ -51,9 +51,17 @@ export function createPistonSystem(chunks: ChunkManager): System {
                 const src = piston.occupied === 'from' ? piston.from : piston.to
                 vacating.add(cellKey(src.x, src.y, src.z))
             }
+            // Track players already pushed by a physical piston this tick.
+            // Without this guard, a player straddling N adjacent pistons of
+            // a co-moving platform gets the full delta applied N times —
+            // they fly up faster than the platform and then snap back when
+            // they fall out of rider tolerance, producing visible flicker.
+            // First-piston-to-push wins; subsequent pistons see the eid in
+            // this set and skip.
+            const pushedThisTick = new Set<number>()
             for (const piston of world.pistons) {
                 if (piston.motion === 'physical') {
-                    updatePhysicalPiston(chunks, world, piston, simTime, dt)
+                    updatePhysicalPiston(chunks, world, piston, simTime, dt, pushedThisTick)
                     continue
                 }
                 if (simTime < piston.nextFlipAt) continue
@@ -77,6 +85,7 @@ function updatePhysicalPiston(
     piston: PistonMechanism,
     simTime: number,
     dt: number,
+    pushedThisTick: Set<number>,
 ): void {
     if (piston.eid < 0) return
     if (piston.moving === 0) {
@@ -111,7 +120,7 @@ function updatePhysicalPiston(
     if (
         blockIsCollidable &&
         piston.characterPolicy === 'push' &&
-        !tryPushPlayersWithPhysicalBlock(chunks, world, piston, oldPos, nextPos, delta)
+        !tryPushPlayersWithPhysicalBlock(chunks, world, piston, oldPos, nextPos, delta, pushedThisTick)
     ) {
         Position.x[piston.eid] = oldPos.x
         Position.y[piston.eid] = oldPos.y
@@ -196,6 +205,7 @@ function tryPushPlayersWithPhysicalBlock(
     oldPos: { x: number; y: number; z: number },
     nextPos: { x: number; y: number; z: number },
     delta: { x: number; y: number; z: number },
+    pushedThisTick: Set<number>,
 ): boolean {
     if (delta.x === 0 && delta.y === 0 && delta.z === 0) return true
     const players = query(world, [Position, BoxCollider, PlayerControlled])
@@ -209,6 +219,10 @@ function tryPushPlayersWithPhysicalBlock(
     const verticalMove = delta.y !== 0 && delta.x === 0 && delta.z === 0
     for (let i = 0; i < players.length; i++) {
         const eid = players[i]!
+        // Already moved by another piston this tick — skip so a player
+        // straddling a co-moving platform doesn't get the same delta
+        // applied multiple times.
+        if (pushedThisTick.has(eid)) continue
         aabbFromFoot(
             { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] },
             { x: BoxCollider.x[eid], y: BoxCollider.y[eid], z: BoxCollider.z[eid] },
@@ -239,6 +253,11 @@ function tryPushPlayersWithPhysicalBlock(
             Velocity.y[eid] = Math.max(0, Velocity.y[eid])
             Velocity.z[eid] = 0
         }
+        // Claim this player so subsequent co-moving pistons skip them.
+        // Side-graze contacts also claim, because the player was just
+        // teleported sideways — a second piston pushing them again would
+        // double the displacement.
+        pushedThisTick.add(eid)
     }
     return true
 }
