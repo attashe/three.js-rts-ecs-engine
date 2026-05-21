@@ -877,7 +877,8 @@ function sectionEl(title: string): HTMLElement {
 
 function colorToCss(entry: PaletteEntry): string {
     const [r, g, b] = entry.color
-    return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`
+    const alpha = entry.opacity ?? 1
+    return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`
 }
 
 let cssInjected = false

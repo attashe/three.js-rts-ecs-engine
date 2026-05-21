@@ -1,4 +1,4 @@
-import { occludesFaces, type Palette } from './palette'
+import { isRenderableVoxel, occludesFaces, voxelOpacity, type Palette } from './palette'
 
 /**
  * Sample function — returns the palette index at a voxel coord. The mesher
@@ -14,7 +14,7 @@ export interface MeshData {
     positions: Float32Array
     /** Flat per-face normals (same value for all 4 corners of a quad). */
     normals: Float32Array
-    /** Linear-space RGB per vertex, sampled from `palette.entries[idx].color`. */
+    /** Linear-space RGBA per vertex, sampled from `palette.entries[idx]`. */
     colors: Float32Array
     /** Triangle indices. Two triangles per quad: (0,1,2) and (0,2,3) for +face, mirrored for -face. */
     indices: Uint32Array
@@ -75,15 +75,17 @@ export function greedyMesh(
                     x[d] = s
                     const cellPos = sample(x[0], x[1], x[2])
 
-                    const negSolid = occludesFaces(palette, cellNeg)
-                    const posSolid = occludesFaces(palette, cellPos)
+                    const negRenderable = isRenderableVoxel(palette, cellNeg)
+                    const posRenderable = isRenderableVoxel(palette, cellPos)
+                    const negOccludes = occludesFaces(palette, cellNeg)
+                    const posOccludes = occludesFaces(palette, cellPos)
 
                     let m = 0
-                    if (s - 1 >= 0 && negSolid && !posSolid) {
-                        // +d face — solid voxel sits behind, air in front. Emitted by THIS chunk.
+                    if (s - 1 >= 0 && negRenderable && !posOccludes && cellNeg !== cellPos) {
+                        // +d face — visible voxel sits behind, transparent/non-occluding space in front.
                         m = cellNeg
-                    } else if (s < dim && !negSolid && posSolid) {
-                        // -d face — solid voxel sits in front, air behind. Emitted by THIS chunk.
+                    } else if (s < dim && !negOccludes && posRenderable && cellNeg !== cellPos) {
+                        // -d face — visible voxel sits in front, transparent/non-occluding space behind.
                         m = -cellPos
                     }
                     mask[i + j * dim] = m
@@ -117,6 +119,7 @@ export function greedyMesh(
                     const paletteIdx = Math.abs(m)
                     const entry = palette.entries[paletteIdx]
                     const [r, g, b] = entry?.color ?? [1, 0, 1]
+                    const a = voxelOpacity(palette, paletteIdx)
 
                     // Quad-local axes in world space.
                     const pos: [number, number, number] = [0, 0, 0]
@@ -145,7 +148,7 @@ export function greedyMesh(
                     const ny = d === 1 ? (isPositive ? 1 : -1) : 0
                     const nz = d === 2 ? (isPositive ? 1 : -1) : 0
                     for (let k = 0; k < 4; k++) normals.push(nx, ny, nz)
-                    for (let k = 0; k < 4; k++) colors.push(r, g, b)
+                    for (let k = 0; k < 4; k++) colors.push(r, g, b, a)
 
                     indices.push(
                         vertexBase, vertexBase + 1, vertexBase + 2,

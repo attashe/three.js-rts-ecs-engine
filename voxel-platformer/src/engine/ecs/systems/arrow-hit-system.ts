@@ -2,6 +2,7 @@ import { hasComponent, query } from 'bitecs'
 import { Vector3 } from 'three'
 import type { ChunkManager } from '../../voxel/chunk-manager'
 import { voxelRaycast } from '../../voxel/voxel-raycast'
+import { isCollidable } from '../../voxel/palette'
 import {
     MovingObject,
     Position,
@@ -66,7 +67,11 @@ export function createArrowHitSystem(
                 if (segLen <= 0) continue
                 tmpOrigin.set(sx, sy, sz)
                 tmpDir.set(vx / Math.sqrt(speedSq), vy / Math.sqrt(speedSq), vz / Math.sqrt(speedSq))
-                const wallHit = voxelRaycast(chunks, tmpOrigin, tmpDir, segLen)
+                // Arrows pass through non-collidable cells (water, cloud)
+                // even though those cells are otherwise raycast targets for
+                // the editor cursor. Use the collidable predicate so the
+                // arrow only stops on actual walls.
+                const wallHit = voxelRaycast(chunks, tmpOrigin, tmpDir, segLen, isCollidable)
                 if (wallHit !== null) {
                     landed.add(arrow)
                     opts.onArrowLand?.(arrow, { x: wallHit.voxel.x, y: wallHit.voxel.y, z: wallHit.voxel.z })

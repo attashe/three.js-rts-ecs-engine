@@ -84,10 +84,10 @@ async function main(): Promise<void> {
     }
 
     engine
-        .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso), 'playerControl')
+        .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, { chunks }), 'playerControl')
         .addSystem(createProjectileLaunchSystem(actions, { actionId: GameAction.BowShot }), 'projectileLaunch')
         .addSystem(createArrowHitSystem(chunks), 'arrowHit')
-        .addSystem(createHighJumpSystem(actions, { actionId: GameAction.HighJump }), 'highJump')
+        .addSystem(createHighJumpSystem(actions, { actionId: GameAction.HighJump, chunks }), 'highJump')
         .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
         .addSystem(createPickupSystem(), 'pickup')
         .addSystem(createPistonSystem(chunks), 'piston')

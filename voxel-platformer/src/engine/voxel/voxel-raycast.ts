@@ -1,6 +1,6 @@
 import { Vector3 } from 'three'
 import type { ChunkManager } from './chunk-manager'
-import { isRaycastTarget } from './palette'
+import { isRaycastTarget, type Palette } from './palette'
 
 export interface VoxelHit {
     /** Voxel coords (integer) of the hit cell. */
@@ -11,9 +11,16 @@ export interface VoxelHit {
     t: number
 }
 
+/** Predicate deciding whether a voxel index counts as a hit. Different
+ *  callers want different rules — the editor cursor wants to hit water
+ *  (so the user can interact with it), but arrow physics wants water to
+ *  be transparent. Defaults to `isRaycastTarget`. */
+export type VoxelHitPredicate = (palette: Palette, index: number) => boolean
+
 /**
  * Amanatides-Woo voxel ray traversal. Steps along the ray cell-by-cell and
- * returns the first solid voxel hit, or null if `maxDistance` is exceeded.
+ * returns the first voxel hit (per the `predicate`), or null if
+ * `maxDistance` is exceeded.
  *
  * Ray origin is in world space; direction must be (approximately) unit length.
  * `maxDistance` is in world units. The returned `t` is the distance to the
@@ -28,6 +35,7 @@ export function voxelRaycast(
     origin: Vector3,
     direction: Vector3,
     maxDistance: number,
+    predicate: VoxelHitPredicate = isRaycastTarget,
 ): VoxelHit | null {
     // Current voxel.
     let x = Math.floor(origin.x)
@@ -57,7 +65,7 @@ export function voxelRaycast(
         : stepZ < 0 ? (origin.z - Math.floor(origin.z)) / -direction.z : Infinity
 
     // Check the starting voxel first (in case the origin is inside a solid).
-    if (isRaycastTarget(manager.palette, manager.getVoxel(x, y, z))) {
+    if (predicate(manager.palette, manager.getVoxel(x, y, z))) {
         return { voxel: { x, y, z }, normal: { x: 0, y: 0, z: 0 }, t: 0 }
     }
 
@@ -85,7 +93,7 @@ export function voxelRaycast(
 
         if (t > maxDistance) return null
 
-        if (isRaycastTarget(manager.palette, manager.getVoxel(x, y, z))) {
+        if (predicate(manager.palette, manager.getVoxel(x, y, z))) {
             // Normal points back along the axis we stepped (away from the hit voxel).
             const normal = { x: 0, y: 0, z: 0 }
             if (stepAxis === 0) normal.x = -stepX

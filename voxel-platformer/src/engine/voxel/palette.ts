@@ -22,6 +22,17 @@ export interface PaletteEntry {
     raycastTarget?: boolean
     /** Whether agents may stand on this block. Defaults to `collidable`. */
     pathSurface?: boolean
+    /** Render opacity for visible voxels. Defaults to 1. */
+    opacity?: number
+    /** Movement effects applied while a character overlaps this voxel. */
+    movement?: BlockMovementTraits
+}
+
+export interface BlockMovementTraits {
+    /** Horizontal movement speed multiplier while overlapping the block. */
+    speedMultiplier?: number
+    /** Whether normal/high jumps are disabled while overlapping the block. */
+    disableJump?: boolean
 }
 
 export interface Palette {
@@ -43,6 +54,8 @@ export const BLOCK = {
     glow: 9,
     noWalk: 10,
     door: 11,
+    water: 12,
+    cloud: 13,
 } as const
 
 /**
@@ -63,6 +76,27 @@ export const DEFAULT_PALETTE: Palette = {
         { name: 'glow',  color: [1.00, 0.78, 0.40], solid: true },
         { name: 'no-walk ward', color: [0.58, 0.18, 0.70], solid: true, pathSurface: false },
         { name: 'door',  color: [0.50, 0.30, 0.16], solid: true },
+        {
+            name: 'water',
+            color: [0.20, 0.52, 0.92],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0.48,
+            movement: { speedMultiplier: 0.45, disableJump: true },
+        },
+        {
+            name: 'cloud',
+            color: [0.86, 0.91, 1.00],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0.42,
+        },
     ],
 }
 
@@ -94,4 +128,21 @@ export function isRaycastTarget(palette: Palette, index: number): boolean {
 export function isPathSurface(palette: Palette, index: number): boolean {
     const entry = paletteEntry(palette, index)
     return entry.pathSurface ?? isCollidable(palette, index)
+}
+
+export function voxelOpacity(palette: Palette, index: number): number {
+    if (index === AIR) return 0
+    return paletteEntry(palette, index).opacity ?? 1
+}
+
+export function isRenderableVoxel(palette: Palette, index: number): boolean {
+    return voxelOpacity(palette, index) > 0
+}
+
+export function blockMovementTraits(palette: Palette, index: number): Required<BlockMovementTraits> {
+    const traits = paletteEntry(palette, index).movement
+    return {
+        speedMultiplier: traits?.speedMultiplier ?? 1,
+        disableJump: traits?.disableJump ?? false,
+    }
 }

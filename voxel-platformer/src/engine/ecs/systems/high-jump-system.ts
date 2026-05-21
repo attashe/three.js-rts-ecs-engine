@@ -1,13 +1,18 @@
 import { hasComponent, query, removeComponent } from 'bitecs'
-import { Grounded, PlayerControlled, Position, Velocity } from '../components'
+import { BoxCollider, Grounded, PlayerControlled, Position, Velocity } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushLog } from '../world'
+import type { ChunkManager } from '../../voxel/chunk-manager'
+import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
+import { movementEnvironmentForAABB } from '../../voxel/movement-effects'
 
 export interface HighJumpOptions {
     actionId?: ActionId
     jumpVelocity?: number
+    /** Optional voxel world query for non-physical movement effects such as water. */
+    chunks?: ChunkManager
 }
 
 /**
@@ -22,16 +27,30 @@ export interface HighJumpOptions {
 export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions = {}): System {
     const actionId = opts.actionId ?? 'spell.highJump'
     const jumpVelocity = opts.jumpVelocity ?? 13.5
+    const chunks = opts.chunks
+    const playerAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 
     return {
         fixed: true,
         order: FixedOrder.input + 10,
         update(world) {
-            const players = query(world, [PlayerControlled, Position, Velocity])
+            const players = query(world, [PlayerControlled, Position, Velocity, BoxCollider])
             if (players.length === 0) return
 
             const player = players[0]!
             if (!actions.consumePressed(actionId, player)) return
+
+            if (chunks) {
+                aabbFromFoot(
+                    { x: Position.x[player], y: Position.y[player], z: Position.z[player] },
+                    { x: BoxCollider.x[player], y: BoxCollider.y[player], z: BoxCollider.z[player] },
+                    playerAabb,
+                )
+                if (movementEnvironmentForAABB(chunks, playerAabb).jumpDisabled) {
+                    pushLog(world, 'High Jump is disabled here.')
+                    return
+                }
+            }
 
             if (!hasComponent(world, player, Grounded)) {
                 pushLog(world, 'High Jump needs solid ground.')

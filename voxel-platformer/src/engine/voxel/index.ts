@@ -17,13 +17,22 @@ export {
     BLOCK,
     DEFAULT_PALETTE,
     isCollidable,
+    isRenderableVoxel,
     isPathSurface,
     isRaycastTarget,
     isSolid,
     occludesFaces,
     paletteEntry,
+    voxelOpacity,
+    blockMovementTraits,
 } from './palette'
-export type { Palette, PaletteEntry } from './palette'
+export type { BlockMovementTraits, Palette, PaletteEntry } from './palette'
+
+export {
+    DEFAULT_MOVEMENT_ENVIRONMENT,
+    movementEnvironmentForAABB,
+} from './movement-effects'
+export type { MovementEnvironment } from './movement-effects'
 
 export { voxelRaycast } from './voxel-raycast'
 export type { VoxelHit } from './voxel-raycast'

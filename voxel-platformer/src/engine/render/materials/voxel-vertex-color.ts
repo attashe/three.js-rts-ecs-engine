@@ -98,8 +98,9 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const isCovered = cutActive.and(isActiveLayer).and(maskValue.greaterThan(0.5))
 
     const base = vertexColor()
-    m.colorNode = select(isCovered, base.mul(darken), base)
-    m.opacityNode = select(isAbove, aboveOpacity, 1.0)
+    const baseColor = base.rgb
+    m.colorNode = select(isCovered, baseColor.mul(darken), baseColor)
+    m.opacityNode = base.a.mul(select(isAbove, aboveOpacity, 1.0))
     m.transparent = true
 
     return {
