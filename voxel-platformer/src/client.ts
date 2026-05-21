@@ -102,7 +102,12 @@ async function main(): Promise<void> {
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
-        .addSystem(createDebugOverlaySystem(renderer.scene, engine.input), 'debugOverlay')
+        // Push the log panel below the top-right ↻ Restart / ← Editor
+        // buttons so it doesn't cover them. Buttons sit at top: 8px with
+        // ~28 px height — start the log at 48 px to leave a clear gap.
+        .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
+            logPosition: { top: '48px', right: '8px', maxWidth: '320px' },
+        }), 'debugOverlay')
         .addSystem(createRestartSystem(), 'restart')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,

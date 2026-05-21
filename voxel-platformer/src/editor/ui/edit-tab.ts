@@ -1,0 +1,752 @@
+import { DEFAULT_PALETTE } from '../../engine/voxel/palette'
+import { BRUSHES, type BrushKind } from '../brush'
+import { PISTON_DIRECTIONS, type PistonDirection } from '../piston-direction'
+import type { ZoneScriptAction } from '../../engine/ecs/zones'
+import type {
+    EditorMode,
+    EditorPiston,
+    EditorState,
+    EditorViewMode,
+    EditorZoneTriggerMode,
+} from '../editor-state'
+import { colorToCss, formatCoord, sectionEl, trimForList, type RefreshableElement } from './common'
+
+interface ModeDef {
+    mode: EditorMode
+    label: string
+    hint: string
+}
+
+const MODES: readonly ModeDef[] = [
+    { mode: 'paint', label: 'Paint', hint: 'LMB places the active block, RMB erases.' },
+    { mode: 'erase', label: 'Erase', hint: 'LMB erases. (Same as RMB in Paint.)' },
+    { mode: 'spawn-pickup', label: 'Pickup', hint: 'Drop gold piles on the working plane.' },
+    { mode: 'place-piston', label: 'Piston', hint: 'Place a moving block — teleport or physical motion.' },
+    { mode: 'place-spawn', label: 'Spawn', hint: 'Set the player start point.' },
+    { mode: 'place-zone', label: 'Zone', hint: 'Region you can attach triggers / scripts to.' },
+]
+
+/** Edit tab. Top section is the always-visible camera + working-plane row
+ *  (the user changes the plane Y constantly during editing, so it lives
+ *  alongside the palette / mode toolbar rather than behind a separate
+ *  tab). Below: palette, mode toolbar, and a contextual settings panel
+ *  that rebuilds itself when the mode changes. */
+export function buildEditTab(state: EditorState): RefreshableElement {
+    const root = document.createElement('div')
+    root.style.display = 'flex'
+    root.style.flexDirection = 'column'
+    root.style.gap = '10px'
+
+    const cameraPlane = buildCameraPlaneSection(state)
+    root.appendChild(cameraPlane.element)
+
+    root.appendChild(buildPaletteSection(state))
+    const modeRow = buildModeSection(state, () => switchMode())
+    root.appendChild(modeRow)
+
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.style.minHeight = '14px'
+    root.appendChild(hint)
+
+    const contextual = document.createElement('div')
+    contextual.style.display = 'flex'
+    contextual.style.flexDirection = 'column'
+    contextual.style.gap = '10px'
+    root.appendChild(contextual)
+
+    let currentBuilder: RefreshableElement | null = null
+
+    function switchMode(): void {
+        // Tear down whichever contextual builder was last shown so its
+        // listeners (refreshes etc.) stop touching detached DOM.
+        contextual.innerHTML = ''
+        currentBuilder = buildContextualForMode(state)
+        if (currentBuilder) contextual.appendChild(currentBuilder.element)
+        const def = MODES.find((m) => m.mode === state.mode)
+        hint.textContent = def?.hint ?? ''
+    }
+    switchMode()
+
+    return {
+        element: root,
+        refresh: () => {
+            cameraPlane.refresh()
+            currentBuilder?.refresh()
+        },
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Camera + working-plane (always-visible row inside the Edit tab)
+// ────────────────────────────────────────────────────────────────────────
+
+function buildCameraPlaneSection(state: EditorState): RefreshableElement {
+    const section = sectionEl('Camera / Plane')
+
+    // View mode toggle (Iso / Top). Compact button pair.
+    const viewRow = document.createElement('div')
+    viewRow.className = 'vpe-row'
+    const viewModes: { mode: EditorViewMode; label: string; hint: string }[] = [
+        { mode: 'iso', label: 'Iso', hint: 'Default isometric view (V to toggle)' },
+        { mode: 'top-down', label: 'Top', hint: 'Top-down — hides above the plane (V to toggle)' },
+    ]
+    const viewButtons: { mode: EditorViewMode; btn: HTMLButtonElement }[] = []
+    for (const m of viewModes) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.style.flex = '1'
+        btn.textContent = m.label
+        btn.title = m.hint
+        btn.onclick = () => { state.viewMode = m.mode; syncView() }
+        if (m.mode === state.viewMode) btn.classList.add('active')
+        viewButtons.push({ mode: m.mode, btn })
+        viewRow.appendChild(btn)
+    }
+    section.appendChild(viewRow)
+
+    // Working plane Y — − / + / number / readout in one row.
+    const planeRow = document.createElement('div')
+    planeRow.className = 'vpe-row'
+    const yLabel = document.createElement('span')
+    yLabel.className = 'vpe-field-label'
+    yLabel.style.flex = '0 0 auto'
+    yLabel.textContent = 'Plane Y:'
+    const minus = document.createElement('button')
+    minus.className = 'vpe-button'
+    minus.textContent = '−'
+    minus.title = 'PgDn'
+    minus.onclick = () => { state.workingPlaneY -= 1; syncPlane() }
+    const plus = document.createElement('button')
+    plus.className = 'vpe-button'
+    plus.textContent = '+'
+    plus.title = 'PgUp'
+    plus.onclick = () => { state.workingPlaneY += 1; syncPlane() }
+    const input = document.createElement('input')
+    input.className = 'vpe-input'
+    input.type = 'number'
+    input.value = String(state.workingPlaneY)
+    input.style.width = '54px'
+    input.oninput = () => {
+        const v = parseInt(input.value, 10)
+        if (Number.isFinite(v)) state.workingPlaneY = v
+    }
+    planeRow.append(yLabel, minus, plus, input)
+    section.appendChild(planeRow)
+
+    // Plane lock toggle.
+    const lockLabel = document.createElement('label')
+    lockLabel.style.display = 'flex'
+    lockLabel.style.alignItems = 'center'
+    lockLabel.style.gap = '6px'
+    lockLabel.style.cursor = 'pointer'
+    const lockBox = document.createElement('input')
+    lockBox.type = 'checkbox'
+    lockBox.checked = state.planeLock
+    lockBox.onchange = () => { state.planeLock = lockBox.checked }
+    const lockText = document.createElement('span')
+    lockText.textContent = 'Lock cursor to plane (L)'
+    lockLabel.append(lockBox, lockText)
+    section.appendChild(lockLabel)
+
+    const shortcuts = document.createElement('div')
+    shortcuts.className = 'vpe-hint'
+    shortcuts.textContent = 'V: toggle view · PgUp/PgDn: ±1 (Shift = ±4) · L: lock'
+    section.appendChild(shortcuts)
+
+    function syncView(): void {
+        for (const { mode, btn } of viewButtons) btn.classList.toggle('active', mode === state.viewMode)
+    }
+    function syncPlane(): void {
+        if (input.value !== String(state.workingPlaneY)) input.value = String(state.workingPlaneY)
+    }
+
+    return {
+        element: section,
+        refresh() {
+            // Hotkeys (V, PgUp/PgDn, L) mutate the state outside the panel;
+            // mirror back into the controls.
+            syncView()
+            syncPlane()
+            if (lockBox.checked !== state.planeLock) lockBox.checked = state.planeLock
+        },
+    }
+}
+
+function buildContextualForMode(state: EditorState): RefreshableElement {
+    switch (state.mode) {
+        case 'paint':
+        case 'erase':
+            return buildBrushPanel(state)
+        case 'spawn-pickup':
+            return buildPickupPanel(state)
+        case 'place-piston':
+            return buildPistonPanel(state)
+        case 'place-spawn':
+            return buildSpawnPanel()
+        case 'place-zone':
+            return buildZonePanel(state)
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Palette + mode toolbar
+// ────────────────────────────────────────────────────────────────────────
+
+function buildPaletteSection(state: EditorState): HTMLElement {
+    const section = sectionEl('Palette')
+    const row = document.createElement('div')
+    row.className = 'vpe-row tight'
+    section.appendChild(row)
+    const swatches: HTMLElement[] = []
+    for (let i = 1; i < DEFAULT_PALETTE.entries.length; i++) {
+        const entry = DEFAULT_PALETTE.entries[i]!
+        const swatch = document.createElement('div')
+        swatch.className = 'vpe-swatch'
+        swatch.title = `${entry.name} (${i})`
+        swatch.style.background = colorToCss(entry)
+        swatch.onclick = () => {
+            state.activeBlock = i
+            for (const s of swatches) s.classList.remove('active')
+            swatch.classList.add('active')
+        }
+        if (i === state.activeBlock) swatch.classList.add('active')
+        swatches.push(swatch)
+        row.appendChild(swatch)
+    }
+    return section
+}
+
+function buildModeSection(state: EditorState, onChange: () => void): HTMLElement {
+    const section = sectionEl('Mode')
+    const row = document.createElement('div')
+    row.className = 'vpe-row'
+    section.appendChild(row)
+    const buttons: { mode: EditorMode; btn: HTMLButtonElement }[] = []
+    for (const m of MODES) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.textContent = m.label
+        btn.title = m.hint
+        btn.onclick = () => {
+            state.mode = m.mode
+            for (const { btn: b } of buttons) b.classList.remove('active')
+            btn.classList.add('active')
+            onChange()
+        }
+        if (m.mode === state.mode) btn.classList.add('active')
+        buttons.push({ mode: m.mode, btn })
+        row.appendChild(btn)
+    }
+    return section
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Per-mode contextual panels
+// ────────────────────────────────────────────────────────────────────────
+
+function buildBrushPanel(state: EditorState): RefreshableElement {
+    const section = sectionEl('Brush')
+    const row = document.createElement('div')
+    row.className = 'vpe-row'
+    section.appendChild(row)
+    const buttons: { kind: BrushKind; btn: HTMLButtonElement }[] = []
+    for (const brush of BRUSHES) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.textContent = brush.label
+        btn.title = brush.hint
+        btn.onclick = () => {
+            state.brush = brush.kind
+            for (const { btn: b } of buttons) b.classList.remove('active')
+            btn.classList.add('active')
+        }
+        if (brush.kind === state.brush) btn.classList.add('active')
+        buttons.push({ kind: brush.kind, btn })
+        row.appendChild(btn)
+    }
+    return { element: section, refresh: () => {} }
+}
+
+function buildPickupPanel(state: EditorState): RefreshableElement {
+    const root = document.createElement('div')
+    root.style.display = 'flex'
+    root.style.flexDirection = 'column'
+    root.style.gap = '10px'
+
+    const section = sectionEl('Gold pickup')
+
+    const amountRow = document.createElement('div')
+    amountRow.className = 'vpe-field'
+    const amountLabel = document.createElement('span')
+    amountLabel.className = 'vpe-field-label'
+    amountLabel.textContent = 'Amount:'
+    const amountInput = document.createElement('input')
+    amountInput.className = 'vpe-input'
+    amountInput.type = 'number'
+    amountInput.min = '1'
+    amountInput.value = String(state.pickupAmount)
+    amountInput.style.width = '60px'
+    amountInput.oninput = () => {
+        const v = parseInt(amountInput.value, 10)
+        if (Number.isFinite(v) && v >= 1) state.pickupAmount = v
+    }
+    amountRow.append(amountLabel, amountInput)
+    section.appendChild(amountRow)
+    root.appendChild(section)
+
+    const listSection = sectionEl('Placed pickups')
+    const list = document.createElement('div')
+    list.className = 'vpe-list'
+    listSection.appendChild(list)
+    root.appendChild(listSection)
+
+    let fingerprint = ''
+    function refresh(): void {
+        const fp = state.pickups.map((p) => `${p.amount}@${p.position.x},${p.position.y},${p.position.z}`).join('|')
+        if (fp === fingerprint) return
+        fingerprint = fp
+        list.innerHTML = ''
+        if (state.pickups.length === 0) {
+            const empty = document.createElement('span')
+            empty.className = 'vpe-list-empty'
+            empty.textContent = 'No pickups placed yet.'
+            list.appendChild(empty)
+            return
+        }
+        for (const pickup of state.pickups) {
+            const row = document.createElement('div')
+            row.className = 'vpe-list-item'
+            const label = document.createElement('span')
+            label.textContent = `gold ×${pickup.amount} @ ${formatCoord({
+                x: Math.floor(pickup.position.x),
+                y: Math.floor(pickup.position.y),
+                z: Math.floor(pickup.position.z),
+            })}`
+            const removeBtn = document.createElement('button')
+            removeBtn.textContent = 'remove'
+            removeBtn.onclick = () => {
+                const i = state.pickups.indexOf(pickup)
+                if (i >= 0) state.pickups.splice(i, 1)
+                fingerprint = ''
+                refresh()
+            }
+            row.append(label, removeBtn)
+            list.appendChild(row)
+        }
+    }
+    refresh()
+    return { element: root, refresh }
+}
+
+function buildSpawnPanel(): RefreshableElement {
+    const section = sectionEl('Spawn point')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.style.color = 'rgba(217, 247, 255, 0.75)'
+    hint.textContent = 'LMB sets the player spawn at the cursor cell.'
+    section.appendChild(hint)
+    return { element: section, refresh: () => {} }
+}
+
+function buildPistonPanel(state: EditorState): RefreshableElement {
+    const root = document.createElement('div')
+    root.style.display = 'flex'
+    root.style.flexDirection = 'column'
+    root.style.gap = '10px'
+
+    const settings = sectionEl('Piston settings')
+
+    const dirRow = document.createElement('div')
+    dirRow.className = 'vpe-row tight'
+    const dirButtons: { dir: PistonDirection; btn: HTMLButtonElement }[] = []
+    for (const def of PISTON_DIRECTIONS) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.textContent = def.label
+        btn.onclick = () => {
+            state.pistonDirection = def.id
+            for (const { btn: b } of dirButtons) b.classList.remove('active')
+            btn.classList.add('active')
+        }
+        if (def.id === state.pistonDirection) btn.classList.add('active')
+        dirButtons.push({ dir: def.id, btn })
+        dirRow.appendChild(btn)
+    }
+    settings.appendChild(dirRow)
+
+    settings.appendChild(numberField('Distance:', state.pistonDistance, 1, 8, 1, (v) => { state.pistonDistance = v }))
+    settings.appendChild(numberField('Delay (s):', state.pistonDelay, 0, 60, 0.25, (v) => { state.pistonDelay = v }))
+
+    const motionRow = document.createElement('div')
+    motionRow.className = 'vpe-row'
+    const motions: { id: EditorPiston['motion']; label: string }[] = [
+        { id: 'teleport', label: 'Teleport' },
+        { id: 'physical', label: 'Physical' },
+    ]
+    const motionButtons: { id: EditorPiston['motion']; btn: HTMLButtonElement }[] = []
+    for (const m of motions) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.style.flex = '1'
+        btn.textContent = m.label
+        btn.onclick = () => {
+            state.pistonMotion = m.id
+            for (const { btn: b } of motionButtons) b.classList.remove('active')
+            btn.classList.add('active')
+        }
+        if (m.id === state.pistonMotion) btn.classList.add('active')
+        motionButtons.push({ id: m.id, btn })
+        motionRow.appendChild(btn)
+    }
+    settings.appendChild(motionRow)
+
+    settings.appendChild(numberField('Travel (s):', state.pistonTravelTime, 0.05, 30, 0.05, (v) => { state.pistonTravelTime = v }))
+
+    const policyRow = document.createElement('div')
+    policyRow.className = 'vpe-row'
+    const policies: { id: EditorPiston['characterPolicy']; label: string }[] = [
+        { id: 'push', label: 'Push' },
+        { id: 'block', label: 'Block' },
+    ]
+    const policyButtons: { id: EditorPiston['characterPolicy']; btn: HTMLButtonElement }[] = []
+    for (const p of policies) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.style.flex = '1'
+        btn.textContent = p.label
+        btn.onclick = () => {
+            state.pistonPolicy = p.id
+            for (const { btn: b } of policyButtons) b.classList.remove('active')
+            btn.classList.add('active')
+        }
+        if (p.id === state.pistonPolicy) btn.classList.add('active')
+        policyButtons.push({ id: p.id, btn })
+        policyRow.appendChild(btn)
+    }
+    settings.appendChild(policyRow)
+    root.appendChild(settings)
+
+    const listSection = sectionEl('Placed pistons')
+    const list = document.createElement('div')
+    list.className = 'vpe-list'
+    listSection.appendChild(list)
+    root.appendChild(listSection)
+
+    let fingerprint = ''
+    function refresh(): void {
+        const fp = state.pistons.map((p) => `${p.from.x},${p.from.y},${p.from.z}>${p.to.x},${p.to.y},${p.to.z}|${p.motion}|${p.delay}|${p.travelTime}|${p.characterPolicy}`).join('||')
+        if (fp === fingerprint) return
+        fingerprint = fp
+        list.innerHTML = ''
+        if (state.pistons.length === 0) {
+            const empty = document.createElement('span')
+            empty.className = 'vpe-list-empty'
+            empty.textContent = 'No pistons placed yet.'
+            list.appendChild(empty)
+            return
+        }
+        for (const piston of state.pistons) {
+            const row = document.createElement('div')
+            row.className = 'vpe-list-item'
+            const span = document.createElement('span')
+            const motion = piston.motion ?? 'teleport'
+            const delay = piston.delay ?? piston.interval ?? 2
+            const travel = piston.travelTime ?? 1
+            span.textContent = `${formatCoord(piston.from)} → ${formatCoord(piston.to)} · ${motion} · delay ${delay}s · travel ${travel}s · ${piston.characterPolicy}`
+            row.append(span)
+            list.appendChild(row)
+        }
+    }
+    refresh()
+    return { element: root, refresh }
+}
+
+function buildZonePanel(state: EditorState): RefreshableElement {
+    const root = document.createElement('div')
+    root.style.display = 'flex'
+    root.style.flexDirection = 'column'
+    root.style.gap = '10px'
+
+    const settings = sectionEl('Zone settings')
+
+    settings.appendChild(textField('Kind:', state.zoneKind, 'generic', (v) => { state.zoneKind = v || 'generic' }))
+    settings.appendChild(textField('Label:', state.zoneLabel, '(optional)', (v) => { state.zoneLabel = v }))
+    settings.appendChild(numberField('XZ size:', state.zoneSize, 1, 32, 1, (v) => { state.zoneSize = v }))
+    settings.appendChild(numberField('Y height:', state.zoneHeight, 1, 32, 1, (v) => { state.zoneHeight = v }))
+
+    const triggerRow = document.createElement('div')
+    triggerRow.className = 'vpe-row'
+    const triggerModes: { id: EditorZoneTriggerMode; label: string }[] = [
+        { id: 'player', label: 'Player' },
+        { id: 'arrow', label: 'Arrow' },
+        { id: 'both', label: 'Both' },
+    ]
+    const triggerButtons: { id: EditorZoneTriggerMode; btn: HTMLButtonElement }[] = []
+    for (const mode of triggerModes) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.style.flex = '1'
+        btn.textContent = mode.label
+        btn.onclick = () => {
+            state.zoneTriggerMode = mode.id
+            for (const { btn: b } of triggerButtons) b.classList.remove('active')
+            btn.classList.add('active')
+        }
+        if (mode.id === state.zoneTriggerMode) btn.classList.add('active')
+        triggerButtons.push({ id: mode.id, btn })
+        triggerRow.appendChild(btn)
+    }
+    settings.appendChild(triggerRow)
+    root.appendChild(settings)
+
+    // Script builder.
+    const scriptSection = sectionEl('Trigger script (next zone)')
+
+    const msgRow = document.createElement('div')
+    msgRow.className = 'vpe-row'
+    const msgInput = document.createElement('input')
+    msgInput.className = 'vpe-input'
+    msgInput.type = 'text'
+    msgInput.value = state.zoneScriptMessage
+    msgInput.placeholder = 'message'
+    msgInput.style.flex = '1'
+    msgInput.oninput = () => { state.zoneScriptMessage = msgInput.value }
+    const addMsgBtn = document.createElement('button')
+    addMsgBtn.className = 'vpe-button'
+    addMsgBtn.textContent = '+ Msg'
+    addMsgBtn.onclick = () => {
+        const message = state.zoneScriptMessage.trim()
+        if (!message) return
+        state.zoneScriptActions.push({ type: 'message', message })
+        scriptFingerprint = ''
+        refresh()
+    }
+    msgRow.append(msgInput, addMsgBtn)
+    scriptSection.appendChild(msgRow)
+
+    const offsetRow = document.createElement('div')
+    offsetRow.className = 'vpe-field'
+    const offsetLabel = document.createElement('span')
+    offsetLabel.className = 'vpe-field-label'
+    offsetLabel.textContent = 'Offset:'
+    offsetRow.appendChild(offsetLabel)
+    for (const axis of ['x', 'y', 'z'] as const) {
+        const input = document.createElement('input')
+        input.className = 'vpe-input'
+        input.type = 'number'
+        input.value = String(state.zoneScriptOffset[axis])
+        input.style.width = '42px'
+        input.title = `${axis.toUpperCase()} offset from zone min`
+        input.oninput = () => {
+            const v = parseInt(input.value, 10)
+            if (Number.isFinite(v)) state.zoneScriptOffset[axis] = v
+        }
+        offsetRow.appendChild(input)
+    }
+    scriptSection.appendChild(offsetRow)
+
+    const actionRow = document.createElement('div')
+    actionRow.className = 'vpe-row'
+    const killBtn = document.createElement('button')
+    killBtn.className = 'vpe-button'
+    killBtn.textContent = '+ Kill'
+    killBtn.onclick = () => {
+        const message = state.zoneScriptMessage.trim()
+        state.zoneScriptActions.push(message ? { type: 'kill-player', message } : { type: 'kill-player' })
+        scriptFingerprint = ''
+        refresh()
+    }
+    const spawnBtn = document.createElement('button')
+    spawnBtn.className = 'vpe-button'
+    spawnBtn.textContent = '+ Spawn'
+    spawnBtn.title = 'Add a set-block action using the active palette block, relative to zone min'
+    spawnBtn.onclick = () => {
+        state.zoneScriptActions.push({
+            type: 'set-block',
+            position: { ...state.zoneScriptOffset },
+            block: state.activeBlock,
+            relativeTo: 'zone-min',
+        })
+        scriptFingerprint = ''
+        refresh()
+    }
+    const eraseBtn = document.createElement('button')
+    eraseBtn.className = 'vpe-button'
+    eraseBtn.textContent = '+ Erase'
+    eraseBtn.onclick = () => {
+        state.zoneScriptActions.push({
+            type: 'set-block',
+            position: { ...state.zoneScriptOffset },
+            block: 0,
+            relativeTo: 'zone-min',
+        })
+        scriptFingerprint = ''
+        refresh()
+    }
+    const clearBtn = document.createElement('button')
+    clearBtn.className = 'vpe-button'
+    clearBtn.textContent = 'Clear'
+    clearBtn.onclick = () => {
+        state.zoneScriptActions.length = 0
+        scriptFingerprint = ''
+        refresh()
+    }
+    actionRow.append(killBtn, spawnBtn, eraseBtn, clearBtn)
+    scriptSection.appendChild(actionRow)
+
+    const scriptList = document.createElement('div')
+    scriptList.className = 'vpe-list'
+    scriptSection.appendChild(scriptList)
+    root.appendChild(scriptSection)
+
+    // Placed zones.
+    const listSection = sectionEl('Placed zones')
+    const list = document.createElement('div')
+    list.className = 'vpe-list'
+    listSection.appendChild(list)
+    root.appendChild(listSection)
+
+    let scriptFingerprint = ''
+    let zoneFingerprint = ''
+
+    function refresh(): void {
+        const sfp = state.zoneScriptActions.map((a) => JSON.stringify(a)).join('|')
+        if (sfp !== scriptFingerprint) {
+            scriptFingerprint = sfp
+            scriptList.innerHTML = ''
+            if (state.zoneScriptActions.length === 0) {
+                const empty = document.createElement('span')
+                empty.className = 'vpe-list-empty'
+                empty.textContent = 'No script actions queued.'
+                scriptList.appendChild(empty)
+            } else {
+                for (const action of state.zoneScriptActions) {
+                    const row = document.createElement('div')
+                    row.className = 'vpe-list-item'
+                    const span = document.createElement('span')
+                    span.textContent = formatZoneScriptAction(action)
+                    const removeBtn = document.createElement('button')
+                    removeBtn.textContent = 'remove'
+                    removeBtn.onclick = () => {
+                        const i = state.zoneScriptActions.indexOf(action)
+                        if (i >= 0) state.zoneScriptActions.splice(i, 1)
+                        scriptFingerprint = ''
+                        refresh()
+                    }
+                    row.append(span, removeBtn)
+                    scriptList.appendChild(row)
+                }
+            }
+        }
+
+        const zfp = state.zones.map((z) => JSON.stringify(z)).join('|')
+        if (zfp !== zoneFingerprint) {
+            zoneFingerprint = zfp
+            list.innerHTML = ''
+            if (state.zones.length === 0) {
+                const empty = document.createElement('span')
+                empty.className = 'vpe-list-empty'
+                empty.textContent = 'No zones placed yet.'
+                list.appendChild(empty)
+            } else {
+                for (const zone of state.zones) {
+                    const row = document.createElement('div')
+                    row.className = 'vpe-list-item'
+                    const span = document.createElement('span')
+                    const w = zone.max.x - zone.min.x
+                    const h = zone.max.y - zone.min.y
+                    const d = zone.max.z - zone.min.z
+                    const title = zone.label ?? zone.id
+                    const sources = (zone.triggerSources ?? ['player']).join('+')
+                    const scripts = zone.script?.actions.length ?? 0
+                    span.textContent = `${title} [${zone.kind}] ${sources} ${w}×${h}×${d} · ${scripts} script`
+                    const removeBtn = document.createElement('button')
+                    removeBtn.textContent = 'remove'
+                    removeBtn.onclick = () => {
+                        const i = state.zones.indexOf(zone)
+                        if (i >= 0) state.zones.splice(i, 1)
+                        zoneFingerprint = ''
+                        refresh()
+                    }
+                    row.append(span, removeBtn)
+                    list.appendChild(row)
+                }
+            }
+        }
+    }
+    refresh()
+    return { element: root, refresh }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Small reusable field builders
+// ────────────────────────────────────────────────────────────────────────
+
+function numberField(
+    label: string,
+    initial: number,
+    min: number,
+    max: number,
+    step: number,
+    onChange: (v: number) => void,
+): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'vpe-field'
+    const span = document.createElement('span')
+    span.className = 'vpe-field-label'
+    span.textContent = label
+    const input = document.createElement('input')
+    input.className = 'vpe-input'
+    input.type = 'number'
+    input.min = String(min)
+    input.max = String(max)
+    input.step = String(step)
+    input.value = String(initial)
+    input.style.width = '60px'
+    input.oninput = () => {
+        const v = step % 1 === 0 ? parseInt(input.value, 10) : parseFloat(input.value)
+        if (Number.isFinite(v) && v >= min) onChange(v)
+    }
+    row.append(span, input)
+    return row
+}
+
+function textField(
+    label: string,
+    initial: string,
+    placeholder: string,
+    onChange: (v: string) => void,
+): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'vpe-field'
+    const span = document.createElement('span')
+    span.className = 'vpe-field-label'
+    span.textContent = label
+    const input = document.createElement('input')
+    input.className = 'vpe-input'
+    input.type = 'text'
+    input.value = initial
+    input.placeholder = placeholder
+    input.style.flex = '2'
+    input.oninput = () => { onChange(input.value) }
+    row.append(span, input)
+    return row
+}
+
+function formatZoneScriptAction(action: ZoneScriptAction): string {
+    if (action.type === 'message') return `message "${trimForList(action.message)}"`
+    if (action.type === 'kill-player') {
+        return action.message ? `kill + "${trimForList(action.message)}"` : 'kill player'
+    }
+    if (action.type === 'set-block') {
+        const block = action.block === 0
+            ? 'air'
+            : (DEFAULT_PALETTE.entries[action.block]?.name ?? `block ${action.block}`)
+        return `${action.block === 0 ? 'erase' : 'spawn'} ${block} @ ${formatCoord(action.position)}`
+    }
+    const block = action.block === 0
+        ? 'air'
+        : (DEFAULT_PALETTE.entries[action.block]?.name ?? `block ${action.block}`)
+    return `fill ${block} ${formatCoord(action.min)}..${formatCoord(action.max)}`
+}

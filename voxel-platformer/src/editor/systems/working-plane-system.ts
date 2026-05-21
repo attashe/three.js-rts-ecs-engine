@@ -12,8 +12,12 @@ const UNLOCKED_COLOUR = 0x4a7385
 const LOCKED_COLOUR = 0xffd166
 
 /**
- * Renders the working-plane grid and processes PageUp/PageDown to raise or
- * lower it. Shift = ×4 nudge. Mutates `editorState.workingPlaneY` and
+ * Renders the working-plane grid and processes the editing hotkeys:
+ *   - PageUp / PageDown — raise / lower the working plane (Shift = ×4).
+ *   - V — toggle iso ↔ top-down view.
+ *   - L — toggle the cursor-locks-to-plane flag.
+ *
+ * Mutates `editorState.workingPlaneY` / `viewMode` / `planeLock` and
  * re-centres the grid on the camera target each frame so the plane is
  * always visible near the area you're editing.
  *
@@ -34,6 +38,14 @@ export function createWorkingPlaneSystem(scene: Scene, input: Input, iso: Isomet
         update(world) {
             if (handleKeyboardNudge(input, editorState)) {
                 pushLog(world as GameWorld, `Working plane Y → ${editorState.workingPlaneY}`)
+            }
+            if (input.consumeKeyPressed('KeyV')) {
+                editorState.viewMode = editorState.viewMode === 'iso' ? 'top-down' : 'iso'
+                pushLog(world as GameWorld, `View → ${editorState.viewMode}`)
+            }
+            if (input.consumeKeyPressed('KeyL')) {
+                editorState.planeLock = !editorState.planeLock
+                pushLog(world as GameWorld, `Plane lock → ${editorState.planeLock ? 'on' : 'off'}`)
             }
             if (editorState.planeLock !== lastLock) {
                 scene.remove(helper)
