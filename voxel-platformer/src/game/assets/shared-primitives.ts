@@ -14,11 +14,12 @@ export const SHARED_ASSET_RESOURCE = 'sharedAssetResource'
 const geometryByKey = new Map<string, BufferGeometry>()
 const materialByKey = new Map<string, MeshStandardMaterial>()
 
-export function sharedMaterial(color: number, roughness = 0.7, metalness = 0): MeshStandardMaterial {
-    const key = `standard:${color}:${roughness}:${metalness}`
+export function sharedMaterial(color: number, roughness = 0.7, metalness = 0, opacity = 1): MeshStandardMaterial {
+    const key = `standard:${color}:${roughness}:${metalness}:${opacity}`
     let existing = materialByKey.get(key)
     if (!existing) {
-        existing = new MeshStandardMaterial({ color, roughness, metalness })
+        const transparent = opacity < 1
+        existing = new MeshStandardMaterial({ color, roughness, metalness, transparent, opacity })
         existing.userData[SHARED_ASSET_RESOURCE] = true
         materialByKey.set(key, existing)
     }

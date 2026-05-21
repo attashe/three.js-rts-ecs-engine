@@ -80,7 +80,7 @@ function updatePhysicalPiston(
 ): void {
     if (piston.eid < 0) return
     if (piston.moving === 0) {
-        updatePhysicalPistonObstacle(world, piston)
+        updatePhysicalPistonObstacle(world, chunks, piston)
         if (simTime < piston.nextFlipAt) return
         if (!tryStartPhysicalMove(chunks, world, piston, simTime)) return
     }
@@ -105,14 +105,18 @@ function updatePhysicalPiston(
     Position.y[piston.eid] = nextPos.y
     Position.z[piston.eid] = nextPos.z
 
+    // Non-collidable blocks (cloud, water) can't push or carry the player
+    // — they pass right through. Skip the push check; movement always succeeds.
+    const blockIsCollidable = isCollidable(chunks.palette, piston.block)
     if (
+        blockIsCollidable &&
         piston.characterPolicy === 'push' &&
         !tryPushPlayersWithPhysicalBlock(chunks, world, piston, oldPos, nextPos, delta)
     ) {
         Position.x[piston.eid] = oldPos.x
         Position.y[piston.eid] = oldPos.y
         Position.z[piston.eid] = oldPos.z
-        updatePhysicalPistonObstacle(world, piston)
+        updatePhysicalPistonObstacle(world, chunks, piston)
         return
     }
 
@@ -126,7 +130,7 @@ function updatePhysicalPiston(
         Position.y[piston.eid] = end.y
         Position.z[piston.eid] = end.z + 0.5
     }
-    updatePhysicalPistonObstacle(world, piston)
+    updatePhysicalPistonObstacle(world, chunks, piston)
 }
 
 function tryStartPhysicalMove(
@@ -137,7 +141,11 @@ function tryStartPhysicalMove(
 ): boolean {
     const target = piston.occupied === 'from' ? piston.to : piston.from
     if (chunks.getVoxel(target.x, target.y, target.z) !== AIR) return false
-    if (piston.characterPolicy === 'block' && voxelCellOverlapsPlayer(world, target)) return false
+    // 'block' policy only refuses to flip when the player physically can't
+    // share the cell with the block. Non-collidable pistons (cloud) move
+    // through the player freely, so don't gate the move on overlap.
+    const blockIsCollidable = isCollidable(chunks.palette, piston.block)
+    if (blockIsCollidable && piston.characterPolicy === 'block' && voxelCellOverlapsPlayer(world, target)) return false
     piston.moving = 1
     piston.moveT = 0
     piston.moveFrom = piston.occupied
@@ -153,8 +161,15 @@ function physicalPistonPosition(from: VoxelCoord, to: VoxelCoord, t: number): { 
     }
 }
 
-function updatePhysicalPistonObstacle(world: GameWorld, piston: PistonMechanism): void {
+function updatePhysicalPistonObstacle(world: GameWorld, chunks: ChunkManager, piston: PistonMechanism): void {
     if (piston.eid < 0) return
+    // Non-collidable blocks (cloud, water, …) move and render but don't
+    // sit in the obstacle registry — physics sweeps walk straight through
+    // them just like they walk through the corresponding voxel cells.
+    if (!isCollidable(chunks.palette, piston.block)) {
+        world.obstacles.remove(piston.eid)
+        return
+    }
     const aabb = physicalBlockAabb({
         x: Position.x[piston.eid],
         y: Position.y[piston.eid],
@@ -370,8 +385,12 @@ function tryFlipPiston(chunks: ChunkManager, world: GameWorld, piston: PistonMec
     }
 
     if (chunks.getVoxel(target.x, target.y, target.z) !== AIR) return false
-    if (piston.characterPolicy === 'block' && voxelCellOverlapsPlayer(world, target)) return false
-    if (piston.characterPolicy === 'push') {
+    // Non-collidable teleport blocks (cloud/water) pass through players,
+    // so 'block' policy + 'push' policy are both no-ops for them — let
+    // the flip happen regardless of overlap.
+    const blockIsCollidable = isCollidable(chunks.palette, piston.block)
+    if (blockIsCollidable && piston.characterPolicy === 'block' && voxelCellOverlapsPlayer(world, target)) return false
+    if (blockIsCollidable && piston.characterPolicy === 'push') {
         const result = tryPushAffectedPlayers(chunks, world, source, target, direction, vacating)
         if (!result.ok) {
             // Downward piston crushed a rider/occupant against a wall —

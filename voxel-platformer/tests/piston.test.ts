@@ -394,6 +394,76 @@ test('PistonSystem: side-graze of a physical vertical piston preserves player ve
     assert.equal(Velocity.z[player], storedVz, 'z velocity preserved through a side graze')
 })
 
+test('PistonSystem: physical cloud piston does not register an obstacle or push the player', () => {
+    // A cloud-block physical piston should render and move but stay
+    // non-collidable — the player walks through it just like through the
+    // matching voxel cells. Regression for the bug where physical
+    // pistons unconditionally added their AABB to `world.obstacles` and
+    // ran the player-push step regardless of palette `collidable`.
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.cloud,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    // Player straddling the piston's column at y=1.5 — directly inside
+    // the cloud block's path. A collidable block would block / push them.
+    const player = placePlayer(world, 5.5, 1.5, 0.5)
+    const startX = Position.x[player]
+    const startY = Position.y[player]
+    const startZ = Position.z[player]
+    const startVx = Velocity.x[player]
+    const startVy = Velocity.y[player]
+    const startVz = Velocity.z[player]
+
+    createPistonSystem(chunks).update(world, 0.25)
+
+    // The cloud block must NOT be registered as an obstacle.
+    assert.equal(world.obstacles.intersects({
+        minX: startX - 0.34,
+        minY: startY,
+        minZ: startZ - 0.34,
+        maxX: startX + 0.34,
+        maxY: startY + 1.8,
+        maxZ: startZ + 0.34,
+    }), false, 'cloud piston AABB should not enter obstacle registry')
+
+    // The player's position + velocity must be untouched — no carry, no push.
+    assert.equal(Position.x[player], startX, 'cloud piston should not push player x')
+    assert.equal(Position.y[player], startY, 'cloud piston should not push player y')
+    assert.equal(Position.z[player], startZ, 'cloud piston should not push player z')
+    assert.equal(Velocity.x[player], startVx)
+    assert.equal(Velocity.y[player], startVy)
+    assert.equal(Velocity.z[player], startVz)
+    assert.equal(world.deathSignal, null, 'cloud piston cannot crush')
+})
+
+test('PistonSystem: teleport cloud piston flips even when the player stands in the target cell', () => {
+    // Symmetric regression: `block` characterPolicy refused to flip when
+    // a player overlapped the target cell. For non-collidable blocks the
+    // player can share the cell, so the flip must go ahead.
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 6, y: 1, z: 0 },
+        block: BLOCK.cloud,
+        delay: 1,
+        characterPolicy: 'block',
+    })
+    placePlayer(world, 6.5, 1, 0.5)
+
+    createPistonSystem(chunks).update(world, 1)
+
+    assert.equal(chunks.getVoxel(6, 1, 0), BLOCK.cloud, 'cloud flip happens through the player')
+    assert.equal(chunks.getVoxel(5, 1, 0), 0, 'source cell cleared')
+})
+
 test('PistonSystem: physical piston with zero delay reverses continuously', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()

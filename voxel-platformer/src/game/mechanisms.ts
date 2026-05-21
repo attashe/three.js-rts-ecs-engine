@@ -102,13 +102,22 @@ function createPistonBlockVisual(chunks: ChunkManager, block: number): Group {
     const color = ((Math.round(r * 255) & 0xff) << 16) |
         ((Math.round(g * 255) & 0xff) << 8) |
         (Math.round(b * 255) & 0xff)
+    const opacity = entry.opacity ?? 1
     const root = new Group()
     root.name = 'PhysicalPistonBlock'
-    const mesh = new Mesh(sharedBoxGeometry(1, 1, 1), sharedMaterial(color, 0.85, 0))
+    // Pull the palette's opacity through to the mesh material so a cloud-
+    // block piston looks like a cloud (semi-transparent), not a solid
+    // pastel cube. `sharedMaterial` keys by opacity, so opaque pistons
+    // still share their material with everything else of the same colour.
+    const mesh = new Mesh(sharedBoxGeometry(1, 1, 1), sharedMaterial(color, 0.85, 0, opacity))
     mesh.name = `${entry.name}Block`
     mesh.position.y = 0.5
-    mesh.castShadow = true
-    mesh.receiveShadow = true
+    // Shadow casting on a fully-transparent block looks wrong; skip it for
+    // anything below ~0.7 alpha so cloud / water-block pistons don't paint
+    // hard-edged shadow squares on the terrain.
+    const castShadow = opacity >= 0.7
+    mesh.castShadow = castShadow
+    mesh.receiveShadow = castShadow
     root.add(mesh)
     return root
 }
