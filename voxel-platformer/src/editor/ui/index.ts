@@ -1,6 +1,7 @@
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
 import type { EditorState } from '../editor-state'
+import type { CommandStack } from '../history'
 import { injectCss } from './common'
 import { createTabBar } from './tabs'
 import { buildEditTab } from './edit-tab'
@@ -11,6 +12,8 @@ export interface MountEditorPanelOptions {
     world: GameWorld
     chunks: ChunkManager
     editorState: EditorState
+    /** Undo / redo stack — `New` / `Load` invalidate it. */
+    history: CommandStack
 }
 
 /**

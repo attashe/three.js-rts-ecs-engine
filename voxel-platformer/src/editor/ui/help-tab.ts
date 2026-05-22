@@ -31,6 +31,14 @@ const HELP_GROUPS: readonly HelpGroup[] = [
         ],
     },
     {
+        title: 'History',
+        lines: [
+            'Ctrl+Z — undo last paint stroke',
+            'Ctrl+Shift+Z / Ctrl+Y — redo',
+            '(New / Load clear the history.)',
+        ],
+    },
+    {
         title: 'Debug',
         lines: [
             '` (backtick) — toggle debug overlay',

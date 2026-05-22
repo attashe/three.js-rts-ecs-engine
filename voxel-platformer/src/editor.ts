@@ -11,6 +11,8 @@ import { createEditorActionMap } from './editor/actions'
 import { createEditorState } from './editor/editor-state'
 import { createVoxelCursorSystem } from './editor/systems/voxel-cursor-system'
 import { createVoxelPaintSystem } from './editor/systems/voxel-paint-system'
+import { createHistorySystem } from './editor/systems/history-system'
+import { createCommandStack } from './editor/history'
 import { createPickupSpawnSystem } from './editor/systems/pickup-spawn-system'
 import { createPistonPlaceSystem } from './editor/systems/piston-place-system'
 import { createSpawnPlaceSystem } from './editor/systems/spawn-place-system'
@@ -73,7 +75,8 @@ async function main(): Promise<void> {
     renderer.iso.target.set(editorState.spawn.x, editorState.spawn.y, editorState.spawn.z)
     renderer.iso.syncPosition()
 
-    mountEditorPanel({ world, chunks, editorState })
+    const history = createCommandStack()
+    mountEditorPanel({ world, chunks, editorState, history })
 
     const chunkRenderSystem: System = {
         name: 'chunkRender',
@@ -83,7 +86,8 @@ async function main(): Promise<void> {
     }
 
     engine
-        .addSystem(createVoxelPaintSystem(chunks, engine.input, editorState), 'voxelPaint')
+        .addSystem(createHistorySystem(engine.input, history), 'history')
+        .addSystem(createVoxelPaintSystem(chunks, engine.input, editorState, history), 'voxelPaint')
         .addSystem(createPickupSpawnSystem(engine.input, editorState), 'pickupSpawn')
         .addSystem(createPistonPlaceSystem(chunks, engine.input, editorState), 'pistonPlace')
         .addSystem(createSpawnPlaceSystem(engine.input, editorState), 'spawnPlace')

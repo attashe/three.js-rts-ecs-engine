@@ -6,10 +6,21 @@ import { FixedOrder } from '../../engine/ecs/systems/orders'
 import type { GameWorld } from '../../engine/ecs/world'
 import { brushFootprint } from '../brush'
 import type { EditorState } from '../editor-state'
+import type { CommandStack } from '../history'
 import { removePistonsTouchingCells } from './piston-place-system'
 
 const LMB = 0
 const RMB = 2
+
+interface StrokeCell {
+    x: number
+    y: number
+    z: number
+    /** Block at the cell *before* the stroke first touched it. */
+    before: number
+    /** Latest block written by the stroke. */
+    after: number
+}
 
 /**
  * Continuous voxel editing while the mouse button is held. LMB paints with
@@ -23,21 +34,86 @@ const RMB = 2
  * fixed step paints once per tick (60 Hz) while held, and
  * `chunks.setVoxel` no-ops when a cell's value didn't change, so
  * re-painting the same cell while the cursor sits still is free.
+ *
+ * Each stroke (mouse-down → mouse-up) becomes a single `Command` pushed to
+ * the editor history, so Ctrl+Z reverts the whole stroke in one step.
+ * Piston removals triggered by erase strokes are NOT included in the
+ * command — Ctrl+Z restores the chunk cells but leaves the pistons gone.
+ * Phase 2 of the history work covers that.
  */
-export function createVoxelPaintSystem(chunks: ChunkManager, input: Input, editorState: EditorState): System {
+export function createVoxelPaintSystem(
+    chunks: ChunkManager,
+    input: Input,
+    editorState: EditorState,
+    history?: CommandStack,
+): System {
+    // Stroke-local state. Each entry records the *first* `before` value at
+    // a cell (so a multi-tick stroke that re-touches the same cell keeps
+    // the right undo target) and the *latest* `after` value.
+    let strokeActive = false
+    let strokeErase = false
+    const strokeCells = new Map<string, StrokeCell>()
+
+    function endStroke(): void {
+        if (!strokeActive) return
+        strokeActive = false
+        if (!history || strokeCells.size === 0) {
+            strokeCells.clear()
+            return
+        }
+        // Skip strokes that produced no net change (e.g. painted air over
+        // air, or repainted the same colour onto itself).
+        const cells = [...strokeCells.values()].filter((c) => c.before !== c.after)
+        strokeCells.clear()
+        if (cells.length === 0) return
+        const label = strokeErase ? 'erase' : 'paint'
+        history.pushApplied({
+            label,
+            apply: () => chunks.applyBulk(cells.map((c) => ({ x: c.x, y: c.y, z: c.z, value: c.after }))),
+            revert: () => chunks.applyBulk(cells.map((c) => ({ x: c.x, y: c.y, z: c.z, value: c.before }))),
+        })
+    }
+
     return {
         fixed: true,
         order: FixedOrder.input,
         update(world) {
-            if (editorState.mode !== 'paint' && editorState.mode !== 'erase') return
-            if (!editorState.cursor) return
+            const inPaintLike = editorState.mode === 'paint' || editorState.mode === 'erase'
             const lmb = input.isMouseButtonDown(LMB)
             const rmb = input.isMouseButtonDown(RMB)
-            if (!lmb && !rmb) return
+            const anyDown = lmb || rmb
+
+            // If the user releases / switches modes mid-stroke, finalise
+            // whatever was accumulated so far.
+            if (strokeActive && (!anyDown || !inPaintLike)) {
+                endStroke()
+            }
+
+            if (!inPaintLike) return
+            if (!editorState.cursor) return
+            if (!anyDown) return
 
             const erase = editorState.mode === 'erase' ? (lmb || rmb) : rmb
             const value = erase ? AIR : editorState.activeBlock
             const footprint = brushFootprint(editorState.brush, editorState.cursor)
+
+            if (!strokeActive) {
+                strokeActive = true
+                strokeErase = erase
+                strokeCells.clear()
+            }
+
+            for (const cell of footprint) {
+                const key = `${cell.x},${cell.y},${cell.z}`
+                const existing = strokeCells.get(key)
+                if (existing) {
+                    existing.after = value
+                } else {
+                    const before = chunks.getVoxel(cell.x, cell.y, cell.z)
+                    strokeCells.set(key, { x: cell.x, y: cell.y, z: cell.z, before, after: value })
+                }
+            }
+
             if (erase) removePistonsTouchingCells(world as GameWorld, chunks, editorState, footprint)
             chunks.applyBulk(footprint.map((cell) => ({ x: cell.x, y: cell.y, z: cell.z, value })))
         },

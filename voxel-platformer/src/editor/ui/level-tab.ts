@@ -1,6 +1,7 @@
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
 import type { EditorState } from '../editor-state'
+import type { CommandStack } from '../history'
 import {
     NEW_LEVEL_DEFAULT_DEPTH,
     NEW_LEVEL_DEFAULT_WIDTH,
@@ -16,6 +17,7 @@ export interface LevelTabOptions {
     world: GameWorld
     chunks: ChunkManager
     editorState: EditorState
+    history: CommandStack
 }
 
 /** Save / Load / Playtest controls + level name field + new-level form. */
@@ -69,6 +71,7 @@ export function buildLevelTab(opts: LevelTabOptions): RefreshableElement {
         )
         if (!confirmed) return
         newLevel(opts.world, opts.chunks, opts.editorState, w, d)
+        opts.history.clear()
         nameInput.value = 'untitled-level'
     }
     newSection.appendChild(newBtn)
@@ -110,6 +113,7 @@ export function buildLevelTab(opts: LevelTabOptions): RefreshableElement {
         if (!file) return
         try {
             const meta = await loadLevelFromFile(file, opts.world, opts.chunks, opts.editorState)
+            opts.history.clear()
             nameInput.value = meta.name
         } catch (err) {
             console.error('Failed to load level:', err)
