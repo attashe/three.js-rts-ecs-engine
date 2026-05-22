@@ -22,6 +22,7 @@ import type { EditorState } from '../editor-state'
 import { addOffset, pistonOffset } from '../piston-direction'
 
 const MAX_RAY = 60
+const RMB = 2
 const PAINT_OUTLINE_COLOUR = 0x9cff57
 const ERASE_OUTLINE_COLOUR = 0xff8a5a
 const PICKUP_OUTLINE_COLOUR = 0x8fb6ff
@@ -95,7 +96,9 @@ export function createVoxelCursorSystem(
             }
             screenToWorldRay(pointer.x, pointer.y, iso.camera, ray)
 
-            const cursorCell = resolveCursorCell(chunks, ray, editorState)
+            const eraseGesture = editorState.mode === 'erase' ||
+                (editorState.mode === 'paint' && input.isMouseButtonDown(RMB))
+            const cursorCell = resolveCursorCell(chunks, ray, editorState, eraseGesture)
             editorState.cursor = cursorCell
             if (!cursorCell) {
                 lines.visible = false
@@ -133,6 +136,7 @@ function resolveCursorCell(
     chunks: ChunkManager,
     ray: ReturnType<typeof makeRay>,
     editorState: EditorState,
+    eraseGesture: boolean,
 ): { x: number; y: number; z: number } | null {
     // Lock-to-plane: even if the ray hits a voxel, force the cursor onto the
     // working plane so the user can paint a specific layer through existing
@@ -145,7 +149,7 @@ function resolveCursorCell(
         // Paint + spawn want the empty cell adjacent to the hit face — for
         // paint that's where the new block lands, for spawn it's where the
         // player stands. Erase / pickup / piston want the hit cell itself.
-        if (editorState.mode === 'paint' || editorState.mode === 'place-spawn') {
+        if ((editorState.mode === 'paint' && !eraseGesture) || editorState.mode === 'place-spawn') {
             return {
                 x: hit.voxel.x + hit.normal.x,
                 y: hit.voxel.y + hit.normal.y,

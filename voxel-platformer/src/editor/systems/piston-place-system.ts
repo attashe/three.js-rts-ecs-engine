@@ -8,6 +8,7 @@ import { despawnEntity } from '../../engine/ecs/entity'
 import { registerPistonMechanism } from '../../game/mechanisms'
 import { addOffset, pistonOffset } from '../piston-direction'
 import type { EditorState } from '../editor-state'
+import { handlePistonClicks } from './piston-clicks'
 
 /**
  * One-click piston placement. With editor mode = 'place-piston', LMB on
@@ -30,15 +31,12 @@ export function createPistonPlaceSystem(chunks: ChunkManager, input: Input, edit
             if (editorState.mode !== 'place-piston') return
             const clicks = input.consumeClicks()
             if (clicks.length === 0) return
-            if (!editorState.cursor) return
 
-            for (const click of clicks) {
-                if (click.button === 2) {
-                    removeLastPiston(world, chunks, editorState)
-                } else {
-                    placePiston(world, chunks, editorState)
-                }
-            }
+            handlePistonClicks(clicks, {
+                hasCursor: () => editorState.cursor !== null,
+                place: () => placePiston(world, chunks, editorState),
+                removeLast: () => removeLastPiston(world, chunks, editorState),
+            })
         },
     }
 }
@@ -113,8 +111,30 @@ export function removePistonAt(
     pushLog(world, `Removed piston @ (${removed.from.x}, ${removed.from.y}, ${removed.from.z}).`)
 }
 
+export function removePistonsTouchingCells(
+    world: GameWorld,
+    chunks: ChunkManager,
+    state: EditorState,
+    cells: readonly { x: number; y: number; z: number }[],
+): number {
+    if (state.pistons.length === 0 || cells.length === 0) return 0
+    const cellKeys = new Set(cells.map((cell) => cellKey(cell)))
+    let removed = 0
+    for (let i = state.pistons.length - 1; i >= 0; i--) {
+        const piston = state.pistons[i]!
+        if (!cellKeys.has(cellKey(piston.from)) && !cellKeys.has(cellKey(piston.to))) continue
+        removePistonAt(world, chunks, state, i)
+        removed++
+    }
+    return removed
+}
+
 function clearIfBlock(chunks: ChunkManager, cell: { x: number; y: number; z: number }, block: number): void {
     if (chunks.getVoxel(cell.x, cell.y, cell.z) === block) {
         chunks.setVoxel(cell.x, cell.y, cell.z, AIR)
     }
+}
+
+function cellKey(cell: { x: number; y: number; z: number }): string {
+    return `${cell.x},${cell.y},${cell.z}`
 }

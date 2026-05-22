@@ -13,7 +13,7 @@ const LOCKED_COLOUR = 0xffd166
 
 /**
  * Renders the working-plane grid and processes the editing hotkeys:
- *   - PageUp / PageDown — raise / lower the working plane (Shift = ×4).
+ *   - X / Z — raise / lower the working plane (Shift = ×4).
  *   - V — toggle iso ↔ top-down view.
  *   - L — toggle the cursor-locks-to-plane flag.
  *
@@ -86,11 +86,11 @@ function makeHelper(locked: boolean): GridHelper {
 function handleKeyboardNudge(input: Input, state: EditorState): boolean {
     const shift = input.isKeyDown('ShiftLeft') || input.isKeyDown('ShiftRight')
     const step = shift ? 4 : 1
-    if (input.consumeKeyPressed('PageUp')) {
+    if (input.consumeKeyPressed('KeyX')) {
         state.workingPlaneY += step
         return true
     }
-    if (input.consumeKeyPressed('PageDown')) {
+    if (input.consumeKeyPressed('KeyZ')) {
         state.workingPlaneY -= step
         return true
     }

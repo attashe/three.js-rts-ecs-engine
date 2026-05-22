@@ -125,12 +125,12 @@ function buildCameraPlaneSection(state: EditorState): RefreshableElement {
     const minus = document.createElement('button')
     minus.className = 'vpe-button'
     minus.textContent = '−'
-    minus.title = 'PgDn'
+    minus.title = 'Z'
     minus.onclick = () => { state.workingPlaneY -= 1; syncPlane() }
     const plus = document.createElement('button')
     plus.className = 'vpe-button'
     plus.textContent = '+'
-    plus.title = 'PgUp'
+    plus.title = 'X'
     plus.onclick = () => { state.workingPlaneY += 1; syncPlane() }
     const input = document.createElement('input')
     input.className = 'vpe-input'
@@ -161,7 +161,7 @@ function buildCameraPlaneSection(state: EditorState): RefreshableElement {
 
     const shortcuts = document.createElement('div')
     shortcuts.className = 'vpe-hint'
-    shortcuts.textContent = 'V: toggle view · PgUp/PgDn: ±1 (Shift = ±4) · L: lock'
+    shortcuts.textContent = 'Z/X: plane ±1 (Shift = ±4) · V: view · L: lock'
     section.appendChild(shortcuts)
 
     function syncView(): void {
@@ -174,7 +174,7 @@ function buildCameraPlaneSection(state: EditorState): RefreshableElement {
     return {
         element: section,
         refresh() {
-            // Hotkeys (V, PgUp/PgDn, L) mutate the state outside the panel;
+            // Hotkeys (Z/X, V, L) mutate the state outside the panel;
             // mirror back into the controls.
             syncView()
             syncPlane()

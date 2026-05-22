@@ -17,8 +17,8 @@ const HELP_GROUPS: readonly HelpGroup[] = [
     {
         title: 'Working plane',
         lines: [
-            'PgUp / PgDn — ±1',
-            'Shift + PgUp/PgDn — ±4',
+            'Z / X — down / up by 1',
+            'Shift + Z/X — down / up by 4',
             'V — toggle iso / top-down view',
             'L — toggle cursor-locks-to-plane',
         ],

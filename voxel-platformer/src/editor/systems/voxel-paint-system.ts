@@ -3,8 +3,10 @@ import { AIR } from '../../engine/voxel/palette'
 import type { Input } from '../../engine/input/input'
 import type { System } from '../../engine/ecs/systems/system'
 import { FixedOrder } from '../../engine/ecs/systems/orders'
+import type { GameWorld } from '../../engine/ecs/world'
 import { brushFootprint } from '../brush'
 import type { EditorState } from '../editor-state'
+import { removePistonsTouchingCells } from './piston-place-system'
 
 const LMB = 0
 const RMB = 2
@@ -26,16 +28,17 @@ export function createVoxelPaintSystem(chunks: ChunkManager, input: Input, edito
     return {
         fixed: true,
         order: FixedOrder.input,
-        update() {
+        update(world) {
             if (editorState.mode !== 'paint' && editorState.mode !== 'erase') return
             if (!editorState.cursor) return
             const lmb = input.isMouseButtonDown(LMB)
             const rmb = input.isMouseButtonDown(RMB)
             if (!lmb && !rmb) return
 
-            const erase = rmb || editorState.mode === 'erase'
+            const erase = editorState.mode === 'erase' ? (lmb || rmb) : rmb
             const value = erase ? AIR : editorState.activeBlock
             const footprint = brushFootprint(editorState.brush, editorState.cursor)
+            if (erase) removePistonsTouchingCells(world as GameWorld, chunks, editorState, footprint)
             chunks.applyBulk(footprint.map((cell) => ({ x: cell.x, y: cell.y, z: cell.z, value })))
         },
     }

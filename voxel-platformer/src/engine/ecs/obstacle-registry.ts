@@ -46,6 +46,15 @@ export class ObstacleRegistry {
 
     /** True if any registered AABB (other than `excludeEid`) overlaps `query`. */
     intersects(query: AABB, excludeEid?: number): boolean {
+        return this.intersectsInternal(query, excludeEid, undefined)
+    }
+
+    /** True if any registered AABB not in `excludeEids` overlaps `query`. */
+    intersectsExcept(query: AABB, excludeEids?: ReadonlySet<number>): boolean {
+        return this.intersectsInternal(query, undefined, excludeEids)
+    }
+
+    private intersectsInternal(query: AABB, excludeEid?: number, excludeEids?: ReadonlySet<number>): boolean {
         let hit = false
         this.seen.clear()
         const x0 = Math.floor(query.minX)
@@ -63,6 +72,7 @@ export class ObstacleRegistry {
                     for (let i = 0; i < bucket.length; i++) {
                         const eid = bucket[i]
                         if (eid === excludeEid) continue
+                        if (excludeEids?.has(eid)) continue
                         if (this.seen.has(eid)) continue
                         this.seen.add(eid)
                         const a = this.entries.get(eid)

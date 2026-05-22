@@ -28,7 +28,7 @@ export interface MountEditorPanelOptions {
  * Each tab is lazily built on first activation, so the panel stays cheap
  * even as features grow. The active tab's `refresh` runs on a 250 ms
  * interval to pick up state changes driven from outside the panel
- * (PgUp/PgDn shortcuts mutate `workingPlaneY`, V toggles `viewMode`,
+     * (Z/X shortcuts mutate `workingPlaneY`, V toggles `viewMode`,
  * etc.).
  */
 export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () => void } {

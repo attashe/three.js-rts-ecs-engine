@@ -393,6 +393,85 @@ test('PistonSystem: rider straddling two co-moving physical pistons is pushed on
     assert.equal(world.deathSignal, null, 'no spurious crush from second piston')
 })
 
+test('PistonSystem: rider straddling two descending physical pistons is not crushed by sibling obstacle', () => {
+    // Sequential update regression: piston A carried the rider downward,
+    // then checked the destination against piston B's still-registered old
+    // obstacle. Because this is a downward rider contact, that false block
+    // became a false "crushed-by-piston" death.
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 3, z: 0 },
+        to: { x: 5, y: 1, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    registerPistonMechanism(world, chunks, {
+        from: { x: 6, y: 3, z: 0 },
+        to: { x: 6, y: 1, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const player = placePlayer(world, 6, 4, 0.5)
+
+    const dt = 0.1
+    const expectedDeltaY = dt * (-2 / 1)
+    createPistonSystem(chunks).update(world, dt)
+
+    assert.equal(world.deathSignal, null, 'no false crush from sibling piston obstacle')
+    assert.ok(
+        Math.abs(Position.y[player] - (4 + expectedDeltaY)) < 1e-5,
+        `expected player to descend once (y≈${4 + expectedDeltaY}), got ${Position.y[player]}`,
+    )
+})
+
+test('PistonSystem: walking near seam on ascending physical pistons is carried by support, not side-shoved', () => {
+    // Player is mostly on the right block, with only a tiny foot overlap on
+    // the left neighbour. The left block's upward next AABB overlaps the
+    // player's lower body, but that must not become a side shove that claims
+    // the player before the right support block carries them.
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    registerPistonMechanism(world, chunks, {
+        from: { x: 6, y: 1, z: 0 },
+        to: { x: 6, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const startX = 6.28
+    const player = placePlayer(world, startX, 2, 0.5)
+    Velocity.x[player] = 1.5
+
+    const dt = 0.1
+    const expectedDeltaY = dt * (2 / 1)
+    createPistonSystem(chunks).update(world, dt)
+
+    assert.equal(world.deathSignal, null, 'no false crush while crossing the seam')
+    assert.ok(Math.abs(Position.x[player] - startX) < 1e-5, `expected no seam side shove, got x=${Position.x[player]}`)
+    assert.ok(
+        Math.abs(Position.y[player] - (2 + expectedDeltaY)) < 1e-5,
+        `expected support block to carry player upward (y≈${2 + expectedDeltaY}), got ${Position.y[player]}`,
+    )
+})
+
 test('PistonSystem: side-graze of a physical vertical piston preserves player velocity', () => {
     // Regression: the old apply loop zeroed X/Z velocity and clamped Y at
     // Math.max(0, vy) for *every* push contact — including side-grazes.

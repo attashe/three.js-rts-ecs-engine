@@ -120,7 +120,7 @@ function updatePhysicalPiston(
     if (
         blockIsCollidable &&
         piston.characterPolicy === 'push' &&
-        !tryPushPlayersWithPhysicalBlock(chunks, world, piston, oldPos, nextPos, delta, pushedThisTick)
+        !tryPushPlayersWithPhysicalBlock(chunks, world, piston, oldPos, nextPos, delta, simTime, dt, pushedThisTick)
     ) {
         Position.x[piston.eid] = oldPos.x
         Position.y[piston.eid] = oldPos.y
@@ -205,6 +205,8 @@ function tryPushPlayersWithPhysicalBlock(
     oldPos: { x: number; y: number; z: number },
     nextPos: { x: number; y: number; z: number },
     delta: { x: number; y: number; z: number },
+    simTime: number,
+    dt: number,
     pushedThisTick: Set<number>,
 ): boolean {
     if (delta.x === 0 && delta.y === 0 && delta.z === 0) return true
@@ -213,6 +215,7 @@ function tryPushPlayersWithPhysicalBlock(
 
     const oldBlock = physicalBlockAabb(oldPos)
     const nextBlock = physicalBlockAabb(nextPos)
+    const coMovingObstacles = coMovingPhysicalPistonEids(chunks, world, piston, delta, simTime, dt)
     const contactByPlayer = new Map<number, PhysicalPistonContact>()
     const playerBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     const movedBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
@@ -237,7 +240,7 @@ function tryPushPlayersWithPhysicalBlock(
 
         const dest = contact.dest
         aabbFromFoot(dest, { x: BoxCollider.x[eid], y: BoxCollider.y[eid], z: BoxCollider.z[eid] }, movedBox)
-        if (voxelAABBOverlapExcept(chunks, movedBox, new Set()) || world.obstacles.intersects(movedBox, piston.eid)) {
+        if (voxelAABBOverlapExcept(chunks, movedBox, new Set()) || world.obstacles.intersectsExcept(movedBox, coMovingObstacles)) {
             if (contact.crushOnBlocked) world.deathSignal ??= 'crushed-by-piston'
             return false
         }
@@ -260,6 +263,70 @@ function tryPushPlayersWithPhysicalBlock(
         pushedThisTick.add(eid)
     }
     return true
+}
+
+function coMovingPhysicalPistonEids(
+    chunks: ChunkManager,
+    world: GameWorld,
+    active: PistonMechanism,
+    delta: { x: number; y: number; z: number },
+    simTime: number,
+    dt: number,
+): ReadonlySet<number> {
+    const ignored = new Set<number>([active.eid])
+    for (const piston of world.pistons) {
+        if (piston === active) continue
+        if (piston.motion !== 'physical' || piston.eid < 0) continue
+        if (!isCollidable(chunks.palette, piston.block)) continue
+        const otherDelta = physicalPistonDeltaForTick(chunks, world, piston, simTime, dt)
+        if (!otherDelta) continue
+        if (sameDelta(delta, otherDelta)) ignored.add(piston.eid)
+    }
+    return ignored
+}
+
+function physicalPistonDeltaForTick(
+    chunks: ChunkManager,
+    world: GameWorld,
+    piston: PistonMechanism,
+    simTime: number,
+    dt: number,
+): { x: number; y: number; z: number } | null {
+    if (piston.eid < 0) return null
+    let moveFrom = piston.moveFrom
+    let moveT = piston.moveT
+    if (piston.moving === 0) {
+        if (simTime < piston.nextFlipAt) return null
+        const target = piston.occupied === 'from' ? piston.to : piston.from
+        if (chunks.getVoxel(target.x, target.y, target.z) !== AIR) return null
+        if (isCollidable(chunks.palette, piston.block) &&
+            piston.characterPolicy === 'block' &&
+            voxelCellOverlapsPlayer(world, target)) return null
+        moveFrom = piston.occupied
+        moveT = 0
+    }
+
+    const from = moveFrom === 'from' ? piston.from : piston.to
+    const to = moveFrom === 'from' ? piston.to : piston.from
+    const oldPos = {
+        x: Position.x[piston.eid],
+        y: Position.y[piston.eid],
+        z: Position.z[piston.eid],
+    }
+    const nextT = Math.min(1, moveT + dt / piston.travelTime)
+    const nextPos = physicalPistonPosition(from, to, nextT)
+    return {
+        x: nextPos.x - oldPos.x,
+        y: nextPos.y - oldPos.y,
+        z: nextPos.z - oldPos.z,
+    }
+}
+
+function sameDelta(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): boolean {
+    const eps = 1e-6
+    return Math.abs(a.x - b.x) <= eps &&
+        Math.abs(a.y - b.y) <= eps &&
+        Math.abs(a.z - b.z) <= eps
 }
 
 interface PhysicalPistonContact {
@@ -318,6 +385,13 @@ function resolvePhysicalPistonContact(
         }
     }
 
+    // When the player is walking across a multi-block vertical platform,
+    // neighbouring blocks can have a tiny horizontal overlap with the feet.
+    // On ascent the neighbour's next AABB overlaps the lower part of the
+    // player, but this is still a top-surface graze, not a side collision.
+    // Ignore it so the actual support block can carry the player this tick.
+    if (playerFeetNearTopOfBlock(eid, oldBlock)) return null
+
     const sidePush = smallestHorizontalSeparation(playerBox, block)
     if (!sidePush) return null
     return {
@@ -349,9 +423,13 @@ function playerCenterInsideHorizontalFootprint(eid: number, block: AABB): boolea
         Position.z[eid] > block.minZ && Position.z[eid] < block.maxZ
 }
 
-function playerRidesPhysicalBlock(eid: number, block: AABB): boolean {
+function playerFeetNearTopOfBlock(eid: number, block: AABB): boolean {
     const dy = Position.y[eid] - block.maxY
-    if (dy < -0.02 || dy > 0.1) return false
+    return dy >= -0.02 && dy <= 0.1
+}
+
+function playerRidesPhysicalBlock(eid: number, block: AABB): boolean {
+    if (!playerFeetNearTopOfBlock(eid, block)) return false
     const playerBox: AABB = {
         minX: Position.x[eid] - BoxCollider.x[eid],
         maxX: Position.x[eid] + BoxCollider.x[eid],
