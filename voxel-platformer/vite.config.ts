@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         game: resolve(__dirname, 'index.html'),
         editor: resolve(__dirname, 'editor.html'),
+        fxDemo: resolve(__dirname, 'fx-demo.html'),
       },
     },
   },

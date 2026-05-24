@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voxel Platformer — FX Demo</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --panel-bg: rgba(14, 18, 26, 0.78);
+            --panel-border: rgba(120, 160, 200, 0.18);
+            --accent: #6ad0ff;
+            --row-bg: rgba(40, 56, 72, 0.4);
+            --row-bg-hover: rgba(60, 90, 120, 0.55);
+            --text-dim: rgba(217, 247, 255, 0.65);
+        }
+        html, body { margin: 0; padding: 0; overflow: hidden; background: #0a0d12; height: 100%; color: #d9f7ff;
+            font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 13px;
+            letter-spacing: 0.01em; }
+
+        #panel {
+            position: fixed; top: 16px; left: 16px; width: 260px; max-height: calc(100vh - 32px); overflow-y: auto;
+            padding: 14px 16px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 10px;
+            backdrop-filter: blur(6px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+        }
+        #panel h1 { margin: 0 0 4px 0; font-size: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+        #panel .hint { color: var(--text-dim); font-size: 11px; line-height: 1.4; margin-bottom: 12px; }
+        section { margin-top: 14px; }
+        section h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+            color: rgba(217, 247, 255, 0.8); margin: 0 0 6px 0; }
+        .row { display: flex; gap: 6px; flex-wrap: wrap; }
+        button {
+            background: var(--row-bg); border: 1px solid var(--panel-border); border-radius: 6px; color: inherit;
+            padding: 6px 10px; cursor: pointer; font-size: 12px; transition: background 0.12s ease;
+        }
+        button:hover { background: var(--row-bg-hover); }
+        button.active { background: rgba(106, 208, 255, 0.18); border-color: rgba(106, 208, 255, 0.5); }
+        button.danger { background: rgba(255, 90, 70, 0.18); border-color: rgba(255, 90, 70, 0.4); }
+        button.full { flex: 1; }
+        select, input[type=number], input[type=range] {
+            background: rgba(20, 28, 40, 0.7); border: 1px solid var(--panel-border); border-radius: 5px;
+            color: inherit; padding: 4px 6px; font-family: inherit; font-size: 12px;
+        }
+        .field { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+        .field label { flex: 0 0 auto; color: var(--text-dim); font-size: 11px; }
+        .field .value { flex: 0 0 36px; text-align: right; color: var(--text-dim); font-size: 11px; }
+        .field input[type=range] { flex: 1; }
+        #zones { list-style: none; margin: 0; padding: 0; }
+        #zones li {
+            display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px;
+            background: var(--row-bg); border-radius: 5px; margin-bottom: 4px; font-size: 11px;
+        }
+        #zones li .remove { font-size: 10px; padding: 2px 6px; }
+        #zones li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #zones li .meta { color: var(--text-dim); font-size: 10px; }
+        #zones li.selected { outline: 1px solid rgba(106, 208, 255, 0.65); background: rgba(106, 208, 255, 0.14); }
+        .compact-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .compact-grid input { width: 100%; box-sizing: border-box; }
+        .hidden { display: none; }
+        #jsonBox {
+            width: 100%; min-height: 86px; resize: vertical; box-sizing: border-box;
+            background: rgba(20, 28, 40, 0.7); border: 1px solid var(--panel-border); border-radius: 5px;
+            color: inherit; padding: 6px; font: 11px 'SF Mono', ui-monospace, monospace;
+        }
+        #stats {
+            position: fixed; top: 16px; right: 16px; padding: 8px 12px; background: var(--panel-bg);
+            border: 1px solid var(--panel-border); border-radius: 8px; font-family: 'SF Mono', monospace; font-size: 11px;
+            color: var(--text-dim); min-width: 130px;
+        }
+        #stats .row { justify-content: space-between; gap: 12px; }
+        #stats b { color: #d9f7ff; font-weight: 500; }
+        #help {
+            position: fixed; bottom: 16px; left: 16px; padding: 6px 10px; background: var(--panel-bg);
+            border: 1px solid var(--panel-border); border-radius: 6px; font-size: 11px; color: var(--text-dim);
+        }
+        #help kbd { background: rgba(40, 56, 72, 0.7); border-radius: 3px; padding: 1px 5px; font-family: 'SF Mono', monospace;
+            font-size: 10px; color: #d9f7ff; }
+    </style>
+</head>
+<body>
+    <div id="panel">
+        <h1>FX Demo</h1>
+        <p class="hint">Browse every weather preset and effect zone the FX package ships with. Click into the viewport, then drag to orbit and scroll to zoom.</p>
+
+        <section>
+            <h2>Ambient Weather</h2>
+            <div id="weatherPresets" class="row"></div>
+            <div class="field">
+                <label for="tod">Time</label>
+                <input id="tod" type="range" min="0" max="24" step="0.1" value="12" />
+                <span id="todValue" class="value">12.0</span>
+            </div>
+            <div class="field">
+                <label for="cloud">Clouds</label>
+                <input id="cloud" type="range" min="0" max="1" step="0.05" value="0" />
+                <span id="cloudValue" class="value">0.00</span>
+            </div>
+            <div class="field">
+                <label for="wind">Wind X</label>
+                <input id="wind" type="range" min="-8" max="8" step="0.2" value="0" />
+                <span id="windValue" class="value">0.0</span>
+            </div>
+        </section>
+
+        <section>
+            <h2>Spawn FX Zone</h2>
+            <div id="zonePresets" class="row"></div>
+            <div class="row" style="margin-top: 6px;">
+                <button id="boom" class="full">⚡ Trigger Explosion</button>
+            </div>
+        </section>
+
+        <section>
+            <h2>Active Zones</h2>
+            <ul id="zones"></ul>
+            <button id="clear" class="danger full" style="margin-top: 4px;">Clear all</button>
+        </section>
+
+        <section id="zoneEditor" class="hidden">
+            <h2>Selected Zone</h2>
+            <div class="field">
+                <label for="zoneName">Name</label>
+                <input id="zoneName" type="text" />
+            </div>
+            <div class="field">
+                <label for="zoneColor">Color</label>
+                <input id="zoneColor" type="color" />
+                <span id="zoneColorValue" class="value">#ffffff</span>
+            </div>
+            <div class="row">
+                <button id="modeTranslate" class="active full">Move</button>
+                <button id="modeScale" class="full">Scale</button>
+            </div>
+            <div class="field"><label>Position</label></div>
+            <div class="compact-grid">
+                <input id="posX" type="number" step="0.1" />
+                <input id="posY" type="number" step="0.1" />
+                <input id="posZ" type="number" step="0.1" />
+            </div>
+            <div class="field"><label>Size</label></div>
+            <div class="compact-grid">
+                <input id="sizeX" type="number" min="1" step="0.1" />
+                <input id="sizeY" type="number" min="1" step="0.1" />
+                <input id="sizeZ" type="number" min="1" step="0.1" />
+            </div>
+            <div class="row" style="margin-top: 6px;">
+                <button id="duplicateZone" class="full">Duplicate</button>
+                <button id="deleteZone" class="danger full">Delete</button>
+            </div>
+        </section>
+
+        <section>
+            <h2>Zone JSON</h2>
+            <textarea id="jsonBox" spellcheck="false"></textarea>
+            <div class="row" style="margin-top: 6px;">
+                <button id="exportZones" class="full">Export</button>
+                <button id="importZones" class="full">Import</button>
+            </div>
+        </section>
+    </div>
+
+    <div id="stats">
+        <div class="row"><span>FPS</span><b id="fps">—</b></div>
+        <div class="row"><span>Frame</span><b id="frame">—</b></div>
+        <div class="row"><span>Zones</span><b id="zoneCount">0</b></div>
+    </div>
+
+    <div id="help">
+        <kbd>Drag</kbd> orbit · <kbd>Click volume</kbd> select · <kbd>Scroll</kbd> zoom · <kbd>1-6</kbd> ambient · <kbd>Space</kbd> pause
+    </div>
+
+    <script type="module" src="/src/fx-demo.ts"></script>
+</body>
+</html>

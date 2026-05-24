@@ -25,6 +25,14 @@
     "src/editor/history.ts",
     "src/editor/palette-edit.ts",
     "src/editor/piston-direction.ts",
+    "src/engine/fx/core/sim-utils.ts",
+    "src/engine/fx/core/particle-field.ts",
+    "src/engine/fx/core/particle-ops.ts",
+    "src/engine/fx/core/types.ts",
+    "src/engine/fx/materials/material-tint.ts",
+    "src/engine/fx/presets/zone-presets.ts",
+    "src/engine/fx/presets/weather-presets.ts",
+    "src/engine/fx/lights/light-budget.ts",
     "tests/**/*.ts"
   ]
 }
