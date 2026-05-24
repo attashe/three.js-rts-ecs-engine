@@ -1,9 +1,11 @@
-import { DEFAULT_PALETTE } from '../../engine/voxel/palette'
+import { isCollidable, isPathSurface, isRaycastTarget, occludesFaces, type Palette, type PaletteEntry } from '../../engine/voxel/palette'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
 import { BRUSHES, type BrushKind } from '../brush'
 import { PISTON_DIRECTIONS, type PistonDirection } from '../piston-direction'
 import { removePistonAt } from '../systems/piston-place-system'
+import { appendMaterial, colorToHex, hexToColor, materialFingerprint } from '../palette-edit'
+import { refreshPhysicalPistonVisuals } from '../../game/mechanisms'
 import type { ZoneScriptAction } from '../../engine/ecs/zones'
 import type {
     EditorMode,
@@ -50,7 +52,8 @@ export function buildEditTab(ctx: EditTabContext): RefreshableElement {
     const cameraPlane = buildCameraPlaneSection(state)
     root.appendChild(cameraPlane.element)
 
-    root.appendChild(buildPaletteSection(state))
+    const palette = buildPaletteSection(ctx)
+    root.appendChild(palette.element)
     const modeRow = buildModeSection(state, () => switchMode())
     root.appendChild(modeRow)
 
@@ -82,6 +85,7 @@ export function buildEditTab(ctx: EditTabContext): RefreshableElement {
         element: root,
         refresh: () => {
             cameraPlane.refresh()
+            palette.refresh()
             currentBuilder?.refresh()
         },
     }
@@ -196,7 +200,7 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
         case 'place-spawn':
             return buildSpawnPanel()
         case 'place-zone':
-            return buildZonePanel(state)
+            return buildZonePanel(ctx)
     }
 }
 
@@ -204,28 +208,209 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
 // Palette + mode toolbar
 // ────────────────────────────────────────────────────────────────────────
 
-function buildPaletteSection(state: EditorState): HTMLElement {
+function buildPaletteSection(ctx: EditTabContext): RefreshableElement {
+    const { chunks, editorState: state } = ctx
     const section = sectionEl('Palette')
     const row = document.createElement('div')
     row.className = 'vpe-row tight'
     section.appendChild(row)
-    const swatches: HTMLElement[] = []
-    for (let i = 1; i < DEFAULT_PALETTE.entries.length; i++) {
-        const entry = DEFAULT_PALETTE.entries[i]!
-        const swatch = document.createElement('div')
-        swatch.className = 'vpe-swatch'
-        swatch.title = `${entry.name} (${i})`
-        swatch.style.background = colorToCss(entry)
-        swatch.onclick = () => {
-            state.activeBlock = i
-            for (const s of swatches) s.classList.remove('active')
-            swatch.classList.add('active')
+    const editor = document.createElement('div')
+    editor.style.display = 'flex'
+    editor.style.flexDirection = 'column'
+    editor.style.gap = '4px'
+    section.appendChild(editor)
+
+    const swatches: { block: number; el: HTMLElement }[] = []
+    let swatchFingerprint = ''
+    let editorIndex = -1
+    let editorFingerprint = ''
+
+    function rebuildSwatches(): void {
+        swatchFingerprint = paletteFingerprint()
+        row.innerHTML = ''
+        swatches.length = 0
+        for (let i = 1; i < chunks.palette.entries.length; i++) {
+            const entry = chunks.palette.entries[i]!
+            const swatch = document.createElement('div')
+            swatch.className = 'vpe-swatch'
+            applySwatchMaterial(swatch, i, entry)
+            swatch.onclick = () => {
+                state.activeBlock = i
+                sync()
+            }
+            swatches.push({ block: i, el: swatch })
+            row.appendChild(swatch)
         }
-        if (i === state.activeBlock) swatch.classList.add('active')
-        swatches.push(swatch)
-        row.appendChild(swatch)
+        sync()
     }
-    return section
+
+    function applySwatchMaterial(swatch: HTMLElement, block: number, entry: PaletteEntry): void {
+        const keyHint = block <= 9 ? ` · key ${block}` : ''
+        swatch.title = `${entry.name} (${block})${keyHint}`
+        swatch.style.background = colorToCss(entry)
+    }
+
+    function sync(): void {
+        if (state.activeBlock <= 0 || !chunks.palette.entries[state.activeBlock]) {
+            state.activeBlock = Math.min(1, chunks.palette.entries.length - 1)
+        }
+        for (const { block, el } of swatches) {
+            el.classList.toggle('active', block === state.activeBlock)
+        }
+        syncEditor()
+    }
+
+    function syncEditor(): void {
+        const entry = chunks.palette.entries[state.activeBlock]
+        if (!entry) {
+            editor.textContent = 'No material selected.'
+            editorIndex = state.activeBlock
+            editorFingerprint = ''
+            return
+        }
+        const fp = materialFingerprint(entry)
+        if (editorIndex === state.activeBlock && editorFingerprint === fp) return
+        if (editor.contains(document.activeElement)) return
+        editorIndex = state.activeBlock
+        editorFingerprint = fp
+        renderMaterialEditor(entry)
+    }
+
+    function renderMaterialEditor(entry: PaletteEntry): void {
+        editor.innerHTML = ''
+        const title = document.createElement('div')
+        title.className = 'vpe-hint'
+        title.style.color = 'rgba(217, 247, 255, 0.75)'
+        title.textContent = `Material ${state.activeBlock}`
+        editor.appendChild(title)
+
+        editor.appendChild(textField('Name:', entry.name, 'material name', (value) => {
+            entry.name = value.trim() || `material ${state.activeBlock}`
+            materialChanged()
+        }))
+
+        const colorRow = document.createElement('div')
+        colorRow.className = 'vpe-field'
+        const colorLabel = document.createElement('span')
+        colorLabel.className = 'vpe-field-label'
+        colorLabel.textContent = 'Color:'
+        const colorInput = document.createElement('input')
+        colorInput.className = 'vpe-input'
+        colorInput.type = 'color'
+        colorInput.value = colorToHex(entry.color)
+        colorInput.oninput = () => {
+            entry.color = hexToColor(colorInput.value)
+            materialChanged()
+        }
+        colorRow.append(colorLabel, colorInput)
+        editor.appendChild(colorRow)
+
+        editor.appendChild(numberField('Opacity:', entry.opacity ?? 1, 0, 1, 0.05, (value) => {
+            const opacity = Math.max(0, Math.min(1, value))
+            if (opacity >= 1) delete entry.opacity
+            else {
+                entry.opacity = opacity
+                entry.occludesFaces = false
+            }
+            materialChanged()
+        }))
+
+        const toggles = document.createElement('div')
+        toggles.className = 'vpe-row'
+        toggles.append(
+            checkboxField('Solid', entry.solid, (checked) => {
+                entry.solid = checked
+                entry.collidable = checked
+                entry.occludesFaces = checked
+                entry.raycastTarget = checked
+                entry.pathSurface = checked
+                materialChanged(true)
+            }),
+            checkboxField('Collide', isCollidable(chunks.palette, state.activeBlock), (checked) => {
+                entry.collidable = checked
+                materialChanged()
+            }),
+            checkboxField('Occlude', occludesFaces(chunks.palette, state.activeBlock), (checked) => {
+                entry.occludesFaces = checked
+                materialChanged()
+            }),
+            checkboxField('Raycast', isRaycastTarget(chunks.palette, state.activeBlock), (checked) => {
+                entry.raycastTarget = checked
+                materialChanged()
+            }),
+            checkboxField('Walk', isPathSurface(chunks.palette, state.activeBlock), (checked) => {
+                entry.pathSurface = checked
+                materialChanged()
+            }),
+        )
+        editor.appendChild(toggles)
+
+        const movementRow = document.createElement('div')
+        movementRow.className = 'vpe-row'
+        movementRow.append(
+            numberField('Speed:', entry.movement?.speedMultiplier ?? 1, 0.05, 3, 0.05, (value) => {
+                const speed = Math.max(0.05, Math.min(3, value))
+                const disableJump = entry.movement?.disableJump ?? false
+                entry.movement = speed === 1 && !disableJump ? undefined : { speedMultiplier: speed, disableJump }
+                materialChanged()
+            }),
+            checkboxField('No jump', entry.movement?.disableJump ?? false, (checked) => {
+                const speed = entry.movement?.speedMultiplier ?? 1
+                entry.movement = speed === 1 && !checked ? undefined : { speedMultiplier: speed, disableJump: checked }
+                materialChanged()
+            }),
+        )
+        editor.appendChild(movementRow)
+
+        const addBtn = document.createElement('button')
+        addBtn.className = 'vpe-button'
+        addBtn.textContent = '+ Material'
+        addBtn.title = 'Create a new material from the selected material'
+        addBtn.onclick = () => {
+            const index = appendMaterial(chunks.palette, entry)
+            if (index < 0) return
+            state.activeBlock = index
+            chunks.markAllDirty()
+            editorIndex = -1
+            rebuildSwatches()
+        }
+        editor.appendChild(addBtn)
+    }
+
+    function materialChanged(rerenderEditor = false): void {
+        chunks.markAllDirty()
+        refreshPhysicalPistonVisuals(ctx.world, chunks, state.activeBlock)
+        const entry = chunks.palette.entries[state.activeBlock]
+        if (entry) {
+            for (const { block, el } of swatches) {
+                if (block === state.activeBlock) applySwatchMaterial(el, block, entry)
+            }
+        }
+        swatchFingerprint = paletteFingerprint()
+        editorFingerprint = entry ? materialFingerprint(entry) : ''
+        if (rerenderEditor && entry) {
+            editorIndex = state.activeBlock
+            renderMaterialEditor(entry)
+        } else {
+            sync()
+        }
+    }
+
+    function paletteFingerprint(): string {
+        return chunks.palette.entries.map((entry) => materialFingerprint(entry)).join('|')
+    }
+
+    function refresh(): void {
+        const fp = paletteFingerprint()
+        if (fp !== swatchFingerprint && !editor.contains(document.activeElement)) {
+            rebuildSwatches()
+            return
+        }
+        sync()
+    }
+
+    rebuildSwatches()
+    return { element: section, refresh }
 }
 
 function buildModeSection(state: EditorState, onChange: () => void): HTMLElement {
@@ -488,7 +673,8 @@ function buildPistonPanel(ctx: EditTabContext): RefreshableElement {
     return { element: root, refresh }
 }
 
-function buildZonePanel(state: EditorState): RefreshableElement {
+function buildZonePanel(ctx: EditTabContext): RefreshableElement {
+    const { chunks, editorState: state } = ctx
     const root = document.createElement('div')
     root.style.display = 'flex'
     root.style.flexDirection = 'column'
@@ -651,7 +837,7 @@ function buildZonePanel(state: EditorState): RefreshableElement {
                     const row = document.createElement('div')
                     row.className = 'vpe-list-item'
                     const span = document.createElement('span')
-                    span.textContent = formatZoneScriptAction(action)
+                    span.textContent = formatZoneScriptAction(action, chunks.palette)
                     const removeBtn = document.createElement('button')
                     removeBtn.textContent = 'remove'
                     removeBtn.onclick = () => {
@@ -760,7 +946,26 @@ function textField(
     return row
 }
 
-function formatZoneScriptAction(action: ZoneScriptAction): string {
+function checkboxField(
+    label: string,
+    initial: boolean,
+    onChange: (checked: boolean) => void,
+): HTMLElement {
+    const field = document.createElement('label')
+    field.className = 'vpe-field'
+    field.style.cursor = 'pointer'
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = initial
+    input.onchange = () => { onChange(input.checked) }
+    const span = document.createElement('span')
+    span.className = 'vpe-field-label'
+    span.textContent = label
+    field.append(input, span)
+    return field
+}
+
+function formatZoneScriptAction(action: ZoneScriptAction, palette: Palette): string {
     if (action.type === 'message') return `message "${trimForList(action.message)}"`
     if (action.type === 'kill-player') {
         return action.message ? `kill + "${trimForList(action.message)}"` : 'kill player'
@@ -768,11 +973,11 @@ function formatZoneScriptAction(action: ZoneScriptAction): string {
     if (action.type === 'set-block') {
         const block = action.block === 0
             ? 'air'
-            : (DEFAULT_PALETTE.entries[action.block]?.name ?? `block ${action.block}`)
+            : (palette.entries[action.block]?.name ?? `block ${action.block}`)
         return `${action.block === 0 ? 'erase' : 'spawn'} ${block} @ ${formatCoord(action.position)}`
     }
     const block = action.block === 0
         ? 'air'
-        : (DEFAULT_PALETTE.entries[action.block]?.name ?? `block ${action.block}`)
+        : (palette.entries[action.block]?.name ?? `block ${action.block}`)
     return `fill ${block} ${formatCoord(action.min)}..${formatCoord(action.max)}`
 }

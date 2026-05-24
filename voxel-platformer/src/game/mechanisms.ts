@@ -1,7 +1,7 @@
 import { addComponent, addComponents } from 'bitecs'
 import { Group, Mesh } from 'three'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
-import { paletteEntry } from '../engine/voxel/palette'
+import { paletteEntry, voxelOpacity } from '../engine/voxel/palette'
 import { BoxCollider, Position, Renderable, Rotation } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
 import type { GameWorld, PistonMechanism, VoxelCoord } from '../engine/ecs/world'
@@ -97,27 +97,44 @@ function spawnPhysicalPistonBlock(
 }
 
 function createPistonBlockVisual(chunks: ChunkManager, block: number): Group {
+    const root = new Group()
+    root.name = 'PhysicalPistonBlock'
+    const mesh = new Mesh(sharedBoxGeometry(1, 1, 1))
+    mesh.position.y = 0.5
+    applyPistonBlockMaterial(mesh, chunks, block)
+    root.add(mesh)
+    return root
+}
+
+export function refreshPhysicalPistonVisuals(world: GameWorld, chunks: ChunkManager, block?: number): void {
+    for (const piston of world.pistons) {
+        if (piston.motion !== 'physical' || piston.eid < 0) continue
+        if (block !== undefined && piston.block !== block) continue
+        const obj = world.object3DByEid.get(piston.eid)
+        if (!obj) continue
+        obj.traverse((child) => {
+            if (child instanceof Mesh) applyPistonBlockMaterial(child, chunks, piston.block)
+        })
+    }
+}
+
+function applyPistonBlockMaterial(mesh: Mesh, chunks: ChunkManager, block: number): void {
     const entry = paletteEntry(chunks.palette, block)
     const [r, g, b] = entry.color
     const color = ((Math.round(r * 255) & 0xff) << 16) |
         ((Math.round(g * 255) & 0xff) << 8) |
         (Math.round(b * 255) & 0xff)
-    const opacity = entry.opacity ?? 1
-    const root = new Group()
-    root.name = 'PhysicalPistonBlock'
+    const opacity = voxelOpacity(chunks.palette, block)
     // Pull the palette's opacity through to the mesh material so a cloud-
     // block piston looks like a cloud (semi-transparent), not a solid
     // pastel cube. `sharedMaterial` keys by opacity, so opaque pistons
     // still share their material with everything else of the same colour.
-    const mesh = new Mesh(sharedBoxGeometry(1, 1, 1), sharedMaterial(color, 0.85, 0, opacity))
+    mesh.material = sharedMaterial(color, 0.85, 0, opacity)
     mesh.name = `${entry.name}Block`
-    mesh.position.y = 0.5
     // Shadow casting on a fully-transparent block looks wrong; skip it for
     // anything below ~0.7 alpha so cloud / water-block pistons don't paint
     // hard-edged shadow squares on the terrain.
     const castShadow = opacity >= 0.7
     mesh.castShadow = castShadow
     mesh.receiveShadow = castShadow
-    root.add(mesh)
-    return root
 }

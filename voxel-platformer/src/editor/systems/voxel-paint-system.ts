@@ -3,8 +3,8 @@ import { AIR } from '../../engine/voxel/palette'
 import type { Input } from '../../engine/input/input'
 import type { System } from '../../engine/ecs/systems/system'
 import { FixedOrder } from '../../engine/ecs/systems/orders'
-import type { GameWorld } from '../../engine/ecs/world'
-import { brushFootprint } from '../brush'
+import type { GameWorld, VoxelCoord } from '../../engine/ecs/world'
+import { brushDragFootprint, brushFootprint, isDragBrush } from '../brush'
 import type { EditorState } from '../editor-state'
 import type { CommandStack } from '../history'
 import { removePistonsTouchingCells } from './piston-place-system'
@@ -52,11 +52,50 @@ export function createVoxelPaintSystem(
     // the right undo target) and the *latest* `after` value.
     let strokeActive = false
     let strokeErase = false
+    let strokeDrag = false
+    let strokeBrush = editorState.brush
+    let strokeValue = AIR
+    let dragAnchor: VoxelCoord | null = null
+    let dragLast: VoxelCoord | null = null
     const strokeCells = new Map<string, StrokeCell>()
+
+    function clearStroke(): void {
+        strokeActive = false
+        strokeDrag = false
+        dragAnchor = null
+        dragLast = null
+        editorState.brushDragAnchor = null
+    }
+
+    function recordFootprint(
+        world: GameWorld,
+        footprint: readonly VoxelCoord[],
+        value: number,
+        erase: boolean,
+    ): void {
+        for (const cell of footprint) {
+            const key = `${cell.x},${cell.y},${cell.z}`
+            const existing = strokeCells.get(key)
+            if (existing) {
+                existing.after = value
+            } else {
+                const before = chunks.getVoxel(cell.x, cell.y, cell.z)
+                strokeCells.set(key, { x: cell.x, y: cell.y, z: cell.z, before, after: value })
+            }
+        }
+
+        if (erase) removePistonsTouchingCells(world, chunks, editorState, footprint)
+        chunks.applyBulk(footprint.map((cell) => ({ x: cell.x, y: cell.y, z: cell.z, value })))
+    }
+
+    function applyDragStroke(world: GameWorld): void {
+        if (!strokeDrag || !dragAnchor || !dragLast) return
+        recordFootprint(world, brushDragFootprint(strokeBrush, dragAnchor, dragLast), strokeValue, strokeErase)
+    }
 
     function endStroke(): void {
         if (!strokeActive) return
-        strokeActive = false
+        clearStroke()
         if (!history || strokeCells.size === 0) {
             strokeCells.clear()
             return
@@ -86,36 +125,48 @@ export function createVoxelPaintSystem(
             // If the user releases / switches modes mid-stroke, finalise
             // whatever was accumulated so far.
             if (strokeActive && (!anyDown || !inPaintLike)) {
+                if (strokeDrag) applyDragStroke(world as GameWorld)
                 endStroke()
             }
 
             if (!inPaintLike) return
-            if (!editorState.cursor) return
+            if (!editorState.cursor) {
+                if (strokeActive) {
+                    if (strokeDrag) applyDragStroke(world as GameWorld)
+                    endStroke()
+                }
+                return
+            }
             if (!anyDown) return
 
             const erase = editorState.mode === 'erase' ? (lmb || rmb) : rmb
             const value = erase ? AIR : editorState.activeBlock
-            const footprint = brushFootprint(editorState.brush, editorState.cursor)
 
             if (!strokeActive) {
                 strokeActive = true
                 strokeErase = erase
+                strokeDrag = isDragBrush(editorState.brush)
+                strokeBrush = editorState.brush
+                strokeValue = value
+                if (strokeDrag) {
+                    dragAnchor = { ...editorState.cursor }
+                    dragLast = { ...editorState.cursor }
+                    editorState.brushDragAnchor = { ...editorState.cursor }
+                }
                 strokeCells.clear()
             }
 
-            for (const cell of footprint) {
-                const key = `${cell.x},${cell.y},${cell.z}`
-                const existing = strokeCells.get(key)
-                if (existing) {
-                    existing.after = value
-                } else {
-                    const before = chunks.getVoxel(cell.x, cell.y, cell.z)
-                    strokeCells.set(key, { x: cell.x, y: cell.y, z: cell.z, before, after: value })
-                }
+            if (strokeDrag) {
+                dragLast = { ...editorState.cursor }
+                return
             }
 
-            if (erase) removePistonsTouchingCells(world as GameWorld, chunks, editorState, footprint)
-            chunks.applyBulk(footprint.map((cell) => ({ x: cell.x, y: cell.y, z: cell.z, value })))
+            recordFootprint(
+                world as GameWorld,
+                brushFootprint(editorState.brush, editorState.cursor),
+                value,
+                erase,
+            )
         },
     }
 }

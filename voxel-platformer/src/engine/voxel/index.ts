@@ -25,6 +25,7 @@ export {
     paletteEntry,
     voxelOpacity,
     blockMovementTraits,
+    clonePalette,
 } from './palette'
 export type { BlockMovementTraits, Palette, PaletteEntry } from './palette'
 

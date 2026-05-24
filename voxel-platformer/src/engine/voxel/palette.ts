@@ -132,7 +132,8 @@ export function isPathSurface(palette: Palette, index: number): boolean {
 
 export function voxelOpacity(palette: Palette, index: number): number {
     if (index === AIR) return 0
-    return paletteEntry(palette, index).opacity ?? 1
+    const opacity = paletteEntry(palette, index).opacity ?? 1
+    return Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1
 }
 
 export function isRenderableVoxel(palette: Palette, index: number): boolean {
@@ -144,5 +145,15 @@ export function blockMovementTraits(palette: Palette, index: number): Required<B
     return {
         speedMultiplier: traits?.speedMultiplier ?? 1,
         disableJump: traits?.disableJump ?? false,
+    }
+}
+
+export function clonePalette(palette: Palette): Palette {
+    return {
+        entries: palette.entries.map((entry) => ({
+            ...entry,
+            color: [...entry.color] as [number, number, number],
+            movement: entry.movement ? { ...entry.movement } : undefined,
+        })),
     }
 }

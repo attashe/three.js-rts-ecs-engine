@@ -10,14 +10,13 @@ import {
     type Scene,
 } from 'three'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
-import { DEFAULT_PALETTE } from '../../engine/voxel/palette'
 import { voxelRaycast } from '../../engine/voxel/voxel-raycast'
 import { makeRay, screenToWorldRay } from '../../engine/input/pointer'
 import type { Input } from '../../engine/input/input'
 import type { IsometricCamera } from '../../engine/render/isometric-camera'
 import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
-import { brushFootprint } from '../brush'
+import { brushDragFootprint, brushFootprint, isDragBrush } from '../brush'
 import type { EditorState } from '../editor-state'
 import { addOffset, pistonOffset } from '../piston-direction'
 
@@ -114,7 +113,7 @@ export function createVoxelCursorSystem(
             // Ghost block sits at the anchor cell, tinted with whatever the
             // active block will paint (red for erase, sky for spawn, gold
             // for piston `to` cell).
-            const [gr, gg, gb] = ghostColour(editorState)
+            const [gr, gg, gb] = ghostColour(chunks, editorState)
             ghostMaterial.color.setRGB(gr, gg, gb)
             const ghostCell = editorState.mode === 'place-piston'
                 ? addOffset(cursorCell, pistonOffset(editorState.pistonDirection, editorState.pistonDistance))
@@ -185,6 +184,13 @@ function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; 
         }
         return cells
     }
+    if (
+        (state.mode === 'paint' || state.mode === 'erase') &&
+        state.brushDragAnchor &&
+        isDragBrush(state.brush)
+    ) {
+        return brushDragFootprint(state.brush, state.brushDragAnchor, cursor)
+    }
     return brushFootprint(state.brush, cursor)
 }
 
@@ -213,13 +219,13 @@ function outlineColour(mode: EditorState['mode']): number {
     }
 }
 
-function ghostColour(state: EditorState): [number, number, number] {
+function ghostColour(chunks: ChunkManager, state: EditorState): [number, number, number] {
     if (state.mode === 'erase') return [1, 0.4, 0.32]
     if (state.mode === 'spawn-pickup') return [0.56, 0.71, 1]
     if (state.mode === 'place-piston') return [1, 0.82, 0.4]
     if (state.mode === 'place-spawn') return [0.34, 0.88, 1]
     if (state.mode === 'place-zone') return [1, 0.4, 0.8]
-    const entry = DEFAULT_PALETTE.entries[state.activeBlock]
+    const entry = chunks.palette.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]
 }

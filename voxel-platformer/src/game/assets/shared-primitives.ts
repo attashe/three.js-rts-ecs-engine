@@ -27,7 +27,7 @@ export function sharedMaterial(color: number, roughness = 0.7, metalness = 0, op
         // physical piston block matches the chunk renderer's appearance
         // for the same voxel kind.
         const transparent = opacity < 1
-        existing = new MeshStandardMaterial({ color, roughness, metalness, opacity, transparent })
+        existing = new MeshStandardMaterial({ color, roughness, metalness, opacity, transparent, depthWrite: !transparent })
         existing.userData[SHARED_ASSET_RESOURCE] = true
         materialByKey.set(key, existing)
     }

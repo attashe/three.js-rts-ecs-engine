@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { BRUSHES, brushFootprint, getBrushDef, type BrushKind } from '../src/editor/brush'
+import { BRUSHES, brushDragFootprint, brushFootprint, getBrushDef, isDragBrush, type BrushKind } from '../src/editor/brush'
 
 const ORIGIN = { x: 0, y: 0, z: 0 }
 
@@ -54,4 +54,17 @@ test('brushFootprint: centre offset propagates correctly to every cell', () => {
         assert.ok(c.y >= 19 && c.y <= 21)
         assert.ok(c.z >= 29 && c.z <= 31)
     }
+})
+
+test('brushDragFootprint: box fills inclusive bounds in either drag direction', () => {
+    const cells = brushDragFootprint('box', { x: 3, y: 2, z: 1 }, { x: 1, y: 2, z: 3 })
+    assert.equal(cells.length, 9)
+    assert.ok(cells.some((c) => c.x === 1 && c.y === 2 && c.z === 1), 'min corner present')
+    assert.ok(cells.some((c) => c.x === 3 && c.y === 2 && c.z === 3), 'max corner present')
+    assert.ok(cells.every((c) => c.y === 2), 'flat drag at same Y stays rectangular')
+})
+
+test('isDragBrush only marks box brush as drag-defined', () => {
+    assert.equal(isDragBrush('box'), true)
+    assert.equal(isDragBrush('single'), false)
 })

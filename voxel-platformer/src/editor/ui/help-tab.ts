@@ -28,6 +28,14 @@ const HELP_GROUPS: readonly HelpGroup[] = [
         lines: [
             'LMB — primary action for the current mode',
             'RMB — secondary (erase / undo last placement)',
+            'Box drag brush — press, drag, release to fill',
+        ],
+    },
+    {
+        title: 'Palette',
+        lines: [
+            '1-9 — select palette block',
+            'B — pick block under cursor',
         ],
     },
     {

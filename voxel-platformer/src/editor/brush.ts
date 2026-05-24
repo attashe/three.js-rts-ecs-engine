@@ -1,6 +1,6 @@
 import type { VoxelCoord } from '../engine/ecs/world'
 
-export type BrushKind = 'single' | 'cube3' | 'cube5' | 'disk3' | 'disk5'
+export type BrushKind = 'single' | 'cube3' | 'cube5' | 'disk3' | 'disk5' | 'box'
 
 export interface BrushDef {
     readonly kind: BrushKind
@@ -14,6 +14,7 @@ export const BRUSHES: readonly BrushDef[] = [
     { kind: 'cube5',  label: '5×5×5 cube', hint: '5×5×5 cube centred on the cursor' },
     { kind: 'disk3',  label: 'Flat 3×3',   hint: '3×3 horizontal disk at the cursor Y' },
     { kind: 'disk5',  label: 'Flat 5×5',   hint: '5×5 horizontal disk at the cursor Y' },
+    { kind: 'box',    label: 'Box drag',   hint: 'Drag to fill the box between press and release' },
 ]
 
 const BRUSH_BY_KIND = new Map(BRUSHES.map((def) => [def.kind, def]))
@@ -39,6 +40,18 @@ export function brushFootprint(kind: BrushKind, center: VoxelCoord): VoxelCoord[
         case 'cube5':  return cubeFootprint(center, 2)
         case 'disk3':  return diskFootprint(center, 1)
         case 'disk5':  return diskFootprint(center, 2)
+        case 'box':    return [{ ...center }]
+    }
+}
+
+export function isDragBrush(kind: BrushKind): boolean {
+    return kind === 'box'
+}
+
+export function brushDragFootprint(kind: BrushKind, from: VoxelCoord, to: VoxelCoord): VoxelCoord[] {
+    switch (kind) {
+        case 'box': return boxFootprint(from, to)
+        default: return brushFootprint(kind, to)
     }
 }
 
@@ -59,6 +72,24 @@ function diskFootprint(center: VoxelCoord, radius: number): VoxelCoord[] {
     for (let dz = -radius; dz <= radius; dz++) {
         for (let dx = -radius; dx <= radius; dx++) {
             out.push({ x: center.x + dx, y: center.y, z: center.z + dz })
+        }
+    }
+    return out
+}
+
+function boxFootprint(from: VoxelCoord, to: VoxelCoord): VoxelCoord[] {
+    const minX = Math.min(from.x, to.x)
+    const maxX = Math.max(from.x, to.x)
+    const minY = Math.min(from.y, to.y)
+    const maxY = Math.max(from.y, to.y)
+    const minZ = Math.min(from.z, to.z)
+    const maxZ = Math.max(from.z, to.z)
+    const out: VoxelCoord[] = []
+    for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+            for (let x = minX; x <= maxX; x++) {
+                out.push({ x, y, z })
+            }
         }
     }
     return out

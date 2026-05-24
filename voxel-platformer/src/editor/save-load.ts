@@ -1,5 +1,5 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
-import { BLOCK } from '../engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { deserializeLevel, serializeLevel } from '../engine/voxel/level-serializer'
 import { copyZoneScriptAction, type EditorState, type EditorLevelMeta } from './editor-state'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
@@ -35,6 +35,7 @@ export function newLevel(
 
     clearWorldAndEditorState(world, chunks, editorState)
     clearAllChunks(chunks)
+    chunks.replacePalette(DEFAULT_PALETTE)
 
     for (let x = 0; x < w; x++) {
         for (let z = 0; z < d; z++) {
@@ -45,6 +46,7 @@ export function newLevel(
 
     editorState.spawn = { x: w / 2, y: padY + 1, z: d / 2 }
     editorState.workingPlaneY = padY
+    editorState.activeBlock = BLOCK.grass
 }
 
 function clearWorldAndEditorState(
@@ -140,6 +142,7 @@ export function loadLevelFromBuffer(
 
     clearWorldAndEditorState(world, chunks, editorState)
     clearAllChunks(chunks)
+    chunks.replacePalette(loaded.chunks.palette)
 
     // Copy chunk data from the loaded snapshot. The chunk renderer's
     // drainDirty loop catches up on the next render frame.

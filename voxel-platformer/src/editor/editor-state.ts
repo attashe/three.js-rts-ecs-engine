@@ -1,4 +1,4 @@
-import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel'
+import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import type { VoxelCoord } from '../engine/ecs/world'
 import type { ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
@@ -57,6 +57,8 @@ export interface EditorState {
     activeBlock: number
     /** Currently-selected brush. */
     brush: BrushKind
+    /** Drag-brush anchor cell while a drag brush stroke is active. */
+    brushDragAnchor: VoxelCoord | null
     /** What clicks do. */
     mode: EditorMode
     /** Last cell the mouse raycast hit (in voxel coords). null when no hit. */
@@ -125,6 +127,7 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
     return {
         activeBlock: grass,
         brush: 'single',
+        brushDragAnchor: null,
         mode: 'paint',
         cursor: null,
         spawn,

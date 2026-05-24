@@ -13,6 +13,7 @@ import { createVoxelCursorSystem } from './editor/systems/voxel-cursor-system'
 import { createVoxelPaintSystem } from './editor/systems/voxel-paint-system'
 import { createHistorySystem } from './editor/systems/history-system'
 import { createCommandStack } from './editor/history'
+import { createPaletteHotkeySystem } from './editor/systems/palette-hotkey-system'
 import { createPickupSpawnSystem } from './editor/systems/pickup-spawn-system'
 import { createPistonPlaceSystem } from './editor/systems/piston-place-system'
 import { createSpawnPlaceSystem } from './editor/systems/spawn-place-system'
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
 
     engine
         .addSystem(createHistorySystem(engine.input, history), 'history')
+        .addSystem(createPaletteHotkeySystem(chunks, engine.input, renderer.iso, editorState), 'paletteHotkeys')
         .addSystem(createVoxelPaintSystem(chunks, engine.input, editorState, history), 'voxelPaint')
         .addSystem(createPickupSpawnSystem(engine.input, editorState), 'pickupSpawn')
         .addSystem(createPistonPlaceSystem(chunks, engine.input, editorState), 'pistonPlace')

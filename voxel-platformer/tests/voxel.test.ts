@@ -6,7 +6,7 @@ import { deserializeLevel, serializeLevel } from '../src/engine/voxel/level-seri
 import { voxelAABBOverlap, sweepAxis } from '../src/engine/voxel/voxel-collide'
 import { greedyMesh } from '../src/engine/voxel/greedy-mesher'
 import { movementEnvironmentForAABB } from '../src/engine/voxel/movement-effects'
-import { BLOCK, DEFAULT_PALETTE, isCollidable, voxelOpacity } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, voxelOpacity } from '../src/engine/voxel/palette'
 import { voxelRaycast } from '../src/engine/voxel/voxel-raycast'
 import { Vector3 } from 'three'
 
@@ -37,6 +37,25 @@ test('bulk edits summarize changed voxels and dirty chunk keys', () => {
     assert.equal(result.changedVoxels, 1)
     const dirty = chunks.drainDirty().map((chunk) => chunkKey(chunk.cx, chunk.cy, chunk.cz)).sort()
     assert.deepEqual(dirty, ['0,0,0', '1,0,0'])
+})
+
+test('ChunkManager owns a mutable palette copy and can replace it', () => {
+    const initial = clonePalette(DEFAULT_PALETTE)
+    initial.entries[BLOCK.grass]!.name = 'editor grass'
+    const chunks = new ChunkManager(initial)
+    initial.entries[BLOCK.grass]!.name = 'mutated outside'
+
+    assert.equal(chunks.palette.entries[BLOCK.grass]?.name, 'editor grass')
+
+    chunks.setVoxel(0, 0, 0, BLOCK.grass)
+    chunks.drainDirty()
+    const replacement = clonePalette(DEFAULT_PALETTE)
+    replacement.entries[BLOCK.grass]!.color = [1, 0, 0]
+    chunks.replacePalette(replacement)
+    replacement.entries[BLOCK.grass]!.color = [0, 0, 0]
+
+    assert.deepEqual(chunks.palette.entries[BLOCK.grass]?.color, [1, 0, 0])
+    assert.equal(chunks.drainDirty().length, 1, 'replacing the palette remeshes existing chunks')
 })
 
 test('voxelAABBOverlap treats max boundary as exclusive', () => {
@@ -156,8 +175,19 @@ test('sweepAxis clamps movement before a blocking voxel', () => {
 
 test('level serialization round-trips palette, metadata, and chunks', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const customBlock = chunks.palette.entries.length
+    chunks.palette.entries.push({
+        name: 'violet glass',
+        color: [0.55, 0.25, 0.95],
+        solid: false,
+        collidable: false,
+        occludesFaces: false,
+        raycastTarget: true,
+        opacity: 0.35,
+    })
     chunks.setVoxel(2, 3, 4, BLOCK.grass)
     chunks.setVoxel(-1, 0, 0, BLOCK.brick)
+    chunks.setVoxel(6, 7, 8, customBlock)
 
     const metadata = { spawn: { x: 2.5, y: 4, z: 4.5 }, name: 'test-level' }
     const buffer = serializeLevel(chunks, metadata)
@@ -165,7 +195,10 @@ test('level serialization round-trips palette, metadata, and chunks', () => {
 
     assert.deepEqual(loaded.metadata, metadata)
     assert.equal(loaded.chunks.palette.entries[BLOCK.brick]?.name, 'brick')
+    assert.equal(loaded.chunks.palette.entries[customBlock]?.name, 'violet glass')
+    assert.deepEqual(loaded.chunks.palette.entries[customBlock]?.color, [0.55, 0.25, 0.95])
     assert.equal(loaded.chunks.getVoxel(2, 3, 4), BLOCK.grass)
     assert.equal(loaded.chunks.getVoxel(-1, 0, 0), BLOCK.brick)
+    assert.equal(loaded.chunks.getVoxel(6, 7, 8), customBlock)
     assert.equal(loaded.chunks.chunkCount(), chunks.chunkCount())
 })

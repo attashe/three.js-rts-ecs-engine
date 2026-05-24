@@ -165,6 +165,7 @@ function loadLevel(chunks: ChunkManager): LevelMeta {
         if (buffer) {
             try {
                 const loaded = deserializeLevel<EditorLevelMeta>(buffer)
+                chunks.replacePalette(loaded.chunks.palette)
                 copyChunks(loaded.chunks, chunks)
                 const size = Math.max(24, Math.ceil(Math.max(
                     loaded.metadata.spawn.x,
