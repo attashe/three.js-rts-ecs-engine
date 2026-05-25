@@ -4,6 +4,7 @@ import type { Zone } from '../engine/ecs/zones'
 import type { PistonMechanismConfig } from './mechanisms'
 import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
+import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
 
 export interface CoinPileSpawn {
     position: { x: number; y: number; z: number }
@@ -27,6 +28,12 @@ export interface LevelMeta {
     soundZones: SoundZoneConfig[]
     /** Level-wide ambient bed (stereo, non-spatial). Optional. */
     environment?: EnvironmentConfig
+    /** FX/particle weather zones (rain, fire, magic, lava surface, …)
+     *  paired with optional looped ambient beds. */
+    weatherZones: WeatherZoneRuntimeConfig[]
+    /** Level-wide ambient weather snapshot (sky/fog/sun/drifting
+     *  rain & snow). Optional — absent ⇒ engine defaults. */
+    ambientWeather?: AmbientWeatherRuntimeConfig
     /** XZ extent of the generated level, used by the demo to centre the camera. */
     size: number
 }
@@ -182,6 +189,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         // authored levels start with `environment: undefined` and the
         // user picks (or clears) the track from the Sound tab.
         environment: { soundId: 'music.background', volume: 0.36 },
+        weatherZones: [],
         size,
     }
 }

@@ -39,6 +39,7 @@
     "src/engine/fx/presets/zone-presets.ts",
     "src/engine/fx/presets/weather-presets.ts",
     "src/engine/fx/lights/light-budget.ts",
+    "src/game/weather-config.ts",
     "tests/**/*.ts"
   ]
 }

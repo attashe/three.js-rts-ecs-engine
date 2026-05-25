@@ -3,6 +3,7 @@ import type { Zone } from '../engine/ecs/zones'
 import type { LevelMeta, CoinPileSpawn } from './level'
 import type { PistonMechanismConfig } from './mechanisms'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
+import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
 
 /**
  * Translate an editor-authored level (`EditorLevelMeta` + already-deserialized
@@ -67,6 +68,24 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         ? { soundId: meta.environment.soundId, volume: clamp(meta.environment.volume, 0, 1, 0.4) }
         : undefined
 
+    const weatherZones: WeatherZoneRuntimeConfig[] = (meta.weatherZones ?? []).map((z) => ({
+        id: z.id,
+        label: z.label,
+        presetId: z.presetId,
+        position: { ...z.position },
+        size: { ...z.size },
+        addSound: z.addSound ?? true,
+        soundId: z.soundId,
+        soundVolume: clamp(z.soundVolume, 0, 1, 0.5),
+    }))
+
+    const ambientWeather: AmbientWeatherRuntimeConfig | undefined = meta.ambientWeather?.enabled
+        ? {
+            presetId: meta.ambientWeather.presetId,
+            state: { ...meta.ambientWeather.state },
+        }
+        : undefined
+
     return {
         spawn: { x: meta.spawn.x, y: meta.spawn.y, z: meta.spawn.z },
         stoneSpawners: [],
@@ -76,6 +95,8 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         soundSources,
         soundZones,
         environment,
+        weatherZones,
+        ambientWeather,
         size: fallbackSize,
     }
 }

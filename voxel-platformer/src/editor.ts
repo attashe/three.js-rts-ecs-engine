@@ -25,6 +25,8 @@ import { createSoundSourcePlaceSystem } from './editor/systems/sound-source-plac
 import { createSoundSourceRenderSystem } from './editor/systems/sound-source-render-system'
 import { createSoundZonePlaceSystem } from './editor/systems/sound-zone-place-system'
 import { createSoundZoneRenderSystem } from './editor/systems/sound-zone-render-system'
+import { createWeatherZonePlaceSystem } from './editor/systems/weather-zone-place-system'
+import { createWeatherZoneRenderSystem } from './editor/systems/weather-zone-render-system'
 import { createSelectionGizmoSystem } from './editor/systems/selection-gizmo-system'
 import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
 import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
@@ -101,6 +103,7 @@ async function main(): Promise<void> {
         .addSystem(createZonePlaceSystem(engine.input, editorState), 'zonePlace')
         .addSystem(createSoundSourcePlaceSystem(engine.input, editorState), 'soundSourcePlace')
         .addSystem(createSoundZonePlaceSystem(engine.input, editorState), 'soundZonePlace')
+        .addSystem(createWeatherZonePlaceSystem(engine.input, editorState), 'weatherZonePlace')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
@@ -111,6 +114,7 @@ async function main(): Promise<void> {
         .addSystem(createZoneRenderSystem(renderer.scene, editorState), 'zoneRender')
         .addSystem(createSoundSourceRenderSystem(renderer.scene, editorState), 'soundSourceRender')
         .addSystem(createSoundZoneRenderSystem(renderer.scene, editorState), 'soundZoneRender')
+        .addSystem(createWeatherZoneRenderSystem(renderer.scene, editorState), 'weatherZoneRender')
         .addSystem(createSelectionGizmoSystem(renderer.scene, renderer.iso, engine.input, renderer.webgpu.domElement, editorState), 'selectionGizmo')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Editor panel lives top-right; push debug metrics / log to the

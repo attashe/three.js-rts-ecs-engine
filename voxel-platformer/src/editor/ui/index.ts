@@ -8,6 +8,7 @@ import { buildEditTab } from './edit-tab'
 import { buildLevelTab } from './level-tab'
 import { buildHelpTab } from './help-tab'
 import { buildSoundTab } from './sound-tab'
+import { buildWeatherTab } from './weather-tab'
 
 export interface MountEditorPanelOptions {
     world: GameWorld
@@ -42,6 +43,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
     const bar = createTabBar([
         { id: 'edit', label: 'Edit', build: () => buildEditTab(opts) },
         { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
+        { id: 'weather', label: 'Weather', build: () => buildWeatherTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
         { id: 'help', label: 'Help', build: () => buildHelpTab() },
     ], 'edit')

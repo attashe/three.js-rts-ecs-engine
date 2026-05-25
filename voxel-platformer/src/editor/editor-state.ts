@@ -6,7 +6,17 @@ import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
 import type { PistonDirection } from './piston-direction'
 
-export type EditorMode = 'select' | 'paint' | 'erase' | 'spawn-pickup' | 'place-piston' | 'place-spawn' | 'place-zone' | 'place-sound' | 'place-sound-zone'
+export type EditorMode =
+    | 'select'
+    | 'paint'
+    | 'erase'
+    | 'spawn-pickup'
+    | 'place-piston'
+    | 'place-spawn'
+    | 'place-zone'
+    | 'place-sound'
+    | 'place-sound-zone'
+    | 'place-weather'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut. */
 export type EditorViewMode = 'iso' | 'top-down'
@@ -96,6 +106,93 @@ export interface EditorSoundZone {
     volume: number
     /** Crossfade in seconds applied on enter / leave. */
     fadeTime: number
+}
+
+/**
+ * Weather/FX particle zone — AABB volume that spawns one of the FX
+ * package's emitter strategies (rain, fire, magic, lava surface, ...).
+ *
+ * The runtime translates `presetId` through `ZONE_PRESETS` to fill in
+ * colour/count/lifetime/etc., so the editor only stores the slots the
+ * user actually edits (preset, position, size, paired sound).
+ *
+ *  - `position` is the AABB **centre** (matches the FX system).
+ *  - `size` is full XYZ extents centred on `position`.
+ *  - `addSound = true` plays a looped ambient bed at the zone's
+ *    position; `defaultSoundForPreset` picks a default unless the
+ *    author overrides `soundId`.
+ */
+export interface EditorWeatherZone {
+    id: string
+    label?: string
+    presetId: string
+    position: { x: number; y: number; z: number }
+    size: { x: number; y: number; z: number }
+    /** "Add sound" checkbox — default on. */
+    addSound: boolean
+    /** Override paired sound id. Empty / undefined ⇒ use preset default. */
+    soundId?: string
+    /** Per-zone paired-sound gain (0..1). */
+    soundVolume: number
+}
+
+/**
+ * Level-wide ambient weather — sky dome, fog, sun, lightning, drifting
+ * rain/snow that follow the camera. Stored as a *snapshot* of every
+ * `AmbientWeatherState` field plus the source preset id for re-applying
+ * a clean preset in the editor without losing user overrides.
+ *
+ * Authoring path:
+ *   1. Pick a `presetId` from `WEATHER_PRESETS` → state seeds from
+ *      `preset.apply` (every field gets a definitive value).
+ *   2. Override any field via the editor knobs; the snapshot stores the
+ *      *effective* state, not the deltas.
+ *   3. Save/load round-trips `presetId` + the snapshot so the editor
+ *      remembers which preset card to highlight.
+ *
+ * `enabled = false` ⇒ runtime skips the ambient pass entirely (the
+ * scene uses whatever sky/fog it built — same as the editor when no
+ * weather is authored).
+ */
+export interface EditorAmbientWeather {
+    enabled: boolean
+    presetId: string
+    /** Snapshot of every AmbientWeatherState field. Stored verbatim so
+     *  the editor's knobs don't have to recompute deltas vs. a preset. */
+    state: AmbientWeatherStateSnapshot
+}
+
+/** Mirror of `AmbientWeatherState` from `engine/fx/core/types.ts`.
+ *  Duplicated here to avoid a `engine → editor` import direction. */
+export interface AmbientWeatherStateSnapshot {
+    skyTop: string
+    skyBottom: string
+    fogColor: string
+    fogDensity: number
+    sunIntensity: number
+    sunColor: string
+    ambientIntensity: number
+    ambientColor: string
+    timeOfDay: number
+    sunAzimuth: number
+    rainOn: boolean
+    rainCount: number
+    rainSpeed: number
+    rainOpacity: number
+    rainColor: string
+    snowOn: boolean
+    snowCount: number
+    snowSpeed: number
+    snowSway: number
+    snowOpacity: number
+    windX: number
+    windZ: number
+    windGusts: number
+    lightningOn: boolean
+    lightningRate: number
+    lightningIntensity: number
+    lightningColor: string
+    cloudCoverage: number
 }
 
 export interface EditorState {
@@ -194,6 +291,27 @@ export interface EditorState {
     /** Crossfade time for enter/leave. */
     soundZoneFadeTime: number
 
+    /** Weather/FX particle zones placed in the editor. */
+    weatherZones: EditorWeatherZone[]
+    selectedWeatherZoneId: string | null
+    /** Preset id applied to the next placed weather zone. */
+    weatherPresetId: string
+    weatherZoneLabel: string
+    /** XZ extent in cells, centred on the cursor. */
+    weatherZoneSize: number
+    /** Y extent in cells, starting at the working plane. */
+    weatherZoneHeight: number
+    /** "Add sound" checkbox draft — default true. */
+    weatherZoneAddSound: boolean
+    /** Sound id override for the next placed weather zone. Empty ⇒
+     *  use the preset default from `defaultSoundForPreset`. */
+    weatherZoneSoundId: string
+    weatherZoneSoundVolume: number
+
+    /** Level-wide ambient weather (sky / fog / sun / drifting rain
+     *  & snow / lightning). Disabled by default. */
+    ambientWeather: EditorAmbientWeather
+
     /** Y-row of the working plane. Used by the cursor system as the placement
      *  Y when no voxel is hit, and (when planeLock is on) overrides voxel
      *  hits so the user can paint a specific layer through existing geometry. */
@@ -204,6 +322,42 @@ export interface EditorState {
     /** Camera view. In `top-down` mode the camera looks straight down and
      *  the near plane clips everything above `workingPlaneY`. */
     viewMode: EditorViewMode
+}
+
+/**
+ * Default `AmbientWeatherStateSnapshot` — matches the FX package's
+ * `defaultAmbientState()` so a freshly-created level looks identical
+ * with ambient enabled vs disabled (modulo the sky dome + fog).
+ */
+export const DEFAULT_AMBIENT_WEATHER: AmbientWeatherStateSnapshot = {
+    skyTop: '#5a90c8',
+    skyBottom: '#cfe2f0',
+    fogColor: '#cfe2f0',
+    fogDensity: 0.005,
+    sunIntensity: 1.3,
+    sunColor: '#fff0d4',
+    ambientIntensity: 0.6,
+    ambientColor: '#ffffff',
+    timeOfDay: 12,
+    sunAzimuth: 35,
+    rainOn: false,
+    rainCount: 1500,
+    rainSpeed: 14,
+    rainOpacity: 0.55,
+    rainColor: '#a6c8ff',
+    snowOn: false,
+    snowCount: 1500,
+    snowSpeed: 2,
+    snowSway: 1,
+    snowOpacity: 0.78,
+    windX: 0.2,
+    windZ: 0,
+    windGusts: 0,
+    lightningOn: false,
+    lightningRate: 0.2,
+    lightningIntensity: 32,
+    lightningColor: '#f0f6ff',
+    cloudCoverage: 0.05,
 }
 
 export function createEditorState(spawn: { x: number; y: number; z: number }): EditorState {
@@ -253,6 +407,20 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         soundZoneHeight: 4,
         soundZoneVolume: 0.5,
         soundZoneFadeTime: 1.2,
+        weatherZones: [],
+        selectedWeatherZoneId: null,
+        weatherPresetId: 'rain',
+        weatherZoneLabel: '',
+        weatherZoneSize: 12,
+        weatherZoneHeight: 8,
+        weatherZoneAddSound: true,
+        weatherZoneSoundId: '',
+        weatherZoneSoundVolume: 0.5,
+        ambientWeather: {
+            enabled: false,
+            presetId: 'clear',
+            state: { ...DEFAULT_AMBIENT_WEATHER },
+        },
         pistonMoveSoundId: null,
         pistonMoveSoundVolume: 0.5,
         workingPlaneY: Math.floor(spawn.y),
@@ -282,6 +450,11 @@ export interface EditorLevelMeta {
     /** AABB sound zones that fade ambient audio in/out as the player
      *  enters/leaves them. */
     soundZones?: EditorSoundZone[]
+    /** Weather/FX particle zones (rain, fire, magic, lava surface, …). */
+    weatherZones?: EditorWeatherZone[]
+    /** Level-wide ambient weather snapshot. Absent / `enabled: false`
+     *  ⇒ playtest uses the engine's default lighting + sky. */
+    ambientWeather?: EditorAmbientWeather
 }
 
 export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
@@ -337,6 +510,23 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             volume: z.volume,
             fadeTime: z.fadeTime,
         })),
+        weatherZones: state.weatherZones.map((z) => ({
+            id: z.id,
+            label: z.label,
+            presetId: z.presetId,
+            position: { ...z.position },
+            size: { ...z.size },
+            addSound: z.addSound,
+            soundId: z.soundId,
+            soundVolume: z.soundVolume,
+        })),
+        ambientWeather: state.ambientWeather.enabled
+            ? {
+                enabled: true,
+                presetId: state.ambientWeather.presetId,
+                state: { ...state.ambientWeather.state },
+            }
+            : undefined,
     }
 }
 

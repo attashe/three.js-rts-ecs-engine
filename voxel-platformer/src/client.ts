@@ -32,6 +32,7 @@ import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
 import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from './game/sound-sources'
 import { createPlayerLocomotionAudioSystem } from './game/player-audio'
+import { createWeatherZoneSystem } from './game/weather'
 import { defineZone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
 import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
         .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
         .addSystem(createSoundSourceSystem(audio, meta.soundSources, { audioReady }), 'soundSources')
         .addSystem(createSoundZoneSystem(audio, meta.soundZones, { audioReady }), 'soundZones')
+        .addSystem(createWeatherZoneSystem(renderer.scene, audio, meta.weatherZones, meta.ambientWeather, () => renderer.iso.camera, { audioReady }), 'weatherZones')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,
             onJump: () => audio.play(GameAudio.Jump, {

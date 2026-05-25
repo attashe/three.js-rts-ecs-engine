@@ -76,6 +76,11 @@ function clearWorldAndEditorState(
     editorState.selectedSoundSourceId = null
     editorState.soundZones = []
     editorState.selectedSoundZoneId = null
+    editorState.weatherZones = []
+    editorState.selectedWeatherZoneId = null
+    // Leave ambientWeather alone — it's level-wide state the user
+    // explicitly authored. A fresh "new level" call will overwrite it
+    // via createEditorState anyway.
 }
 
 function clearAllChunks(chunks: ChunkManager): void {
@@ -230,6 +235,25 @@ export function loadLevelFromBuffer(
                 volume: Number.isFinite(z.volume) ? z.volume : 0.5,
                 fadeTime: Number.isFinite(z.fadeTime) ? z.fadeTime : 1.2,
             })
+        }
+        for (const z of loaded.metadata.weatherZones ?? []) {
+            editorState.weatherZones.push({
+                id: z.id,
+                label: z.label,
+                presetId: z.presetId,
+                position: { ...z.position },
+                size: { ...z.size },
+                addSound: z.addSound ?? true,
+                soundId: z.soundId,
+                soundVolume: Number.isFinite(z.soundVolume) ? z.soundVolume : 0.5,
+            })
+        }
+        if (loaded.metadata.ambientWeather) {
+            editorState.ambientWeather = {
+                enabled: loaded.metadata.ambientWeather.enabled,
+                presetId: loaded.metadata.ambientWeather.presetId,
+                state: { ...loaded.metadata.ambientWeather.state },
+            }
         }
     }
 

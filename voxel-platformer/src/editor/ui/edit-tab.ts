@@ -218,6 +218,8 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
         case 'place-sound':
         case 'place-sound-zone':
             return buildSoundModePanel()
+        case 'place-weather':
+            return buildWeatherModePanel()
     }
 }
 
@@ -580,6 +582,16 @@ function buildSoundModePanel(): RefreshableElement {
     hint.className = 'vpe-hint'
     hint.style.color = 'rgba(217, 247, 255, 0.75)'
     hint.textContent = 'Use the Sound tab to choose the source and edit placed emitters.'
+    section.appendChild(hint)
+    return { element: section, refresh: () => {} }
+}
+
+function buildWeatherModePanel(): RefreshableElement {
+    const section = sectionEl('Weather zone')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.style.color = 'rgba(255, 220, 240, 0.78)'
+    hint.textContent = 'Use the Weather tab to pick the preset, tune the size, and toggle the paired sound.'
     section.appendChild(hint)
     return { element: section, refresh: () => {} }
 }

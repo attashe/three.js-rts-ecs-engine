@@ -229,6 +229,7 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'place-zone': return 0xff66cc
         case 'place-sound': return SOUND_OUTLINE_COLOUR
         case 'place-sound-zone': return 0x4af6c8
+        case 'place-weather': return 0xffd6f0
     }
 }
 
@@ -241,6 +242,7 @@ function ghostColour(chunks: ChunkManager, state: EditorState): [number, number,
     if (state.mode === 'place-zone') return [1, 0.4, 0.8]
     if (state.mode === 'place-sound') return [0.4, 0.9, 1]
     if (state.mode === 'place-sound-zone') return [0.29, 0.96, 0.78]
+    if (state.mode === 'place-weather') return [1, 0.84, 0.94]
     const entry = chunks.palette.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]
