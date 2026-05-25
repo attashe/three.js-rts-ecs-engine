@@ -4,18 +4,21 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+// Locked byte sizes + SHA-256s for the procedurally generated WAV
+// assets. Adding a new asset or modifying an existing one should
+// require running `node scripts/generate-audio-samples.mjs` and
+// updating the entry below — that's the contract: anyone touching
+// the synth has to opt into the bytes shipping with the build.
+
 const expected = {
+    // ── Game one-shots ────────────────────────────────────────────
     'arrow-hit.wav': {
-        bytes: 7541,
-        sha256: 'b02a77abfd70d5b50c53febb7a4c6d5c40bd518d7fdf6c9eed08e7f1a172de94',
-    },
-    'background-loop.wav': {
-        bytes: 114704,
-        sha256: '707a9a69c03516c8c5ad2bec34e57b3548578b723eadd4ce06f9485d350903f6',
+        bytes: 8423,
+        sha256: '9891172b04d2d37a236f4c3c600f6a03ed217fcc2456cd15926bd622ebdcbbdc',
     },
     'bow.wav': {
-        bytes: 8423,
-        sha256: 'c01fc102fe950bf1fe59a84bb34efc122f92365e247084a3239baece0a194998',
+        bytes: 9305,
+        sha256: '727f0424cb3577f1647ea765278cee4ce5bbd842bbda4fb7d43c97b550fb9fef',
     },
     'death-stinger.wav': {
         bytes: 29811,
@@ -30,8 +33,114 @@ const expected = {
         sha256: 'b7d2ea345abb0dcae38a055f07594bb2736e08470c9b9916bfd3048d9fb64d22',
     },
     'pickup-gold.wav': {
-        bytes: 7100,
-        sha256: '514fbe1852b5d56b1025d5ba8fa0198da55ead3e52ec9c173fb33cedecf1949a',
+        bytes: 7982,
+        sha256: 'c4113915a90992c66ece1074c3243a50e0dbcaf1e5fe9503f5cd3615ff24a9d1',
+    },
+
+    // ── Player locomotion ─────────────────────────────────────────
+    'footstep-1.wav': {
+        bytes: 2249,
+        sha256: '09fc2a32d38a18d020652af1ea012dcf8a59449e7c484998a931e64940eac525',
+    },
+    'footstep-2.wav': {
+        bytes: 2469,
+        sha256: '16245465a8809d72a18d1088ef7b7d563ca6dc15157324891208843d8d8fa806',
+    },
+    'footstep-3.wav': {
+        bytes: 2249,
+        sha256: '21fd78ee7d6a3a3e1f07aaea3c9d6d659ccb2b2c4ca91365e2494897047a318a',
+    },
+    'jump.wav': {
+        bytes: 4013,
+        sha256: 'ce429ce8ec5d27b38ae8f8ae265ee7f84196e60838d04801ea52d185da1a0f4a',
+    },
+    'land.wav': {
+        bytes: 4895,
+        sha256: 'e26ee157b2c9fc0ad2304cf522c132b98e6317a8699ed9c1f246cdd9406e274c',
+    },
+    'high-jump.wav': {
+        bytes: 18786,
+        sha256: '645585cc1b5cb4c588d7423046ca1fdea6ba0de09fa15ce938d5bf0e081feb78',
+    },
+
+    // ── Music loops ───────────────────────────────────────────────
+    'background-loop.wav': {
+        bytes: 114704,
+        sha256: '5bb0a6d488c873e5c63a1fcab2975cb54b6adc00cef275255676794ed558df83',
+    },
+    'background-calm-loop.wav': {
+        bytes: 141164,
+        sha256: 'f63bb61ca98491b39dc78c5cfa4bb8656fd5f702d28bc20c6e18e8237b897681',
+    },
+    'background-action-loop.wav': {
+        bytes: 105884,
+        sha256: 'e36a441c9b2365ec48eac86d4a80991d1288c009641cf4644a761c09a9cff358',
+    },
+    'background-cave-loop.wav': {
+        bytes: 158804,
+        sha256: '5f245a89b923027d8e84e19c3e85928a2dd2540ff5bea0333343d9532c7fa9f9',
+    },
+
+    // ── Weather ───────────────────────────────────────────────────
+    'rain-loop.wav': {
+        bytes: 79424,
+        sha256: 'b48f2abc0b6719167fa79ea81783f29a9ce8d2b007d0f16f61858829bf961a2d',
+    },
+    'storm-loop.wav': {
+        bytes: 99269,
+        sha256: 'b56c1859fe279af3c9b987ef54a69fdd5ac630abb15f685e068964158698fd92',
+    },
+    'wind-loop.wav': {
+        bytes: 88244,
+        sha256: 'c99140962c58ee86512e71fe4b6f56ca6b84081ab2f90a7501e64d07068e977f',
+    },
+    'thunder.wav': {
+        bytes: 40836,
+        sha256: '7b8d33ff9e2ce425cc721f86dce455b5a1641515888fc09b86724b18d9577702',
+    },
+
+    // ── Fire ──────────────────────────────────────────────────────
+    'fire-loop.wav': {
+        bytes: 75014,
+        sha256: 'ffcf69c90620171694e7248dc658bdba3f1001fe8fafb720e21cb92e64ddf795',
+    },
+    'fire-whoosh.wav': {
+        bytes: 13715,
+        sha256: '55fb1c4d5fc656706fb85eb5f42382c96a3604490830178fa3ba90fbaa9c403d',
+    },
+
+    // ── Explosion ─────────────────────────────────────────────────
+    'explosion.wav': {
+        bytes: 30913,
+        sha256: 'b4d338df61b31381274a4af87da3d1a6a7eaa285d3cd62ae36bbf00008d38cf3',
+    },
+    'explosion-small.wav': {
+        bytes: 18786,
+        sha256: 'ea49d9ff6e90e8b5ce103bea6edc75f0e4f24f51c71f83840452acb377add3fc',
+    },
+
+    // ── Liquids ───────────────────────────────────────────────────
+    'water-loop.wav': {
+        bytes: 66194,
+        sha256: '071d659f8e5275bea8c092b285fa626237a21397f1dc6ea76856b734c664edbb',
+    },
+    'lava-loop.wav': {
+        bytes: 70604,
+        sha256: '4273eeec1c66c8dd53eefa5baf4b76d109c081000c70531ebcddef7a6da9232b',
+    },
+    'bubble.wav': {
+        bytes: 6659,
+        sha256: '3b8907de5ffb776607372cb32fc99d9e0b225f7eb82a9e332fb3e5f6742eef7c',
+    },
+
+    // ── Magic ─────────────────────────────────────────────────────
+    'magic-loop.wav': {
+        bytes: 83834,
+        sha256: '9fb017ff1fe2b7589966f9eec7ac0b0e94129954af8c6e8d1d65edcbfddcfc3f',
+    },
+    'magic-chime.wav': {
+        bytes: 16361,
+        sha256: '195b8a62aa61267dbbaa34af48e58ffde04a80301b8e6a182268aa2bed002c5e',
     },
 } as const
 

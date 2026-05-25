@@ -21,6 +21,8 @@
     "src/engine/audio/web-audio-backend.ts",
     "src/engine/audio/audio-engine.ts",
     "src/engine/audio/index.ts",
+    "src/sound-demo/local-assets.ts",
+    "src/sound-demo/waveform.ts",
     "src/engine/ecs/components.ts",
     "src/engine/ecs/obstacle-registry.ts",
     "src/engine/ecs/world.ts",

@@ -12,6 +12,7 @@ export default defineConfig({
         game: resolve(__dirname, 'index.html'),
         editor: resolve(__dirname, 'editor.html'),
         fxDemo: resolve(__dirname, 'fx-demo.html'),
+        soundDemo: resolve(__dirname, 'sound-demo.html'),
       },
     },
   },
