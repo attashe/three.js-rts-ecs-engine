@@ -19,8 +19,8 @@ export const NEW_LEVEL_MAX_DIMENSION = 64
  * Wipe the current world + editor state and seed a fresh dirt + grass pad
  * of the given XZ dimensions. Same shape the editor uses on first launch,
  * just with caller-chosen `width` × `depth`. Spawn is recentered, all
- * placed pickups / pistons / zones are torn down, and the working plane
- * snaps to the new ground row.
+ * placed pickups / pistons / zones / sound sources / sound zones are torn
+ * down, and the working plane snaps to the new ground row.
  */
 export function newLevel(
     world: GameWorld,
@@ -71,6 +71,11 @@ function clearWorldAndEditorState(
     world.zones.clear()
     world.zoneEvents.length = 0
     editorState.zones = []
+
+    editorState.soundSources = []
+    editorState.selectedSoundSourceId = null
+    editorState.soundZones = []
+    editorState.selectedSoundZoneId = null
 }
 
 function clearAllChunks(chunks: ChunkManager): void {
@@ -201,6 +206,29 @@ export function loadLevelFromBuffer(
                 script: z.script ? {
                     actions: z.script.actions.map(copyZoneScriptAction),
                 } : undefined,
+            })
+        }
+        for (const s of loaded.metadata.soundSources ?? []) {
+            editorState.soundSources.push({
+                id: s.id,
+                soundId: s.soundId,
+                label: s.label,
+                position: { ...s.position },
+                radius: Number.isFinite(s.radius) ? s.radius : 12,
+                volume: Number.isFinite(s.volume) ? s.volume : 1,
+                loop: s.loop ?? true,
+                autoplay: s.autoplay ?? true,
+            })
+        }
+        for (const z of loaded.metadata.soundZones ?? []) {
+            editorState.soundZones.push({
+                id: z.id,
+                label: z.label,
+                min: { ...z.min },
+                max: { ...z.max },
+                soundId: z.soundId,
+                volume: Number.isFinite(z.volume) ? z.volume : 0.5,
+                fadeTime: Number.isFinite(z.fadeTime) ? z.fadeTime : 1.2,
             })
         }
     }

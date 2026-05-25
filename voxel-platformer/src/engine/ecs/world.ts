@@ -64,6 +64,11 @@ export interface PistonMechanism {
      *   flip — see `player-death-system`.
      */
     characterPolicy: 'block' | 'push'
+    /** Asset id played on each flip via the piston-system's `onFlip`
+     *  callback. Undefined or empty string ⇒ no flip sound. */
+    moveSoundId?: string
+    /** Per-piston gain multiplier for the move sound. Defaults to 1. */
+    moveSoundVolume?: number
 }
 
 /** Why the level should restart. Set by gameplay systems; consumed by

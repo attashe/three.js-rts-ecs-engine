@@ -2,6 +2,7 @@ import { copyZoneScriptAction, type EditorLevelMeta } from '../editor/editor-sta
 import type { Zone } from '../engine/ecs/zones'
 import type { LevelMeta, CoinPileSpawn } from './level'
 import type { PistonMechanismConfig } from './mechanisms'
+import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 
 /**
  * Translate an editor-authored level (`EditorLevelMeta` + already-deserialized
@@ -25,6 +26,8 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         characterPolicy: p.characterPolicy,
         motion: p.motion ?? 'teleport',
         travelTime: p.travelTime ?? 1,
+        moveSoundId: p.moveSoundId || undefined,
+        moveSoundVolume: clamp(p.moveSoundVolume ?? 1, 0, 1, 1),
     }))
 
     const zones: Zone[] = (meta.zones ?? []).map((z) => ({
@@ -39,12 +42,45 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         } : undefined,
     }))
 
+    const soundSources: SoundSourceConfig[] = (meta.soundSources ?? []).map((s) => ({
+        id: s.id,
+        soundId: s.soundId,
+        label: s.label,
+        position: { ...s.position },
+        radius: clamp(s.radius, 0.5, 200, 12),
+        volume: clamp(s.volume, 0, 1, 1),
+        loop: s.loop ?? true,
+        autoplay: s.autoplay ?? true,
+    }))
+
+    const soundZones: SoundZoneConfig[] = (meta.soundZones ?? []).map((z) => ({
+        id: z.id,
+        label: z.label,
+        min: { ...z.min },
+        max: { ...z.max },
+        soundId: z.soundId,
+        volume: clamp(z.volume, 0, 1, 0.5),
+        fadeTime: clamp(z.fadeTime, 0, 10, 1.2),
+    }))
+
+    const environment: EnvironmentConfig | undefined = meta.environment?.soundId
+        ? { soundId: meta.environment.soundId, volume: clamp(meta.environment.volume, 0, 1, 0.4) }
+        : undefined
+
     return {
         spawn: { x: meta.spawn.x, y: meta.spawn.y, z: meta.spawn.z },
         stoneSpawners: [],
         coinPiles,
         pistons,
         zones,
+        soundSources,
+        soundZones,
+        environment,
         size: fallbackSize,
     }
+}
+
+function clamp(value: number, min: number, max: number, fallback: number): number {
+    if (!Number.isFinite(value)) return fallback
+    return Math.max(min, Math.min(max, value))
 }

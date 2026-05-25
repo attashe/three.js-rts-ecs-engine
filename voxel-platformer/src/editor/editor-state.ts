@@ -2,10 +2,11 @@ import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import type { VoxelCoord } from '../engine/ecs/world'
 import type { ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
+import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
 import type { PistonDirection } from './piston-direction'
 
-export type EditorMode = 'paint' | 'erase' | 'spawn-pickup' | 'place-piston' | 'place-spawn' | 'place-zone'
+export type EditorMode = 'select' | 'paint' | 'erase' | 'spawn-pickup' | 'place-piston' | 'place-spawn' | 'place-zone' | 'place-sound' | 'place-sound-zone'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut. */
 export type EditorViewMode = 'iso' | 'top-down'
@@ -50,6 +51,51 @@ export interface EditorPiston {
     characterPolicy: 'block' | 'push'
     motion: EditorPistonMotion
     travelTime: number
+    /** Asset id to play at the piston's position each time it flips.
+     *  Falsy ⇒ no movement sound. Loops are not appropriate here —
+     *  the runtime fires one-shots so the cadence matches `delay`. */
+    moveSoundId?: string
+    /** Per-piston gain multiplier for the move sound (0..1). */
+    moveSoundVolume?: number
+}
+
+export interface EditorSoundSource {
+    id: string
+    soundId: string
+    label?: string
+    position: { x: number; y: number; z: number }
+    radius: number
+    volume: number
+    loop: boolean
+    autoplay: boolean
+}
+
+/**
+ * Level-wide ambient bed — a single stereo (non-spatial) sound that
+ * plays as long as the player is in the level. Pairs with the
+ * music track. Set `soundId` to `null` to skip.
+ */
+export interface EditorEnvironment {
+    soundId: string | null
+    volume: number
+}
+
+/**
+ * Sound zone — an AABB region whose configured sound fades in while
+ * the player is inside the box and fades out when they leave.
+ * Unlike `EditorSoundSource` (point-source spatial emitter) and
+ * `EditorEnvironment` (always-on stereo bed), sound zones are
+ * "biome" audio that swaps based on the player's location.
+ */
+export interface EditorSoundZone {
+    id: string
+    label?: string
+    min: VoxelCoord
+    max: VoxelCoord
+    soundId: string
+    volume: number
+    /** Crossfade in seconds applied on enter / leave. */
+    fadeTime: number
 }
 
 export interface EditorState {
@@ -87,6 +133,11 @@ export interface EditorState {
     pistonTravelTime: number
     /** Character handling on flip — see PistonMechanism.characterPolicy. */
     pistonPolicy: 'block' | 'push'
+    /** Sound played on each flip. `null` = no movement sound. Applies
+     *  to the *next* piston placement; per-piston overrides live on
+     *  the `EditorPiston.moveSound*` fields and on the list panel. */
+    pistonMoveSoundId: string | null
+    pistonMoveSoundVolume: number
 
     /** Zones placed in the editor — serialised into the level metadata. */
     zones: EditorZone[]
@@ -107,6 +158,41 @@ export interface EditorState {
     zoneScriptMessage: string
     /** Draft block offset from zone min used by spawn/erase script actions. */
     zoneScriptOffset: VoxelCoord
+
+    /** Sound sources placed in the editor — serialised into the level metadata. */
+    soundSources: EditorSoundSource[]
+    /** Currently selected placed sound source for tab-side editing. */
+    selectedSoundSourceId: string | null
+    /** Sound id applied to the next placed source. */
+    soundSourceSoundId: string
+    /** Optional label applied to the next placed source. */
+    soundSourceLabel: string
+    /** Hearing radius / spatial max distance for the next placed source. */
+    soundSourceRadius: number
+    /** Per-source gain multiplier for the next placed source. */
+    soundSourceVolume: number
+    /** Whether the next placed source loops. */
+    soundSourceLoop: boolean
+    /** Whether the next placed source starts during playtest. */
+    soundSourceAutoplay: boolean
+
+    /** Level-wide ambient bed (stereo, non-spatial). */
+    environment: EditorEnvironment
+
+    /** Sound zones placed in the editor — fade ambient sound in/out
+     *  based on player position. */
+    soundZones: EditorSoundZone[]
+    selectedSoundZoneId: string | null
+    /** Sound id applied to the next placed sound zone. */
+    soundZoneSoundId: string
+    soundZoneLabel: string
+    /** XZ extent in cells, centred on the cursor. */
+    soundZoneSize: number
+    /** Y extent in cells, starting at the working plane. */
+    soundZoneHeight: number
+    soundZoneVolume: number
+    /** Crossfade time for enter/leave. */
+    soundZoneFadeTime: number
 
     /** Y-row of the working plane. Used by the cursor system as the placement
      *  Y when no voxel is hit, and (when planeLock is on) overrides voxel
@@ -150,6 +236,25 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         zoneScriptActions: [],
         zoneScriptMessage: '',
         zoneScriptOffset: { x: 0, y: 0, z: 0 },
+        soundSources: [],
+        selectedSoundSourceId: null,
+        soundSourceSoundId: GameAudio.AmbFire,
+        soundSourceLabel: '',
+        soundSourceRadius: 12,
+        soundSourceVolume: 0.75,
+        soundSourceLoop: true,
+        soundSourceAutoplay: true,
+        environment: { soundId: null, volume: 0.4 },
+        soundZones: [],
+        selectedSoundZoneId: null,
+        soundZoneSoundId: GameAudio.AmbWind,
+        soundZoneLabel: '',
+        soundZoneSize: 6,
+        soundZoneHeight: 4,
+        soundZoneVolume: 0.5,
+        soundZoneFadeTime: 1.2,
+        pistonMoveSoundId: null,
+        pistonMoveSoundVolume: 0.5,
         workingPlaneY: Math.floor(spawn.y),
         planeLock: false,
         viewMode: 'iso',
@@ -158,7 +263,8 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
 
 /**
  * Shape of the JSON metadata blob saved inside the level binary. The game's
- * level loader reads this to reconstruct spawn + pickups + pistons on load.
+ * level loader reads this to reconstruct spawn, pickups, pistons, zones, and
+ * sound sources on load.
  */
 export interface EditorLevelMeta {
     name: string
@@ -170,6 +276,12 @@ export interface EditorLevelMeta {
     }>
     pistons: EditorPiston[]
     zones?: EditorZone[]
+    soundSources?: EditorSoundSource[]
+    /** Level-wide ambient bed. Absent / `soundId: null` ⇒ no env sound. */
+    environment?: EditorEnvironment
+    /** AABB sound zones that fade ambient audio in/out as the player
+     *  enters/leaves them. */
+    soundZones?: EditorSoundZone[]
 }
 
 export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
@@ -189,6 +301,8 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             characterPolicy: p.characterPolicy,
             motion: p.motion ?? 'teleport',
             travelTime: p.travelTime ?? 1,
+            moveSoundId: p.moveSoundId,
+            moveSoundVolume: p.moveSoundVolume,
         })),
         zones: state.zones.map((z) => ({
             id: z.id,
@@ -200,6 +314,28 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             script: z.script ? {
                 actions: z.script.actions.map(copyZoneScriptAction),
             } : undefined,
+        })),
+        soundSources: state.soundSources.map((s) => ({
+            id: s.id,
+            soundId: s.soundId,
+            label: s.label,
+            position: { ...s.position },
+            radius: s.radius,
+            volume: s.volume,
+            loop: s.loop,
+            autoplay: s.autoplay,
+        })),
+        environment: state.environment.soundId
+            ? { soundId: state.environment.soundId, volume: state.environment.volume }
+            : undefined,
+        soundZones: state.soundZones.map((z) => ({
+            id: z.id,
+            label: z.label,
+            min: { ...z.min },
+            max: { ...z.max },
+            soundId: z.soundId,
+            volume: z.volume,
+            fadeTime: z.fadeTime,
         })),
     }
 }

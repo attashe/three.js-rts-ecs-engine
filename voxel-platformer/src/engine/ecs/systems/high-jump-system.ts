@@ -13,6 +13,10 @@ export interface HighJumpOptions {
     jumpVelocity?: number
     /** Optional voxel world query for non-physical movement effects such as water. */
     chunks?: ChunkManager
+    /** Fires the frame the high jump fires successfully (after the
+     *  movement-environment and grounded gates pass). Used to play the
+     *  spell-whoosh cue. */
+    onHighJump?: (eid: number) => void
 }
 
 /**
@@ -26,8 +30,9 @@ export interface HighJumpOptions {
  */
 export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions = {}): System {
     const actionId = opts.actionId ?? 'spell.highJump'
-    const jumpVelocity = opts.jumpVelocity ?? 13.5
+    const jumpVelocity = opts.jumpVelocity ?? 14.5
     const chunks = opts.chunks
+    const onHighJump = opts.onHighJump
     const playerAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 
     return {
@@ -60,6 +65,7 @@ export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions =
             Velocity.y[player] = Math.max(Velocity.y[player], jumpVelocity)
             removeComponent(world, player, Grounded)
             pushLog(world, 'High Jump!')
+            onHighJump?.(player)
         },
     }
 }

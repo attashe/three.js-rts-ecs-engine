@@ -26,6 +26,10 @@ export interface PistonMechanismConfig {
     characterPolicy?: PistonMechanism['characterPolicy']
     /** Which cell holds the block at level load. Default `'from'`. */
     initial?: 'from' | 'to'
+    /** Asset id played at the piston's position on each flip. */
+    moveSoundId?: string
+    /** 0..1 gain multiplier for the move sound. Default 1. */
+    moveSoundVolume?: number
 }
 
 /**
@@ -63,6 +67,8 @@ export function registerPistonMechanism(
         moveT: 0,
         moveFrom: config.initial ?? 'from',
         characterPolicy: config.characterPolicy ?? 'block',
+        moveSoundId: config.moveSoundId || undefined,
+        moveSoundVolume: config.moveSoundVolume,
     }
     const initialCell = piston.occupied === 'from' ? piston.from : piston.to
     if (motion === 'physical') {

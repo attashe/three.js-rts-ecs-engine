@@ -30,8 +30,17 @@ const VERTICAL_CONTACT_EPS = 0.03
  * Voxel writes use the chunk manager's bulk-edit so the renderer only
  * remeshes once per flip.
  */
-export function createPistonSystem(chunks: ChunkManager): System {
+export interface PistonSystemOptions {
+    /** Fires immediately after a successful flip (teleport) or arrival
+     *  at the destination cell (physical). Use this to trigger audio /
+     *  particles / score events. `position` is the world-space centre
+     *  of the cell the piston is *now* occupying. */
+    onFlip?: (piston: PistonMechanism, position: { x: number; y: number; z: number }) => void
+}
+
+export function createPistonSystem(chunks: ChunkManager, opts: PistonSystemOptions = {}): System {
     let simTime = 0
+    const onFlip = opts.onFlip
     return {
         fixed: true,
         order: FixedOrder.mechanisms,
@@ -61,7 +70,8 @@ export function createPistonSystem(chunks: ChunkManager): System {
             const pushedThisTick = new Set<number>()
             for (const piston of world.pistons) {
                 if (piston.motion === 'physical') {
-                    updatePhysicalPiston(chunks, world, piston, simTime, dt, pushedThisTick)
+                    const arrived = updatePhysicalPiston(chunks, world, piston, simTime, dt, pushedThisTick)
+                    if (arrived && onFlip) onFlip(piston, occupiedCellCentre(piston))
                     continue
                 }
                 if (simTime < piston.nextFlipAt) continue
@@ -70,6 +80,7 @@ export function createPistonSystem(chunks: ChunkManager): System {
                     // is what keeps multiple pistons synced when one of
                     // them flipped a tick or two late.
                     piston.nextFlipAt += piston.delay
+                    if (onFlip) onFlip(piston, occupiedCellCentre(piston))
                 }
                 // On blocked, leave nextFlipAt in the past — we'll retry
                 // every tick until the obstruction clears. Once it does,
@@ -79,6 +90,11 @@ export function createPistonSystem(chunks: ChunkManager): System {
     }
 }
 
+function occupiedCellCentre(piston: PistonMechanism): { x: number; y: number; z: number } {
+    const cell = piston.occupied === 'from' ? piston.from : piston.to
+    return { x: cell.x + 0.5, y: cell.y + 0.5, z: cell.z + 0.5 }
+}
+
 function updatePhysicalPiston(
     chunks: ChunkManager,
     world: GameWorld,
@@ -86,12 +102,12 @@ function updatePhysicalPiston(
     simTime: number,
     dt: number,
     pushedThisTick: Set<number>,
-): void {
-    if (piston.eid < 0) return
+): boolean {
+    if (piston.eid < 0) return false
     if (piston.moving === 0) {
         updatePhysicalPistonObstacle(world, chunks, piston)
-        if (simTime < piston.nextFlipAt) return
-        if (!tryStartPhysicalMove(chunks, world, piston, simTime)) return
+        if (simTime < piston.nextFlipAt) return false
+        if (!tryStartPhysicalMove(chunks, world, piston, simTime)) return false
     }
 
     const from = piston.moveFrom === 'from' ? piston.from : piston.to
@@ -126,10 +142,11 @@ function updatePhysicalPiston(
         Position.y[piston.eid] = oldPos.y
         Position.z[piston.eid] = oldPos.z
         updatePhysicalPistonObstacle(world, chunks, piston)
-        return
+        return false
     }
 
     piston.moveT = nextT
+    let arrived = false
     if (nextT >= 1) {
         piston.occupied = piston.moveFrom === 'from' ? 'to' : 'from'
         piston.moving = 0
@@ -138,8 +155,10 @@ function updatePhysicalPiston(
         Position.x[piston.eid] = end.x + 0.5
         Position.y[piston.eid] = end.y
         Position.z[piston.eid] = end.z + 0.5
+        arrived = true
     }
     updatePhysicalPistonObstacle(world, chunks, piston)
+    return arrived
 }
 
 function tryStartPhysicalMove(

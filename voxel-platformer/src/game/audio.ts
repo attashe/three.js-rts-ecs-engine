@@ -1,27 +1,112 @@
 import type { AudioManifest } from '../engine/audio'
 
+/**
+ * Canonical audio asset IDs. Use these constants — not raw strings —
+ * so a rename rolls cleanly through every call site.
+ *
+ * Groups:
+ *   - Game one-shots: pickup, bow, arrow-hit, death, death-stinger
+ *   - Player locomotion: footstep variants (rotated for variety),
+ *     jump take-off, landing thud, high-jump spell whoosh
+ *   - Music: explore / calm / action / cave background loops
+ *   - Ambient loops: weather, fire, liquids, magic (loopable beds the
+ *     FX system pairs with its weather / fire / lava / water zones)
+ *   - One-shot effects: thunder, fire whoosh, explosion (paired with
+ *     `triggerExplosion` and weather event bursts), bubble pops,
+ *     magic chimes
+ */
 export const GameAudio = {
     Background: 'music.background',
+    BackgroundCalm: 'music.background.calm',
+    BackgroundAction: 'music.background.action',
+    BackgroundCave: 'music.background.cave',
+
     PickupGold: 'sfx.pickup.gold',
     PickupArrow: 'sfx.pickup.arrow',
     Bow: 'sfx.bow',
     ArrowHit: 'sfx.arrow.hit',
     Death: 'sfx.death',
     DeathStinger: 'stinger.death',
+
+    // ── Player locomotion ────────────────────────────────────────────
+    // Three footstep variants rotated by the locomotion-audio system
+    // for variety; jump is the standard take-off cue; land fires when
+    // the player reconnects with the ground after enough airborne time;
+    // high-jump is the "spell" whoosh — deliberately louder and more
+    // layered than the plain jump so it reads as a special action.
+    Footstep1: 'sfx.footstep.1',
+    Footstep2: 'sfx.footstep.2',
+    Footstep3: 'sfx.footstep.3',
+    Jump: 'sfx.jump',
+    Land: 'sfx.land',
+    HighJump: 'sfx.high.jump',
+
+    // ── Ambient loops (intended for `audio.playSpatial` with `loop: true`) ─
+    AmbRain: 'sfx.amb.rain',
+    AmbStorm: 'sfx.amb.storm',
+    AmbWind: 'sfx.amb.wind',
+    AmbFire: 'sfx.amb.fire',
+    AmbWater: 'sfx.amb.water',
+    AmbLava: 'sfx.amb.lava',
+    AmbMagic: 'sfx.amb.magic',
+
+    // ── One-shot effects ─────────────────────────────────────────────
+    Thunder: 'sfx.thunder',
+    FireWhoosh: 'sfx.fire.whoosh',
+    Explosion: 'sfx.explosion',
+    ExplosionSmall: 'sfx.explosion.small',
+    Bubble: 'sfx.bubble',
+    MagicChime: 'sfx.magic.chime',
 } as const
+
+export type GameAudioId = (typeof GameAudio)[keyof typeof GameAudio]
+
+const path = (file: string): string => `/audio/8bit/${file}`
 
 export const GAME_AUDIO_MANIFEST: AudioManifest = {
     sounds: [
-        { id: GameAudio.PickupGold, url: '/audio/8bit/pickup-gold.wav', volume: 0.42, maxInstances: 4, priority: 3 },
-        { id: GameAudio.PickupArrow, url: '/audio/8bit/pickup-arrow.wav', volume: 0.38, maxInstances: 4, priority: 3 },
-        { id: GameAudio.Bow, url: '/audio/8bit/bow.wav', volume: 0.48, maxInstances: 3, priority: 2 },
-        { id: GameAudio.ArrowHit, url: '/audio/8bit/arrow-hit.wav', volume: 0.52, maxInstances: 5, priority: 2 },
-        { id: GameAudio.Death, url: '/audio/8bit/death.wav', volume: 0.62, maxInstances: 1, priority: 8 },
+        // Gameplay one-shots
+        { id: GameAudio.PickupGold,  url: path('pickup-gold.wav'),  volume: 0.42, maxInstances: 4, priority: 3 },
+        { id: GameAudio.PickupArrow, url: path('pickup-arrow.wav'), volume: 0.38, maxInstances: 4, priority: 3 },
+        { id: GameAudio.Bow,         url: path('bow.wav'),          volume: 0.48, maxInstances: 3, priority: 2 },
+        { id: GameAudio.ArrowHit,    url: path('arrow-hit.wav'),    volume: 0.52, maxInstances: 5, priority: 2 },
+        { id: GameAudio.Death,       url: path('death.wav'),        volume: 0.62, maxInstances: 1, priority: 8 },
+
+        // Player locomotion — kept quiet by default so the constant
+        // walking cadence doesn't dominate the mix. The locomotion
+        // system applies a small rate-jitter on each play for variety.
+        { id: GameAudio.Footstep1, url: path('footstep-1.wav'), volume: 0.32, maxInstances: 4, priority: 1 },
+        { id: GameAudio.Footstep2, url: path('footstep-2.wav'), volume: 0.32, maxInstances: 4, priority: 1 },
+        { id: GameAudio.Footstep3, url: path('footstep-3.wav'), volume: 0.32, maxInstances: 4, priority: 1 },
+        { id: GameAudio.Jump,      url: path('jump.wav'),       volume: 0.40, maxInstances: 3, priority: 2 },
+        { id: GameAudio.Land,      url: path('land.wav'),       volume: 0.44, maxInstances: 3, priority: 2 },
+        { id: GameAudio.HighJump,  url: path('high-jump.wav'),  volume: 0.72, maxInstances: 2, priority: 4 },
+
+        // Ambient loops — `loop: true` is the asset default; callers
+        // can override via `playSpatial(id, pos, { loop: false })`.
+        { id: GameAudio.AmbRain,   url: path('rain-loop.wav'),   volume: 0.32, loop: true, maxInstances: 2, priority: 1 },
+        { id: GameAudio.AmbStorm,  url: path('storm-loop.wav'),  volume: 0.34, loop: true, maxInstances: 2, priority: 1 },
+        { id: GameAudio.AmbWind,   url: path('wind-loop.wav'),   volume: 0.28, loop: true, maxInstances: 2, priority: 1 },
+        { id: GameAudio.AmbFire,   url: path('fire-loop.wav'),   volume: 0.42, loop: true, maxInstances: 6, priority: 2 },
+        { id: GameAudio.AmbWater,  url: path('water-loop.wav'),  volume: 0.30, loop: true, maxInstances: 4, priority: 1 },
+        { id: GameAudio.AmbLava,   url: path('lava-loop.wav'),   volume: 0.38, loop: true, maxInstances: 4, priority: 2 },
+        { id: GameAudio.AmbMagic,  url: path('magic-loop.wav'),  volume: 0.30, loop: true, maxInstances: 3, priority: 1 },
+
+        // One-shot effects
+        { id: GameAudio.Thunder,        url: path('thunder.wav'),         volume: 0.78, maxInstances: 2, priority: 5 },
+        { id: GameAudio.FireWhoosh,     url: path('fire-whoosh.wav'),     volume: 0.55, maxInstances: 3, priority: 3 },
+        { id: GameAudio.Explosion,      url: path('explosion.wav'),       volume: 0.88, maxInstances: 3, priority: 6 },
+        { id: GameAudio.ExplosionSmall, url: path('explosion-small.wav'), volume: 0.70, maxInstances: 4, priority: 5 },
+        { id: GameAudio.Bubble,         url: path('bubble.wav'),          volume: 0.42, maxInstances: 8, priority: 1 },
+        { id: GameAudio.MagicChime,     url: path('magic-chime.wav'),     volume: 0.48, maxInstances: 4, priority: 2 },
     ],
     music: [
-        { id: GameAudio.Background, url: '/audio/8bit/background-loop.wav', volume: 0.36, loop: true, priority: 1 },
+        { id: GameAudio.Background,       url: path('background-loop.wav'),       volume: 0.36, loop: true, priority: 1 },
+        { id: GameAudio.BackgroundCalm,   url: path('background-calm-loop.wav'),  volume: 0.34, loop: true, priority: 1 },
+        { id: GameAudio.BackgroundAction, url: path('background-action-loop.wav'),volume: 0.32, loop: true, priority: 1 },
+        { id: GameAudio.BackgroundCave,   url: path('background-cave-loop.wav'),  volume: 0.38, loop: true, priority: 1 },
     ],
     stingers: [
-        { id: GameAudio.DeathStinger, url: '/audio/8bit/death-stinger.wav', volume: 0.78, priority: 9 },
+        { id: GameAudio.DeathStinger, url: path('death-stinger.wav'), volume: 0.78, priority: 9 },
     ],
 }

@@ -25,6 +25,9 @@ export interface PlayerControlOptions {
     /** Optional voxel world query for non-physical movement effects such as water. */
     chunks?: ChunkManager
     actions?: PlayerControlActions
+    /** Fires the frame a player jump is accepted (after coyote/buffer
+     *  resolution). Used to drive the take-off audio cue. */
+    onJump?: (eid: number) => void
 }
 
 export interface PlayerControlActions {
@@ -56,6 +59,7 @@ export function createPlayerControlSystem(
     const jumpBufferMs = opts.jumpBufferMs ?? 200
     const coyoteMs = opts.coyoteMs ?? 100
     const chunks = opts.chunks
+    const onJump = opts.onJump
     const actionIds = opts.actions ?? {
         forward: 'move.forward',
         backward: 'move.backward',
@@ -137,6 +141,7 @@ export function createPlayerControlSystem(
                     Velocity.y[eid] = jumpVelocity
                     removeComponent(world, eid, Grounded)
                     lastGroundedAt.delete(eid)
+                    onJump?.(eid)
                 }
 
                 // Aim follows the mouse on the player's current ground plane.

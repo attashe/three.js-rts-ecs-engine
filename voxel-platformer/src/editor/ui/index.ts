@@ -7,6 +7,7 @@ import { createTabBar } from './tabs'
 import { buildEditTab } from './edit-tab'
 import { buildLevelTab } from './level-tab'
 import { buildHelpTab } from './help-tab'
+import { buildSoundTab } from './sound-tab'
 
 export interface MountEditorPanelOptions {
     world: GameWorld
@@ -21,6 +22,7 @@ export interface MountEditorPanelOptions {
  *  - **Edit** — camera + working-plane controls, palette, mode toolbar,
  *    and a contextual settings panel for the active placement mode. This
  *    is the only tab that swaps its body in response to state changes.
+ *  - **Sound** — static spatial sound sources.
  *  - **Level** — name + save / load / playtest.
  *  - **Help** — keyboard / mouse cheatsheet.
  *
@@ -39,6 +41,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
 
     const bar = createTabBar([
         { id: 'edit', label: 'Edit', build: () => buildEditTab(opts) },
+        { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
         { id: 'help', label: 'Help', build: () => buildHelpTab() },
     ], 'edit')

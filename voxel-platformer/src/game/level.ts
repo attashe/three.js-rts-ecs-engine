@@ -1,7 +1,9 @@
-import { BLOCK, type ChunkManager } from '../engine/voxel'
+import type { ChunkManager } from '../engine/voxel/chunk-manager'
+import { BLOCK } from '../engine/voxel/palette'
 import type { Zone } from '../engine/ecs/zones'
 import type { PistonMechanismConfig } from './mechanisms'
 import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
+import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 
 export interface CoinPileSpawn {
     position: { x: number; y: number; z: number }
@@ -19,6 +21,12 @@ export interface LevelMeta {
     pistons: PistonMechanismConfig[]
     /** Named AABB regions — registered into `world.zones` by client.ts. */
     zones: Zone[]
+    /** Static spatial audio emitters registered by client.ts. */
+    soundSources: SoundSourceConfig[]
+    /** AABB ambient zones that fade audio in/out as the player enters/leaves. */
+    soundZones: SoundZoneConfig[]
+    /** Level-wide ambient bed (stereo, non-spatial). Optional. */
+    environment?: EnvironmentConfig
     /** XZ extent of the generated level, used by the demo to centre the camera. */
     size: number
 }
@@ -168,6 +176,12 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         coinPiles,
         pistons,
         zones: [],
+        soundSources: [],
+        soundZones: [],
+        // Demo level keeps the existing background music bed. Editor-
+        // authored levels start with `environment: undefined` and the
+        // user picks (or clears) the track from the Sound tab.
+        environment: { soundId: 'music.background', volume: 0.36 },
         size,
     }
 }

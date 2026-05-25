@@ -1,6 +1,8 @@
 import { isCollidable, isPathSurface, isRaycastTarget, occludesFaces, type Palette, type PaletteEntry } from '../../engine/voxel/palette'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
+import type { AudioAsset } from '../../engine/audio'
+import { GAME_AUDIO_MANIFEST } from '../../game/audio'
 import { BRUSHES, type BrushKind } from '../brush'
 import { PISTON_DIRECTIONS, type PistonDirection } from '../piston-direction'
 import { removePistonAt } from '../systems/piston-place-system'
@@ -29,12 +31,14 @@ interface ModeDef {
 }
 
 const MODES: readonly ModeDef[] = [
+    { mode: 'select', label: 'Select', hint: 'Pick movable editor objects and drag the snap-to-grid gizmo.' },
     { mode: 'paint', label: 'Paint', hint: 'LMB places the active block, RMB erases.' },
     { mode: 'erase', label: 'Erase', hint: 'LMB erases. (Same as RMB in Paint.)' },
     { mode: 'spawn-pickup', label: 'Pickup', hint: 'Drop gold piles on the working plane.' },
     { mode: 'place-piston', label: 'Piston', hint: 'Place a moving block — teleport or physical motion.' },
     { mode: 'place-spawn', label: 'Spawn', hint: 'Set the player start point.' },
     { mode: 'place-zone', label: 'Zone', hint: 'Region you can attach triggers / scripts to.' },
+    { mode: 'place-sound', label: 'Sound', hint: 'Place the sound source configured in the Sound tab.' },
 ]
 
 /** Edit tab. Top section is the always-visible camera + working-plane row
@@ -54,8 +58,8 @@ export function buildEditTab(ctx: EditTabContext): RefreshableElement {
 
     const palette = buildPaletteSection(ctx)
     root.appendChild(palette.element)
-    const modeRow = buildModeSection(state, () => switchMode())
-    root.appendChild(modeRow)
+    const modeSection = buildModeSection(state, () => switchMode())
+    root.appendChild(modeSection.element)
 
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
@@ -69,15 +73,18 @@ export function buildEditTab(ctx: EditTabContext): RefreshableElement {
     root.appendChild(contextual)
 
     let currentBuilder: RefreshableElement | null = null
+    let shownMode: EditorMode | null = null
 
     function switchMode(): void {
         // Tear down whichever contextual builder was last shown so its
         // listeners (refreshes etc.) stop touching detached DOM.
+        shownMode = state.mode
         contextual.innerHTML = ''
         currentBuilder = buildContextualForMode(ctx)
         if (currentBuilder) contextual.appendChild(currentBuilder.element)
         const def = MODES.find((m) => m.mode === state.mode)
         hint.textContent = def?.hint ?? ''
+        modeSection.refresh()
     }
     switchMode()
 
@@ -86,6 +93,11 @@ export function buildEditTab(ctx: EditTabContext): RefreshableElement {
         refresh: () => {
             cameraPlane.refresh()
             palette.refresh()
+            if (shownMode !== state.mode) {
+                switchMode()
+                return
+            }
+            modeSection.refresh()
             currentBuilder?.refresh()
         },
     }
@@ -190,6 +202,8 @@ function buildCameraPlaneSection(state: EditorState): RefreshableElement {
 function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
     const state = ctx.editorState
     switch (state.mode) {
+        case 'select':
+            return buildSelectPanel()
         case 'paint':
         case 'erase':
             return buildBrushPanel(state)
@@ -201,6 +215,9 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
             return buildSpawnPanel()
         case 'place-zone':
             return buildZonePanel(ctx)
+        case 'place-sound':
+        case 'place-sound-zone':
+            return buildSoundModePanel()
     }
 }
 
@@ -413,7 +430,7 @@ function buildPaletteSection(ctx: EditTabContext): RefreshableElement {
     return { element: section, refresh }
 }
 
-function buildModeSection(state: EditorState, onChange: () => void): HTMLElement {
+function buildModeSection(state: EditorState, onChange: () => void): RefreshableElement {
     const section = sectionEl('Mode')
     const row = document.createElement('div')
     row.className = 'vpe-row'
@@ -426,15 +443,17 @@ function buildModeSection(state: EditorState, onChange: () => void): HTMLElement
         btn.title = m.hint
         btn.onclick = () => {
             state.mode = m.mode
-            for (const { btn: b } of buttons) b.classList.remove('active')
-            btn.classList.add('active')
+            refresh()
             onChange()
         }
         if (m.mode === state.mode) btn.classList.add('active')
         buttons.push({ mode: m.mode, btn })
         row.appendChild(btn)
     }
-    return section
+    function refresh(): void {
+        for (const { mode, btn } of buttons) btn.classList.toggle('active', mode === state.mode)
+    }
+    return { element: section, refresh }
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -461,6 +480,16 @@ function buildBrushPanel(state: EditorState): RefreshableElement {
         buttons.push({ kind: brush.kind, btn })
         row.appendChild(btn)
     }
+    return { element: section, refresh: () => {} }
+}
+
+function buildSelectPanel(): RefreshableElement {
+    const section = sectionEl('Selection')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.style.color = 'rgba(217, 247, 255, 0.75)'
+    hint.textContent = 'LMB selects spawn, pickups, zones, sound zones, or sound sources. Drag the gizmo to move by whole grid cells.'
+    section.appendChild(hint)
     return { element: section, refresh: () => {} }
 }
 
@@ -545,6 +574,16 @@ function buildSpawnPanel(): RefreshableElement {
     return { element: section, refresh: () => {} }
 }
 
+function buildSoundModePanel(): RefreshableElement {
+    const section = sectionEl('Sound source')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.style.color = 'rgba(217, 247, 255, 0.75)'
+    hint.textContent = 'Use the Sound tab to choose the source and edit placed emitters.'
+    section.appendChild(hint)
+    return { element: section, refresh: () => {} }
+}
+
 function buildPistonPanel(ctx: EditTabContext): RefreshableElement {
     const { editorState: state, world, chunks } = ctx
     const root = document.createElement('div')
@@ -622,6 +661,20 @@ function buildPistonPanel(ctx: EditTabContext): RefreshableElement {
         policyRow.appendChild(btn)
     }
     settings.appendChild(policyRow)
+
+    // ── Movement sound (per-piston, optional) ─────────────────────
+    const soundLabel = document.createElement('div')
+    soundLabel.className = 'vpe-section-heading'
+    soundLabel.textContent = 'Movement sound'
+    soundLabel.style.marginTop = '6px'
+    soundLabel.style.fontSize = '11px'
+    soundLabel.style.color = 'var(--text-dim, rgba(217, 247, 255, 0.65))'
+    settings.appendChild(soundLabel)
+    settings.appendChild(pistonSoundSelectField(state.pistonMoveSoundId, (id) => {
+        state.pistonMoveSoundId = id
+    }))
+    settings.appendChild(numberField('Sound vol:', state.pistonMoveSoundVolume, 0, 1, 0.05, (v) => { state.pistonMoveSoundVolume = v }))
+
     root.appendChild(settings)
 
     const listSection = sectionEl('Placed pistons')
@@ -963,6 +1016,36 @@ function checkboxField(
     span.textContent = label
     field.append(input, span)
     return field
+}
+
+/** Per-piston movement-sound dropdown. Includes a `(none)` option so
+ *  pistons that should be silent skip the audio call entirely. The
+ *  asset list comes from the SFX manifest — looped ambient samples
+ *  are excluded since they wouldn't make sense as one-shots. */
+function pistonSoundSelectField(initial: string | null, onChange: (id: string | null) => void): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'vpe-field'
+    const label = document.createElement('span')
+    label.className = 'vpe-field-label'
+    label.textContent = 'Sound:'
+    const select = document.createElement('select')
+    select.className = 'vpe-input'
+    select.style.flex = '2'
+    const none = document.createElement('option')
+    none.value = ''
+    none.textContent = '(silent)'
+    select.appendChild(none)
+    const assets: readonly AudioAsset[] = (GAME_AUDIO_MANIFEST.sounds ?? []).filter((a) => !a.loop)
+    for (const asset of assets) {
+        const opt = document.createElement('option')
+        opt.value = asset.id
+        opt.textContent = asset.id.replace(/^sfx\./, '').replace(/\./g, ' / ')
+        select.appendChild(opt)
+    }
+    select.value = initial ?? ''
+    select.onchange = () => { onChange(select.value ? select.value : null) }
+    row.append(label, select)
+    return row
 }
 
 function formatZoneScriptAction(action: ZoneScriptAction, palette: Palette): string {

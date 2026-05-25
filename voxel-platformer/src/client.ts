@@ -24,11 +24,14 @@ import { createZoneTriggerSystem } from './engine/ecs/systems/zone-trigger-syste
 import { createPlayerDeathSystem } from './engine/ecs/systems/player-death-system'
 import { createRestartSystem } from './engine/ecs/systems/restart-system'
 import { createAudioUnlockSystem } from './engine/ecs/systems/audio-unlock-system'
+import { createAudioListenerSystem } from './engine/ecs/systems/audio-listener-system'
 import { AudioEngine } from './engine/audio'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
+import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from './game/sound-sources'
+import { createPlayerLocomotionAudioSystem } from './game/player-audio'
 import { defineZone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
 import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
@@ -44,9 +47,8 @@ async function main(): Promise<void> {
     const { renderer, world } = engine
     const actions = createGameActionMap(engine.input)
     const audio = new AudioEngine()
-    void audio.loadManifest(GAME_AUDIO_MANIFEST)
-        .then(() => audio.playMusic(GameAudio.Background, { volume: 0.36, crossfade: 0.8 }))
-        .catch((err) => console.warn('Game audio failed to load:', err))
+    const audioReady = audio.loadManifest(GAME_AUDIO_MANIFEST)
+    void audioReady.catch((err) => console.warn('Game audio failed to load:', err))
 
     // Lighting. Sun from south-east, target at the centre of the demo level so
     // the shadow camera covers the whole island.
@@ -90,9 +92,24 @@ async function main(): Promise<void> {
         dispose: () => chunkRenderer.dispose(),
     }
 
+    // Level-wide ambient bed — starts once audio is unlocked. Routes
+    // through music-bus or sfx-bus depending on whether the chosen
+    // asset is declared under `music` or `sounds` in the manifest.
+    // Authoring `(none)` in the editor leaves `meta.environment`
+    // undefined ⇒ playtest is genuinely silent.
+    void audioReady.then(() => startEnvironment(audio, meta.environment, GAME_AUDIO_MANIFEST))
+
     engine
         .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
-        .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, { chunks }), 'playerControl')
+        .addSystem(createSoundSourceSystem(audio, meta.soundSources, { audioReady }), 'soundSources')
+        .addSystem(createSoundZoneSystem(audio, meta.soundZones, { audioReady }), 'soundZones')
+        .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
+            chunks,
+            onJump: () => audio.play(GameAudio.Jump, {
+                deferUntilUnlocked: true,
+                rate: 0.97 + Math.random() * 0.06,
+            }),
+        }), 'playerControl')
         .addSystem(createProjectileLaunchSystem(actions, {
             actionId: GameAction.BowShot,
             onLaunch: () => audio.play(GameAudio.Bow, { deferUntilUnlocked: true }),
@@ -100,7 +117,11 @@ async function main(): Promise<void> {
         .addSystem(createArrowHitSystem(chunks, {
             onArrowLand: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
         }), 'arrowHit')
-        .addSystem(createHighJumpSystem(actions, { actionId: GameAction.HighJump, chunks }), 'highJump')
+        .addSystem(createHighJumpSystem(actions, {
+            actionId: GameAction.HighJump,
+            chunks,
+            onHighJump: () => audio.play(GameAudio.HighJump, { deferUntilUnlocked: true }),
+        }), 'highJump')
         .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
         .addSystem(createPickupSystem({
             onCollected: (kind) => audio.play(
@@ -108,10 +129,29 @@ async function main(): Promise<void> {
                 { deferUntilUnlocked: true },
             ),
         }), 'pickup')
-        .addSystem(createPistonSystem(chunks), 'piston')
+        .addSystem(createPistonSystem(chunks, {
+            // Author-tagged movement sound. Fires once per teleport flip
+            // and once per physical arrival — at the piston's current
+            // cell so the falloff matches its visual position.
+            onFlip: (piston, position) => {
+                if (!piston.moveSoundId) return
+                try {
+                    audio.playSpatial(piston.moveSoundId, position, {
+                        deferUntilUnlocked: true,
+                        volume: piston.moveSoundVolume ?? 1,
+                        refDistance: 2,
+                        maxDistance: 24,
+                        rolloffModel: 'inverse',
+                    })
+                } catch (err) {
+                    console.warn(`Piston move sound "${piston.moveSoundId}" failed:`, err)
+                }
+            },
+        }), 'piston')
         .addSystem(createZoneTriggerSystem(chunks), 'zoneTrigger')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks), 'physics')
+        .addSystem(createPlayerLocomotionAudioSystem(audio), 'playerLocomotionAudio')
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')
         .addSystem(createImpactSystem(), 'impact')
         .addSystem(createMovingObjectSystem(), 'movingObjects')
@@ -138,6 +178,7 @@ async function main(): Promise<void> {
             wheelZoom: true,
         }), 'cameraControl')
         .addSystem(createCameraFollowSystem(renderer.iso, { smoothing: 8 }), 'cameraFollow')
+        .addSystem(createAudioListenerSystem(audio, () => renderer.iso.camera), 'audioListener')
 
     mountRestartButton(world)
     if (isPlaytestMode()) mountBackToEditorButton()
@@ -179,7 +220,8 @@ function isPlaytestMode(): boolean {
  * Pick the level the game should load. In playtest mode we deserialize the
  * editor-authored level from session storage and translate its metadata into
  * the runtime `LevelMeta` (mapping editor pickups to coin piles, passing
- * pistons through). The procedural demo level is the fallback when there's
+ * pistons / zones / sound sources through). The procedural demo level is the
+ * fallback when there's
  * no playtest snapshot, so the game URL still works as a standalone entry.
  */
 function loadLevel(chunks: ChunkManager): LevelMeta {

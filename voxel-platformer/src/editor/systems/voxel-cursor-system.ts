@@ -27,6 +27,7 @@ const ERASE_OUTLINE_COLOUR = 0xff8a5a
 const PICKUP_OUTLINE_COLOUR = 0x8fb6ff
 const PISTON_FROM_COLOUR = 0xc594ff
 const SPAWN_OUTLINE_COLOUR = 0x57e1ff
+const SOUND_OUTLINE_COLOUR = 0x66e6ff
 
 /**
  * Render-side cursor preview for the editor:
@@ -99,6 +100,11 @@ export function createVoxelCursorSystem(
                 (editorState.mode === 'paint' && input.isMouseButtonDown(RMB))
             const cursorCell = resolveCursorCell(chunks, ray, editorState, eraseGesture)
             editorState.cursor = cursorCell
+            if (editorState.mode === 'select') {
+                lines.visible = false
+                ghost.visible = false
+                return
+            }
             if (!cursorCell) {
                 lines.visible = false
                 ghost.visible = false
@@ -145,10 +151,13 @@ function resolveCursorCell(
     }
     const hit = voxelRaycast(chunks, ray.origin, ray.direction, MAX_RAY)
     if (hit) {
-        // Paint + spawn want the empty cell adjacent to the hit face — for
-        // paint that's where the new block lands, for spawn it's where the
-        // player stands. Erase / pickup / piston want the hit cell itself.
-        if ((editorState.mode === 'paint' && !eraseGesture) || editorState.mode === 'place-spawn') {
+        // Paint + spawn + sound sources want the empty cell adjacent to
+        // the hit face. Erase / pickup / piston want the hit cell itself.
+        if (
+            (editorState.mode === 'paint' && !eraseGesture) ||
+            editorState.mode === 'place-spawn' ||
+            editorState.mode === 'place-sound'
+        ) {
             return {
                 x: hit.voxel.x + hit.normal.x,
                 y: hit.voxel.y + hit.normal.y,
@@ -163,10 +172,11 @@ function resolveCursorCell(
 }
 
 /** Cells the active operation will affect. Place-piston shows two outlines
- *  (from + to); pickups / spawn show one; place-zone shows the full XZ
- *  footprint at the working plane; paint / erase show the brush footprint. */
+ *  (from + to); pickups / spawn / sound sources show one; place-zone shows
+ *  the full XZ footprint at the working plane; paint / erase show the brush
+ *  footprint. */
 function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; z: number }): { x: number; y: number; z: number }[] {
-    if (state.mode === 'spawn-pickup' || state.mode === 'place-spawn') return [cursor]
+    if (state.mode === 'spawn-pickup' || state.mode === 'place-spawn' || state.mode === 'place-sound') return [cursor]
     if (state.mode === 'place-piston') {
         const target = addOffset(cursor, pistonOffset(state.pistonDirection, state.pistonDistance))
         return [cursor, target]
@@ -210,21 +220,27 @@ function intersectGroundPlane(
 
 function outlineColour(mode: EditorState['mode']): number {
     switch (mode) {
+        case 'select': return 0xffd166
         case 'paint': return PAINT_OUTLINE_COLOUR
         case 'erase': return ERASE_OUTLINE_COLOUR
         case 'spawn-pickup': return PICKUP_OUTLINE_COLOUR
         case 'place-piston': return PISTON_FROM_COLOUR
         case 'place-spawn': return SPAWN_OUTLINE_COLOUR
         case 'place-zone': return 0xff66cc
+        case 'place-sound': return SOUND_OUTLINE_COLOUR
+        case 'place-sound-zone': return 0x4af6c8
     }
 }
 
 function ghostColour(chunks: ChunkManager, state: EditorState): [number, number, number] {
+    if (state.mode === 'select') return [1, 0.82, 0.4]
     if (state.mode === 'erase') return [1, 0.4, 0.32]
     if (state.mode === 'spawn-pickup') return [0.56, 0.71, 1]
     if (state.mode === 'place-piston') return [1, 0.82, 0.4]
     if (state.mode === 'place-spawn') return [0.34, 0.88, 1]
     if (state.mode === 'place-zone') return [1, 0.4, 0.8]
+    if (state.mode === 'place-sound') return [0.4, 0.9, 1]
+    if (state.mode === 'place-sound-zone') return [0.29, 0.96, 0.78]
     const entry = chunks.palette.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]

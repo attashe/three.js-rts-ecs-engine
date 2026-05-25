@@ -47,6 +47,8 @@ function placePiston(world: GameWorld, chunks: ChunkManager, state: EditorState)
     const offset = pistonOffset(state.pistonDirection, state.pistonDistance)
     if (offset.x === 0 && offset.y === 0 && offset.z === 0) return
     const to = addOffset(from, offset)
+    const moveSoundId = state.pistonMoveSoundId || undefined
+    const moveSoundVolume = state.pistonMoveSoundVolume
     registerPistonMechanism(world, chunks, {
         from,
         to,
@@ -55,6 +57,8 @@ function placePiston(world: GameWorld, chunks: ChunkManager, state: EditorState)
         motion: state.pistonMotion,
         travelTime: state.pistonTravelTime,
         characterPolicy: state.pistonPolicy,
+        moveSoundId,
+        moveSoundVolume,
     })
     state.pistons.push({
         from: { ...from },
@@ -64,6 +68,8 @@ function placePiston(world: GameWorld, chunks: ChunkManager, state: EditorState)
         motion: state.pistonMotion,
         travelTime: state.pistonTravelTime,
         characterPolicy: state.pistonPolicy,
+        moveSoundId,
+        moveSoundVolume,
     })
     pushLog(world, `Piston placed (${state.pistonMotion}, ${state.pistonDirection} ×${state.pistonDistance}, ${state.pistonPolicy}).`)
 }
