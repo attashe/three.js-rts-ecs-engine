@@ -11,6 +11,7 @@ export interface ProjectileLaunchOptions {
     arrowLift?: number
     actionId?: ActionId
     canUse?: (world: Parameters<System['update']>[0], player: number) => boolean
+    onLaunch?: () => void
 }
 
 export function createProjectileLaunchSystem(actions: ActionMap, opts: ProjectileLaunchOptions = {}): System {
@@ -45,6 +46,7 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
                 },
             )
             pushLog(world, 'Arrow loosed.')
+            opts.onLaunch?.()
         },
     }
 }

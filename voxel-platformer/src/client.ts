@@ -18,17 +18,20 @@ import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-la
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
-import { createPickupSystem } from './engine/ecs/systems/pickup-system'
+import { createPickupSystem, PickupKind } from './engine/ecs/systems/pickup-system'
 import { createPistonSystem } from './engine/ecs/systems/piston-system'
 import { createZoneTriggerSystem } from './engine/ecs/systems/zone-trigger-system'
 import { createPlayerDeathSystem } from './engine/ecs/systems/player-death-system'
 import { createRestartSystem } from './engine/ecs/systems/restart-system'
+import { createAudioUnlockSystem } from './engine/ecs/systems/audio-unlock-system'
+import { AudioEngine } from './engine/audio'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
 import { defineZone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
+import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
 import { deserializeLevel } from './engine/voxel/level-serializer'
 import { consumePlaytestLevel } from './editor/playtest'
 import { levelMetaFromEditor } from './game/level-from-meta'
@@ -40,6 +43,10 @@ async function main(): Promise<void> {
     const engine = new Engine({ fixedHz: 60 })
     const { renderer, world } = engine
     const actions = createGameActionMap(engine.input)
+    const audio = new AudioEngine()
+    void audio.loadManifest(GAME_AUDIO_MANIFEST)
+        .then(() => audio.playMusic(GameAudio.Background, { volume: 0.36, crossfade: 0.8 }))
+        .catch((err) => console.warn('Game audio failed to load:', err))
 
     // Lighting. Sun from south-east, target at the centre of the demo level so
     // the shadow camera covers the whole island.
@@ -84,12 +91,23 @@ async function main(): Promise<void> {
     }
 
     engine
+        .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, { chunks }), 'playerControl')
-        .addSystem(createProjectileLaunchSystem(actions, { actionId: GameAction.BowShot }), 'projectileLaunch')
-        .addSystem(createArrowHitSystem(chunks), 'arrowHit')
+        .addSystem(createProjectileLaunchSystem(actions, {
+            actionId: GameAction.BowShot,
+            onLaunch: () => audio.play(GameAudio.Bow, { deferUntilUnlocked: true }),
+        }), 'projectileLaunch')
+        .addSystem(createArrowHitSystem(chunks, {
+            onArrowLand: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
+        }), 'arrowHit')
         .addSystem(createHighJumpSystem(actions, { actionId: GameAction.HighJump, chunks }), 'highJump')
         .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
-        .addSystem(createPickupSystem(), 'pickup')
+        .addSystem(createPickupSystem({
+            onCollected: (kind) => audio.play(
+                kind === PickupKind.Arrow ? GameAudio.PickupArrow : GameAudio.PickupGold,
+                { deferUntilUnlocked: true },
+            ),
+        }), 'pickup')
         .addSystem(createPistonSystem(chunks), 'piston')
         .addSystem(createZoneTriggerSystem(chunks), 'zoneTrigger')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
@@ -98,7 +116,12 @@ async function main(): Promise<void> {
         .addSystem(createImpactSystem(), 'impact')
         .addSystem(createMovingObjectSystem(), 'movingObjects')
         .addSystem(createDynamicCollisionSystem(chunks), 'dynamicCollision')
-        .addSystem(createPlayerDeathSystem(), 'playerDeath')
+        .addSystem(createPlayerDeathSystem({
+            onDeath: () => {
+                audio.play(GameAudio.Death, { deferUntilUnlocked: true })
+                audio.playStinger(GameAudio.DeathStinger, { deferUntilUnlocked: true })
+            },
+        }), 'playerDeath')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')

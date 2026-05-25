@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "audio:samples": "node scripts/generate-audio-samples.mjs",
     "test": "tsc -p tsconfig.test.json && cp tests/package.cjs.json .tmp/test-build/package.json && node --test .tmp/test-build/tests/*.test.js",
     "typecheck": "tsc --noEmit"
   },

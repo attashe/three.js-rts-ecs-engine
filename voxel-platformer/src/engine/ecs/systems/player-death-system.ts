@@ -2,12 +2,13 @@ import { query } from 'bitecs'
 import { PlayerControlled, Position } from '../components'
 import type { System } from './system'
 import { FixedOrder } from './orders'
-import { pushLog, type GameWorld } from '../world'
+import { pushLog, type DeathReason, type GameWorld } from '../world'
 
 export interface PlayerDeathSystemOptions {
     /** Players below this world-Y are considered to have fallen off the
      *  level and die. Default `-2` — below most demo / playtest terrain. */
     voidY?: number
+    onDeath?: (reason: DeathReason) => void
 }
 
 /**
@@ -33,6 +34,7 @@ export function createPlayerDeathSystem(opts: PlayerDeathSystemOptions = {}): Sy
                 if (Position.y[eid] < voidY) {
                     (world as GameWorld).deathSignal = 'fell-into-void'
                     pushLog(world as GameWorld, 'You fell into the void.')
+                    opts.onDeath?.('fell-into-void')
                     return
                 }
             }
