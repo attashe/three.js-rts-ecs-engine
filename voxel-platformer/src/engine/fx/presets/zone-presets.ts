@@ -53,7 +53,7 @@ export const ZONE_PRESETS: Record<string, ZonePreset> = {
         params: { type: 'water', name: 'Water', color: '#5fb6ff', count: 24, particleSize: 0.08, opacity: 0.68, speed: 0.55, turbulence: 1.1, windX: 0.45, windZ: 0.18, gravity: 0, lifetime: 6.0, streaks: false, streakLength: 0.08, lightEnabled: false, lightColor: '#8ed8ff', lightIntensity: 0.5, lightDistance: 16, lightning: false, size: { x: 14, y: 5, z: 14 } },
     },
     lava: { id: 'lava', label: 'Lava Surface',
-        params: { type: 'lava', name: 'Lava', color: '#ff6a24', count: 120, particleSize: 0.14, opacity: 0.92, speed: 1.2, turbulence: 1.0, windX: 0.12, windZ: 0.08, gravity: -0.2, lifetime: 2.1, streaks: false, streakLength: 0.08, lightEnabled: true, lightColor: '#ff7a24', lightIntensity: 6, lightDistance: 20, lightning: false, size: { x: 12, y: 4.5, z: 12 } },
+        params: { type: 'lava', name: 'Lava', color: '#ff6a24', count: 120, particleSize: 0.14, opacity: 0.92, speed: 1.2, turbulence: 1.0, windX: 0.12, windZ: 0.08, gravity: -0.2, lifetime: 2.1, streaks: false, streakLength: 0.08, lightEnabled: true, lightColor: '#ff8a3a', lightIntensity: 14, lightDistance: 32, lightning: false, size: { x: 12, y: 4.5, z: 12 } },
     },
 }
 

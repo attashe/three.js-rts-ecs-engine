@@ -1,24 +1,29 @@
 import type { EmitterCreated, EmitterDeps, EmitterStrategy, WeatherZoneRuntime, WriteContext } from '../core/types'
 import { billboardYaw, buildPrimaryBillboard } from './emitter-base'
 import { rand, TAU } from '../core/sim-utils'
-import { animateWaterSurface, buildWaterSurface } from '../materials/liquid-surfaces'
+import { buildWaterSurface, type WaterSurface } from '../materials/liquid-surfaces'
 import { tintMaterial } from '../materials/material-tint'
 
 /**
- * Water zone: animated surface plane + caustic projector overlay + a
- * handful of "glint" sprites that twinkle just above the surface. The
- * surface is what makes this read as water — the particles are
- * decoration.
+ * Water zone: GPU-driven wave surface + a handful of "glint" sprites
+ * that twinkle just above the crests. The shader handles all of the
+ * displacement, normal calculation, fresnel, foam, and sun glints —
+ * the emitter just provides the per-zone tint and the decorative
+ * sprite layer.
  */
 export class WaterEmitter implements EmitterStrategy {
     readonly type = 'water' as const
 
     create(runtime: WeatherZoneRuntime, deps: EmitterDeps): EmitterCreated {
-        const { surface, overlay, base } = buildWaterSurface(runtime.params.color, { x: runtime.params.size.x, z: runtime.params.size.z }, deps.textures)
+        const surface = buildWaterSurface({
+            size: { x: runtime.params.size.x, z: runtime.params.size.z },
+            shallowColor: runtime.params.color,
+            opacity: runtime.params.opacity,
+        })
         const { mesh } = buildPrimaryBillboard(runtime, deps, 'glint', { additive: true })
         runtime.particles.count = runtime.params.count
-        ;(runtime as { _surfaceBase?: Float32Array })._surfaceBase = base
-        return { primary: mesh, extras: runtime.extras, surface, surfaceOverlay: overlay }
+        ;(runtime as { _waterSurface?: WaterSurface })._waterSurface = surface
+        return { primary: mesh, extras: runtime.extras, surface: surface.mesh }
     }
 
     spawn(runtime: WeatherZoneRuntime, i: number, _recycle: boolean, rng: () => number): void {
@@ -47,9 +52,13 @@ export class WaterEmitter implements EmitterStrategy {
             pool.positions[p3 + 2] += Math.cos(elapsed * 0.5 + ph * 1.4) * 0.1 * dt
         }
 
-        if (runtime.surface) {
-            const base = (runtime as { _surfaceBase?: Float32Array })._surfaceBase
-            if (base) animateWaterSurface(runtime.surface, base, runtime.surfaceOverlay, runtime.params, elapsed)
+        // The shader reads `time` on its own; we only push tunables
+        // that depend on the per-zone params.
+        const surface = (runtime as { _waterSurface?: WaterSurface })._waterSurface
+        if (surface) {
+            surface.setColors({ shallow: runtime.params.color })
+            surface.setOpacity(runtime.params.opacity)
+            surface.setSize(runtime.params.size.x, runtime.params.size.z)
         }
     }
 
@@ -77,5 +86,11 @@ export class WaterEmitter implements EmitterStrategy {
         tintMaterial(primary.material, '#e7f8ff', p.opacity * 0.6)
     }
 
-    dispose(_runtime: WeatherZoneRuntime): void {}
+    dispose(runtime: WeatherZoneRuntime): void {
+        const surface = (runtime as { _waterSurface?: WaterSurface })._waterSurface
+        if (surface) {
+            surface.dispose()
+            ;(runtime as { _waterSurface?: WaterSurface })._waterSurface = undefined
+        }
+    }
 }

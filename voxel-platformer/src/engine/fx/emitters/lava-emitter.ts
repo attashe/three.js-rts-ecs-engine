@@ -1,23 +1,27 @@
 import type { EmitterCreated, EmitterDeps, EmitterStrategy, WeatherZoneRuntime, WriteContext } from '../core/types'
 import { billboardYaw, buildPrimaryBillboard } from './emitter-base'
 import { damping, rand, TAU } from '../core/sim-utils'
-import { animateLavaSurface, buildLavaSurface } from '../materials/liquid-surfaces'
+import { buildLavaSurface, type LavaSurface } from '../materials/liquid-surfaces'
 import { tintMaterial } from '../materials/material-tint'
 
 /**
- * Lava zone: emissive surface + caustic-style glow overlay + upward
- * embers. The zone's PointLight is modulated by the FX light
- * controller to pulse with the surface glow.
+ * Lava zone: GPU-driven emissive crust+core surface + upward embers.
+ * The shader handles the rolling displacement, crust mask, and HDR
+ * emissive bands; the emitter owns the ember particle layer and the
+ * per-frame light modulation (which lives in fx-light-controller).
  */
 export class LavaEmitter implements EmitterStrategy {
     readonly type = 'lava' as const
 
     create(runtime: WeatherZoneRuntime, deps: EmitterDeps): EmitterCreated {
-        const { surface, overlay, base } = buildLavaSurface(runtime.params.color, { x: runtime.params.size.x, z: runtime.params.size.z }, deps.textures)
+        const surface = buildLavaSurface({
+            size: { x: runtime.params.size.x, z: runtime.params.size.z },
+            hotColor: runtime.params.color,
+        })
         const { mesh } = buildPrimaryBillboard(runtime, deps, 'ember', { additive: true })
         runtime.particles.count = runtime.params.count
-        ;(runtime as { _surfaceBase?: Float32Array })._surfaceBase = base
-        return { primary: mesh, extras: runtime.extras, surface, surfaceOverlay: overlay }
+        ;(runtime as { _lavaSurface?: LavaSurface })._lavaSurface = surface
+        return { primary: mesh, extras: runtime.extras, surface: surface.mesh }
     }
 
     spawn(runtime: WeatherZoneRuntime, i: number, _recycle: boolean, rng: () => number): void {
@@ -36,7 +40,7 @@ export class LavaEmitter implements EmitterStrategy {
         pool.lifetimes[i] = runtime.params.lifetime * rand(rng, 0.6, 1.2)
     }
 
-    update(runtime: WeatherZoneRuntime, dt: number, elapsed: number, rng: () => number): void {
+    update(runtime: WeatherZoneRuntime, dt: number, _elapsed: number, rng: () => number): void {
         const pool = runtime.particles
         const drag = damping(0.82, dt)
         for (let i = 0; i < pool.count; i++) {
@@ -51,9 +55,10 @@ export class LavaEmitter implements EmitterStrategy {
             if (pool.ages[i]! > pool.lifetimes[i]!) this.spawn(runtime, i, true, rng)
         }
 
-        if (runtime.surface) {
-            const base = (runtime as { _surfaceBase?: Float32Array })._surfaceBase
-            if (base) animateLavaSurface(runtime.surface, base, runtime.surfaceOverlay, runtime.params, elapsed)
+        const surface = (runtime as { _lavaSurface?: LavaSurface })._lavaSurface
+        if (surface) {
+            surface.setColors({ hot: runtime.params.color })
+            surface.setSize(runtime.params.size.x, runtime.params.size.z)
         }
     }
 
@@ -83,5 +88,11 @@ export class LavaEmitter implements EmitterStrategy {
         tintMaterial(primary.material, '#ffb259', p.opacity)
     }
 
-    dispose(_runtime: WeatherZoneRuntime): void {}
+    dispose(runtime: WeatherZoneRuntime): void {
+        const surface = (runtime as { _lavaSurface?: LavaSurface })._lavaSurface
+        if (surface) {
+            surface.dispose()
+            ;(runtime as { _lavaSurface?: LavaSurface })._lavaSurface = undefined
+        }
+    }
 }

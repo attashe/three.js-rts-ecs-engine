@@ -63,7 +63,16 @@ export class ExplosionEmitter implements EmitterStrategy {
         const next = (runtime as { _explosionNext?: number })._explosionNext ?? 0
         if (elapsed >= next) {
             resetBurst(runtime, elapsed, rng)
-            ;(runtime as { _explosionNext?: number })._explosionNext = elapsed + Math.max(1.0, p.lifetime) + 1.35
+            // One-shot zones (created via `WeatherSystem.triggerExplosion`)
+            // mark the runtime so the next burst never schedules. Setting
+            // `_explosionNext` to +Infinity keeps the comparison consistent
+            // with the regular recurring path. Placed-zone explosions (no
+            // flag) keep their recurring rhythm.
+            const oneShot = (runtime as { _explosionOneShot?: boolean })._explosionOneShot === true
+            ;(runtime as { _explosionNext?: number })._explosionNext =
+                oneShot
+                    ? Infinity
+                    : elapsed + Math.max(1.0, p.lifetime) + 1.35
         }
 
         const pool = runtime.particles

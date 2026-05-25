@@ -106,6 +106,12 @@ export class WeatherSystem {
             lightEnabled: true, lightColor: '#ff9a2d', lightIntensity: 16, lightDistance: 36, lightning: false,
         }, overrides)
         const zone = this.addZone(params)
+        // Flag the runtime so the explosion emitter never reschedules a
+        // second burst. Without this, the recurring-burst path would
+        // fire ≈ `lifetime + 1.35 s` after spawn — which overlapped the
+        // despawn window (`lifetime + 1.5 s`) by 0.15 s and produced a
+        // visible "echo" right before the zone disappeared.
+        ;(zone.runtime as { _explosionOneShot?: boolean })._explosionOneShot = true
         this.oneShots.push({ zone, expireAt: this.elapsed + params.lifetime + 1.5 })
         return zone
     }

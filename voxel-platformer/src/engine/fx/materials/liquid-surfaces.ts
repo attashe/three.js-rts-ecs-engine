@@ -1,246 +1,356 @@
-import { AdditiveBlending, BufferAttribute, Color, DoubleSide, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry } from 'three'
-import type { TextureRegistryView } from '../core/types'
+import { Color, DoubleSide, Mesh, PlaneGeometry, Vector3 } from 'three'
+import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
+import {
+    Fn,
+    cameraPosition,
+    cross,
+    float,
+    mix,
+    mx_fractal_noise_float,
+    mx_noise_float,
+    normalize,
+    positionLocal,
+    positionWorld,
+    pow,
+    reflect,
+    saturate,
+    sin,
+    smoothstep,
+    time,
+    uniform,
+    vec2,
+    vec3,
+} from 'three/tsl'
 
 /**
- * Liquid surface meshes for water + lava zones. CPU-displaced plane
- * (the migration doc calls this a prototype-grade approach — a flow
- * map / normal-driven shader is the right production target).
+ * Production-grade liquid surface materials, driven entirely by the
+ * GPU via TSL nodes — zero per-frame CPU work, zero per-frame
+ * allocations, and no overlay quad.
  *
- * The mesh + overlay are returned as a pair so the emitter can animate
- * texture offsets and per-vertex displacement from a single update
- * call. Disposal is the caller's responsibility.
+ * Each builder returns:
+ *   - `mesh`     : a `Mesh` ready to be added to a scene group;
+ *   - `setColors`/`setOpacity` : runtime tweakers that mutate uniforms;
+ *   - `dispose`  : free GPU resources owned by the material.
+ *
+ * The shader reads three.js's global `time` uniform, so no caller
+ * needs to feed it a clock. Multiple instances share the same time —
+ * they all phase together, which keeps a body of water reading as a
+ * single fluid even across many zones.
  */
-export function buildWaterSurface(color: string, size: { x: number; z: number }, textures: TextureRegistryView): { surface: Mesh; overlay: Mesh; base: Float32Array } {
-    const geo = new PlaneGeometry(1, 1, 36, 36)
-    geo.rotateX(-Math.PI / 2)
-    const positions = geo.attributes.position as import('three').BufferAttribute
-    const base = new Float32Array(positions.array as Float32Array)
-    const colorAttr = new Float32Array(positions.count * 3)
-    geo.setAttribute('color', new BufferAttribute(colorAttr, 3))
 
-    const mat = new MeshStandardMaterial({
-        color: new Color(color),
-        roughness: 0.12,
-        metalness: 0.04,
-        transparent: true,
-        opacity: 0.76,
-        emissive: new Color('#12385a'),
-        emissiveIntensity: 0.16,
-        vertexColors: true,
-        side: DoubleSide,
-    })
-    const surface = new Mesh(geo, mat)
-    surface.scale.set(size.x, 1, size.z)
-
-    const overlayMat = new MeshBasicMaterial({
-        map: textures.surface('caustics'),
-        transparent: true,
-        depthWrite: false,
-        opacity: 0.28,
-        blending: AdditiveBlending,
-        side: DoubleSide,
-    })
-    overlayMat.map!.repeat.set(2.4, 2.4)
-    const overlayGeo = new PlaneGeometry(1, 1)
-    overlayGeo.rotateX(-Math.PI / 2)
-    const overlay = new Mesh(overlayGeo, overlayMat)
-    overlay.scale.set(size.x, 1, size.z)
-    overlay.position.y = 0.06
-
-    return { surface, overlay, base }
+export interface LiquidSurfaceBase {
+    mesh: Mesh
+    setOpacity(o: number): void
+    setSize(x: number, z: number): void
+    dispose(): void
 }
 
-export function buildLavaSurface(color: string, size: { x: number; z: number }, textures: TextureRegistryView): { surface: Mesh; overlay: Mesh; base: Float32Array } {
-    const geo = new PlaneGeometry(1, 1, 54, 54)
-    geo.rotateX(-Math.PI / 2)
-    const positions = geo.attributes.position as import('three').BufferAttribute
-    const base = new Float32Array(positions.array as Float32Array)
-    const colorAttr = new Float32Array(positions.count * 3)
-    geo.setAttribute('color', new BufferAttribute(colorAttr, 3))
+export interface WaterSurface extends LiquidSurfaceBase {
+    setColors(opts: { deep?: string; shallow?: string; foam?: string }): void
+}
 
-    const mat = new MeshStandardMaterial({
-        map: textures.surface('lava'),
-        color: new Color('#ffffff'),
-        roughness: 0.58,
-        metalness: 0.02,
-        emissive: new Color(color),
-        emissiveIntensity: 1.35,
-        vertexColors: true,
-        side: DoubleSide,
-    })
-    mat.map!.repeat.set(1.12, 1.12)
-    const surface = new Mesh(geo, mat)
-    surface.scale.set(size.x, 1, size.z)
+export interface LavaSurface extends LiquidSurfaceBase {
+    setColors(opts: { crust?: string; hot?: string; glow?: string }): void
+}
 
-    const overlayMat = new MeshBasicMaterial({
-        map: textures.surface('lavaGlow'),
-        transparent: true,
-        depthWrite: false,
-        opacity: 0.34,
-        blending: AdditiveBlending,
-        side: DoubleSide,
-    })
-    overlayMat.color.set(new Color('#ff8a2a'))
-    overlayMat.map!.repeat.set(1.35, 1.35)
-    const overlayGeo = new PlaneGeometry(1, 1)
-    overlayGeo.rotateX(-Math.PI / 2)
-    const overlay = new Mesh(overlayGeo, overlayMat)
-    overlay.scale.set(size.x, 1, size.z)
-    overlay.position.y = 0.08
-
-    return { surface, overlay, base }
+export interface WaterSurfaceOpts {
+    size: { x: number; z: number }
+    /** Bottom-of-wave tint — dominates troughs. */
+    deepColor?: string
+    /** Top-of-wave tint — dominates crests and grazing-angle highlights. */
+    shallowColor?: string
+    /** Wash colour at foamy crests. */
+    foamColor?: string
+    sunDirection?: Vector3
+    /** Peak wave height in local units. Default 0.16 — visible. */
+    waveAmplitude?: number
+    /** Animation rate multiplier. Default 1.0. */
+    waveSpeed?: number
+    opacity?: number
 }
 
 /**
- * Step the water plane vertices + caustics offset. `base` is the
- * cached rest-state positions allocated alongside the surface.
+ * Stylised "video-game water" surface. Unlit on purpose — we don't
+ * try to compete with real PBR water (which needs reflections and an
+ * environment map). Instead we lean into the look that reads as water
+ * from any angle:
+ *
+ *   - Four overlapping sin-wave trains drive both displacement and
+ *     analytic-difference normals. Wavelengths are deliberately
+ *     non-commensurate so the surface never resolves into a grid.
+ *   - The base colour is a *vertical gradient* keyed to wave height,
+ *     not a fresnel mix. Troughs are dark and saturated, crests are
+ *     bright and pastel — the eye reads the gradient as depth and
+ *     the displacement as motion.
+ *   - Two scrolling FBM noise fields paint moving bright patches on
+ *     top, evoking light scatter / underwater caustics without ever
+ *     being a real reflection.
+ *   - Foam appears at the highest crests as an additive white wash
+ *     so the wave shape is visible even at glancing angles.
+ *   - A single sharp specular highlight tracks the sun direction.
+ *   - A soft fresnel adds a hint of shallow tint at grazing angles.
+ *
+ * All composited into `colorNode`. We bypass PBR entirely
+ * (`MeshBasicNodeMaterial`) so the look doesn't depend on the
+ * surrounding lighting rig.
  */
-export function animateWaterSurface(mesh: Mesh, base: Float32Array, overlay: Mesh | null, params: { speed: number; opacity: number; color: string }, elapsed: number): void {
-    const geo = mesh.geometry as PlaneGeometry
-    const positions = geo.attributes.position as import('three').BufferAttribute
-    const arr = positions.array as Float32Array
-    const colorArr = (geo.attributes.color as import('three').BufferAttribute).array as Float32Array
-    for (let i = 0; i < positions.count; i++) {
-        const i3 = i * 3
-        const x = base[i3]!
-        const z = base[i3 + 2]!
-        const phase = base[i3]! * 0.7 + base[i3 + 2]! * 1.1
-        const wave =
-            Math.sin((x * 10.0) + elapsed * (1.7 + params.speed * 0.12) + phase) * 0.020 +
-            Math.cos((z * 11.5) - elapsed * (1.35 + params.speed * 0.10) + phase * 1.7) * 0.016 +
-            Math.sin((x + z) * 16.0 + elapsed * 2.4) * 0.010
-        arr[i3 + 1] = wave
-        const glow = 0.55 + 0.45 * Math.sin((x - z) * 18 + elapsed * 2.8 + phase)
-        colorArr[i3]     = 0.18 + glow * 0.08
-        colorArr[i3 + 1] = 0.44 + glow * 0.15
-        colorArr[i3 + 2] = 0.68 + glow * 0.17
+export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
+    const deepColor = uniform(new Color(opts.deepColor ?? '#08283f'))
+    const shallowColor = uniform(new Color(opts.shallowColor ?? '#7ddbf2'))
+    const foamColor = uniform(new Color(opts.foamColor ?? '#f4faff'))
+    const opacityUniform = uniform(opts.opacity ?? 0.88)
+    const amplitude = uniform(opts.waveAmplitude ?? 0.16)
+    const speed = uniform(opts.waveSpeed ?? 1.0)
+    const sunDir = uniform(
+        opts.sunDirection
+            ? opts.sunDirection.clone().normalize()
+            : new Vector3(0.35, 0.75, 0.4).normalize(),
+    )
+
+    const tScaled = time.mul(speed)
+
+    // Four wave trains with prime-ish directions + wavelengths so the
+    // sum never tiles visibly. Coefficients chosen so the *summed*
+    // wave envelope stays in roughly [-1, 1] before the amplitude
+    // multiplier — which keeps the colour-from-height remap stable.
+    const wavefn = Fn(([p, t]: [any, any]) => {
+        const w1 = p.dot(vec2(0.93, 0.36).mul(1.8)).add(t.mul(1.45)).sin().mul(0.40)
+        const w2 = p.dot(vec2(-0.52, 0.85).mul(2.6)).add(t.mul(1.15)).sin().mul(0.28)
+        const w3 = p.dot(vec2(0.71, -0.71).mul(3.9)).add(t.mul(1.85)).sin().mul(0.18)
+        const w4 = p.dot(vec2(-0.85, -0.52).mul(5.7)).add(t.mul(2.35)).sin().mul(0.12)
+        return w1.add(w2).add(w3).add(w4)
+    })
+
+    const localXZ = vec2(positionLocal.x, positionLocal.z)
+    const waveRaw = wavefn(localXZ, tScaled)
+    const h = waveRaw.mul(amplitude)
+    const newPos = vec3(positionLocal.x, h, positionLocal.z)
+
+    // Analytic-style normal via central difference on the wave field.
+    // We use a small eps relative to the wave wavelengths so the
+    // surface tangents are well-conditioned.
+    const eps = float(0.03)
+    const hL = wavefn(localXZ.sub(vec2(eps, 0)), tScaled).mul(amplitude)
+    const hR = wavefn(localXZ.add(vec2(eps, 0)), tScaled).mul(amplitude)
+    const hD = wavefn(localXZ.sub(vec2(0, eps)), tScaled).mul(amplitude)
+    const hU = wavefn(localXZ.add(vec2(0, eps)), tScaled).mul(amplitude)
+    const tangentX = vec3(eps.mul(2), hR.sub(hL), float(0))
+    const tangentZ = vec3(float(0), hU.sub(hD), eps.mul(2))
+    const n = normalize(cross(tangentZ, tangentX))
+
+    // View direction for fresnel + sun glint.
+    const view = normalize(cameraPosition.sub(positionWorld))
+    const ndotv = saturate(view.dot(n))
+    const fresnel = pow(float(1).sub(ndotv), 4)  // softer than ^5
+
+    // Wave-height remap to [0, 1] so we can drive a colour gradient.
+    // `waveRaw` sums to roughly [-1, 1]; the .add(1).mul(0.5) hits [0, 1].
+    const heightT = saturate(waveRaw.add(1).mul(0.5))
+
+    // Caustic-style scrolling bright patches. Two scales for richness.
+    const cau1 = mx_fractal_noise_float(vec3(localXZ.x, localXZ.y, time.mul(0.4)).mul(2.4), 3, 2.0, 0.5, 1.0)
+    const cau2 = mx_fractal_noise_float(vec3(localXZ.x, localXZ.y, time.mul(-0.25)).mul(5.1), 3, 2.0, 0.5, 1.0)
+    // Sharpen the patches into bright highlights with a smoothstep.
+    const caustics = smoothstep(float(0.35), float(0.85), cau1.add(cau2).mul(0.5).add(0.5))
+        .mul(0.45)
+
+    // Foam at crests. The crest is anything in the top ~30 % of the
+    // height range. Wide smoothstep keeps the edge soft.
+    const foamMask = smoothstep(float(0.68), float(0.92), heightT)
+
+    // Sun glint. Sharp but not pinpoint — moderate exponent gives a
+    // streak you can actually see when the camera moves.
+    const reflected = reflect(view.negate(), n)
+    const sunDot = saturate(reflected.dot(sunDir))
+    const glint = pow(sunDot, 48).mul(0.85)
+
+    // Composition order:
+    //   1. base height gradient (deep ↔ shallow)
+    //   2. mix in shallow tint at grazing angles (fresnel)
+    //   3. add caustic brightness (mostly shallow-tinted)
+    //   4. wash with foam at crests
+    //   5. add sun glint (additive bright white)
+    const baseHeight = mix(deepColor, shallowColor, heightT)
+    const withFresnel = mix(baseHeight, shallowColor, fresnel.mul(0.6))
+    const withCaustics = withFresnel.add(shallowColor.mul(caustics))
+    const withFoam = mix(withCaustics, foamColor, foamMask)
+    const finalColor = withFoam.add(vec3(glint))
+
+    // Opacity climbs at grazing angles (where the eye sees more water
+    // surface). Foam pushes opacity to nearly 1 so crests read solid.
+    const finalOpacity = saturate(
+        opacityUniform.add(fresnel.mul(0.20)).add(foamMask.mul(0.30)),
+    )
+
+    const mat = new MeshBasicNodeMaterial({
+        transparent: true,
+        side: DoubleSide,
+        depthWrite: false,
+    })
+    mat.positionNode = newPos
+    mat.colorNode = finalColor
+    mat.opacityNode = finalOpacity
+
+    // 96×96 segments — plenty for smooth Gerstner waves at the demo's
+    // zone sizes. Modern hardware doesn't notice.
+    const geo = new PlaneGeometry(1, 1, 96, 96)
+    geo.rotateX(-Math.PI / 2)
+    const mesh = new Mesh(geo, mat)
+    mesh.scale.set(opts.size.x, 1, opts.size.z)
+
+    return {
+        mesh,
+        setColors(c) {
+            if (c.deep)    deepColor.value.set(c.deep)
+            if (c.shallow) shallowColor.value.set(c.shallow)
+            if (c.foam)    foamColor.value.set(c.foam)
+        },
+        setOpacity(o) { opacityUniform.value = o },
+        setSize(x, z) { mesh.scale.set(x, 1, z) },
+        dispose() {
+            geo.dispose()
+            mat.dispose()
+        },
     }
-    positions.needsUpdate = true
-    ;(geo.attributes.color as import('three').BufferAttribute).needsUpdate = true
-    geo.computeVertexNormals()
-    ;(mesh.material as MeshStandardMaterial).opacity = params.opacity
-    ;(mesh.material as MeshStandardMaterial).color.set(params.color)
+}
 
-    if (overlay) {
-        const m = overlay.material as MeshBasicMaterial
-        const tex = m.map!
-        tex.offset.x = elapsed * 0.045 + Math.sin(elapsed * 0.25) * 0.03
-        tex.offset.y = -elapsed * 0.034 + Math.cos(elapsed * 0.22) * 0.03
-        m.opacity = 0.10 + Math.min(0.20, params.opacity * 0.18)
+export interface LavaSurfaceOpts {
+    size: { x: number; z: number }
+    hotColor?: string
+    crustColor?: string
+    glowColor?: string
+    waveAmplitude?: number
+    flowSpeed?: number
+    crustAmount?: number
+    /** HDR emissive multiplier. Default 4.5 — high enough that the
+     *  surface noticeably glows through fog under ACES tonemapping. */
+    emissiveStrength?: number
+}
+
+/**
+ * Stylised lava with HDR emissive. The shader produces values well
+ * above 1.0 in the hottest regions, so under ACES tonemapping the
+ * surface visibly glows even when fog is heavy.
+ *
+ *   - Vertex displacement: low-octave FBM scrolling slowly across the
+ *     surface, giving the goopy bulges. Same finite-difference normal
+ *     trick as the water shader.
+ *   - Crust mask: independent low-frequency Perlin thresholded with
+ *     smoothstep. Dark patches that don't visibly correlate with the
+ *     displacement field.
+ *   - Hot veins: faster-scrolling FBM, sharpened. Concentrates bright
+ *     emissive at sharp boundaries.
+ *   - Fresnel rim: extra glow at grazing angles so the rim of the
+ *     pool reads as luminous even when viewed from above.
+ *   - Pulse: two-frequency sin oscillator gives the surface life.
+ *   - `material.fog = false` — lava is a light source. Fog dimming
+ *     the emissive would look wrong (and *was* the user's complaint).
+ */
+export function buildLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
+    const hotColor = uniform(new Color(opts.hotColor ?? '#ffb35a'))
+    const crustColor = uniform(new Color(opts.crustColor ?? '#1c0904'))
+    const glowColor = uniform(new Color(opts.glowColor ?? '#ff5a16'))
+    const opacityUniform = uniform(1.0)
+    const amplitude = uniform(opts.waveAmplitude ?? 0.05)
+    const flowSpeed = uniform(opts.flowSpeed ?? 0.18)
+    const crustAmount = uniform(opts.crustAmount ?? 0.55)
+    const emissiveStrength = uniform(opts.emissiveStrength ?? 4.5)
+
+    const tFlow = time.mul(flowSpeed)
+    const flow1 = vec2(positionLocal.x, positionLocal.z).mul(2.6).add(vec2(tFlow, tFlow.mul(-0.6)))
+    const flow2 = vec2(positionLocal.x, positionLocal.z).mul(5.2).add(vec2(tFlow.mul(-0.85), tFlow.mul(0.4)))
+    const flowCrust = vec2(positionLocal.x, positionLocal.z).mul(1.4).add(vec2(tFlow.mul(0.35), tFlow.mul(0.25)))
+
+    const dispNoise = mx_fractal_noise_float(vec3(flow1.x, flow1.y, tFlow.mul(0.3)), 3, 2.0, 0.5, 1.0)
+    const h = dispNoise.mul(amplitude)
+    const newPos = vec3(positionLocal.x, h, positionLocal.z)
+
+    const eps = float(0.05)
+    const sampleDisp = Fn(([uv]: [any]) =>
+        mx_fractal_noise_float(vec3(uv.x, uv.y, tFlow.mul(0.3)), 3, 2.0, 0.5, 1.0).mul(amplitude),
+    )
+    const hL = sampleDisp(flow1.sub(vec2(eps, 0)))
+    const hR = sampleDisp(flow1.add(vec2(eps, 0)))
+    const hD = sampleDisp(flow1.sub(vec2(0, eps)))
+    const hU = sampleDisp(flow1.add(vec2(0, eps)))
+    const tangentX = vec3(eps.mul(2), hR.sub(hL), float(0))
+    const tangentZ = vec3(float(0), hU.sub(hD), eps.mul(2))
+    const n = normalize(cross(tangentZ, tangentX))
+
+    // Crust + heat masks.
+    const crustNoise = mx_noise_float(vec3(flowCrust.x, flowCrust.y, tFlow.mul(0.18)))
+    const crustBlend = crustNoise.add(1).mul(0.5)  // remap [-1, 1] → [0, 1]
+    const crust = smoothstep(crustAmount.sub(0.15), crustAmount.add(0.18), crustBlend)
+    const heat = float(1).sub(crust)
+
+    // Hot vein highlights — sharp emissive bands inside the molten
+    // patches.
+    const veinNoise = mx_fractal_noise_float(vec3(flow2.x, flow2.y, tFlow.mul(0.5)), 4, 2.1, 0.55, 1.0)
+    const veinBlend = veinNoise.add(1).mul(0.5)
+    const vein = smoothstep(float(0.55), float(0.92), veinBlend)
+
+    // Surface pulse — two frequencies superimposed for a "breathing"
+    // intensity that never quite repeats.
+    const pulse = sin(time.mul(1.8)).mul(0.18)
+        .add(sin(time.mul(3.7)).mul(0.10))
+        .add(1.0)
+
+    // Fresnel rim. At grazing angles we add an extra glow band so the
+    // pool's silhouette reads as luminous even when fog dims the
+    // interior.
+    const view = normalize(cameraPosition.sub(positionWorld))
+    const ndotv = saturate(view.dot(n))
+    const fresnel = pow(float(1).sub(ndotv), 3)
+
+    // Base colour — visible in normal lighting via diffuse.
+    const baseColor = mix(crustColor, hotColor, heat)
+    const finalColor = mix(baseColor, hotColor, vein.mul(heat))
+
+    // Emissive — what makes it glow. HDR magnitudes:
+    //   - hot core:    `heat * strength * pulse` peaks around 4.5–5.5
+    //   - vein highlights: `vein * 1.6`         peaks at 1.6
+    //   - rim glow:    `fresnel * heat * 1.4`   peaks at ~1.4
+    // ACES will bloom the high values into a believable glow.
+    const emissive = glowColor.mul(heat.mul(emissiveStrength).mul(pulse))
+        .add(glowColor.mul(vein.mul(1.6)))
+        .add(glowColor.mul(fresnel.mul(heat).mul(1.4)))
+
+    const mat = new MeshStandardNodeMaterial({
+        side: DoubleSide,
+        roughness: 0.92,
+        metalness: 0.0,
+    })
+    mat.positionNode = newPos
+    mat.normalNode = n
+    mat.colorNode = finalColor
+    mat.opacityNode = opacityUniform
+    mat.emissiveNode = emissive
+    mat.roughnessNode = mix(float(0.55), float(0.96), crust)
+    // Lava IS affected by fog (a real torch through mist still dims —
+    // it just dims less than the rock around it). Combined with HDR
+    // emissive ≥ 4.5 and ACES tonemapping on the renderer, the
+    // surface reads as a powerful glow that fog partially absorbs.
+    // Earlier `mat.fog = false` was wrong: the lava punched through
+    // cloud weather as if nothing was there, which looked unnatural.
+    mat.fog = true
+
+    const geo = new PlaneGeometry(1, 1, 56, 56)
+    geo.rotateX(-Math.PI / 2)
+    const mesh = new Mesh(geo, mat)
+    mesh.scale.set(opts.size.x, 1, opts.size.z)
+
+    return {
+        mesh,
+        setColors(c) {
+            if (c.crust) crustColor.value.set(c.crust)
+            if (c.hot)   hotColor.value.set(c.hot)
+            if (c.glow)  glowColor.value.set(c.glow)
+        },
+        setOpacity(o) { opacityUniform.value = o },
+        setSize(x, z) { mesh.scale.set(x, 1, z) },
+        dispose() {
+            geo.dispose()
+            mat.dispose()
+        },
     }
-}
-
-export function animateLavaSurface(mesh: Mesh, base: Float32Array, overlay: Mesh | null, params: { speed: number; opacity: number; color: string }, elapsed: number): void {
-    const geo = mesh.geometry as PlaneGeometry
-    const positions = geo.attributes.position as import('three').BufferAttribute
-    const arr = positions.array as Float32Array
-    const colorArr = (geo.attributes.color as import('three').BufferAttribute).array as Float32Array
-    for (let i = 0; i < positions.count; i++) {
-        const i3 = i * 3
-        const x = base[i3]!
-        const z = base[i3 + 2]!
-        const speed = 0.45 + params.speed * 0.32
-        const flowX = x + Math.sin(elapsed * 0.18 + z * 2.4) * 0.10
-        const flowZ = z + Math.cos(elapsed * 0.16 + x * 2.1) * 0.10
-        const broad = lavaFbm(flowX * 2.15 + elapsed * 0.18 * speed, flowZ * 2.05 - elapsed * 0.14 * speed, 11)
-        const detail = lavaFbm(flowX * 5.6 - elapsed * 0.36 * speed, flowZ * 5.1 + elapsed * 0.29 * speed, 29)
-        const fine = lavaFbm(flowX * 10.5 + elapsed * 0.52 * speed, flowZ * 9.2 - elapsed * 0.44 * speed, 53)
-        const heat = clamp01(
-            smoothstep(0.42, 0.86, broad) * 0.50 +
-            smoothstep(0.48, 0.90, detail) * 0.42 +
-            smoothstep(0.54, 0.95, Math.abs(detail - broad) * 1.45 + fine * 0.36) * 0.50,
-        )
-        const crust = 1 - smoothstep(0.28, 0.76, heat)
-        const bubble = smoothstep(0.62, 0.96, fine) * heat
-        arr[i3 + 1] = heat * 0.060 + bubble * 0.017 +
-            Math.sin((x * 4.2 + z * 3.6) + elapsed * 0.62 * speed) * 0.005
-
-        const dark: [number, number, number] = [0.09, 0.035, 0.020]
-        const molten: [number, number, number] = [0.82, 0.16, 0.035]
-        const bright: [number, number, number] = [1.0, 0.64, 0.12]
-        const midT = smoothstep(0.12, 0.72, heat)
-        const hotT = smoothstep(0.68, 1.0, heat)
-        const r = lerp(lerp(dark[0], molten[0], midT), bright[0], hotT)
-        const g = lerp(lerp(dark[1], molten[1], midT), bright[1], hotT)
-        const b = lerp(lerp(dark[2], molten[2], midT), bright[2], hotT)
-        colorArr[i3] = r * (1 - crust * 0.18)
-        colorArr[i3 + 1] = g * (1 - crust * 0.12)
-        colorArr[i3 + 2] = b
-    }
-    positions.needsUpdate = true
-    ;(geo.attributes.color as import('three').BufferAttribute).needsUpdate = true
-    geo.computeVertexNormals()
-    const mat = mesh.material as MeshStandardMaterial
-    mat.emissive.set(params.color)
-    mat.emissiveIntensity = 1.05 + Math.max(0, Math.sin(elapsed * 1.8)) * 0.38 + Math.max(0, Math.sin(elapsed * 4.9)) * 0.18
-    if (mat.map) {
-        mat.map.offset.x = elapsed * 0.012 + Math.sin(elapsed * 0.17) * 0.018
-        mat.map.offset.y = -elapsed * 0.009 + Math.cos(elapsed * 0.13) * 0.016
-    }
-
-    if (overlay) {
-        const m = overlay.material as MeshBasicMaterial
-        const glowTex = m.map!
-        glowTex.offset.x = -elapsed * 0.018 + Math.sin(elapsed * 0.21) * 0.014
-        glowTex.offset.y = elapsed * 0.014 + Math.cos(elapsed * 0.19) * 0.012
-        m.opacity = 0.13 + Math.max(0, Math.sin(elapsed * 1.7)) * 0.11
-    }
-}
-
-function lavaFbm(x: number, z: number, seed: number): number {
-    let value = 0
-    let amp = 0.55
-    let norm = 0
-    for (let octave = 0; octave < 4; octave++) {
-        value += gradientNoise(x, z, seed + octave * 97) * amp
-        norm += amp
-        x *= 2.02
-        z *= 2.02
-        amp *= 0.52
-    }
-    return value / Math.max(0.0001, norm)
-}
-
-function gradientNoise(x: number, z: number, seed: number): number {
-    const x0 = Math.floor(x)
-    const z0 = Math.floor(z)
-    const x1 = x0 + 1
-    const z1 = z0 + 1
-    const sx = fade(x - x0)
-    const sz = fade(z - z0)
-    const n00 = gradDot(x0, z0, x, z, seed)
-    const n10 = gradDot(x1, z0, x, z, seed)
-    const n01 = gradDot(x0, z1, x, z, seed)
-    const n11 = gradDot(x1, z1, x, z, seed)
-    return lerp(lerp(n00, n10, sx), lerp(n01, n11, sx), sz) * 0.5 + 0.5
-}
-
-function gradDot(ix: number, iz: number, x: number, z: number, seed: number): number {
-    const h = hash2(ix, iz, seed)
-    const angle = (h / 0xffffffff) * Math.PI * 2
-    return Math.cos(angle) * (x - ix) + Math.sin(angle) * (z - iz)
-}
-
-function hash2(x: number, z: number, seed: number): number {
-    let h = (x * 374761393 + z * 668265263 + seed * 1442695041) | 0
-    h = (h ^ (h >>> 13)) | 0
-    h = Math.imul(h, 1274126177)
-    return (h ^ (h >>> 16)) >>> 0
-}
-
-function fade(t: number): number {
-    return t * t * t * (t * (t * 6 - 15) + 10)
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-    const t = clamp01((x - edge0) / Math.max(0.0001, edge1 - edge0))
-    return t * t * (3 - 2 * t)
-}
-
-function clamp01(v: number): number {
-    return Math.max(0, Math.min(1, v))
-}
-
-function lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t
 }
