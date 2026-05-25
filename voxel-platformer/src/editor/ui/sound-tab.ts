@@ -41,6 +41,10 @@ export function buildSoundTab(ctx: SoundTabContext): RefreshableElement {
     root.appendChild(envSection)
 
     const placement = sectionEl('Sound source')
+    const sourceHint = document.createElement('div')
+    sourceHint.className = 'vpe-hint'
+    sourceHint.textContent = 'Spatial point emitter. Inner ring = full-volume core; outer ring = inaudible boundary. Autoplay must stay on — non-autoplay sources are inert (nothing triggers them).'
+    placement.appendChild(sourceHint)
     const soundSelect = soundSelectField(state.soundSourceSoundId, (id) => {
         state.soundSourceSoundId = id
         const asset = findSourceAsset(id)

@@ -11,11 +11,15 @@ import {
 } from 'three'
 import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
+import { SOURCE_CORE_RATIO } from '../../game/sound-sources'
 import type { EditorSoundSource, EditorState } from '../editor-state'
 
 const SOURCE_COLOUR = 0x66e6ff
 const SELECTED_COLOUR = 0xffd166
 const SEGMENTS = 96
+/** Floor used by the runtime when computing `refDistance`. Mirrored
+ *  here so the editor's inner ring matches what playtest will produce. */
+const MIN_CORE_RADIUS = 0.25
 
 /**
  * Editor-only overlay for placed sound sources. Each source gets a small
@@ -54,11 +58,29 @@ export function createSoundSourceRenderSystem(scene: Scene, editorState: EditorS
         depthTest: false,
         depthWrite: false,
     })
+    // Inner ring marks the runtime's `refDistance` — the radius inside
+    // which the source plays at full volume. Painted brighter than the
+    // outer (inaudible) ring so the falloff direction is obvious.
+    const coreRingMaterial = new LineBasicMaterial({
+        color: SOURCE_COLOUR,
+        transparent: true,
+        opacity: 0.65,
+        depthTest: false,
+        depthWrite: false,
+    })
+    const selectedCoreRingMaterial = new LineBasicMaterial({
+        color: SELECTED_COLOUR,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+        depthWrite: false,
+    })
 
     interface Entry {
         root: Group
         marker: Mesh<SphereGeometry, MeshBasicMaterial>
         ring: LineLoop<BufferGeometry, LineBasicMaterial>
+        coreRing: LineLoop<BufferGeometry, LineBasicMaterial>
         fingerprint: string
     }
     const entries: Entry[] = []
@@ -86,7 +108,15 @@ export function createSoundSourceRenderSystem(scene: Scene, editorState: EditorS
         ring.renderOrder = 996
         root.add(ring)
 
-        return { root, marker, ring, fingerprint: fingerprint(source) }
+        const coreRing = new LineLoop(
+            radiusGeometry(Math.max(MIN_CORE_RADIUS, source.radius * SOURCE_CORE_RATIO)),
+            selected ? selectedCoreRingMaterial : coreRingMaterial,
+        )
+        coreRing.frustumCulled = false
+        coreRing.renderOrder = 996
+        root.add(coreRing)
+
+        return { root, marker, ring, coreRing, fingerprint: fingerprint(source) }
     }
 
     function fingerprint(source: EditorSoundSource): string {
@@ -145,6 +175,8 @@ export function createSoundSourceRenderSystem(scene: Scene, editorState: EditorS
             selectedMaterial.dispose()
             ringMaterial.dispose()
             selectedRingMaterial.dispose()
+            coreRingMaterial.dispose()
+            selectedCoreRingMaterial.dispose()
         },
     }
 }
@@ -162,7 +194,9 @@ function radiusGeometry(radius: number): BufferGeometry {
 function disposeEntry(entry: {
     marker: Mesh<SphereGeometry, MeshBasicMaterial>
     ring: LineLoop<BufferGeometry, LineBasicMaterial>
+    coreRing: LineLoop<BufferGeometry, LineBasicMaterial>
 }): void {
     entry.marker.geometry.dispose()
     entry.ring.geometry.dispose()
+    entry.coreRing.geometry.dispose()
 }

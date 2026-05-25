@@ -19,6 +19,15 @@ import { RenderOrder } from '../engine/ecs/systems/orders'
  * matching metadata and `level-from-meta` translates 1:1.
  */
 
+/**
+ * Fraction of a sound source's `radius` that sits inside the
+ * full-volume "core" (the `refDistance` ring). Outside the core the
+ * gain falls linearly to zero at `radius`. Exported so the editor's
+ * source render system can draw the same falloff visualisation the
+ * runtime audio engine will produce.
+ */
+export const SOURCE_CORE_RATIO = 0.3
+
 export interface SoundSourceConfig {
     id: string
     soundId: string
@@ -75,8 +84,14 @@ export function createSoundSourceSystem(
                     deferUntilUnlocked: true,
                     loop: source.loop,
                     volume: clamp(source.volume, 0, 1),
+                    // `radius` is the inaudible boundary; the inner
+                    // full-gain core is `radius * SOURCE_CORE_RATIO`,
+                    // giving every source the same proportional
+                    // shape (~30 % full-gain core, ~70 % linear
+                    // falloff zone). The previous clamp at 4 collapsed
+                    // large sources to a tiny core with a huge falloff.
                     maxDistance: radius,
-                    refDistance: Math.max(0.25, Math.min(4, radius * 0.2)),
+                    refDistance: Math.max(0.25, radius * SOURCE_CORE_RATIO),
                     rolloffModel: 'linear',
                 })
                 handles.set(source.id, handle)
@@ -149,6 +164,18 @@ export function createSoundZoneSystem(
                     deferUntilUnlocked: true,
                     loop: true,
                     volume: 0,
+                    // Several zones may share one soundId (e.g. a level
+                    // dotted with `AmbFire` zones). The asset's manifest
+                    // `maxInstances` would silently steal the older
+                    // voices once the cap is hit, leaving zones with a
+                    // live handle but a dead voice — `setVolume` ramps
+                    // become no-ops and the zone is permanently silent.
+                    // Opt out of the per-asset cap; the global voice
+                    // budget still applies.
+                    maxInstances: Number.POSITIVE_INFINITY,
+                    // Outrank ordinary SFX so a flurry of bow/hit
+                    // sounds can't evict the always-on zone beds.
+                    priority: 6,
                     maxDistance: radius * 2,
                     refDistance: Math.max(1, radius * 0.6),
                     rolloffModel: 'linear',
