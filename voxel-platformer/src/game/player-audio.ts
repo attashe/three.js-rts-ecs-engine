@@ -3,7 +3,12 @@ import type { AudioEngine } from '../engine/audio'
 import { Grounded, PlayerControlled, Position, Velocity } from '../engine/ecs/components'
 import type { System } from '../engine/ecs/systems/system'
 import { FixedOrder } from '../engine/ecs/systems/orders'
+import type { ChunkManager } from '../engine/voxel/chunk-manager'
+import { BLOCK } from '../engine/voxel/palette'
 import { GameAudio } from './audio'
+
+/** Footstep surface family the player is currently walking on. */
+export type FootstepSurface = 'grass' | 'dirt' | 'stone' | 'wood' | 'water'
 
 interface PlayerState {
     /** True last frame — used to detect the false→true transition that
@@ -16,7 +21,7 @@ interface PlayerState {
     /** Distance-since-last-step accumulator. Resets on each footstep
      *  trigger and on takeoff so we don't fire mid-air. */
     stepPhase: number
-    /** Round-robin index into the footstep variant pool. */
+    /** Round-robin index into the active surface's footstep pool. */
     stepIdx: number
 }
 
@@ -32,22 +37,61 @@ export interface PlayerLocomotionAudioOptions {
     /** Don't fire a footstep below this horizontal speed — keeps the
      *  cadence from triggering when the player is just nudging a wall. */
     minHorizontalSpeed?: number
+    /** Voxel world. When omitted, footsteps always pick the `dirt`
+     *  pool — the same behaviour as a level without authored geometry
+     *  metadata. */
+    chunks?: ChunkManager
 }
 
-const FOOTSTEP_IDS = [GameAudio.Footstep1, GameAudio.Footstep2, GameAudio.Footstep3] as const
+const FOOTSTEP_POOLS: Record<FootstepSurface, readonly string[]> = {
+    grass: [GameAudio.FootstepGrass1, GameAudio.FootstepGrass2],
+    dirt:  [GameAudio.FootstepDirt1,  GameAudio.FootstepDirt2],
+    stone: [GameAudio.FootstepStone1, GameAudio.FootstepStone2],
+    wood:  [GameAudio.FootstepWood1,  GameAudio.FootstepWood2],
+    water: [GameAudio.FootstepWater1, GameAudio.FootstepWater2],
+}
+
+/**
+ * Classify a palette block id into a footstep surface family. Default
+ * is `dirt` — keeps unauthored / unknown blocks audible without
+ * needing a per-block table. Water has special handling at the
+ * locomotion layer (player walking *into* water uses splash steps
+ * even though the block under their feet may be solid).
+ */
+export function surfaceForBlock(block: number): FootstepSurface {
+    switch (block) {
+        case BLOCK.grass: return 'grass'
+        case BLOCK.leaf:  return 'grass'
+        case BLOCK.dirt:  return 'dirt'
+        case BLOCK.sand:  return 'dirt'
+        case BLOCK.stone: return 'stone'
+        case BLOCK.brick: return 'stone'
+        case BLOCK.glow:  return 'stone'
+        case BLOCK.noWalk: return 'stone'
+        case BLOCK.door:  return 'wood'
+        case BLOCK.wood:  return 'wood'
+        case BLOCK.plank: return 'wood'
+        case BLOCK.water: return 'water'
+        default: return 'dirt'
+    }
+}
 
 /**
  * Plays footstep + landing cues for `PlayerControlled` entities.
  *
  * Footsteps: distance-driven cadence (not time-driven) so the cadence
- * scales naturally with movement speed without us baking in a BPM.
- * Three variants cycle round-robin and each instance gets a small
- * random pitch jitter so the pattern doesn't read as a metronome.
+ * scales naturally with movement speed. Surface is queried from the
+ * voxel one cell under the player's feet (or the voxel the foot is
+ * in, when wading through water). Two variants per surface rotate
+ * round-robin and each play gets a small random pitch jitter so the
+ * pattern doesn't read as a metronome.
  *
  * Landings: edge-detect the `Grounded` tag. Only fires after
  * `minAirTimeForLand` so a player walking off a 1-voxel kerb doesn't
  * make a thud; landing volume + pitch scale with the inbound vertical
- * speed so a 4-block drop sounds heavier than a hop.
+ * speed so a 4-block drop sounds heavier than a hop. The land cue
+ * uses the surface the player landed on (water lands splash, stone
+ * lands clack).
  *
  * Runs in the fixed-step bucket after physics so the Grounded tag we
  * read this frame is the one physics just wrote.
@@ -59,7 +103,24 @@ export function createPlayerLocomotionAudioSystem(
     const stepDistance = opts.stepDistance ?? 1.6
     const minAirTime = opts.minAirTimeForLand ?? 0.12
     const minHorizontalSpeed = opts.minHorizontalSpeed ?? 0.6
+    const chunks = opts.chunks
     const states = new Map<number, PlayerState>()
+
+    function surfaceUnder(eid: number): FootstepSurface {
+        if (!chunks) return 'dirt'
+        const px = Math.floor(Position.x[eid]!)
+        const py = Math.floor(Position.y[eid]!)
+        const pz = Math.floor(Position.z[eid]!)
+        // First check the voxel the foot is inside — wading through
+        // water reads as water steps even when there's solid ground
+        // below.
+        const foot = chunks.getVoxel(px, py, pz)
+        if (foot === BLOCK.water) return 'water'
+        // Otherwise the voxel directly below the foot (the actual
+        // contact surface).
+        const below = chunks.getVoxel(px, py - 1, pz)
+        return surfaceForBlock(below)
+    }
 
     return {
         name: 'playerLocomotionAudio',
@@ -90,11 +151,27 @@ export function createPlayerLocomotionAudioSystem(
                     const heaviness = Math.min(1, approxInbound / 12) // 0..1
                     const volume = 0.65 + 0.35 * heaviness
                     const rate = 1.06 - 0.14 * heaviness + (Math.random() - 0.5) * 0.04
-                    audio.play(GameAudio.Land, {
-                        deferUntilUnlocked: true,
-                        volume,
-                        rate,
-                    })
+                    const surface = surfaceUnder(eid)
+                    // Water + grass landings use a heavier footstep
+                    // from the same surface as the impact cue (splash
+                    // or rustle reads as "land" naturally). Other
+                    // surfaces use the dedicated `Land` thud which has
+                    // more low-end body than any single footstep.
+                    if (surface === 'water' || surface === 'grass') {
+                        const pool = FOOTSTEP_POOLS[surface]
+                        const id = pool[state.stepIdx % pool.length]!
+                        audio.play(id, {
+                            deferUntilUnlocked: true,
+                            volume: Math.min(1, volume * 1.2),
+                            rate,
+                        })
+                    } else {
+                        audio.play(GameAudio.Land, {
+                            deferUntilUnlocked: true,
+                            volume,
+                            rate,
+                        })
+                    }
                 }
 
                 // ── Airborne / step bookkeeping ─────────────────────
@@ -112,7 +189,9 @@ export function createPlayerLocomotionAudioSystem(
                         state.stepPhase += speed * dt
                         if (state.stepPhase >= stepDistance) {
                             state.stepPhase -= stepDistance
-                            const id = FOOTSTEP_IDS[state.stepIdx % FOOTSTEP_IDS.length]!
+                            const surface = surfaceUnder(eid)
+                            const pool = FOOTSTEP_POOLS[surface]
+                            const id = pool[state.stepIdx % pool.length]!
                             state.stepIdx++
                             audio.play(id, {
                                 deferUntilUnlocked: true,

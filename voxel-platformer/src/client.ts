@@ -153,7 +153,7 @@ async function main(): Promise<void> {
         .addSystem(createZoneTriggerSystem(chunks), 'zoneTrigger')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks), 'physics')
-        .addSystem(createPlayerLocomotionAudioSystem(audio), 'playerLocomotionAudio')
+        .addSystem(createPlayerLocomotionAudioSystem(audio, { chunks }), 'playerLocomotionAudio')
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')
         .addSystem(createImpactSystem(), 'impact')
         .addSystem(createMovingObjectSystem(), 'movingObjects')

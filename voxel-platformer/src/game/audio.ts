@@ -29,14 +29,33 @@ export const GameAudio = {
     DeathStinger: 'stinger.death',
 
     // ── Player locomotion ────────────────────────────────────────────
-    // Three footstep variants rotated by the locomotion-audio system
-    // for variety; jump is the standard take-off cue; land fires when
-    // the player reconnects with the ground after enough airborne time;
-    // high-jump is the "spell" whoosh — deliberately louder and more
-    // layered than the plain jump so it reads as a special action.
-    Footstep1: 'sfx.footstep.1',
-    Footstep2: 'sfx.footstep.2',
-    Footstep3: 'sfx.footstep.3',
+    // Footsteps are surface-aware — the locomotion system queries the
+    // voxel under the player's feet and picks the matching pool. Two
+    // variants per surface give just enough variety; rate jitter at
+    // play time does the rest.
+    //
+    // Surface families:
+    //   - grass  (palette: grass, leaf)         — soft, muffled
+    //   - dirt   (palette: dirt, sand)          — heavy thud
+    //   - stone  (palette: stone, brick, glow,  — clean click
+    //             door, no-walk ward)
+    //   - wood   (palette: wood, plank)         — hollow creak
+    //   - water  (palette: water, partial-      — splash
+    //             submerged)
+    //
+    // `Jump` is the standard take-off; `Land` fires after enough
+    // airborne time; `HighJump` is the spell whoosh — deliberately
+    // louder and more layered than the plain jump.
+    FootstepGrass1: 'sfx.footstep.grass.1',
+    FootstepGrass2: 'sfx.footstep.grass.2',
+    FootstepDirt1:  'sfx.footstep.dirt.1',
+    FootstepDirt2:  'sfx.footstep.dirt.2',
+    FootstepStone1: 'sfx.footstep.stone.1',
+    FootstepStone2: 'sfx.footstep.stone.2',
+    FootstepWood1:  'sfx.footstep.wood.1',
+    FootstepWood2:  'sfx.footstep.wood.2',
+    FootstepWater1: 'sfx.footstep.water.1',
+    FootstepWater2: 'sfx.footstep.water.2',
     Jump: 'sfx.jump',
     Land: 'sfx.land',
     HighJump: 'sfx.high.jump',
@@ -75,9 +94,18 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         // Player locomotion — kept quiet by default so the constant
         // walking cadence doesn't dominate the mix. The locomotion
         // system applies a small rate-jitter on each play for variety.
-        { id: GameAudio.Footstep1, url: path('footstep-1.wav'), volume: 0.32, maxInstances: 4, priority: 1 },
-        { id: GameAudio.Footstep2, url: path('footstep-2.wav'), volume: 0.32, maxInstances: 4, priority: 1 },
-        { id: GameAudio.Footstep3, url: path('footstep-3.wav'), volume: 0.32, maxInstances: 4, priority: 1 },
+        // Water footsteps are louder because the player needs to *feel*
+        // wading even when ambient water hum is playing.
+        { id: GameAudio.FootstepGrass1, url: path('footstep-grass-1.wav'), volume: 0.30, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepGrass2, url: path('footstep-grass-2.wav'), volume: 0.30, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepDirt1,  url: path('footstep-dirt-1.wav'),  volume: 0.34, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepDirt2,  url: path('footstep-dirt-2.wav'),  volume: 0.34, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepStone1, url: path('footstep-stone-1.wav'), volume: 0.36, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepStone2, url: path('footstep-stone-2.wav'), volume: 0.36, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepWood1,  url: path('footstep-wood-1.wav'),  volume: 0.34, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepWood2,  url: path('footstep-wood-2.wav'),  volume: 0.34, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepWater1, url: path('footstep-water-1.wav'), volume: 0.46, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepWater2, url: path('footstep-water-2.wav'), volume: 0.46, maxInstances: 4, priority: 1 },
         { id: GameAudio.Jump,      url: path('jump.wav'),       volume: 0.40, maxInstances: 3, priority: 2 },
         { id: GameAudio.Land,      url: path('land.wav'),       volume: 0.44, maxInstances: 3, priority: 2 },
         { id: GameAudio.HighJump,  url: path('high-jump.wav'),  volume: 0.72, maxInstances: 2, priority: 4 },

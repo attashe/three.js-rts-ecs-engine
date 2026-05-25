@@ -50,29 +50,81 @@ writeWav('death.wav', mix(0.86, [
     noiseBurst(0.08, 0.62, 0.15, 71),
 ]))
 
-// ── Character motion sounds ──────────────────────────────────────────
-// All three footstep variants share the same skeleton (low thud +
-// short noise burst) but pick different fundamentals, noise seeds,
-// and decays so the rotation through them doesn't sound mechanical.
-// Intentionally low amplitude — the player walks constantly; loud
-// footsteps would dominate the mix.
+// ── Character footsteps (per surface) ────────────────────────────────
+// Five surface families × 2 variants each. The locomotion system
+// detects the voxel under the player's feet and picks the matching
+// pool. Two variants gives just enough rotation that the rhythm
+// doesn't read as a metronome; rate jitter at play time adds the
+// rest. Volumes are kept low — the player walks constantly.
+//
+// Recipe shape:
+//   - grass: soft pluck + low-cutoff noise (muffled, no transient)
+//   - dirt : medium pluck + medium-cutoff noise (the previous
+//            "generic" footstep recipe — heavier than grass)
+//   - stone: high pluck + sharp wide-band noise (clean click)
+//   - wood : pluck around 180 Hz + octave-low resonance (hollow creak)
+//   - water: bubble + filtered noise burst (splashy, no thud)
 
-writeWav('footstep-1.wav', mix(0.10, [
+// Grass — soft, slightly mossy. Lower noise cutoff so it reads as
+// "swish" not "click".
+writeWav('footstep-grass-1.wav', mix(0.10, [
+    pluck(0.00, 0.06, 95, 0.22),
+    filteredNoise(0.00, 0.10, 0.18, 380, 6101),
+]))
+writeWav('footstep-grass-2.wav', mix(0.11, [
+    pluck(0.00, 0.07, 110, 0.20),
+    filteredNoise(0.00, 0.11, 0.20, 320, 6111),
+]))
+
+// Dirt — heaviest "generic" footstep. The previous footstep-1 lived
+// here; keep the recipe close so existing levels feel familiar.
+writeWav('footstep-dirt-1.wav', mix(0.10, [
     pluck(0.00, 0.06, 78, 0.30),
-    noiseBurst(0.00, 0.05, 0.20, 6101),
-    filteredNoise(0.01, 0.08, 0.08, 600, 6111),
+    noiseBurst(0.00, 0.05, 0.20, 6121),
+    filteredNoise(0.01, 0.08, 0.08, 600, 6131),
 ]))
-
-writeWav('footstep-2.wav', mix(0.11, [
+writeWav('footstep-dirt-2.wav', mix(0.11, [
     pluck(0.00, 0.07, 65, 0.32),
-    noiseBurst(0.00, 0.06, 0.22, 6121),
-    filteredNoise(0.01, 0.09, 0.07, 480, 6131),
+    noiseBurst(0.00, 0.06, 0.22, 6141),
+    filteredNoise(0.01, 0.09, 0.07, 480, 6151),
 ]))
 
-writeWav('footstep-3.wav', mix(0.10, [
-    pluck(0.00, 0.06, 92, 0.28),
-    noiseBurst(0.00, 0.05, 0.18, 6141),
-    filteredNoise(0.01, 0.08, 0.09, 720, 6151),
+// Stone — clean click. High pluck fundamental, sharp wide-band noise.
+writeWav('footstep-stone-1.wav', mix(0.10, [
+    pluck(0.00, 0.05, 160, 0.28),
+    noiseBurst(0.00, 0.04, 0.26, 6161),
+    filteredNoise(0.01, 0.06, 0.10, 1400, 6171),
+]))
+writeWav('footstep-stone-2.wav', mix(0.10, [
+    pluck(0.00, 0.05, 140, 0.30),
+    noiseBurst(0.00, 0.04, 0.24, 6181),
+    filteredNoise(0.01, 0.06, 0.10, 1200, 6191),
+]))
+
+// Wood — hollow creak. Pluck + an octave-lower companion so the
+// fundamental rings briefly. Less noise than stone.
+writeWav('footstep-wood-1.wav', mix(0.11, [
+    pluck(0.00, 0.08, 180, 0.24),
+    pluck(0.00, 0.10, 90,  0.18),
+    noiseBurst(0.00, 0.04, 0.14, 6201),
+]))
+writeWav('footstep-wood-2.wav', mix(0.12, [
+    pluck(0.00, 0.08, 210, 0.22),
+    pluck(0.00, 0.10, 105, 0.18),
+    noiseBurst(0.00, 0.04, 0.12, 6211),
+]))
+
+// Water — splash. Filtered noise burst + a bubble pop for the
+// "plop" of a foot breaking the surface.
+writeWav('footstep-water-1.wav', mix(0.18, [
+    filteredNoise(0.00, 0.14, 0.20, 1800, 6221),
+    bubble(0.02, 0.16, 360, 0.22, 6231),
+    noiseBurst(0.00, 0.05, 0.18, 6241),
+]))
+writeWav('footstep-water-2.wav', mix(0.20, [
+    filteredNoise(0.00, 0.16, 0.22, 1500, 6251),
+    bubble(0.03, 0.18, 280, 0.24, 6261),
+    noiseBurst(0.00, 0.05, 0.16, 6271),
 ]))
 
 // Standard jump — short upward chirp with a tiny "puff" of noise on

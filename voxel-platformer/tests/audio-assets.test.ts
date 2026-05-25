@@ -38,18 +38,18 @@ const expected = {
     },
 
     // ── Player locomotion ─────────────────────────────────────────
-    'footstep-1.wav': {
-        bytes: 2249,
-        sha256: '09fc2a32d38a18d020652af1ea012dcf8a59449e7c484998a931e64940eac525',
-    },
-    'footstep-2.wav': {
-        bytes: 2469,
-        sha256: '16245465a8809d72a18d1088ef7b7d563ca6dc15157324891208843d8d8fa806',
-    },
-    'footstep-3.wav': {
-        bytes: 2249,
-        sha256: '21fd78ee7d6a3a3e1f07aaea3c9d6d659ccb2b2c4ca91365e2494897047a318a',
-    },
+    // Surface-aware footsteps: 5 families × 2 variants. Volumes vary
+    // per family (see GAME_AUDIO_MANIFEST).
+    'footstep-grass-1.wav': { bytes: 2249, sha256: '058b42232ca56d8189374c8d932737a9cbda18d5339c655e9030b5fe1a37ddbf' },
+    'footstep-grass-2.wav': { bytes: 2469, sha256: '24df097ff78d30207616d3466caa923fade12ec2efc3c6f5213de5a2f8aaf9d9' },
+    'footstep-dirt-1.wav':  { bytes: 2249, sha256: 'ab0e098201b4b5c8aee29ba74cd8cd9c72856de9ae218bc445621fc11a21bf65' },
+    'footstep-dirt-2.wav':  { bytes: 2469, sha256: '33d347a662fa04efd6b4c7395b65d10ac7b7bdbfb39fe87ccceddd8c09fe3595' },
+    'footstep-stone-1.wav': { bytes: 2249, sha256: '12f809b2c8b927ed988f07b65fe5fb45dd32df0ad213cdfe1637e61bf3acbd7f' },
+    'footstep-stone-2.wav': { bytes: 2249, sha256: '1c930f08720f7e88001346d498039a4f6bc447d5b8ddf43b4eb1ba64e57c2685' },
+    'footstep-wood-1.wav':  { bytes: 2469, sha256: '97f840864521dfd18f905f96516879b94ebcf2175e47fc8da3e06748f0adac1d' },
+    'footstep-wood-2.wav':  { bytes: 2690, sha256: '72df83b6b4c5d6ee3ca102abd6e3c536f0747be3f91f6ae19704ef30475fc8d7' },
+    'footstep-water-1.wav': { bytes: 4013, sha256: '87e1cc8e2e7bc1e10e4c756b3eb7caa675abde485c87ccc8c5213089f797f476' },
+    'footstep-water-2.wav': { bytes: 4454, sha256: 'dafb2b6e2af2d7d8e0d98cada0864616f97fbbe8bf81016affd0840bc3f9cfc0' },
     'jump.wav': {
         bytes: 4013,
         sha256: 'ce429ce8ec5d27b38ae8f8ae265ee7f84196e60838d04801ea52d185da1a0f4a',
