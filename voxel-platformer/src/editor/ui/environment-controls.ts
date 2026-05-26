@@ -3,6 +3,7 @@ import { WEATHER_PRESETS } from '../../engine/fx/presets/weather-presets'
 import { DAY_CYCLE_PRESET_HOURS, formatHourLabel } from '../../engine/fx/core/day-cycle'
 import { GAME_AUDIO_MANIFEST } from '../../game/audio'
 import {
+    DEFAULT_AMBIENT_WEATHER,
     type AmbientWeatherStateSnapshot,
     type EditorEnvironmentMode,
     type EditorState,
@@ -60,6 +61,13 @@ export function buildEnvironmentAudioSection(state: EditorState): BuiltSection {
  *   - Custom → freeform per-field colour fields, the pre-cycle behaviour.
  */
 export function buildGlobalVisualEnvironmentSection(state: EditorState): BuiltSection {
+    // Defensively fill in any missing snapshot fields BEFORE building the
+    // panel. Stale session state or pre-cycle save files can leave
+    // skyTint / mode / cycleEnabled / sunIntensityMul / fogDensityMul
+    // undefined, which would crash colour pickers and number inputs that
+    // assume every field is populated.
+    normalizeAmbientSnapshot(state.ambientWeather.state)
+
     const section = sectionEl('Visual environment')
 
     const hint = document.createElement('div')
@@ -613,4 +621,42 @@ function toggleField(
 function formatAssetName(asset: AudioAsset): string {
     const type = MUSIC_ASSETS.includes(asset) ? 'music' : asset.loop ? 'loop' : 'shot'
     return `${asset.id} (${type})`
+}
+
+/**
+ * In-place defensive fill for an ambient-weather snapshot. Ensures every
+ * field the panel reads has a defined value, even when an old saved
+ * level (pre-cycle) is loaded. Mutates `snapshot` so the changes
+ * propagate back to the runtime via the editor's normal state-flow.
+ */
+function normalizeAmbientSnapshot(snapshot: AmbientWeatherStateSnapshot): void {
+    if (snapshot.mode !== 'outdoor' && snapshot.mode !== 'indoor' && snapshot.mode !== 'custom') {
+        snapshot.mode = 'outdoor'
+    }
+    if (typeof snapshot.cycleEnabled !== 'boolean') snapshot.cycleEnabled = false
+    if (!Number.isFinite(snapshot.cycleSeconds) || snapshot.cycleSeconds <= 0) snapshot.cycleSeconds = 600
+    if (!Number.isFinite(snapshot.sunIntensityMul)) snapshot.sunIntensityMul = 1
+    if (!Number.isFinite(snapshot.fogDensityMul)) snapshot.fogDensityMul = 1
+    snapshot.skyTint = sanitizeTriplet(snapshot.skyTint)
+    // Older saves can also miss the legacy fields. Fall back to the
+    // canonical defaults so the custom-mode panel doesn't blow up.
+    if (typeof snapshot.skyTop !== 'string') snapshot.skyTop = DEFAULT_AMBIENT_WEATHER.skyTop
+    if (typeof snapshot.skyBottom !== 'string') snapshot.skyBottom = DEFAULT_AMBIENT_WEATHER.skyBottom
+    if (typeof snapshot.fogColor !== 'string') snapshot.fogColor = DEFAULT_AMBIENT_WEATHER.fogColor
+    if (typeof snapshot.ambientColor !== 'string') snapshot.ambientColor = DEFAULT_AMBIENT_WEATHER.ambientColor
+    if (typeof snapshot.sunColor !== 'string') snapshot.sunColor = DEFAULT_AMBIENT_WEATHER.sunColor
+    if (typeof snapshot.rainColor !== 'string') snapshot.rainColor = DEFAULT_AMBIENT_WEATHER.rainColor
+    if (typeof snapshot.lightningColor !== 'string') snapshot.lightningColor = DEFAULT_AMBIENT_WEATHER.lightningColor
+}
+
+function sanitizeTriplet(value: unknown): [number, number, number] {
+    if (!Array.isArray(value) || value.length < 3) return [1, 1, 1]
+    const r = Number(value[0])
+    const g = Number(value[1])
+    const b = Number(value[2])
+    return [
+        Number.isFinite(r) ? r : 1,
+        Number.isFinite(g) ? g : 1,
+        Number.isFinite(b) ? b : 1,
+    ]
 }

@@ -1,7 +1,7 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { deserializeLevel, serializeLevel } from '../engine/voxel/level-serializer'
-import { copyZoneScriptAction, type EditorState, type EditorLevelMeta } from './editor-state'
+import { copyZoneScriptAction, DEFAULT_AMBIENT_WEATHER, type EditorState, type EditorLevelMeta } from './editor-state'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
 import { toLevelMeta } from './editor-state'
 import { despawnEntity } from '../engine/ecs/entity'
@@ -249,13 +249,35 @@ export function loadLevelFromBuffer(
             })
         }
         if (loaded.metadata.ambientWeather) {
+            // Merge against DEFAULT_AMBIENT_WEATHER so older save files
+            // pick up new fields (mode, cycleEnabled, cycleSeconds,
+            // skyTint, sunIntensityMul, fogDensityMul) without crashing
+            // the editor UI that assumes every field is populated.
             editorState.ambientWeather = {
                 enabled: loaded.metadata.ambientWeather.enabled,
                 presetId: loaded.metadata.ambientWeather.presetId,
-                state: { ...loaded.metadata.ambientWeather.state },
+                state: {
+                    ...DEFAULT_AMBIENT_WEATHER,
+                    ...loaded.metadata.ambientWeather.state,
+                    skyTint: cloneTriplet(loaded.metadata.ambientWeather.state.skyTint),
+                },
             }
         }
     }
 
     return loaded.metadata
+}
+
+/** Defensive clone of a [r,g,b] triplet, with fallback to identity tint
+ *  when the stored value is missing or shape-broken (old saves pre-cycle). */
+function cloneTriplet(value: unknown): [number, number, number] {
+    if (!Array.isArray(value) || value.length < 3) return [1, 1, 1]
+    const r = Number(value[0])
+    const g = Number(value[1])
+    const b = Number(value[2])
+    return [
+        Number.isFinite(r) ? r : 1,
+        Number.isFinite(g) ? g : 1,
+        Number.isFinite(b) ? b : 1,
+    ]
 }
