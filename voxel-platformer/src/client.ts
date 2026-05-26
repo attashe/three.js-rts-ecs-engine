@@ -211,7 +211,7 @@ async function main(): Promise<void> {
         }), 'blockLights')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createTorchBlockRenderSystem(renderer.scene, chunks, {
-            camera: () => renderer.iso.camera,
+            focus: () => renderer.iso.target,
             audio,
             audioReady,
             soundId: GameAudio.TorchFire,

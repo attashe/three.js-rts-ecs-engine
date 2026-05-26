@@ -2,8 +2,6 @@ import {
     Color,
     Mesh,
     PointLight,
-    Vector3,
-    type Camera,
     type Group,
     type Scene,
 } from 'three'
@@ -32,9 +30,43 @@ export interface TorchMount {
 }
 
 export interface TorchBlockRenderOptions {
+    /** Optional cut-plane for the editor's top-down view — torches with
+     *  Y above this plane are hidden so the editor isn't littered with
+     *  out-of-frame props. */
     cutY?: () => number | null
-    camera?: () => Camera
+    /**
+     * World-space focal point — typically the iso camera's `target`,
+     * which tracks the player. Used for two things:
+     *   1. Selecting which torches receive a pool light.
+     *   2. Deciding which torches are close enough to animate.
+     *
+     * This MUST NOT be the camera's position. For an iso camera, the
+     * camera sits ~50 units away from anything on screen, so every
+     * torch is at roughly the same camera-distance — picking "nearest
+     * to camera" produces near-arbitrary results that flicker as the
+     * camera drifts. Distance to the focus point (player / look-at) is
+     * the meaningful metric: 0 means "the player is standing on the
+     * torch", ~12 units means "the torch is at the edge of the iso
+     * viewport".
+     *
+     * If unset, the system falls back to the player entity's position
+     * (PlayerControlled + Position). If there is no player either, the
+     * pool lights stay parked and nothing animates.
+     */
+    focus?: () => Vec3Like | null
+    /** Max distance from focus a torch is considered "near enough" to
+     *  receive a pool light AND animate its flame. Default 14 units,
+     *  matching the iso viewport's half-extent at default zoom. */
+    focusRadius?: number
+    /** When false, no pool lights are created at all. The editor uses
+     *  this — the torches still mount and flicker visually, but
+     *  they don't add lights to the chunk shader. */
     lightsEnabled?: boolean
+    /** Pool size — number of PointLights pre-allocated and dynamically
+     *  assigned to the nearest torches each frame. Defaults to 3.
+     *  Each light in the scene adds a per-fragment lighting calculation
+     *  to every PBR material in the world, so don't push this too
+     *  high. */
     maxLights?: number
     audio?: AudioEngine
     audioReady?: Promise<unknown>
@@ -49,14 +81,16 @@ interface TorchBlockRecord {
     signature: string
     /** World Y of the block — drives cut-plane visibility in the editor. */
     y: number
-    /** Cached torch position (centre + slight Y offset) — used by the
-     *  pool light + spatial sound so we don't re-read group.position
-     *  every frame. */
+    /** Cached world-space position used by the focus-distance test,
+     *  pool light placement, and spatial sound. */
     posX: number
     posY: number
     posZ: number
     flames: TorchFlameRuntime[]
     flickerPhase: number
+    /** Working scratch — squared distance from focus this frame. Reused
+     *  by light + sound selection so we compute it once per record. */
+    d2: number
     sound: SoundHandle | null
     soundX: number
     soundY: number
@@ -75,9 +109,9 @@ interface ChunkSnapshot {
 
 interface LightPoolSlot {
     light: PointLight
-    /** Phase carried by the slot itself, not the torch it lights — keeps
-     *  the flicker animation continuous when the slot is reassigned to
-     *  a different torch as the player moves. */
+    /** Per-slot flicker phase. Assigning a slot to a different torch
+     *  keeps the slot's own phase, so the lit pool keeps animating
+     *  smoothly even as it swaps which physical torch it represents. */
     phase: number
     baseIntensity: number
     baseDistance: number
@@ -85,18 +119,14 @@ interface LightPoolSlot {
 
 const WALL_LEAN_RADIANS = 0.58
 const WALL_STANDOFF = 0.13
-// Each PointLight in the scene adds a per-fragment lighting calculation
-// to every PBR material in the world. Two is the empirical sweet spot
-// for an iso platformer: enough to read "the nearest torch glows on
-// the surrounding blocks" without inflating the fragment shader.
-const DEFAULT_TORCH_LIGHTS = 2
-// Skip flame animation for torches farther than this from the camera.
-// They're already drawn at sub-pixel size, so animating the scale per
-// frame is just CPU + matrix-recompute cost the viewer can't see.
-const ANIMATION_CULL_DISTANCE = 28
+const DEFAULT_TORCH_LIGHTS = 3
+const DEFAULT_FOCUS_RADIUS = 14
 const DEFAULT_TORCH_SOUND_RADIUS = 5
 const DEFAULT_TORCH_SOUND_SOURCES = 3
 const LIGHT_Y_OFFSET = 0.66
+const PARK_X = 1e6
+const PARK_Y = -1e6
+const PARK_Z = 1e6
 
 const WALL_DIRECTIONS = [
     { dx: -1, dz: 0, normalX: 1, normalZ: 0 },
@@ -111,26 +141,22 @@ export function createTorchBlockRenderSystem(
     opts: TorchBlockRenderOptions = {},
 ): System {
     const records = new Map<string, TorchBlockRecord>()
-    // Per-chunk version snapshot. Steady-state cost is one map lookup +
-    // version compare per loaded chunk — no string sort, no allocation.
     const chunkSnapshots = new Map<ChunkKey, ChunkSnapshot>()
     let paletteSignature = palettePropSignature(chunks)
     const lightsEnabled = opts.lightsEnabled !== false
     const poolSize = lightsEnabled ? Math.max(0, Math.floor(opts.maxLights ?? DEFAULT_TORCH_LIGHTS)) : 0
-    // Light pool — every PointLight is created and added to the scene
-    // exactly once. The scene's light count is therefore fixed for the
-    // lifetime of the system, so three.js never has to recompile every
-    // PBR material because a torch entered view.
+    const focusRadius = Math.max(1, opts.focusRadius ?? DEFAULT_FOCUS_RADIUS)
+    const focusRadius2 = focusRadius * focusRadius
     const lightPool: LightPoolSlot[] = []
     let lightsParked = false
-    const PARK_POSITION = { x: 1e6, y: -1e6, z: 1e6 }
     let soundReady = !opts.audioReady
     let soundDisabled = false
     let elapsed = 0
     let lastCutY: number | null | undefined
-    const lightCandidates: TorchLightCandidate[] = []
-    const soundCandidates: TorchSoundCandidate[] = []
+    // Scratch buffers — reused each frame, never re-allocated.
+    const activeRecords: TorchBlockRecord[] = []
     const tmpColor = new Color()
+    const tmpFocus = { x: 0, y: 0, z: 0 }
 
     for (let i = 0; i < poolSize; i++) {
         const light = new PointLight(
@@ -141,12 +167,12 @@ export function createTorchBlockRenderSystem(
         )
         light.name = `BlockTorchPoolLight${i}`
         light.castShadow = false
-        // Visible from the start so the renderer's light list is
-        // settled on frame zero. Position is offscreen until a torch
-        // is assigned — three.js still iterates them, but the work is
-        // bounded by `poolSize` (typically 4–8).
+        // Visible = true from the start so the renderer's light list is
+        // settled on frame zero — adding/removing lights forces a
+        // recompile of every PBR material in the scene, the stalls we
+        // used to see when a torch streamed in.
         light.visible = true
-        light.position.set(PARK_POSITION.x, PARK_POSITION.y, PARK_POSITION.z)
+        light.position.set(PARK_X, PARK_Y, PARK_Z)
         light.intensity = 0
         scene.add(light)
         lightPool.push({
@@ -186,10 +212,11 @@ export function createTorchBlockRenderSystem(
                 let record = records.get(torchKey)
                 if (!record) {
                     const group = createBlockTorch()
-                    // The torch root + its handle/head children never
-                    // animate, so opt them out of three.js's per-frame
-                    // matrixAutoUpdate. We re-fire the matrix manually
-                    // below whenever the mount changes.
+                    // Torch root + non-flame children never move once
+                    // positioned. Opt out of three.js's per-frame
+                    // matrixAutoUpdate so it doesn't recompute their
+                    // local matrix every render. Flames still animate
+                    // their scale, so they keep autoUpdate on.
                     group.matrixAutoUpdate = false
                     for (const child of group.children) {
                         if (child.userData[PLAYER_TORCH_FLAME]) continue
@@ -206,6 +233,7 @@ export function createTorchBlockRenderSystem(
                         posZ: wz + 0.5,
                         flames,
                         flickerPhase: Math.random() * Math.PI * 2,
+                        d2: Infinity,
                         sound: null,
                         soundX: wx + 0.5,
                         soundY: wy + 0.7,
@@ -247,6 +275,9 @@ export function createTorchBlockRenderSystem(
     function syncTorches(): void {
         const palSig = palettePropSignature(chunks)
         if (palSig !== paletteSignature) {
+            // Palette swap / material edit may have moved the torch
+            // entry index. Invalidate every snapshot and let the
+            // per-chunk pass below repopulate.
             paletteSignature = palSig
             for (const snapshot of chunkSnapshots.values()) snapshot.version = -1
         }
@@ -283,85 +314,53 @@ export function createTorchBlockRenderSystem(
         }
     }
 
-    function updateLightPool(): void {
-        if (poolSize === 0) return
-        const camera = opts.camera?.() ?? null
-
-        lightCandidates.length = 0
-        for (const [torchKey, record] of records) {
-            if (!record.group.visible) continue
-            lightCandidates.push({
-                key: torchKey,
-                x: record.posX,
-                y: record.posY,
-                z: record.posZ,
-            })
+    /** Pull the focus point from the option, falling back to the
+     *  player entity's world position. Returns null when neither is
+     *  available (true for editor with no spawn entity). */
+    function resolveFocus(world: Parameters<System['update']>[0]): Vec3Like | null {
+        const provided = opts.focus?.()
+        if (provided) {
+            tmpFocus.x = provided.x
+            tmpFocus.y = provided.y
+            tmpFocus.z = provided.z
+            return tmpFocus
         }
-
-        if (lightCandidates.length === 0) {
-            parkAllLights()
-            return
-        }
-        lightsParked = false
-
-        const activeKeys = camera
-            ? selectTorchLightKeys(lightCandidates, camera.position, poolSize)
-            : new Set(lightCandidates.slice(0, poolSize).map((c) => c.key))
-
-        let slotIndex = 0
-        for (const candidate of lightCandidates) {
-            if (!activeKeys.has(candidate.key)) continue
-            if (slotIndex >= lightPool.length) break
-            const slot = lightPool[slotIndex]!
-            const pulse = flicker(elapsed, slot.phase)
-            slot.light.position.set(candidate.x, candidate.y, candidate.z)
-            slot.light.intensity = slot.baseIntensity * (0.84 + pulse * 0.32)
-            slot.light.distance = slot.baseDistance * (0.95 + pulse * 0.12)
-            tmpColor.setHSL(0.078 + pulse * 0.014, 1, 0.58 + pulse * 0.12)
-            slot.light.color.copy(tmpColor)
-            slotIndex++
-        }
-        for (; slotIndex < lightPool.length; slotIndex++) {
-            const slot = lightPool[slotIndex]!
-            slot.light.intensity = 0
-            slot.light.position.set(PARK_POSITION.x, PARK_POSITION.y, PARK_POSITION.z)
-        }
+        const players = query(world, [Position, PlayerControlled])
+        const pid = players[0]
+        if (pid === undefined) return null
+        tmpFocus.x = Position.x[pid]!
+        tmpFocus.y = Position.y[pid]!
+        tmpFocus.z = Position.z[pid]!
+        return tmpFocus
     }
 
-    function parkAllLights(): void {
-        if (lightsParked) return
-        for (const slot of lightPool) {
-            slot.light.intensity = 0
-            slot.light.position.set(PARK_POSITION.x, PARK_POSITION.y, PARK_POSITION.z)
-        }
-        lightsParked = true
-    }
+    /**
+     * Single-pass classification:
+     *   - For each visible torch, compute squared distance to focus.
+     *   - If within `focusRadius`, the torch is "active": flame
+     *     animation runs and it becomes a light-pool candidate.
+     *   - Otherwise it's inactive: skip work, keep last flame scale.
+     *
+     * Iterating once and caching `record.d2` lets the light-pool
+     * selection re-use the distance without recomputing it.
+     */
+    function classifyAndAnimate(focus: Vec3Like | null): void {
+        activeRecords.length = 0
+        if (!focus) return
 
-    function animateFlames(): void {
-        // Flame animation only animates scale (not material opacity), so
-        // the flame materials can be shared across every torch without
-        // visible sync between them — different `flickerPhase`s give each
-        // torch a slightly different beat.
-        //
-        // Torches beyond `ANIMATION_CULL_DISTANCE` from the camera skip
-        // the scale update. They're rendered at sub-pixel size, so the
-        // flicker isn't visible anyway, and skipping the assignment
-        // avoids re-flagging the flame mesh's local matrix as dirty
-        // (which would force three.js to recompute it during the next
-        // matrixWorld traversal).
-        const camera = opts.camera?.()
-        const cx = camera?.position.x ?? 0
-        const cy = camera?.position.y ?? 0
-        const cz = camera?.position.z ?? 0
-        const cull2 = ANIMATION_CULL_DISTANCE * ANIMATION_CULL_DISTANCE
         for (const record of records.values()) {
             if (!record.group.visible) continue
-            if (camera) {
-                const dx = record.posX - cx
-                const dy = record.posY - cy
-                const dz = record.posZ - cz
-                if (dx * dx + dy * dy + dz * dz > cull2) continue
+            const dx = record.posX - focus.x
+            const dy = record.posY - focus.y
+            const dz = record.posZ - focus.z
+            const d2 = dx * dx + dy * dy + dz * dz
+            if (d2 > focusRadius2) {
+                record.d2 = d2
+                continue
             }
+            record.d2 = d2
+            activeRecords.push(record)
+
             const pulse = flicker(elapsed, record.flickerPhase)
             const flameY = 0.9 + pulse * 0.22
             const flameXZ = 0.92 + (1 - pulse) * 0.1
@@ -373,6 +372,52 @@ export function createTorchBlockRenderSystem(
                 )
             }
         }
+    }
+
+    /**
+     * Sort the active set by distance and assign pool lights to the
+     * nearest `poolSize` torches. Park unused pool slots so they cost
+     * nothing in the lighting math.
+     */
+    function assignLightPool(): void {
+        if (poolSize === 0) return
+        if (activeRecords.length === 0) {
+            parkAllLights()
+            return
+        }
+        lightsParked = false
+
+        // Active set is small (≤ ~30 torches in radius). Partial-sort
+        // would be cleaner but full sort is comparable cost at this
+        // size and dramatically simpler. The closer-to-focus tiebreak
+        // keeps the picks stable when two torches are equidistant.
+        activeRecords.sort(compareByDistance)
+
+        const lit = Math.min(poolSize, activeRecords.length)
+        for (let i = 0; i < lit; i++) {
+            const record = activeRecords[i]!
+            const slot = lightPool[i]!
+            const pulse = flicker(elapsed, slot.phase)
+            slot.light.position.set(record.posX, record.posY, record.posZ)
+            slot.light.intensity = slot.baseIntensity * (0.84 + pulse * 0.32)
+            slot.light.distance = slot.baseDistance * (0.95 + pulse * 0.12)
+            tmpColor.setHSL(0.078 + pulse * 0.014, 1, 0.58 + pulse * 0.12)
+            slot.light.color.copy(tmpColor)
+        }
+        for (let i = lit; i < lightPool.length; i++) {
+            const slot = lightPool[i]!
+            slot.light.intensity = 0
+            slot.light.position.set(PARK_X, PARK_Y, PARK_Z)
+        }
+    }
+
+    function parkAllLights(): void {
+        if (lightsParked) return
+        for (const slot of lightPool) {
+            slot.light.intensity = 0
+            slot.light.position.set(PARK_X, PARK_Y, PARK_Z)
+        }
+        lightsParked = true
     }
 
     return {
@@ -387,8 +432,9 @@ export function createTorchBlockRenderSystem(
             elapsed += dt
             syncTorches()
             applyVisibility()
-            updateLightPool()
-            animateFlames()
+            const focus = resolveFocus(world)
+            classifyAndAnimate(focus)
+            assignLightPool()
             syncTorchSounds(world)
         },
         dispose() {
@@ -420,12 +466,7 @@ export function createTorchBlockRenderSystem(
 
         const radius = Math.max(0.1, opts.soundRadius ?? DEFAULT_TORCH_SOUND_RADIUS)
         const maxSources = Math.max(0, Math.floor(opts.maxSoundSources ?? DEFAULT_TORCH_SOUND_SOURCES))
-        soundCandidates.length = 0
-        for (const [key, record] of records) {
-            if (!record.group.visible) continue
-            soundCandidates.push({ key, x: record.soundX, y: record.soundY, z: record.soundZ })
-        }
-        const selected = selectTorchSoundKeys(soundCandidates, listener, radius, maxSources)
+        const selected = pickNearestKeysWithinRadius(records, listener, radius, maxSources)
 
         for (const [key, record] of records) {
             const shouldPlay = selected.has(key)
@@ -466,6 +507,10 @@ export function createTorchBlockRenderSystem(
     }
 }
 
+function compareByDistance(a: TorchBlockRecord, b: TorchBlockRecord): number {
+    return a.d2 - b.d2
+}
+
 export interface TorchSoundCandidate extends Vec3Like {
     key: string
 }
@@ -474,6 +519,9 @@ export interface TorchLightCandidate extends Vec3Like {
     key: string
 }
 
+/** Legacy export retained for the public test suite. The runtime uses
+ *  the in-place active-record sort instead, which avoids the per-call
+ *  Array.map / new Set allocations this helper does. */
 export function selectTorchLightKeys(
     candidates: readonly TorchLightCandidate[],
     viewer: Vec3Like,
@@ -491,6 +539,7 @@ export function selectTorchLightKeys(
         .map((candidate) => candidate.key))
 }
 
+/** Legacy export retained for the public test suite. */
 export function selectTorchSoundKeys(
     candidates: readonly TorchSoundCandidate[],
     listener: Vec3Like,
@@ -509,6 +558,31 @@ export function selectTorchSoundKeys(
         .sort((a, b) => a.d2 - b.d2 || a.key.localeCompare(b.key))
         .slice(0, count)
         .map((candidate) => candidate.key))
+}
+
+/** Sound-side variant of the light-pool selector — operates directly
+ *  on the records map without an intermediate candidate array. */
+function pickNearestKeysWithinRadius(
+    records: Map<string, TorchBlockRecord>,
+    listener: Vec3Like,
+    radius: number,
+    maxSources: number,
+): Set<string> {
+    const count = Math.max(0, Math.floor(maxSources))
+    if (count === 0) return new Set()
+    const r2 = Math.max(0, radius) ** 2
+
+    const candidates: { key: string; d2: number }[] = []
+    for (const [key, record] of records) {
+        if (!record.group.visible) continue
+        const dx = record.soundX - listener.x
+        const dy = record.soundY - listener.y
+        const dz = record.soundZ - listener.z
+        const d2 = dx * dx + dy * dy + dz * dz
+        if (d2 <= r2) candidates.push({ key, d2 })
+    }
+    candidates.sort((a, b) => a.d2 - b.d2 || a.key.localeCompare(b.key))
+    return new Set(candidates.slice(0, count).map((c) => c.key))
 }
 
 export function resolveTorchMount(chunks: ChunkManager, x: number, y: number, z: number): TorchMount {

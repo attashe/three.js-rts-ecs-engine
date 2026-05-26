@@ -111,7 +111,7 @@ async function main(): Promise<void> {
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createTorchBlockRenderSystem(renderer.scene, chunks, {
             cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
-            camera: () => renderer.iso.camera,
+            focus: () => renderer.iso.target,
             lightsEnabled: false,
         }), 'torchBlocks')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
