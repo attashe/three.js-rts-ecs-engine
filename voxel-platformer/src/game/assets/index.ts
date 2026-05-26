@@ -15,7 +15,7 @@ export type { BowOptions, QuiverOptions } from './weapons'
 export { createCoinPile, createStone } from './props'
 export type { StoneVisualOptions } from './props'
 
-export { createPlayerTorch, PLAYER_TORCH_FLAME, PLAYER_TORCH_LIGHT } from './torch'
+export { createBlockTorch, createPlayerTorch, PLAYER_TORCH_FLAME, PLAYER_TORCH_LIGHT } from './torch'
 export type { PlayerTorchLightUserData } from './torch'
 
 export { mergeGroupByMaterial } from './merge-group'

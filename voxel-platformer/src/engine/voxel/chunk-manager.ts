@@ -1,5 +1,5 @@
 import { CHUNK_DIM, Chunk, chunkKey, type ChunkKey } from './chunk'
-import { AIR, clonePalette, type Palette } from './palette'
+import { AIR, appendMissingDefaultPaletteEntries, clonePalette, type Palette } from './palette'
 
 // Negative-safe integer floor. `Math.floor` already does this in JS, but
 // `(x | 0)` truncates toward zero — wrong for negative coords. Using floor.
@@ -46,11 +46,14 @@ export class ChunkManager {
 
     constructor(palette: Palette) {
         this.palette = clonePalette(palette)
+        appendMissingDefaultPaletteEntries(this.palette)
     }
 
     replacePalette(palette: Palette): void {
+        const next = clonePalette(palette)
+        appendMissingDefaultPaletteEntries(next)
         this.palette.entries.length = 0
-        this.palette.entries.push(...clonePalette(palette).entries)
+        this.palette.entries.push(...next.entries)
         this.markAllDirty()
     }
 

@@ -16,7 +16,7 @@ import type {
     EditorViewMode,
     EditorZoneTriggerMode,
 } from '../editor-state'
-import { colorToCss, formatCoord, sectionEl, trimForList, type RefreshableElement } from './common'
+import { colorToSwatchCss, formatCoord, sectionEl, trimForList, type RefreshableElement } from './common'
 
 export interface EditTabContext {
     world: GameWorld
@@ -266,7 +266,8 @@ function buildPaletteSection(ctx: EditTabContext): RefreshableElement {
     function applySwatchMaterial(swatch: HTMLElement, block: number, entry: PaletteEntry): void {
         const keyHint = block <= 9 ? ` · key ${block}` : ''
         swatch.title = `${entry.name} (${block})${keyHint}`
-        swatch.style.background = colorToCss(entry)
+        swatch.classList.toggle('torch', entry.renderAs === 'torch')
+        swatch.style.background = entry.renderAs === 'torch' ? '' : colorToSwatchCss(entry)
     }
 
     function sync(): void {

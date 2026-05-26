@@ -29,6 +29,7 @@ import { AudioEngine } from './engine/audio'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
+import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
 import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from './game/sound-sources'
@@ -178,6 +179,12 @@ async function main(): Promise<void> {
             camera: () => renderer.iso.camera,
         }), 'blockLights')
         .addSystem(chunkRenderSystem, 'chunkRender')
+        .addSystem(createTorchBlockRenderSystem(renderer.scene, chunks, {
+            camera: () => renderer.iso.camera,
+            audio,
+            audioReady,
+            soundId: GameAudio.TorchFire,
+        }), 'torchBlocks')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Push the log panel below the top-right ↻ Restart / ← Editor
         // buttons so it doesn't cover them. Buttons sit at top: 8px with

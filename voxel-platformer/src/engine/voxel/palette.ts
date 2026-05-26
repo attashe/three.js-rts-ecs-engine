@@ -42,6 +42,8 @@ export interface PaletteEntry {
      *  block-light pool is a fill, not a shadow source; opt in per-block to
      *  diagnose the shadow pipeline. */
     lightCastsShadow?: boolean
+    /** Optional non-cube prop renderer for authored special blocks. */
+    renderAs?: 'torch'
 }
 
 export interface BlockMovementTraits {
@@ -72,6 +74,7 @@ export const BLOCK = {
     door: 11,
     water: 12,
     cloud: 13,
+    torch: 14,
 } as const
 
 /**
@@ -122,6 +125,17 @@ export const DEFAULT_PALETTE: Palette = {
             pathSurface: false,
             opacity: 0.42,
         },
+        {
+            name: 'torch',
+            color: [1.00, 0.58, 0.16],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0,
+            renderAs: 'torch',
+        },
     ],
 }
 
@@ -148,6 +162,11 @@ export function occludesFaces(palette: Palette, index: number): boolean {
 export function isRaycastTarget(palette: Palette, index: number): boolean {
     const entry = paletteEntry(palette, index)
     return entry.raycastTarget ?? isCollidable(palette, index)
+}
+
+export function isTorchBlock(palette: Palette, index: number): boolean {
+    if (index === AIR) return false
+    return paletteEntry(palette, index).renderAs === 'torch'
 }
 
 export function isPathSurface(palette: Palette, index: number): boolean {
@@ -211,6 +230,7 @@ function clamp01(v: number): number {
 }
 
 export function isRenderableVoxel(palette: Palette, index: number): boolean {
+    if (isTorchBlock(palette, index)) return false
     return voxelOpacity(palette, index) > 0
 }
 
@@ -232,4 +252,22 @@ export function clonePalette(palette: Palette): Palette {
             lightColor: entry.lightColor ? [...entry.lightColor] as [number, number, number] : undefined,
         })),
     }
+}
+
+export function appendMissingDefaultPaletteEntries(palette: Palette): void {
+    if (!palette.entries.some((entry) => entry.renderAs === 'torch')) {
+        const torch = clonePalette({ entries: [DEFAULT_PALETTE.entries[BLOCK.torch]!] }).entries[0]!
+        torch.name = uniquePaletteName(palette, torch.name)
+        palette.entries.push(torch)
+    }
+}
+
+function uniquePaletteName(palette: Palette, wanted: string): string {
+    const used = new Set(palette.entries.map((entry) => entry.name))
+    if (!used.has(wanted)) return wanted
+    for (let i = 2; i < 1000; i++) {
+        const candidate = `${wanted} ${i}`
+        if (!used.has(candidate)) return candidate
+    }
+    return `${wanted} ${Date.now()}`
 }

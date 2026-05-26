@@ -58,10 +58,32 @@ export const PANEL_CSS = `
 .vpe-swatch {
     width: 24px; height: 24px; border-radius: 3px;
     border: 2px solid transparent; cursor: pointer;
+    position: relative; overflow: hidden;
     transition: transform 80ms ease, border-color 80ms ease;
 }
 .vpe-swatch:hover { transform: scale(1.08); }
 .vpe-swatch.active { border-color: #ffd166; }
+.vpe-swatch.torch {
+    background: rgba(217, 247, 255, 0.08);
+}
+.vpe-swatch.torch::before {
+    content: '';
+    position: absolute;
+    left: 11px; top: 9px;
+    width: 4px; height: 13px;
+    border-radius: 2px;
+    background: #5b3118;
+    transform: rotate(22deg);
+}
+.vpe-swatch.torch::after {
+    content: '';
+    position: absolute;
+    left: 8px; top: 3px;
+    width: 8px; height: 9px;
+    border-radius: 7px 7px 7px 1px;
+    background: #ff8a2f;
+    transform: rotate(12deg);
+}
 .vpe-button {
     background: rgba(217, 247, 255, 0.1); color: inherit;
     border: 1px solid rgba(217, 247, 255, 0.25);
@@ -112,6 +134,12 @@ export function sectionEl(title: string): HTMLElement {
 export function colorToCss(entry: PaletteEntry): string {
     const [r, g, b] = entry.color
     const alpha = entry.opacity ?? 1
+    return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`
+}
+
+export function colorToSwatchCss(entry: PaletteEntry): string {
+    const [r, g, b] = entry.color
+    const alpha = entry.renderAs ? 1 : Math.max(0.35, entry.opacity ?? 1)
     return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`
 }
 

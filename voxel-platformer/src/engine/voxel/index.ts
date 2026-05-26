@@ -21,12 +21,14 @@ export {
     isPathSurface,
     isRaycastTarget,
     isSolid,
+    isTorchBlock,
     occludesFaces,
     paletteEntry,
     voxelOpacity,
     voxelEmissive,
     voxelLightSpec,
     blockMovementTraits,
+    appendMissingDefaultPaletteEntries,
     clonePalette,
 } from './palette'
 export type { BlockLightSpec, BlockMovementTraits, Palette, PaletteEntry } from './palette'

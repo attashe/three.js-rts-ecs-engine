@@ -32,6 +32,7 @@ import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
 import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
 import { createViewModeSystem } from './editor/systems/view-mode-system'
 import { createAxisGizmoSystem } from './editor/systems/axis-gizmo-system'
+import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { mountEditorPanel } from './editor/editor-ui'
 import { consumePlaytestLevel } from './editor/playtest'
 import { loadLevelFromBuffer } from './editor/save-load'
@@ -106,6 +107,11 @@ async function main(): Promise<void> {
         .addSystem(createWeatherZonePlaceSystem(engine.input, editorState), 'weatherZonePlace')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
+        .addSystem(createTorchBlockRenderSystem(renderer.scene, chunks, {
+            cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
+            camera: () => renderer.iso.camera,
+            lightsEnabled: false,
+        }), 'torchBlocks')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
         .addSystem(createWorkingPlaneSystem(renderer.scene, engine.input, renderer.iso, editorState), 'workingPlane')
         .addSystem(createWorkingPlaneOutlinesSystem(renderer.scene, chunks, editorState), 'workingPlaneOutlines')

@@ -9,11 +9,16 @@ import {
     voxelLightSpec,
 } from '../src/engine/voxel/palette'
 import { appendMaterial, colorToHex, hexToColor, MAX_EDITOR_PALETTE_ENTRIES } from '../src/editor/palette-edit'
+import { colorToSwatchCss } from '../src/editor/ui/common'
 
 test('palette editor color helpers round-trip CSS hex values', () => {
     assert.equal(colorToHex(hexToColor('#336699')), '#336699')
     assert.equal(colorToHex([2, -1, 0.5]), '#ff0080')
     assert.deepEqual(hexToColor('not-a-color'), [1, 1, 1])
+})
+
+test('palette swatches stay visible for prop materials with zero world opacity', () => {
+    assert.equal(colorToSwatchCss(DEFAULT_PALETTE.entries[BLOCK.torch]!), 'rgba(255, 148, 41, 1)')
 })
 
 test('appendMaterial duplicates material data without aliasing source entry', () => {

@@ -69,6 +69,7 @@ export const GameAudio = {
     AmbWater: 'sfx.amb.water',
     AmbLava: 'sfx.amb.lava',
     AmbMagic: 'sfx.amb.magic',
+    TorchFire: 'sfx.amb.torch',
 
     // ── One-shot effects ─────────────────────────────────────────────
     Thunder: 'sfx.thunder',
@@ -120,6 +121,7 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.AmbWater,  url: path('water-loop.wav'),  volume: 0.30, loop: true, maxInstances: 4, priority: 1 },
         { id: GameAudio.AmbLava,   url: path('lava-loop.wav'),   volume: 0.38, loop: true, maxInstances: 4, priority: 2 },
         { id: GameAudio.AmbMagic,  url: path('magic-loop.wav'),  volume: 0.30, loop: true, maxInstances: 3, priority: 1 },
+        { id: GameAudio.TorchFire, url: path('fire-loop.wav'),   volume: 0.20, loop: true, maxInstances: 8, priority: 1 },
 
         // One-shot effects
         { id: GameAudio.Thunder,        url: path('thunder.wav'),         volume: 0.78, maxInstances: 2, priority: 5 },

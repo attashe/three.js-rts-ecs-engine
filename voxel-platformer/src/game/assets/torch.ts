@@ -22,8 +22,57 @@ export interface PlayerTorchLightUserData {
 }
 
 export function createPlayerTorch(): Group {
+    const root = createTorchVisualRoot('PlayerTorch')
+
+    const flickerPhase = Math.random() * Math.PI * 2
+
+    const light = new PointLight(new Color(0xffb05f), 7.6, 14, 1.25)
+    light.name = 'PlayerTorchLight'
+    light.position.set(0, 0.71, 0.04)
+    // The torch fill is intentionally unshadowed. A point light sits
+    // inside the player's chest, so omnidirectional shadow casting
+    // projected the player body (cape/arms) and any nearby block —
+    // including ones above the head — as hard wedges across the lit
+    // pool. The fill is small (14u) and only ever near the player,
+    // so dropping shadows reads as "magic torchlight" rather than a
+    // missing feature.
+    light.castShadow = false
+    light.userData[PLAYER_TORCH_LIGHT] = {
+        baseIntensity: light.intensity,
+        baseDistance: light.distance,
+        phase: flickerPhase,
+    } satisfies PlayerTorchLightUserData
+    root.add(light)
+
+    return root
+}
+
+export function createBlockTorch(): Group {
+    const root = createTorchVisualRoot('BlockTorch')
+    root.scale.setScalar(0.96)
+    root.traverse((obj) => {
+        if (!(obj instanceof Mesh)) return
+        obj.castShadow = false
+        obj.receiveShadow = false
+    })
+
+    const light = new PointLight(new Color(0xffa85a), 4.8, 9, 1.35)
+    light.name = 'BlockTorchLight'
+    light.position.set(0, 0.66, 0.02)
+    light.castShadow = false
+    light.userData[PLAYER_TORCH_LIGHT] = {
+        baseIntensity: light.intensity,
+        baseDistance: light.distance,
+        phase: Math.random() * Math.PI * 2,
+    } satisfies PlayerTorchLightUserData
+    root.add(light)
+
+    return root
+}
+
+function createTorchVisualRoot(name: string): Group {
     const root = new Group()
-    root.name = 'PlayerTorch'
+    root.name = name
 
     const handle = new Mesh(sharedCylinderGeometry(0.025, 0.034, 0.58, 10), sharedMaterial(0x4a2715, 0.86))
     handle.name = 'TorchHandle'
@@ -54,26 +103,6 @@ export function createPlayerTorch(): Group {
     core.scale.set(0.72, 1.28, 0.72)
     core.userData[PLAYER_TORCH_FLAME] = true
     root.add(core)
-
-    const flickerPhase = Math.random() * Math.PI * 2
-
-    const light = new PointLight(new Color(0xffb05f), 7.6, 14, 1.25)
-    light.name = 'PlayerTorchLight'
-    light.position.set(0, 0.71, 0.04)
-    // The torch fill is intentionally unshadowed. A point light sits
-    // inside the player's chest, so omnidirectional shadow casting
-    // projected the player body (cape/arms) and any nearby block —
-    // including ones above the head — as hard wedges across the lit
-    // pool. The fill is small (14u) and only ever near the player,
-    // so dropping shadows reads as "magic torchlight" rather than a
-    // missing feature.
-    light.castShadow = false
-    light.userData[PLAYER_TORCH_LIGHT] = {
-        baseIntensity: light.intensity,
-        baseDistance: light.distance,
-        phase: flickerPhase,
-    } satisfies PlayerTorchLightUserData
-    root.add(light)
 
     return root
 }
