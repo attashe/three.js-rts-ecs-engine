@@ -5,7 +5,7 @@ import {
     Float32BufferAttribute,
     Group,
     LineBasicMaterial,
-    LineLoop,
+    Line,
     Mesh,
     MeshStandardMaterial,
     Scene,
@@ -51,8 +51,8 @@ export class EmitterSource {
     private active = true
 
     private readonly orb: Mesh
-    private readonly innerRing: LineLoop
-    private readonly outerRing: LineLoop
+    private readonly innerRing: Line
+    private readonly outerRing: Line
     private readonly material: MeshStandardMaterial
     private readonly innerMat: LineBasicMaterial
     private readonly outerMat: LineBasicMaterial
@@ -81,10 +81,10 @@ export class EmitterSource {
 
         this.innerMat = new LineBasicMaterial({ color: new Color(opts.color), transparent: true, opacity: 0.95 })
         this.outerMat = new LineBasicMaterial({ color: new Color(opts.color), transparent: true, opacity: 0.35 })
-        this.innerRing = new LineLoop(makeRingGeometry(this.refDistance), this.innerMat)
+        this.innerRing = new Line(makeRingGeometry(this.refDistance), this.innerMat)
         this.innerRing.rotation.x = -Math.PI / 2
         this.innerRing.position.y = 0.06
-        this.outerRing = new LineLoop(makeRingGeometry(this.maxDistance), this.outerMat)
+        this.outerRing = new Line(makeRingGeometry(this.maxDistance), this.outerMat)
         this.outerRing.rotation.x = -Math.PI / 2
         this.outerRing.position.y = 0.04
         this.root.add(this.innerRing, this.outerRing)
@@ -307,9 +307,12 @@ class DeferredHandle implements SoundHandle {
 }
 
 function makeRingGeometry(radius: number): BufferGeometry {
+    // segments + 1 vertices, repeating the first at the end so the open
+    // `Line` strip visually closes the ring. WebGPU dropped support for
+    // `LineLoop`; manually closing the loop keeps the visual identical.
     const segments = 96
-    const positions = new Float32Array(segments * 3)
-    for (let i = 0; i < segments; i++) {
+    const positions = new Float32Array((segments + 1) * 3)
+    for (let i = 0; i <= segments; i++) {
         const t = (i / segments) * Math.PI * 2
         positions[i * 3]     = Math.cos(t) * radius
         positions[i * 3 + 1] = 0

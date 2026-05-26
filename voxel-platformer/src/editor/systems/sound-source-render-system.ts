@@ -2,7 +2,7 @@ import {
     BufferGeometry,
     Group,
     LineBasicMaterial,
-    LineLoop,
+    Line,
     Mesh,
     MeshBasicMaterial,
     SphereGeometry,
@@ -79,8 +79,8 @@ export function createSoundSourceRenderSystem(scene: Scene, editorState: EditorS
     interface Entry {
         root: Group
         marker: Mesh<SphereGeometry, MeshBasicMaterial>
-        ring: LineLoop<BufferGeometry, LineBasicMaterial>
-        coreRing: LineLoop<BufferGeometry, LineBasicMaterial>
+        ring: Line<BufferGeometry, LineBasicMaterial>
+        coreRing: Line<BufferGeometry, LineBasicMaterial>
         fingerprint: string
     }
     const entries: Entry[] = []
@@ -100,7 +100,7 @@ export function createSoundSourceRenderSystem(scene: Scene, editorState: EditorS
         marker.renderOrder = 997
         root.add(marker)
 
-        const ring = new LineLoop(
+        const ring = new Line(
             radiusGeometry(source.radius),
             selected ? selectedRingMaterial : ringMaterial,
         )
@@ -108,7 +108,7 @@ export function createSoundSourceRenderSystem(scene: Scene, editorState: EditorS
         ring.renderOrder = 996
         root.add(ring)
 
-        const coreRing = new LineLoop(
+        const coreRing = new Line(
             radiusGeometry(Math.max(MIN_CORE_RADIUS, source.radius * SOURCE_CORE_RATIO)),
             selected ? selectedCoreRingMaterial : coreRingMaterial,
         )
@@ -184,7 +184,11 @@ export function createSoundSourceRenderSystem(scene: Scene, editorState: EditorS
 function radiusGeometry(radius: number): BufferGeometry {
     const safeRadius = Math.max(0.01, radius)
     const points: Vector3[] = []
-    for (let i = 0; i < SEGMENTS; i++) {
+    for (let i = 0; i <= SEGMENTS; i++) {
+        // `i <= SEGMENTS` (not `<`) repeats the first vertex at the end so
+        // the open `Line` strip visually closes the ring. WebGPU dropped
+        // support for `LineLoop`; closing the loop manually keeps the
+        // visual identical without the unsupported primitive.
         const t = (i / SEGMENTS) * Math.PI * 2
         points.push(new Vector3(Math.cos(t) * safeRadius, 0, Math.sin(t) * safeRadius))
     }
@@ -193,8 +197,8 @@ function radiusGeometry(radius: number): BufferGeometry {
 
 function disposeEntry(entry: {
     marker: Mesh<SphereGeometry, MeshBasicMaterial>
-    ring: LineLoop<BufferGeometry, LineBasicMaterial>
-    coreRing: LineLoop<BufferGeometry, LineBasicMaterial>
+    ring: Line<BufferGeometry, LineBasicMaterial>
+    coreRing: Line<BufferGeometry, LineBasicMaterial>
 }): void {
     entry.marker.geometry.dispose()
     entry.ring.geometry.dispose()
