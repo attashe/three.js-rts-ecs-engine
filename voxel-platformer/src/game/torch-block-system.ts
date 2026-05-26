@@ -120,7 +120,14 @@ interface LightPoolSlot {
 const WALL_LEAN_RADIANS = 0.58
 const WALL_STANDOFF = 0.13
 const DEFAULT_TORCH_LIGHTS = 3
-const DEFAULT_FOCUS_RADIUS = 14
+// Doubled from 14 (≈ iso viewport's half-extent at zoom 1) to 28 so
+// torches turn on well before the player reaches them. At the previous
+// radius, torches lit up roughly when the character walked into them,
+// which read as "they only ignite on touch" instead of "they're
+// already lit ahead of me". 28 covers a full screen-width of lead time
+// in the typical iso view without bringing in torches the player can't
+// actually see yet.
+const DEFAULT_FOCUS_RADIUS = 28
 const DEFAULT_TORCH_SOUND_RADIUS = 5
 const DEFAULT_TORCH_SOUND_SOURCES = 3
 const LIGHT_Y_OFFSET = 0.66
