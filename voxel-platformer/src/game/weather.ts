@@ -49,11 +49,18 @@ interface PendingThunder {
 }
 
 /** Level-wide visual environment: sky dome, fog, sun/ambient light,
- *  camera-following rain/snow/clouds, and lightning flashes. */
+ *  camera-following rain/snow/clouds, and lightning flashes.
+ *
+ *  `focusProvider` optionally returns the world-space point the sun's
+ *  shadow frustum should track (typically the iso camera's lookAt
+ *  target / player). When omitted, `AmbientWeather` projects the
+ *  camera ray onto the ground plane — good enough as a fallback but
+ *  prone to drift on yaw rotation. */
 export function createEnvironmentFxSystem(
     scene: Scene,
     ambient: AmbientWeatherRuntimeConfig | undefined,
     cameraProvider: () => Camera,
+    focusProvider?: () => { x: number; y: number; z: number },
 ): System {
     if (!ambient) return { name: 'environmentFx', update: () => {} }
 
@@ -69,6 +76,7 @@ export function createEnvironmentFxSystem(
         name: 'environmentFx',
         order: RenderOrder.cameraFollow + 2,
         update(_world, dt) {
+            if (focusProvider) fx.ambient.setFocusPoint(focusProvider())
             fx.update(dt, cameraProvider())
         },
         dispose() {

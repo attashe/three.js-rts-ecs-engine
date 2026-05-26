@@ -32,6 +32,7 @@ import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
 import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
 import { createViewModeSystem } from './editor/systems/view-mode-system'
 import { createAxisGizmoSystem } from './editor/systems/axis-gizmo-system'
+import { createSunFollowSystem } from './engine/render/sun-follow-system'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { mountEditorPanel } from './editor/editor-ui'
 import { consumePlaytestLevel } from './editor/playtest'
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
     }
 
     engine
+        .addSystem(createSunFollowSystem(sun, () => renderer.iso.target), 'sunFollow')
         .addSystem(createHistorySystem(engine.input, history), 'history')
         .addSystem(createPaletteHotkeySystem(chunks, engine.input, renderer.iso, editorState), 'paletteHotkeys')
         .addSystem(createVoxelPaintSystem(chunks, engine.input, editorState, history), 'voxelPaint')

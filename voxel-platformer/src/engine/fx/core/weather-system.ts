@@ -179,6 +179,10 @@ class DisabledAmbientWeather {
         Object.assign(this.state, patch)
     }
 
+    setFocusPoint(_focus: { x: number; y: number; z: number } | null): void {
+        // No sun to follow — accept and ignore for API parity with AmbientWeather.
+    }
+
     update(_dt: number, _elapsed: number, _camera: Camera, _dummy: Object3D): void {
         // Zone-only systems deliberately do not own scene sky/fog/lights.
     }

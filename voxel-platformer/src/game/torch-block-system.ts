@@ -1,7 +1,8 @@
 import {
+    Color,
     Mesh,
-    MeshBasicMaterial,
     PointLight,
+    Vector3,
     type Camera,
     type Group,
     type Scene,
@@ -12,14 +13,14 @@ import type { System } from '../engine/ecs/systems/system'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import { PlayerControlled, Position } from '../engine/ecs/components'
 import { disposeObject3D } from '../engine/render/dispose-object'
-import { CHUNK_DIM } from '../engine/voxel/chunk'
+import { CHUNK_DIM, chunkKey, type ChunkKey } from '../engine/voxel/chunk'
+import type { Chunk } from '../engine/voxel/chunk'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { isCollidable, isTorchBlock, occludesFaces } from '../engine/voxel/palette'
 import {
+    BLOCK_TORCH_LIGHT_SPEC,
     createBlockTorch,
     PLAYER_TORCH_FLAME,
-    PLAYER_TORCH_LIGHT,
-    type PlayerTorchLightUserData,
 } from './assets'
 
 export type TorchMountKind = 'wall' | 'standing' | 'floating'
@@ -46,10 +47,16 @@ export interface TorchBlockRenderOptions {
 interface TorchBlockRecord {
     group: Group
     signature: string
+    /** World Y of the block — drives cut-plane visibility in the editor. */
     y: number
-    light: PointLight | null
-    lightData: PlayerTorchLightUserData | null
+    /** Cached torch position (centre + slight Y offset) — used by the
+     *  pool light + spatial sound so we don't re-read group.position
+     *  every frame. */
+    posX: number
+    posY: number
+    posZ: number
     flames: TorchFlameRuntime[]
+    flickerPhase: number
     sound: SoundHandle | null
     soundX: number
     soundY: number
@@ -61,11 +68,35 @@ interface TorchFlameRuntime {
     baseScale: { x: number; y: number; z: number }
 }
 
+interface ChunkSnapshot {
+    version: number
+    torchKeys: Set<string>
+}
+
+interface LightPoolSlot {
+    light: PointLight
+    /** Phase carried by the slot itself, not the torch it lights — keeps
+     *  the flicker animation continuous when the slot is reassigned to
+     *  a different torch as the player moves. */
+    phase: number
+    baseIntensity: number
+    baseDistance: number
+}
+
 const WALL_LEAN_RADIANS = 0.58
 const WALL_STANDOFF = 0.13
-const DEFAULT_TORCH_LIGHTS = 4
+// Each PointLight in the scene adds a per-fragment lighting calculation
+// to every PBR material in the world. Two is the empirical sweet spot
+// for an iso platformer: enough to read "the nearest torch glows on
+// the surrounding blocks" without inflating the fragment shader.
+const DEFAULT_TORCH_LIGHTS = 2
+// Skip flame animation for torches farther than this from the camera.
+// They're already drawn at sub-pixel size, so animating the scale per
+// frame is just CPU + matrix-recompute cost the viewer can't see.
+const ANIMATION_CULL_DISTANCE = 28
 const DEFAULT_TORCH_SOUND_RADIUS = 5
 const DEFAULT_TORCH_SOUND_SOURCES = 3
+const LIGHT_Y_OFFSET = 0.66
 
 const WALL_DIRECTIONS = [
     { dx: -1, dz: 0, normalX: 1, normalZ: 0 },
@@ -80,11 +111,51 @@ export function createTorchBlockRenderSystem(
     opts: TorchBlockRenderOptions = {},
 ): System {
     const records = new Map<string, TorchBlockRecord>()
-    const maxActiveLights = Math.max(0, Math.floor(opts.maxLights ?? DEFAULT_TORCH_LIGHTS))
+    // Per-chunk version snapshot. Steady-state cost is one map lookup +
+    // version compare per loaded chunk — no string sort, no allocation.
+    const chunkSnapshots = new Map<ChunkKey, ChunkSnapshot>()
+    let paletteSignature = palettePropSignature(chunks)
+    const lightsEnabled = opts.lightsEnabled !== false
+    const poolSize = lightsEnabled ? Math.max(0, Math.floor(opts.maxLights ?? DEFAULT_TORCH_LIGHTS)) : 0
+    // Light pool — every PointLight is created and added to the scene
+    // exactly once. The scene's light count is therefore fixed for the
+    // lifetime of the system, so three.js never has to recompile every
+    // PBR material because a torch entered view.
+    const lightPool: LightPoolSlot[] = []
+    let lightsParked = false
+    const PARK_POSITION = { x: 1e6, y: -1e6, z: 1e6 }
     let soundReady = !opts.audioReady
     let soundDisabled = false
-    let worldFingerprint = ''
     let elapsed = 0
+    let lastCutY: number | null | undefined
+    const lightCandidates: TorchLightCandidate[] = []
+    const soundCandidates: TorchSoundCandidate[] = []
+    const tmpColor = new Color()
+
+    for (let i = 0; i < poolSize; i++) {
+        const light = new PointLight(
+            new Color(BLOCK_TORCH_LIGHT_SPEC.color),
+            BLOCK_TORCH_LIGHT_SPEC.intensity,
+            BLOCK_TORCH_LIGHT_SPEC.distance,
+            BLOCK_TORCH_LIGHT_SPEC.decay,
+        )
+        light.name = `BlockTorchPoolLight${i}`
+        light.castShadow = false
+        // Visible from the start so the renderer's light list is
+        // settled on frame zero. Position is offscreen until a torch
+        // is assigned — three.js still iterates them, but the work is
+        // bounded by `poolSize` (typically 4–8).
+        light.visible = true
+        light.position.set(PARK_POSITION.x, PARK_POSITION.y, PARK_POSITION.z)
+        light.intensity = 0
+        scene.add(light)
+        lightPool.push({
+            light,
+            phase: Math.random() * Math.PI * 2,
+            baseIntensity: BLOCK_TORCH_LIGHT_SPEC.intensity,
+            baseDistance: BLOCK_TORCH_LIGHT_SPEC.distance,
+        })
+    }
 
     if (opts.audioReady) {
         void opts.audioReady.then(() => {
@@ -95,49 +166,63 @@ export function createTorchBlockRenderSystem(
         })
     }
 
-    function syncTorches(): void {
-        const seen = new Set<string>()
-        for (const chunk of chunks.allChunks()) {
-            if (chunk.nonAirCount === 0) continue
-            const baseX = chunk.cx * CHUNK_DIM
-            const baseY = chunk.cy * CHUNK_DIM
-            const baseZ = chunk.cz * CHUNK_DIM
+    function syncChunk(chunk: Chunk, key: ChunkKey): void {
+        const prev = chunkSnapshots.get(key)
+        const baseX = chunk.cx * CHUNK_DIM
+        const baseY = chunk.cy * CHUNK_DIM
+        const baseZ = chunk.cz * CHUNK_DIM
+        const newKeys = new Set<string>()
+        if (chunk.nonAirCount > 0) {
             chunk.forEachSolid((lx, ly, lz, value) => {
                 if (!isTorchBlock(chunks.palette, value)) return
                 const wx = baseX + lx
                 const wy = baseY + ly
                 const wz = baseZ + lz
-                const key = `${wx},${wy},${wz}`
-                seen.add(key)
+                const torchKey = `${wx},${wy},${wz}`
+                newKeys.add(torchKey)
 
                 const mount = resolveTorchMount(chunks, wx, wy, wz)
                 const signature = mountSignature(mount)
-                let record = records.get(key)
+                let record = records.get(torchKey)
                 if (!record) {
                     const group = createBlockTorch()
-                    const runtime = collectTorchRuntime(group)
-                    if (opts.lightsEnabled === false && runtime.light) {
-                        runtime.light.removeFromParent()
-                        runtime.light.dispose()
-                        runtime.light = null
+                    // The torch root + its handle/head children never
+                    // animate, so opt them out of three.js's per-frame
+                    // matrixAutoUpdate. We re-fire the matrix manually
+                    // below whenever the mount changes.
+                    group.matrixAutoUpdate = false
+                    for (const child of group.children) {
+                        if (child.userData[PLAYER_TORCH_FLAME]) continue
+                        child.matrixAutoUpdate = false
+                        child.updateMatrix()
                     }
+                    const flames = collectTorchFlames(group)
                     record = {
                         group,
                         signature: '',
                         y: wy,
+                        posX: wx + 0.5,
+                        posY: wy + LIGHT_Y_OFFSET,
+                        posZ: wz + 0.5,
+                        flames,
+                        flickerPhase: Math.random() * Math.PI * 2,
                         sound: null,
                         soundX: wx + 0.5,
                         soundY: wy + 0.7,
                         soundZ: wz + 0.5,
-                        ...runtime,
                     }
-                    records.set(key, record)
+                    records.set(torchKey, record)
                     scene.add(group)
                 }
                 record.y = wy
                 if (record.signature !== signature) {
                     applyTorchTransform(record.group, wx, wy, wz, mount)
+                    record.group.updateMatrix()
+                    record.group.updateMatrixWorld(true)
                     record.signature = signature
+                    record.posX = record.group.position.x
+                    record.posY = record.group.position.y + LIGHT_Y_OFFSET
+                    record.posZ = record.group.position.z
                     record.soundX = record.group.position.x
                     record.soundY = record.group.position.y + 0.56
                     record.soundZ = record.group.position.z
@@ -146,18 +231,147 @@ export function createTorchBlockRenderSystem(
             })
         }
 
-        for (const [key, record] of records) {
-            if (seen.has(key)) continue
-            stopTorchSound(record, 0.2)
-            disposeTorchRecord(record)
-            records.delete(key)
+        if (prev) {
+            for (const oldKey of prev.torchKeys) {
+                if (newKeys.has(oldKey)) continue
+                const record = records.get(oldKey)
+                if (!record) continue
+                stopTorchSound(record, 0.2)
+                disposeTorchRecord(record)
+                records.delete(oldKey)
+            }
+        }
+        chunkSnapshots.set(key, { version: chunk.version, torchKeys: newKeys })
+    }
+
+    function syncTorches(): void {
+        const palSig = palettePropSignature(chunks)
+        if (palSig !== paletteSignature) {
+            paletteSignature = palSig
+            for (const snapshot of chunkSnapshots.values()) snapshot.version = -1
+        }
+
+        const seenChunks = new Set<ChunkKey>()
+        for (const chunk of chunks.allChunks()) {
+            const key = chunkKey(chunk.cx, chunk.cy, chunk.cz)
+            seenChunks.add(key)
+            const snapshot = chunkSnapshots.get(key)
+            if (snapshot && snapshot.version === chunk.version) continue
+            syncChunk(chunk, key)
+        }
+
+        for (const key of chunkSnapshots.keys()) {
+            if (seenChunks.has(key)) continue
+            const snapshot = chunkSnapshots.get(key)!
+            for (const torchKey of snapshot.torchKeys) {
+                const record = records.get(torchKey)
+                if (!record) continue
+                stopTorchSound(record, 0.2)
+                disposeTorchRecord(record)
+                records.delete(torchKey)
+            }
+            chunkSnapshots.delete(key)
         }
     }
 
     function applyVisibility(): void {
         const cutY = opts.cutY?.() ?? null
+        if (cutY === lastCutY) return
+        lastCutY = cutY
         for (const record of records.values()) {
             record.group.visible = cutY === null || record.y <= cutY
+        }
+    }
+
+    function updateLightPool(): void {
+        if (poolSize === 0) return
+        const camera = opts.camera?.() ?? null
+
+        lightCandidates.length = 0
+        for (const [torchKey, record] of records) {
+            if (!record.group.visible) continue
+            lightCandidates.push({
+                key: torchKey,
+                x: record.posX,
+                y: record.posY,
+                z: record.posZ,
+            })
+        }
+
+        if (lightCandidates.length === 0) {
+            parkAllLights()
+            return
+        }
+        lightsParked = false
+
+        const activeKeys = camera
+            ? selectTorchLightKeys(lightCandidates, camera.position, poolSize)
+            : new Set(lightCandidates.slice(0, poolSize).map((c) => c.key))
+
+        let slotIndex = 0
+        for (const candidate of lightCandidates) {
+            if (!activeKeys.has(candidate.key)) continue
+            if (slotIndex >= lightPool.length) break
+            const slot = lightPool[slotIndex]!
+            const pulse = flicker(elapsed, slot.phase)
+            slot.light.position.set(candidate.x, candidate.y, candidate.z)
+            slot.light.intensity = slot.baseIntensity * (0.84 + pulse * 0.32)
+            slot.light.distance = slot.baseDistance * (0.95 + pulse * 0.12)
+            tmpColor.setHSL(0.078 + pulse * 0.014, 1, 0.58 + pulse * 0.12)
+            slot.light.color.copy(tmpColor)
+            slotIndex++
+        }
+        for (; slotIndex < lightPool.length; slotIndex++) {
+            const slot = lightPool[slotIndex]!
+            slot.light.intensity = 0
+            slot.light.position.set(PARK_POSITION.x, PARK_POSITION.y, PARK_POSITION.z)
+        }
+    }
+
+    function parkAllLights(): void {
+        if (lightsParked) return
+        for (const slot of lightPool) {
+            slot.light.intensity = 0
+            slot.light.position.set(PARK_POSITION.x, PARK_POSITION.y, PARK_POSITION.z)
+        }
+        lightsParked = true
+    }
+
+    function animateFlames(): void {
+        // Flame animation only animates scale (not material opacity), so
+        // the flame materials can be shared across every torch without
+        // visible sync between them — different `flickerPhase`s give each
+        // torch a slightly different beat.
+        //
+        // Torches beyond `ANIMATION_CULL_DISTANCE` from the camera skip
+        // the scale update. They're rendered at sub-pixel size, so the
+        // flicker isn't visible anyway, and skipping the assignment
+        // avoids re-flagging the flame mesh's local matrix as dirty
+        // (which would force three.js to recompute it during the next
+        // matrixWorld traversal).
+        const camera = opts.camera?.()
+        const cx = camera?.position.x ?? 0
+        const cy = camera?.position.y ?? 0
+        const cz = camera?.position.z ?? 0
+        const cull2 = ANIMATION_CULL_DISTANCE * ANIMATION_CULL_DISTANCE
+        for (const record of records.values()) {
+            if (!record.group.visible) continue
+            if (camera) {
+                const dx = record.posX - cx
+                const dy = record.posY - cy
+                const dz = record.posZ - cz
+                if (dx * dx + dy * dy + dz * dz > cull2) continue
+            }
+            const pulse = flicker(elapsed, record.flickerPhase)
+            const flameY = 0.9 + pulse * 0.22
+            const flameXZ = 0.92 + (1 - pulse) * 0.1
+            for (const flame of record.flames) {
+                flame.mesh.scale.set(
+                    flame.baseScale.x * flameXZ,
+                    flame.baseScale.y * flameY,
+                    flame.baseScale.z * flameXZ,
+                )
+            }
         }
     }
 
@@ -165,20 +379,16 @@ export function createTorchBlockRenderSystem(
         name: 'torchBlocks',
         order: RenderOrder.worldRender + 2,
         init() {
-            worldFingerprint = fingerprintWorld(chunks)
             syncTorches()
+            lastCutY = undefined
             applyVisibility()
         },
         update(world, dt) {
             elapsed += dt
-            const fp = fingerprintWorld(chunks)
-            if (fp !== worldFingerprint) {
-                worldFingerprint = fp
-                syncTorches()
-            }
+            syncTorches()
             applyVisibility()
-            for (const record of records.values()) updateTorchFlicker(record, elapsed)
-            applyTorchLightBudget(records, opts.camera?.() ?? null, maxActiveLights)
+            updateLightPool()
+            animateFlames()
             syncTorchSounds(world)
         },
         dispose() {
@@ -187,6 +397,12 @@ export function createTorchBlockRenderSystem(
                 disposeTorchRecord(record)
             }
             records.clear()
+            chunkSnapshots.clear()
+            for (const slot of lightPool) {
+                slot.light.removeFromParent()
+                slot.light.dispose()
+            }
+            lightPool.length = 0
         },
     }
 
@@ -204,12 +420,12 @@ export function createTorchBlockRenderSystem(
 
         const radius = Math.max(0.1, opts.soundRadius ?? DEFAULT_TORCH_SOUND_RADIUS)
         const maxSources = Math.max(0, Math.floor(opts.maxSoundSources ?? DEFAULT_TORCH_SOUND_SOURCES))
-        const candidates: TorchSoundCandidate[] = []
+        soundCandidates.length = 0
         for (const [key, record] of records) {
             if (!record.group.visible) continue
-            candidates.push({ key, x: record.soundX, y: record.soundY, z: record.soundZ })
+            soundCandidates.push({ key, x: record.soundX, y: record.soundY, z: record.soundZ })
         }
-        const selected = selectTorchSoundKeys(candidates, listener, radius, maxSources)
+        const selected = selectTorchSoundKeys(soundCandidates, listener, radius, maxSources)
 
         for (const [key, record] of records) {
             const shouldPlay = selected.has(key)
@@ -327,101 +543,22 @@ function applyTorchTransform(group: Group, x: number, y: number, z: number, moun
     group.position.set(x + 0.5, y + (mount.kind === 'standing' ? 0.08 : 0.24), z + 0.5)
 }
 
-function collectTorchRuntime(group: Group): Pick<TorchBlockRecord, 'light' | 'lightData' | 'flames'> {
+function collectTorchFlames(group: Group): TorchFlameRuntime[] {
     const flames: TorchFlameRuntime[] = []
-    let light: PointLight | null = null
-    let lightData: PlayerTorchLightUserData | null = null
     group.traverse((obj) => {
-        if (obj instanceof Mesh && obj.userData[PLAYER_TORCH_FLAME]) {
-            flames.push({
-                mesh: obj,
-                baseScale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z },
-            })
-            return
-        }
-        if (!(obj instanceof PointLight)) return
-        const data = obj.userData[PLAYER_TORCH_LIGHT] as PlayerTorchLightUserData | undefined
-        if (!data) return
-        light = obj
-        lightData = data
+        if (!(obj instanceof Mesh)) return
+        if (!obj.userData[PLAYER_TORCH_FLAME]) return
+        flames.push({
+            mesh: obj,
+            baseScale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z },
+        })
     })
-    return { light, lightData, flames }
-}
-
-function updateTorchFlicker(record: TorchBlockRecord, elapsed: number): void {
-    const pulse = flicker(elapsed, record.lightData?.phase ?? 0)
-    if (record.light && record.lightData) {
-        record.light.intensity = record.lightData.baseIntensity * (0.84 + pulse * 0.32)
-        record.light.distance = record.lightData.baseDistance * (0.95 + pulse * 0.12)
-        record.light.color.setHSL(0.078 + pulse * 0.014, 1, 0.58 + pulse * 0.12)
-        ;(record.light.userData as Record<string, unknown>).wanted = record.light.intensity
-    }
-
-    const flameY = 0.9 + pulse * 0.22
-    const flameXZ = 0.92 + (1 - pulse) * 0.1
-    for (const flame of record.flames) {
-        flame.mesh.scale.set(
-            flame.baseScale.x * flameXZ,
-            flame.baseScale.y * flameY,
-            flame.baseScale.z * flameXZ,
-        )
-        if (flame.mesh.material instanceof MeshBasicMaterial) {
-            flame.mesh.material.opacity = 0.74 + pulse * 0.18
-        }
-    }
+    return flames
 }
 
 function disposeTorchRecord(record: TorchBlockRecord): void {
     record.group.removeFromParent()
-    record.group.traverse((obj) => {
-        if (obj instanceof PointLight) obj.dispose()
-    })
     disposeObject3D(record.group)
-}
-
-function applyTorchLightBudget(records: Map<string, TorchBlockRecord>, camera: Camera | null, maxLights: number): void {
-    if (maxLights <= 0) {
-        for (const record of records.values()) disableTorchLight(record)
-        return
-    }
-    if (!camera) {
-        let active = 0
-        for (const record of records.values()) {
-            if (!record.group.visible) {
-                disableTorchLight(record)
-                continue
-            }
-            setTorchLightActive(record, active < maxLights)
-            active++
-        }
-        return
-    }
-
-    const activeKeys = selectTorchLightKeys([...records]
-        .filter(([, record]) => record.group.visible && record.light)
-        .map(([key, record]) => ({
-            key,
-            x: record.group.position.x,
-            y: record.group.position.y,
-            z: record.group.position.z,
-        })),
-        camera.position,
-        maxLights,
-    )
-
-    for (const [key, record] of records) {
-        setTorchLightActive(record, activeKeys.has(key))
-    }
-}
-
-function setTorchLightActive(record: TorchBlockRecord, active: boolean): void {
-    if (!record.light) return
-    record.light.visible = active
-    if (!active) record.light.intensity = 0
-}
-
-function disableTorchLight(record: TorchBlockRecord): void {
-    setTorchLightActive(record, false)
 }
 
 function stopTorchSound(record: TorchBlockRecord, fadeOut: number): void {
@@ -448,12 +585,13 @@ function distanceSquared(a: Vec3Like, b: Vec3Like): number {
     return dx * dx + dy * dy + dz * dz
 }
 
-function fingerprintWorld(chunks: ChunkManager): string {
-    const parts = [`p:${chunks.palette.entries.map((entry) => entry.renderAs ?? '').join(',')}`]
-    for (const chunk of chunks.allChunks()) {
-        parts.push(`${chunk.cx},${chunk.cy},${chunk.cz}:${chunk.version}:${chunk.nonAirCount}`)
+function palettePropSignature(chunks: ChunkManager): string {
+    let sig = ''
+    for (const entry of chunks.palette.entries) {
+        sig += entry.renderAs ?? ''
+        sig += ','
     }
-    return parts.sort().join('|')
+    return sig
 }
 
 function mountSignature(mount: TorchMount): string {

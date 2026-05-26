@@ -29,6 +29,7 @@ import { AudioEngine } from './engine/audio'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
+import { createSunFollowSystem } from './engine/render/sun-follow-system'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
@@ -108,10 +109,16 @@ async function main(): Promise<void> {
     void audioReady.then(() => startEnvironment(audio, meta.environment, GAME_AUDIO_MANIFEST))
 
     engine
+        .addSystem(createSunFollowSystem(sun, () => renderer.iso.target), 'sunFollow')
         .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
         .addSystem(createSoundSourceSystem(audio, meta.soundSources, { audioReady }), 'soundSources')
         .addSystem(createSoundZoneSystem(audio, meta.soundZones, { audioReady }), 'soundZones')
-        .addSystem(createEnvironmentFxSystem(renderer.scene, meta.ambientWeather, () => renderer.iso.camera), 'environmentFx')
+        .addSystem(createEnvironmentFxSystem(
+            renderer.scene,
+            meta.ambientWeather,
+            () => renderer.iso.camera,
+            () => renderer.iso.target,
+        ), 'environmentFx')
         .addSystem(createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, { audioReady }), 'visualFxZones')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,

@@ -19,6 +19,7 @@ import {
     SphereGeometry,
     Sprite,
     SpriteMaterial,
+    Vector3,
     CanvasTexture,
 } from 'three'
 import type { AmbientWeatherState } from './types'
@@ -53,6 +54,13 @@ export class AmbientWeather {
     private readonly storm: LightningTimer
     private readonly previousFog: Scene['fog']
     private readonly sunOffset = { x: 30, y: 50, z: 20 }
+    /** Where the sun's shadow frustum should be centred. Defaults to the
+     *  camera's lookAt direction projected onto y = 0 when callers don't
+     *  override it. Drives `positionSunForCamera`. */
+    private readonly focusOverride = new Vector3()
+    private focusOverrideSet = false
+    private readonly tmpFocus = new Vector3()
+    private readonly tmpForward = new Vector3()
 
     constructor(private readonly scene: Scene) {
         this.previousFog = scene.fog
@@ -106,6 +114,27 @@ export class AmbientWeather {
     setState(patch: Partial<AmbientWeatherState>): void {
         Object.assign(this.state, patch)
         this.applyAtmosphere()
+    }
+
+    /**
+     * Override the world-space point the sun's shadow frustum follows.
+     * Pass `null` to fall back to projecting the camera's view onto y=0.
+     *
+     * The previous behaviour anchored the shadow frustum to
+     * `camera.position`, which silently broke an orbiting iso camera —
+     * yaw rotation moved the camera around the player, so the ±24-unit
+     * shadow square would orbit off the player and shadows would only
+     * appear for one specific rotation. Letting the host pin the focus
+     * to the iso target (i.e. the player) keeps shadows stable across
+     * camera moves.
+     */
+    setFocusPoint(focus: { x: number; y: number; z: number } | null): void {
+        if (focus === null) {
+            this.focusOverrideSet = false
+            return
+        }
+        this.focusOverride.set(focus.x, focus.y, focus.z)
+        this.focusOverrideSet = true
     }
 
     update(dt: number, elapsed: number, camera: Camera, dummy: Object3D): void {
@@ -317,16 +346,37 @@ export class AmbientWeather {
     }
 
     private positionSunForCamera(camera: Camera): void {
+        const focus = this.resolveSunFocus(camera)
         this.sun.position.set(
-            camera.position.x + this.sunOffset.x,
-            camera.position.y + this.sunOffset.y,
-            camera.position.z + this.sunOffset.z,
+            focus.x + this.sunOffset.x,
+            focus.y + this.sunOffset.y,
+            focus.z + this.sunOffset.z,
         )
-        this.sun.target.position.set(
-            camera.position.x - this.sunOffset.x * 0.02,
-            camera.position.y,
-            camera.position.z - this.sunOffset.z * 0.02,
-        )
+        // Targeting the focus point directly (not an offset back toward
+        // the sun) keeps the orthographic shadow camera centred on the
+        // player. The previous `-sunOffset * 0.02` nudge was a holdover
+        // from when focus == camera.position and didn't matter; with a
+        // real focal point it would shift the frustum off-centre.
+        this.sun.target.position.set(focus.x, focus.y, focus.z)
+    }
+
+    /** Pick the world-space point the shadow frustum should sit on.
+     *  Priority: explicit override (`setFocusPoint`) → camera ray cast
+     *  onto y=0 → camera.position as a last resort. */
+    private resolveSunFocus(camera: Camera): Vector3 {
+        if (this.focusOverrideSet) {
+            this.tmpFocus.copy(this.focusOverride)
+            return this.tmpFocus
+        }
+        camera.getWorldDirection(this.tmpForward)
+        const dy = this.tmpForward.y
+        if (dy < -1e-3 && camera.position.y > 0) {
+            const t = camera.position.y / -dy
+            this.tmpFocus.copy(camera.position).addScaledVector(this.tmpForward, t)
+            return this.tmpFocus
+        }
+        this.tmpFocus.copy(camera.position)
+        return this.tmpFocus
     }
 }
 
