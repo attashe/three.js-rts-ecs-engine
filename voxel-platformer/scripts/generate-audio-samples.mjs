@@ -23,14 +23,19 @@ writeWav('pickup-arrow.wav', noteSequence(0.28, [
     { start: 0.08, end: 0.20, hz: 990, amp: 0.36 },
 ]))
 
-writeWav('bow.wav', mix(0.42, [
-    // Existing layers — pluck + creak + chirp — kept for the bright top.
-    pluck(0.00, 0.22, 170, 0.58),
-    noiseBurst(0.03, 0.17, 0.20, 17),
-    chirp(0.07, 0.30, 520, 180, 0.22),
-    // New low-body layer so the bow draw has weight, not just snap.
-    pluck(0.00, 0.32, 85, 0.36),
-    rumble(0.04, 0.34, 60, 0.04, 23),
+// Bow release — clearer than the previous mix. Reads as
+// "taut string snap → high-frequency whoosh of the arrow leaving":
+//   1. Short bright pluck transient (the string releasing).
+//   2. A high-frequency downward chirp (the arrow's flight whistle).
+//   3. A short filtered-noise burst, lower amplitude, for air movement.
+// Deliberately no rumble — the old recipe's low-end made it buzz like
+// a creaking door instead of cracking like a bowstring.
+writeWav('bow.wav', mix(0.40, [
+    pluck(0.00, 0.10, 380, 0.62),
+    pluck(0.01, 0.16, 260, 0.42),
+    chirp(0.03, 0.34, 2100, 520, 0.18),
+    filteredNoise(0.04, 0.28, 0.10, 2400, 4101),
+    chirp(0.04, 0.30, 1100, 360, 0.16),
 ]))
 
 writeWav('arrow-hit.wav', mix(0.38, [
@@ -173,6 +178,15 @@ writeWav('background-calm-loop.wav', calmLoop(6.4))
 writeWav('background-action-loop.wav', actionLoop(4.8))
 writeWav('background-cave-loop.wav', caveLoop(7.2))
 
+// Minimalistic piano ambients — sparse, low-density melodic beds the
+// level author can pick as level music when they want "atmosphere"
+// rather than "soundtrack". Each one uses the same `pianoNote` voice
+// (additive sine harmonics + percussive attack + exponential decay)
+// but a different scale, register, and density.
+writeWav('piano-ambient-quiet.wav', pianoQuietLoop(8.0))
+writeWav('piano-ambient-night.wav', pianoNightLoop(9.6))
+writeWav('piano-ambient-drift.wav', pianoDriftLoop(8.8))
+
 // ── Weather (new) ────────────────────────────────────────────────────
 
 writeWav('rain-loop.wav', rainLoop(3.6))
@@ -193,6 +207,12 @@ writeWav('thunder.wav', mix(1.85, [
 // ── Fire (new) ───────────────────────────────────────────────────────
 
 writeWav('fire-loop.wav', fireLoop(3.4))
+// Torch loop — distinctly smaller than `fire-loop.wav`. Same crackle
+// language but lower amplitude, no low "roar", and the cutoff sits a
+// bit higher so the crackles read as a hand-held flame rather than a
+// bonfire pit. Used by every block torch in the world via a spatial
+// audio source with a tight `maxDistance`.
+writeWav('torch-loop.wav', torchLoop(2.4))
 writeWav('fire-whoosh.wav', mix(0.62, [
     // Ignition swell — chirp-down + bright noise → settles to crackle.
     chirp(0.00, 0.32, 240, 80, 0.32),
@@ -220,6 +240,19 @@ writeWav('explosion-small.wav', mix(0.85, [
     crackle(0.00, 0.18, 0.25, 0.45, 2129),
     rumble(0.02, 0.85, 80, 0.22, 2141),
     chirpNoise(0.02, 0.55, 1000, 220, 0.24, 2153),
+]))
+
+// Stone collision — a falling-stone landing on / clattering against a
+// block. Quick low pluck for the body of the impact + a short
+// high-frequency noise transient for the surface grit. No long tail:
+// the player hears this hundreds of times across a level so any
+// ringing residue gets annoying fast.
+writeWav('stone-impact.wav', mix(0.34, [
+    pluck(0.00, 0.10, 96, 0.62),
+    pluck(0.01, 0.18, 62, 0.32),
+    noiseBurst(0.00, 0.04, 0.55, 2217),
+    filteredNoise(0.01, 0.18, 0.14, 1800, 2231),
+    rumble(0.02, 0.30, 70, 0.05, 2237),
 ]))
 
 // ── Liquids (new) ────────────────────────────────────────────────────
@@ -534,6 +567,40 @@ function kick(start, amp) {
     }
 }
 
+/**
+ * Piano-ish voice. Approximated by additive sine harmonics (fundamental
+ * + 2 + 3 + 4 × hz) under a percussive amplitude curve: very fast
+ * attack (≈3 ms), exponential decay weighted toward the low harmonics.
+ * Higher harmonics decay faster than the fundamental, which is the
+ * acoustic-piano touch — it's why the *attack* sounds bright and the
+ * *sustain* sounds mellow.
+ */
+function pianoNote(start, end, hz, amp) {
+    return (signal) => {
+        const a = Math.floor(start * sampleRate)
+        const b = Math.min(signal.length, Math.floor(end * sampleRate))
+        const len = Math.max(1, b - a)
+        const harmonics = [
+            { mult: 1, amp: 1.00, decay: 2.4 },
+            { mult: 2, amp: 0.42, decay: 3.6 },
+            { mult: 3, amp: 0.22, decay: 5.2 },
+            { mult: 4, amp: 0.12, decay: 7.0 },
+        ]
+        const twoPi = Math.PI * 2
+        for (let i = a; i < b; i++) {
+            const t = (i - a) / sampleRate
+            const p = (i - a) / len
+            // ~3ms attack ramp so the hammer-on isn't a click.
+            const attack = Math.min(1, p / 0.006)
+            let sample = 0
+            for (const h of harmonics) {
+                sample += Math.sin(twoPi * hz * h.mult * t) * h.amp * Math.exp(-p * h.decay)
+            }
+            signal[i] += sample * amp * attack * 0.42
+        }
+    }
+}
+
 /** Closed hi-hat: very short filtered noise burst. */
 function hihat(start, amp, seed) {
     return (signal) => {
@@ -730,6 +797,86 @@ function windLoop(duration) {
 }
 
 /**
+ * Quiet piano — short ascending phrases in C major pentatonic with a
+ * slow held bass note underneath. Designed to sit behind ambience.
+ *
+ * Scale: C3(131) D3(147) E3(165) G3(196) A3(220) C4(262) D4(294) E4(330)
+ */
+function pianoQuietLoop(duration) {
+    const signal = make(duration)
+    // Sustained bass — fundamental of the key. Long, very quiet, just
+    // gives the loop a tonal centre to lean on.
+    pianoNote(0, duration, 65, 0.045)(signal)
+    pianoNote(duration * 0.5, duration, 98, 0.030)(signal)
+    // Top-line phrase. Sparse — 5 notes over the loop. Pentatonic
+    // pattern keeps every note consonant with the bass without needing
+    // explicit chord changes.
+    const phrase = [
+        { at: 0.05, hz: 262, dur: 1.0 },
+        { at: 0.22, hz: 330, dur: 0.9 },
+        { at: 0.40, hz: 392, dur: 1.4 },
+        { at: 0.60, hz: 294, dur: 1.0 },
+        { at: 0.80, hz: 220, dur: 1.6 },
+    ]
+    for (const n of phrase) {
+        const start = n.at * duration
+        pianoNote(start, start + n.dur, n.hz, 0.16)(signal)
+    }
+    crossfadeEnds(signal, 0.40)
+    return signal
+}
+
+/**
+ * Night piano — lower register, A minor, melodic notes spaced further
+ * apart. Less optimistic than `pianoQuietLoop`.
+ */
+function pianoNightLoop(duration) {
+    const signal = make(duration)
+    pianoNote(0, duration, 55, 0.05)(signal)
+    pianoNote(duration * 0.42, duration, 82, 0.035)(signal)
+    const phrase = [
+        { at: 0.04, hz: 220, dur: 1.3 },
+        { at: 0.20, hz: 196, dur: 1.2 },
+        { at: 0.34, hz: 247, dur: 1.4 },
+        { at: 0.50, hz: 165, dur: 1.6 },
+        { at: 0.66, hz: 196, dur: 1.0 },
+        { at: 0.80, hz: 147, dur: 1.7 },
+    ]
+    for (const n of phrase) {
+        const start = n.at * duration
+        pianoNote(start, start + n.dur, n.hz, 0.14)(signal)
+    }
+    crossfadeEnds(signal, 0.45)
+    return signal
+}
+
+/**
+ * Drift piano — slow alternating two-note motif (a "minor 6th sigh")
+ * over a sub-bass pad. Very few notes, lots of empty space, leans on
+ * the decay tails for continuity.
+ */
+function pianoDriftLoop(duration) {
+    const signal = make(duration)
+    pianoNote(0, duration, 73, 0.05)(signal)
+    pianoNote(duration * 0.5, duration, 110, 0.038)(signal)
+    // Two-note sigh: high note → fall to lower neighbour. Repeats with
+    // slight pitch variation each pass so the loop doesn't feel ticky.
+    const passes = [
+        { at: 0.08, hi: 392, lo: 330 },
+        { at: 0.30, hi: 349, lo: 294 },
+        { at: 0.55, hi: 415, lo: 349 },
+        { at: 0.78, hi: 330, lo: 262 },
+    ]
+    for (const p of passes) {
+        const start = p.at * duration
+        pianoNote(start, start + 1.1, p.hi, 0.13)(signal)
+        pianoNote(start + 0.55, start + 1.6, p.lo, 0.11)(signal)
+    }
+    crossfadeEnds(signal, 0.50)
+    return signal
+}
+
+/**
  * Fire crackle ambience. Two crackle densities layered over a low
  * filtered "roar" — the eye+ear picks "fire" out of the combination
  * without any specific frequency standing out.
@@ -744,6 +891,31 @@ function fireLoop(duration) {
     for (let i = 0; i < len; i++) {
         const t = i / sampleRate
         const flicker = 0.88 + 0.12 * Math.sin(2 * Math.PI * 1.7 * t + Math.sin(t * 0.9))
+        signal[i] *= flicker
+    }
+    crossfadeEnds(signal, 0.22)
+    return signal
+}
+
+/**
+ * Torch loop — much smaller than `fireLoop`. Drops the low-frequency
+ * "roar" filtered-noise bed (a torch is just a stick of fire, not a
+ * burning log) and keeps a single-density crackle layer with a higher
+ * cutoff so individual snaps read as pops, not whumps. Lower amplitude
+ * overall — the runtime plays many of these simultaneously near the
+ * player.
+ */
+function torchLoop(duration) {
+    const signal = make(duration)
+    // High-pass-ish filler — narrow band 1.2 kHz noise so the bed sits
+    // *above* environmental rumble instead of competing with it.
+    filteredNoise(0, duration, 0.06, 1500, 5331)(signal)
+    crackle(0, duration, 0.45, 0.22, 5341)(signal)
+    crackle(0, duration, 0.18, 0.12, 5351)(signal)
+    const len = signal.length
+    for (let i = 0; i < len; i++) {
+        const t = i / sampleRate
+        const flicker = 0.86 + 0.14 * Math.sin(2 * Math.PI * 2.6 * t + Math.sin(t * 1.4))
         signal[i] *= flicker
     }
     crossfadeEnds(signal, 0.22)

@@ -17,8 +17,8 @@ const expected = {
         sha256: '9891172b04d2d37a236f4c3c600f6a03ed217fcc2456cd15926bd622ebdcbbdc',
     },
     'bow.wav': {
-        bytes: 9305,
-        sha256: '727f0424cb3577f1647ea765278cee4ce5bbd842bbda4fb7d43c97b550fb9fef',
+        bytes: 8864,
+        sha256: '7fa9440a464bfc2b5167f6dd97ede27d7a668e8f1821d6b1c6988cedc6349054',
     },
     'death-stinger.wav': {
         bytes: 29811,
@@ -80,6 +80,18 @@ const expected = {
         bytes: 158804,
         sha256: '5f245a89b923027d8e84e19c3e85928a2dd2540ff5bea0333343d9532c7fa9f9',
     },
+    'piano-ambient-quiet.wav': {
+        bytes: 176444,
+        sha256: 'd304479133aacc9b946270389b1e0017366476010fd214c819fa1cede7580cb5',
+    },
+    'piano-ambient-night.wav': {
+        bytes: 211724,
+        sha256: '013e312c690681bf95d69d3f23f53a328afb0d167157f5f141070cd821e5f5fe',
+    },
+    'piano-ambient-drift.wav': {
+        bytes: 194084,
+        sha256: '91e2430ca83750d5a4fa37599a6a8903aae8068801e602ce9f60a869206d385a',
+    },
 
     // ── Weather ───────────────────────────────────────────────────
     'rain-loop.wav': {
@@ -108,6 +120,10 @@ const expected = {
         bytes: 13715,
         sha256: '55fb1c4d5fc656706fb85eb5f42382c96a3604490830178fa3ba90fbaa9c403d',
     },
+    'torch-loop.wav': {
+        bytes: 52964,
+        sha256: '5eb90163770540f01edfd75dd0117a8049a1f89e2f872e0a5de8c8b694136f37',
+    },
 
     // ── Explosion ─────────────────────────────────────────────────
     'explosion.wav': {
@@ -117,6 +133,10 @@ const expected = {
     'explosion-small.wav': {
         bytes: 18786,
         sha256: 'ea49d9ff6e90e8b5ce103bea6edc75f0e4f24f51c71f83840452acb377add3fc',
+    },
+    'stone-impact.wav': {
+        bytes: 7541,
+        sha256: '2ff139b14d1757b58edb81d188e533bac978c81b25675e2205e28e6490741639',
     },
 
     // ── Liquids ───────────────────────────────────────────────────

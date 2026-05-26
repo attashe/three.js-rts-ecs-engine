@@ -31,11 +31,41 @@ const STUCK_RECOVERY_STEP = 0.05
  *  even if restitution is non-zero. Avoids per-frame noise from gentle landings. */
 const IMPACT_MIN_SPEED = 3.0
 
+export interface ImpactEvent {
+    /** Entity that just slammed into a Y-blocking surface. */
+    eid: number
+    /** `MovingObject.kind` for this entity, or 0 if it has no
+     *  `MovingObject` component. Lets the consumer filter by category
+     *  (e.g. stone vs arrow vs player) without re-importing the
+     *  component arrays. */
+    movingObjectKind: number
+    /** World-space contact position (the entity's centre at the moment
+     *  of the block). */
+    x: number
+    y: number
+    z: number
+    /** Positive m/s — how fast the body was descending when blocked. */
+    speed: number
+    /** Horizontal speed at the moment of impact — useful for grit /
+     *  scrape modulation on top of the vertical thud. */
+    horizontalSpeed: number
+}
+
 export interface PhysicsOptions {
     /** Downward acceleration in world-units / second². Default 24. */
     gravity?: number
     /** Terminal vertical fall speed (clamped). Default 40. */
     maxFallSpeed?: number
+    /** Fires every time a body's vertical sweep is blocked at a speed
+     *  above the threshold. Use for FX / damage / one-shot sfx like a
+     *  stone-impact clack. The callback runs inside the fixed step, so
+     *  keep it cheap — push to a queue if you need to drain on the
+     *  render thread. */
+    onImpact?: (event: ImpactEvent) => void
+    /** Minimum inbound speed before an impact event is emitted. Defaults
+     *  to `IMPACT_MIN_SPEED` (3 m/s) — below that, a landing reads as
+     *  "settled gently" and we don't want sfx noise on it. */
+    impactMinSpeed?: number
 }
 
 /**
@@ -62,6 +92,8 @@ export interface PhysicsOptions {
 export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions = {}): System {
     const gravity = opts.gravity ?? DEFAULT_PHYSICS_GRAVITY
     const maxFallSpeed = opts.maxFallSpeed ?? 40
+    const onImpact = opts.onImpact
+    const impactMinSpeed = Math.max(0, opts.impactMinSpeed ?? IMPACT_MIN_SPEED)
 
     const pos = { x: 0, y: 0, z: 0 }
     const half = { x: 0, y: 0, z: 0 }
@@ -124,7 +156,7 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                 let inboundSpeed = 0
                 if (sweepY.blocked) {
                     const incoming = vy
-                    if (incoming < -IMPACT_MIN_SPEED) {
+                    if (incoming < -impactMinSpeed) {
                         landedHard = true
                         inboundSpeed = -incoming
                     }
@@ -138,6 +170,22 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                     }
                 }
                 Velocity.y[eid] = vy
+
+                if (landedHard && onImpact) {
+                    const horizontalSpeed = Math.hypot(Velocity.x[eid], Velocity.z[eid])
+                    const movingObjectKind = hasComponent(world, eid, MovingObject)
+                        ? MovingObject.kind[eid]
+                        : 0
+                    onImpact({
+                        eid,
+                        movingObjectKind,
+                        x: pos.x,
+                        y: pos.y,
+                        z: pos.z,
+                        speed: inboundSpeed,
+                        horizontalSpeed,
+                    })
+                }
 
                 if (hasRb && RigidBody.rollOnGround[eid] === 1) {
                     const recovered = recoverVoxelOverlap(chunks, world, eid, pos, half, anchor)
@@ -192,12 +240,9 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                     Rotation.z[eid] -= Velocity.x[eid] * dt * 1.8
                 }
 
-                // Hard-impact hook reserved for future FX (no consumer in the
-                // platformer foundation; the original engine used this to feed
-                // damage events). Kept landedHard / inboundSpeed locals scoped
-                // here so reinstating the event publication is a one-liner.
-                void landedHard
-                void inboundSpeed
+                // landedHard / inboundSpeed are consumed above via `onImpact`
+                // when a callback is wired up. Without a callback they're
+                // discarded — the locals are kept for cheap restitution gating.
 
                 // Sleep tracking — only RigidBody entities can settle. The body
                 // sleeps once it has been stationary on the ground for sleepDelay

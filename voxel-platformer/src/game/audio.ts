@@ -20,6 +20,11 @@ export const GameAudio = {
     BackgroundCalm: 'music.background.calm',
     BackgroundAction: 'music.background.action',
     BackgroundCave: 'music.background.cave',
+    /** Minimalistic piano beds — `music` bus, intended for level
+     *  authors who want atmosphere instead of soundtrack. */
+    PianoQuiet: 'music.piano.quiet',
+    PianoNight: 'music.piano.night',
+    PianoDrift: 'music.piano.drift',
 
     PickupGold: 'sfx.pickup.gold',
     PickupArrow: 'sfx.pickup.arrow',
@@ -76,6 +81,7 @@ export const GameAudio = {
     FireWhoosh: 'sfx.fire.whoosh',
     Explosion: 'sfx.explosion',
     ExplosionSmall: 'sfx.explosion.small',
+    StoneImpact: 'sfx.stone.impact',
     Bubble: 'sfx.bubble',
     MagicChime: 'sfx.magic.chime',
 } as const
@@ -121,13 +127,17 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.AmbWater,  url: path('water-loop.wav'),  volume: 0.30, loop: true, maxInstances: 4, priority: 1 },
         { id: GameAudio.AmbLava,   url: path('lava-loop.wav'),   volume: 0.38, loop: true, maxInstances: 4, priority: 2 },
         { id: GameAudio.AmbMagic,  url: path('magic-loop.wav'),  volume: 0.30, loop: true, maxInstances: 3, priority: 1 },
-        { id: GameAudio.TorchFire, url: path('fire-loop.wav'),   volume: 0.20, loop: true, maxInstances: 8, priority: 1 },
+        { id: GameAudio.TorchFire, url: path('torch-loop.wav'),  volume: 0.22, loop: true, maxInstances: 8, priority: 1 },
 
         // One-shot effects
         { id: GameAudio.Thunder,        url: path('thunder.wav'),         volume: 0.78, maxInstances: 2, priority: 5 },
         { id: GameAudio.FireWhoosh,     url: path('fire-whoosh.wav'),     volume: 0.55, maxInstances: 3, priority: 3 },
         { id: GameAudio.Explosion,      url: path('explosion.wav'),       volume: 0.88, maxInstances: 3, priority: 6 },
         { id: GameAudio.ExplosionSmall, url: path('explosion-small.wav'), volume: 0.70, maxInstances: 4, priority: 5 },
+        // Stone impact — short clack. `maxInstances` is generous because
+        // a single stone can produce a quick cluster of contacts as it
+        // bounces and settles; we let the audio engine cull stale ones.
+        { id: GameAudio.StoneImpact,    url: path('stone-impact.wav'),    volume: 0.52, maxInstances: 6, priority: 2 },
         { id: GameAudio.Bubble,         url: path('bubble.wav'),          volume: 0.42, maxInstances: 8, priority: 1 },
         { id: GameAudio.MagicChime,     url: path('magic-chime.wav'),     volume: 0.48, maxInstances: 4, priority: 2 },
     ],
@@ -136,6 +146,11 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.BackgroundCalm,   url: path('background-calm-loop.wav'),  volume: 0.34, loop: true, priority: 1 },
         { id: GameAudio.BackgroundAction, url: path('background-action-loop.wav'),volume: 0.32, loop: true, priority: 1 },
         { id: GameAudio.BackgroundCave,   url: path('background-cave-loop.wav'),  volume: 0.38, loop: true, priority: 1 },
+        // Piano ambients — quieter than the gameplay loops so they
+        // can sit comfortably under spoken-word or zone audio.
+        { id: GameAudio.PianoQuiet,       url: path('piano-ambient-quiet.wav'),   volume: 0.30, loop: true, priority: 1 },
+        { id: GameAudio.PianoNight,       url: path('piano-ambient-night.wav'),   volume: 0.28, loop: true, priority: 1 },
+        { id: GameAudio.PianoDrift,       url: path('piano-ambient-drift.wav'),   volume: 0.30, loop: true, priority: 1 },
     ],
     stingers: [
         { id: GameAudio.DeathStinger, url: path('death-stinger.wav'), volume: 0.78, priority: 9 },

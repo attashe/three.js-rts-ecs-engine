@@ -8,6 +8,7 @@ import { createCameraControlSystem } from './engine/ecs/systems/camera-control-s
 import { createCameraFollowSystem } from './engine/ecs/systems/camera-follow-system'
 import { createPlayerControlSystem } from './engine/ecs/systems/player-control-system'
 import { createPhysicsSystem } from './engine/ecs/systems/physics-system'
+import { MovingObjectKind } from './game/moving-objects'
 import { createDynamicCollisionSystem } from './engine/ecs/systems/dynamic-collision-system'
 import { createRigidBodyPairSystem } from './engine/ecs/systems/rigidbody-pair-system'
 import { createImpactSystem } from './engine/ecs/systems/impact-system'
@@ -168,7 +169,30 @@ async function main(): Promise<void> {
         }), 'piston')
         .addSystem(createZoneTriggerSystem(chunks), 'zoneTrigger')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
-        .addSystem(createPhysicsSystem(chunks), 'physics')
+        .addSystem(createPhysicsSystem(chunks, {
+            // One-shot stone-impact sfx — fires every time a falling
+            // stone's vertical sweep is blocked at >4 m/s. Volume scales
+            // with the inbound speed so a stone settling at 5 m/s is
+            // much quieter than a 15 m/s slam, and a per-event pitch
+            // jitter keeps a multi-bounce settle from sounding robotic.
+            // Player landings get a louder dedicated "land.wav" via the
+            // locomotion system, so we filter strictly to Stone here.
+            impactMinSpeed: 4.0,
+            onImpact: (event) => {
+                if (event.movingObjectKind !== MovingObjectKind.Stone) return
+                const speedFactor = Math.min(1, event.speed / 18)
+                audio.playSpatial(GameAudio.StoneImpact, { x: event.x, y: event.y, z: event.z }, {
+                    deferUntilUnlocked: true,
+                    volume: 0.42 + speedFactor * 0.42,
+                    rate: 0.92 + Math.random() * 0.14,
+                    refDistance: 2,
+                    maxDistance: 32,
+                    rolloffModel: 'linear',
+                    panningModel: 'equalpower',
+                    priority: 2,
+                })
+            },
+        }), 'physics')
         .addSystem(createPlayerLocomotionAudioSystem(audio, { chunks }), 'playerLocomotionAudio')
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')
         .addSystem(createImpactSystem(), 'impact')
