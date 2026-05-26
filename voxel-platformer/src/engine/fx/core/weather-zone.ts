@@ -50,6 +50,7 @@ export class WeatherZone {
             light,
             surface: null,
             surfaceOverlay: null,
+            events: [],
             seed,
             visible: true,
             dirty: false,

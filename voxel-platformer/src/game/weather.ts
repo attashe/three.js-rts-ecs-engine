@@ -1,4 +1,4 @@
-import type { Camera, Scene } from 'three'
+import { Vector3, type Camera, type Scene } from 'three'
 import { query } from 'bitecs'
 import {
     WeatherSystem,
@@ -14,9 +14,12 @@ import type { System } from '../engine/ecs/systems/system'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import {
     defaultSoundForPreset,
+    thunderDelayForDistance,
+    thunderVolumeForZone,
     type AmbientWeatherRuntimeConfig,
     type WeatherZoneRuntimeConfig,
 } from './weather-config'
+import { GameAudio } from './audio'
 
 /**
  * Bundles a `WeatherSystem` with paired spatial audio. Splitting the
@@ -37,6 +40,12 @@ interface ZoneEntry {
     fxZone: WeatherZone
     soundHandle: SoundHandle | null
     soundGain: number
+}
+
+interface PendingThunder {
+    playAt: number
+    position: { x: number; y: number; z: number }
+    volume: number
 }
 
 /** Level-wide visual environment: sky dome, fog, sun/ambient light,
@@ -84,7 +93,10 @@ export function createVisualFxZoneSystem(
 
     const fx = new WeatherSystem(scene, { ambient: false, maxLights: 8, cullDistance: 120 })
     const entries: ZoneEntry[] = []
+    const pendingThunder: PendingThunder[] = []
+    const tmpThunderPos = new Vector3()
     let disposed = false
+    let elapsed = 0
 
     function spawn(): void {
         for (const config of zones) {
@@ -115,7 +127,10 @@ export function createVisualFxZoneSystem(
         },
         update(world, dt) {
             if (disposed) return
+            elapsed += dt
             fx.update(dt, cameraProvider())
+            queueThunderEvents(world, entries, pendingThunder, elapsed, tmpThunderPos)
+            playDueThunder(audio, pendingThunder, elapsed)
             updatePairedSoundGains(world, entries, dt)
         },
         dispose() {
@@ -124,6 +139,7 @@ export function createVisualFxZoneSystem(
             const fade = Math.max(0, opts.fadeOut ?? 0.2)
             for (const entry of entries) entry.soundHandle?.stop(fade)
             entries.length = 0
+            pendingThunder.length = 0
             fx.dispose()
         },
     }
@@ -220,6 +236,68 @@ function updatePairedSoundGains(
         entry.soundGain += (target - entry.soundGain) * alpha
         if (Math.abs(entry.soundGain - target) < 0.004) entry.soundGain = target
         handle.setVolume(entry.soundGain, 0)
+    }
+}
+
+function queueThunderEvents(
+    world: Parameters<NonNullable<System['update']>>[0],
+    entries: ZoneEntry[],
+    pending: PendingThunder[],
+    now: number,
+    tmp: Vector3,
+): void {
+    const player = playerPosition(world)
+    for (const entry of entries) {
+        const events = entry.fxZone.runtime.events
+        if (events.length === 0) continue
+        const drained = events.splice(0)
+        if (!entry.config.addSound) continue
+
+        for (const event of drained) {
+            if (event.type !== 'lightning-strike') continue
+            tmp.set(event.localPosition.x, event.localPosition.y, event.localPosition.z)
+            entry.fxZone.group.localToWorld(tmp)
+            const pos = { x: tmp.x, y: tmp.y, z: tmp.z }
+            const distance = player ? Math.hypot(pos.x - player.x, pos.y - player.y, pos.z - player.z) : 24
+            pending.push({
+                playAt: now + thunderDelayForDistance(distance),
+                position: pos,
+                volume: thunderVolumeForZone(entry.config.soundVolume, distance),
+            })
+        }
+    }
+}
+
+function playDueThunder(audio: AudioEngine, pending: PendingThunder[], now: number): void {
+    for (let i = pending.length - 1; i >= 0; i--) {
+        const thunder = pending[i]!
+        if (thunder.playAt > now) continue
+        try {
+            audio.playSpatial(GameAudio.Thunder, thunder.position, {
+                deferUntilUnlocked: true,
+                volume: thunder.volume,
+                rate: 0.94 + Math.random() * 0.1,
+                refDistance: 7,
+                maxDistance: 96,
+                rolloffModel: 'linear',
+                panningModel: 'equalpower',
+                priority: 7,
+            })
+        } catch (err) {
+            console.warn('Lightning thunder failed:', err)
+        }
+        pending.splice(i, 1)
+    }
+}
+
+function playerPosition(world: Parameters<NonNullable<System['update']>>[0]): { x: number; y: number; z: number } | null {
+    const players = query(world, [Position, PlayerControlled])
+    const pid = players[0]
+    if (pid === undefined) return null
+    return {
+        x: Position.x[pid]!,
+        y: Position.y[pid]! + 0.9,
+        z: Position.z[pid]!,
     }
 }
 

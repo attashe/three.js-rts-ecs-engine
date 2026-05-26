@@ -25,6 +25,14 @@ export type EffectType =
 
 export interface Vec3Lite { x: number; y: number; z: number }
 
+export type FxEvent =
+    | {
+        type: 'lightning-strike'
+        /** Local-space strike point within the owning effect zone. */
+        localPosition: Vec3Lite
+        intensity: number
+    }
+
 /** Serializable zone configuration. Only this object is saved to disk. */
 export interface WeatherZoneParams {
     id?: string
@@ -180,6 +188,8 @@ export interface WeatherZoneRuntime {
      *  emitters animate it from `update`. */
     surface: import('three').Mesh | null
     surfaceOverlay: import('three').Mesh | null
+    /** One-frame gameplay/audio events emitted by visual effects. */
+    readonly events: FxEvent[]
     /** Persistent random seed so an emitter's per-step jitter is
      *  reproducible if you re-init from the same zone params. */
     readonly seed: number

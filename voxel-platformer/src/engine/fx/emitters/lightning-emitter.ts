@@ -74,8 +74,14 @@ export class LightningEmitter implements EmitterStrategy {
             const ages = bolts.data.ages as Float32Array
             for (let i = 0; i < bolts.count; i++) ages[i]! += dt
             if (elapsed >= next) {
-                resetStrike(bolts, runtime, rng)
-                ;(runtime as { _lightningFlash?: number })._lightningFlash = p.lightIntensity * rand(rng, 10.0, 16.0)
+                const strike = resetStrike(bolts, runtime, rng)
+                const flash = p.lightIntensity * rand(rng, 10.0, 16.0)
+                runtime.events.push({
+                    type: 'lightning-strike',
+                    localPosition: strike,
+                    intensity: flash,
+                })
+                ;(runtime as { _lightningFlash?: number })._lightningFlash = flash
                 ;(runtime as { _nextStrike?: number })._nextStrike = elapsed + Math.max(0.8, p.lifetime) * rand(rng, 0.6, 1.4)
             }
         }
@@ -125,7 +131,7 @@ export class LightningEmitter implements EmitterStrategy {
  * generator — see `import/particle_system_lightning_extended_liquids.html`
  * § "resetLightningStrike".
  */
-function resetStrike(bolts: ExtraLayer, runtime: WeatherZoneRuntime, rng: () => number): void {
+function resetStrike(bolts: ExtraLayer, runtime: WeatherZoneRuntime, rng: () => number): { x: number; y: number; z: number } {
     const starts = bolts.data.starts as Float32Array
     const ends = bolts.data.ends as Float32Array
     const widths = bolts.data.widths as Float32Array
@@ -138,6 +144,10 @@ function resetStrike(bolts: ExtraLayer, runtime: WeatherZoneRuntime, rng: () => 
     const topY = p.size.y / 2
     const bottomY = -p.size.y / 2 + 0.15
     let cursor = 0
+    let strikeX = 0
+    let strikeY = 0
+    let strikeZ = 0
+    let capturedStrikePoint = false
 
     for (let b = 0; b < branches && cursor < bolts.count; b++) {
         const start = new Vector3(
@@ -150,6 +160,12 @@ function resetStrike(bolts: ExtraLayer, runtime: WeatherZoneRuntime, rng: () => 
             rand(rng, bottomY, bottomY + p.size.y * 0.28),
             rand(rng, -p.size.z * 0.36, p.size.z * 0.36),
         )
+        if (!capturedStrikePoint) {
+            strikeX = target.x
+            strikeY = target.y
+            strikeZ = target.z
+            capturedStrikePoint = true
+        }
         const steps = Math.floor(rand(rng, 4, 7))
         const prev = start.clone()
         const next = new Vector3()
@@ -183,6 +199,8 @@ function resetStrike(bolts: ExtraLayer, runtime: WeatherZoneRuntime, rng: () => 
             prev.copy(next)
         }
     }
+
+    return { x: strikeX, y: strikeY, z: strikeZ }
 }
 
 const tmpDir = new Vector3()

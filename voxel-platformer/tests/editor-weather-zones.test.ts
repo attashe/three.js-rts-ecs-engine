@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_AMBIENT_WEATHER, createEditorState, toLevelMeta, type EditorLevelMeta } from '../src/editor/editor-state'
 import { GameAudio } from '../src/game/audio'
-import { defaultSoundForPreset } from '../src/game/weather-config'
+import { defaultSoundForPreset, thunderDelayForDistance, thunderVolumeForZone } from '../src/game/weather-config'
 import { levelMetaFromEditor } from '../src/game/level-from-meta'
 
 test('toLevelMeta serialises weather zones by value', () => {
@@ -94,4 +94,14 @@ test('defaultSoundForPreset maps presets to ambient bed assets', () => {
     assert.equal(defaultSoundForPreset('explosion'), null)
     // Unknown preset falls through to null so the caller skips audio.
     assert.equal(defaultSoundForPreset('nope'), null)
+})
+
+test('thunder timing and volume scale from distance and authored zone gain', () => {
+    assert.equal(thunderDelayForDistance(0), 0.12)
+    assert.ok(thunderDelayForDistance(80) > thunderDelayForDistance(16))
+    assert.equal(thunderDelayForDistance(999), 1.6)
+
+    assert.ok(thunderVolumeForZone(0.5, 8) > 0.5)
+    assert.ok(thunderVolumeForZone(0.5, 120) < thunderVolumeForZone(0.5, 8))
+    assert.equal(thunderVolumeForZone(3, 0), 1)
 })

@@ -64,3 +64,22 @@ export function defaultSoundForPreset(presetId: string): string | null {
         default:             return null
     }
 }
+
+export function thunderDelayForDistance(distance: number): number {
+    if (!Number.isFinite(distance)) return 0.35
+    // Game units are compact, so use an intentionally faster-than-real
+    // delay: close strikes feel immediate; distant strikes still lag enough
+    // to read as thunder following the flash.
+    return clamp(distance / 80, 0.12, 1.6)
+}
+
+export function thunderVolumeForZone(zoneVolume: number, distance: number): number {
+    const authored = clamp(zoneVolume, 0, 1)
+    const distanceDamping = 1 - clamp((distance - 18) / 90, 0, 0.45)
+    return clamp(Math.max(0.42, authored * 1.35) * distanceDamping, 0, 1)
+}
+
+function clamp(value: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) return min
+    return Math.max(min, Math.min(max, value))
+}
