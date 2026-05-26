@@ -1,6 +1,6 @@
 import { AmbientLight, DirectionalLight } from 'three'
 import { Engine } from './engine/engine'
-import { ChunkManager, ChunkRenderer, DEFAULT_PALETTE } from './engine/voxel'
+import { ChunkManager, ChunkRenderer, DEFAULT_PALETTE, createBlockLightSystem } from './engine/voxel'
 import type { System } from './engine/ecs/systems/system'
 import { RenderOrder } from './engine/ecs/systems/orders'
 import { createRenderSyncSystem } from './engine/ecs/systems/render-sync-system'
@@ -173,6 +173,10 @@ async function main(): Promise<void> {
             },
         }), 'playerDeath')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
+        .addSystem(createBlockLightSystem(chunks, {
+            scene: renderer.scene,
+            camera: () => renderer.iso.camera,
+        }), 'blockLights')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Push the log panel below the top-right ↻ Restart / ← Editor

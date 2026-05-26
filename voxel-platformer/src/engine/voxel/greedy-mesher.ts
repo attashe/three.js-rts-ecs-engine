@@ -1,4 +1,4 @@
-import { isRenderableVoxel, occludesFaces, voxelOpacity, type Palette } from './palette'
+import { isRenderableVoxel, occludesFaces, voxelEmissive, voxelOpacity, type Palette } from './palette'
 
 /**
  * Sample function — returns the palette index at a voxel coord. The mesher
@@ -16,6 +16,9 @@ export interface MeshData {
     normals: Float32Array
     /** Linear-space RGBA per vertex, sampled from `palette.entries[idx]`. */
     colors: Float32Array
+    /** Linear-space emissive RGB per vertex (intensity already folded in).
+     *  All zeros for non-glowing blocks; summed by the chunk shader. */
+    emissive: Float32Array
     /** Triangle indices. Two triangles per quad: (0,1,2) and (0,2,3) for +face, mirrored for -face. */
     indices: Uint32Array
     /** Convenience counts. */
@@ -27,6 +30,7 @@ const EMPTY: MeshData = {
     positions: new Float32Array(0),
     normals: new Float32Array(0),
     colors: new Float32Array(0),
+    emissive: new Float32Array(0),
     indices: new Uint32Array(0),
     vertexCount: 0,
     triangleCount: 0,
@@ -53,6 +57,7 @@ export function greedyMesh(
     const positions: number[] = []
     const normals: number[] = []
     const colors: number[] = []
+    const emissive: number[] = []
     const indices: number[] = []
     let vertexBase = 0
 
@@ -120,6 +125,7 @@ export function greedyMesh(
                     const entry = palette.entries[paletteIdx]
                     const [r, g, b] = entry?.color ?? [1, 0, 1]
                     const a = voxelOpacity(palette, paletteIdx)
+                    const [er, eg, eb] = voxelEmissive(palette, paletteIdx)
 
                     // Quad-local axes in world space.
                     const pos: [number, number, number] = [0, 0, 0]
@@ -149,6 +155,7 @@ export function greedyMesh(
                     const nz = d === 2 ? (isPositive ? 1 : -1) : 0
                     for (let k = 0; k < 4; k++) normals.push(nx, ny, nz)
                     for (let k = 0; k < 4; k++) colors.push(r, g, b, a)
+                    for (let k = 0; k < 4; k++) emissive.push(er, eg, eb)
 
                     indices.push(
                         vertexBase, vertexBase + 1, vertexBase + 2,
@@ -174,6 +181,7 @@ export function greedyMesh(
         positions: new Float32Array(positions),
         normals: new Float32Array(normals),
         colors: new Float32Array(colors),
+        emissive: new Float32Array(emissive),
         indices: new Uint32Array(indices),
         vertexCount: positions.length / 3,
         triangleCount: indices.length / 3,

@@ -17,6 +17,10 @@ export const FixedOrder = {
 
 export const RenderOrder = {
     renderSync: 100,
+    /** Per-block emissive PointLight pool. Runs just before worldRender so
+     *  the lights exist (and the LightBudget has run) before the chunk
+     *  meshes are rendered. */
+    blockLights: 195,
     worldRender: 200,
     debug: 300,
     cameraControl: 400,

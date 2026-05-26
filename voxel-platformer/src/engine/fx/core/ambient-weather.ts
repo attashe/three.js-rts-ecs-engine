@@ -70,14 +70,26 @@ export class AmbientWeather {
         this.sun = new DirectionalLight(new Color(this.state.sunColor), this.state.sunIntensity)
         this.sun.position.set(this.sunOffset.x, this.sunOffset.y, this.sunOffset.z)
         this.sun.castShadow = true
-        this.sun.shadow.camera.left = -36
-        this.sun.shadow.camera.right = 36
-        this.sun.shadow.camera.top = 36
-        this.sun.shadow.camera.bottom = -36
+        // Tightened from ±36 to ±24 — the camera-following sun never needs
+        // to shadow further than what's visible in the isometric viewport,
+        // and a smaller frustum quadruples effective shadow-map resolution
+        // for the same memory cost. Lifts wedge artefacts in tight vertical
+        // mazes where a block 2 cells above the player would otherwise
+        // project a low-res shadow across the lit pool.
+        this.sun.shadow.camera.left = -24
+        this.sun.shadow.camera.right = 24
+        this.sun.shadow.camera.top = 24
+        this.sun.shadow.camera.bottom = -24
         this.sun.shadow.camera.near = 1
         this.sun.shadow.camera.far = 180
         this.sun.shadow.camera.updateProjectionMatrix()
-        this.sun.shadow.mapSize.set(1024, 1024)
+        this.sun.shadow.mapSize.set(2048, 2048)
+        // Voxel surfaces are axis-aligned, so the projected depth is very
+        // sensitive to bias. -0.0008 / 0.04 are the documented safe range
+        // for unit-cube geometry and remove both acne (self-shadowing)
+        // and the peter-panning that PCFSoftShadowMap leaves at default.
+        this.sun.shadow.bias = -0.0008
+        this.sun.shadow.normalBias = 0.04
         this.hemi = new HemisphereLight(0xb0c8e0, 0x2a2418, 0.3)
         this.lightning = new PointLight(new Color(this.state.lightningColor), 0, 200, 1.5)
         scene.add(this.ambient, this.sun, this.sun.target, this.hemi, this.lightning)
@@ -212,6 +224,7 @@ interface AmbientFieldParams {
 class AmbientField {
     private readonly material: MeshBasicMaterial
     private readonly mesh: InstancedMesh
+    private readonly maxCount: number
     private positions: Float32Array
     private phases: Float32Array
     private active = 0
@@ -229,10 +242,15 @@ class AmbientField {
             depthTest: true,
             depthWrite: false,
         })
+        this.maxCount = opts.maxCount
         this.mesh = new InstancedMesh(opts.geo, this.material, opts.maxCount)
         this.mesh.frustumCulled = false
         this.mesh.visible = false
         this.mesh.renderOrder = 900
+        // Three's InstancedMesh draws `mesh.count` instances regardless of
+        // how many matrices were updated. Start at zero so we don't render
+        // unmodified zero matrices before the first reseed.
+        this.mesh.count = 0
         scene.add(this.mesh)
         this.positions = new Float32Array(opts.maxCount * 3)
         this.phases = new Float32Array(opts.maxCount)
@@ -284,8 +302,7 @@ class AmbientField {
     }
 
     private reseed(count: number, camera: Camera): void {
-        const cap = this.mesh.count
-        const target = clamp(count, 0, cap)
+        const target = clamp(count, 0, this.maxCount)
         for (let i = 0; i < target; i++) {
             this.positions[i * 3]     = camera.position.x + (Math.random() - 0.5) * 50
             this.positions[i * 3 + 1] = 5 + Math.random() * 50
@@ -293,6 +310,12 @@ class AmbientField {
             this.phases[i] = Math.random() * Math.PI * 2
         }
         this.active = target
+        // Pin GPU draw count to the live particle population so unused
+        // instances (with stale or zero matrices) don't get rasterised.
+        // Without this the InstancedMesh keeps issuing draw calls for
+        // every slot up to maxCount; degenerate triangles, but they also
+        // confuse transparent sort ordering on certain camera angles.
+        this.mesh.count = target
     }
 
     dispose(): void {

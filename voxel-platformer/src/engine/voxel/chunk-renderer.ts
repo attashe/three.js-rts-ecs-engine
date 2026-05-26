@@ -126,6 +126,7 @@ export class ChunkRenderer {
         geom.setAttribute('position', new BufferAttribute(data.positions, 3))
         geom.setAttribute('normal', new BufferAttribute(data.normals, 3))
         geom.setAttribute('color', new BufferAttribute(data.colors, 4))
+        geom.setAttribute('emissive', new BufferAttribute(data.emissive, 3))
         geom.setIndex(new BufferAttribute(data.indices, 1))
         geom.computeBoundingSphere()
         geom.computeBoundingBox()

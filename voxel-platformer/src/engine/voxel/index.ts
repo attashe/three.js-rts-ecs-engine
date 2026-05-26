@@ -24,10 +24,15 @@ export {
     occludesFaces,
     paletteEntry,
     voxelOpacity,
+    voxelEmissive,
+    voxelLightSpec,
     blockMovementTraits,
     clonePalette,
 } from './palette'
-export type { BlockMovementTraits, Palette, PaletteEntry } from './palette'
+export type { BlockLightSpec, BlockMovementTraits, Palette, PaletteEntry } from './palette'
+
+export { createBlockLightSystem } from './block-light-system'
+export type { BlockLightSystemOptions } from './block-light-system'
 
 export {
     DEFAULT_MOVEMENT_ENVIRONMENT,

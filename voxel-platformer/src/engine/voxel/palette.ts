@@ -26,6 +26,22 @@ export interface PaletteEntry {
     opacity?: number
     /** Movement effects applied while a character overlaps this voxel. */
     movement?: BlockMovementTraits
+    /** Linear-space emissive RGB self-glow (added on top of lit colour by
+     *  the chunk material). [0,0,0] / undefined => no glow. */
+    emissive?: [number, number, number]
+    /** Multiplier applied to `emissive` before the shader adds it. 0 disables. */
+    emissiveIntensity?: number
+    /** PointLight tint spawned at the voxel centre. Falls back to `emissive`
+     *  if omitted but `lightIntensity > 0`. */
+    lightColor?: [number, number, number]
+    /** PointLight intensity. 0 / undefined => no light spawned for this block. */
+    lightIntensity?: number
+    /** PointLight range in world units. Defaults to 8. */
+    lightDistance?: number
+    /** Whether the block-emitted PointLight casts shadows. Default off — the
+     *  block-light pool is a fill, not a shadow source; opt in per-block to
+     *  diagnose the shadow pipeline. */
+    lightCastsShadow?: boolean
 }
 
 export interface BlockMovementTraits {
@@ -73,7 +89,16 @@ export const DEFAULT_PALETTE: Palette = {
         { name: 'leaf',  color: [0.20, 0.45, 0.18], solid: true },
         { name: 'plank', color: [0.78, 0.62, 0.40], solid: true },
         { name: 'brick', color: [0.66, 0.30, 0.25], solid: true },
-        { name: 'glow',  color: [1.00, 0.78, 0.40], solid: true },
+        {
+            name: 'glow',
+            color: [1.00, 0.78, 0.40],
+            solid: true,
+            emissive: [1.00, 0.78, 0.40],
+            emissiveIntensity: 0.85,
+            lightColor: [1.00, 0.78, 0.40],
+            lightIntensity: 6.0,
+            lightDistance: 10,
+        },
         { name: 'no-walk ward', color: [0.58, 0.18, 0.70], solid: true, pathSurface: false },
         { name: 'door',  color: [0.50, 0.30, 0.16], solid: true },
         {
@@ -136,6 +161,55 @@ export function voxelOpacity(palette: Palette, index: number): number {
     return Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1
 }
 
+/**
+ * Pre-multiplied emissive (RGB) for a palette index. Returns the zero tuple
+ * when the entry has no emissive or zero intensity, so the shader can sum
+ * unconditionally without a per-vertex scalar attribute.
+ */
+export function voxelEmissive(palette: Palette, index: number): [number, number, number] {
+    if (index === AIR) return [0, 0, 0]
+    const entry = paletteEntry(palette, index)
+    const intensity = entry.emissiveIntensity
+    if (!entry.emissive || !Number.isFinite(intensity) || (intensity ?? 0) <= 0) return [0, 0, 0]
+    const k = intensity!
+    return [
+        clamp01(entry.emissive[0]) * k,
+        clamp01(entry.emissive[1]) * k,
+        clamp01(entry.emissive[2]) * k,
+    ]
+}
+
+export interface BlockLightSpec {
+    color: [number, number, number]
+    intensity: number
+    distance: number
+    castShadow: boolean
+}
+
+/**
+ * Resolved point-light spec for a palette index, or `null` if the entry
+ * doesn't spawn a light. Falls back to the emissive colour for tint when
+ * `lightColor` is omitted so a "lamp" preset only has to set intensity.
+ */
+export function voxelLightSpec(palette: Palette, index: number): BlockLightSpec | null {
+    if (index === AIR) return null
+    const entry = paletteEntry(palette, index)
+    const intensity = entry.lightIntensity
+    if (!Number.isFinite(intensity) || (intensity ?? 0) <= 0) return null
+    const tint = entry.lightColor ?? entry.emissive ?? entry.color
+    return {
+        color: [clamp01(tint[0]), clamp01(tint[1]), clamp01(tint[2])],
+        intensity: intensity!,
+        distance: Number.isFinite(entry.lightDistance) ? Math.max(0, entry.lightDistance!) : 8,
+        castShadow: entry.lightCastsShadow === true,
+    }
+}
+
+function clamp01(v: number): number {
+    if (!Number.isFinite(v)) return 0
+    return v < 0 ? 0 : v > 1 ? 1 : v
+}
+
 export function isRenderableVoxel(palette: Palette, index: number): boolean {
     return voxelOpacity(palette, index) > 0
 }
@@ -154,6 +228,8 @@ export function clonePalette(palette: Palette): Palette {
             ...entry,
             color: [...entry.color] as [number, number, number],
             movement: entry.movement ? { ...entry.movement } : undefined,
+            emissive: entry.emissive ? [...entry.emissive] as [number, number, number] : undefined,
+            lightColor: entry.lightColor ? [...entry.lightColor] as [number, number, number] : undefined,
         })),
     }
 }

@@ -334,6 +334,8 @@ function buildPaletteSection(ctx: EditTabContext): RefreshableElement {
             materialChanged()
         }))
 
+        editor.appendChild(buildEmissiveBlock(entry, materialChanged))
+
         const toggles = document.createElement('div')
         toggles.className = 'vpe-row'
         toggles.append(
@@ -959,6 +961,84 @@ function buildZonePanel(ctx: EditTabContext): RefreshableElement {
 // ────────────────────────────────────────────────────────────────────────
 // Small reusable field builders
 // ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Emissive + block-light controls. Self-illumination (`emissive*`) is a
+ * pure shader effect — cheap, no light slot. Block PointLight fields
+ * spawn a real PointLight at the voxel centre, useful both for authored
+ * lamps and as a controlled test rig for the shadow pipeline. Castshadow
+ * is per-block (default off — a fill, not a shadow source).
+ */
+function buildEmissiveBlock(entry: PaletteEntry, onChange: () => void): HTMLElement {
+    const root = document.createElement('div')
+    root.style.display = 'flex'
+    root.style.flexDirection = 'column'
+    root.style.gap = '2px'
+    root.style.marginTop = '6px'
+    root.style.paddingTop = '6px'
+    root.style.borderTop = '1px solid rgba(217, 247, 255, 0.12)'
+
+    const heading = document.createElement('div')
+    heading.className = 'vpe-hint'
+    heading.textContent = 'FX (emissive + block light)'
+    heading.style.color = 'rgba(255, 214, 240, 0.7)'
+    root.appendChild(heading)
+
+    root.appendChild(colorRow('Emissive:', colorToHex(entry.emissive ?? [0, 0, 0]), (hex) => {
+        const rgb = hexToColor(hex)
+        if (rgb[0] === 0 && rgb[1] === 0 && rgb[2] === 0) {
+            delete entry.emissive
+        } else {
+            entry.emissive = rgb
+        }
+        onChange()
+    }))
+
+    root.appendChild(numberField('Emissive int:', entry.emissiveIntensity ?? 0, 0, 4, 0.05, (value) => {
+        if (value <= 0) delete entry.emissiveIntensity
+        else entry.emissiveIntensity = value
+        onChange()
+    }))
+
+    root.appendChild(colorRow('Light col:', colorToHex(entry.lightColor ?? entry.emissive ?? [0, 0, 0]), (hex) => {
+        entry.lightColor = hexToColor(hex)
+        onChange()
+    }))
+
+    root.appendChild(numberField('Light int:', entry.lightIntensity ?? 0, 0, 16, 0.1, (value) => {
+        if (value <= 0) delete entry.lightIntensity
+        else entry.lightIntensity = value
+        onChange()
+    }))
+
+    root.appendChild(numberField('Light dist:', entry.lightDistance ?? 8, 1, 32, 0.5, (value) => {
+        entry.lightDistance = value
+        onChange()
+    }))
+
+    root.appendChild(checkboxField('Light casts shadow', entry.lightCastsShadow ?? false, (checked) => {
+        if (!checked) delete entry.lightCastsShadow
+        else entry.lightCastsShadow = true
+        onChange()
+    }))
+
+    return root
+}
+
+function colorRow(label: string, initial: string, onChange: (hex: string) => void): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'vpe-field'
+    const span = document.createElement('span')
+    span.className = 'vpe-field-label'
+    span.textContent = label
+    const input = document.createElement('input')
+    input.className = 'vpe-input'
+    input.type = 'color'
+    input.value = initial
+    input.oninput = () => onChange(input.value)
+    row.append(span, input)
+    return row
+}
 
 function numberField(
     label: string,

@@ -1,4 +1,4 @@
-import { positionWorld, select, texture as tslTexture, uniform, vertexColor } from 'three/tsl'
+import { attribute, positionWorld, select, texture as tslTexture, uniform, vertexColor } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 import { DataTexture, NearestFilter, RedFormat, RepeatWrapping, UnsignedByteType } from 'three'
 
@@ -101,6 +101,12 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const baseColor = base.rgb
     m.colorNode = select(isCovered, baseColor.mul(darken), baseColor)
     m.opacityNode = base.a.mul(select(isAbove, aboveOpacity, 1.0))
+    // Per-vertex emissive RGB (intensity pre-multiplied by the mesher).
+    // Glow blocks therefore add a self-illuminated colour on top of the lit
+    // colour without consuming a real light slot — useful both as a cheap
+    // ornament and as a visual marker for blocks that ALSO spawn a real
+    // PointLight via the block-light system.
+    m.emissiveNode = attribute('emissive')
     m.transparent = true
     // NOTE: leave depthWrite at its default (true). Disabling depth write
     // on the chunk mesh would stop terrain from occluding the player,
