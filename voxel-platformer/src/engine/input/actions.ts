@@ -47,6 +47,9 @@ export interface ActionMapOptions {
     now?: () => number
 }
 
+export type ActionBindingOverrideMap = Readonly<Record<ActionId, readonly ActionBinding[] | undefined>>
+export type ActionKeyOverrideMap = Readonly<Record<ActionId, readonly string[] | undefined>>
+
 const DEFAULT_BUFFER_MS = 120
 
 export class ActionMap {
@@ -64,7 +67,7 @@ export class ActionMap {
             if (this.definitions.has(definition.id)) {
                 throw new Error(`Duplicate action definition: ${definition.id}`)
             }
-            this.definitions.set(definition.id, definition)
+            this.definitions.set(definition.id, cloneActionDefinition(definition))
         }
     }
 
@@ -76,6 +79,14 @@ export class ActionMap {
 
     all(): ActionDefinition[] {
         return [...this.definitions.values()]
+    }
+
+    bindingsFor(id: ActionId): ActionBinding[] {
+        return cloneActionBindings(this.get(id).bindings) ?? []
+    }
+
+    bindingDisplayKeysFor(id: ActionId): string[] {
+        return actionBindingDisplayKeys(this.get(id))
     }
 
     isHeld(id: ActionId): boolean {
@@ -162,3 +173,112 @@ function cooldownKey(id: ActionId, subject: string | number): string {
     return `${id}:${subject}`
 }
 
+export function withActionBindingOverrides(
+    definitions: readonly ActionDefinition[],
+    overrides: ActionBindingOverrideMap = {},
+): ActionDefinition[] {
+    return definitions.map((definition) => {
+        const override = overrides[definition.id]
+        const overrideBindings = override ? normalizeActionBindings(override) : undefined
+        const bindings = overrideBindings ?? cloneActionBindings(definition.bindings)
+        return cloneActionDefinition({ ...definition, bindings })
+    })
+}
+
+export function keyOverridesToActionBindings(overrides: ActionKeyOverrideMap = {}): ActionBindingOverrideMap {
+    const bindings: Record<ActionId, ActionBinding[]> = {}
+    for (const [id, keys] of Object.entries(overrides)) {
+        if (!keys) continue
+        bindings[id] = [{ keys }]
+    }
+    return bindings
+}
+
+export function actionBindingDisplayKeys(definition: ActionDefinition): string[] {
+    const keys: string[] = []
+    for (const binding of definition.bindings ?? []) {
+        const displayKeys = binding.displayKeys && binding.displayKeys.length > 0
+            ? binding.displayKeys
+            : binding.keys.map(formatKeyCodeForDisplay)
+        for (const key of displayKeys) {
+            if (!keys.includes(key)) keys.push(key)
+        }
+    }
+    return keys
+}
+
+export function formatKeyCodeForDisplay(code: string): string {
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3)
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5)
+    if (/^Numpad[0-9]$/.test(code)) return `Num ${code.slice(6)}`
+    return KEY_CODE_LABELS[code] ?? code
+}
+
+function cloneActionDefinition(definition: ActionDefinition): ActionDefinition {
+    return {
+        ...definition,
+        bindings: cloneActionBindings(definition.bindings),
+        tags: definition.tags ? [...definition.tags] : undefined,
+        hint: definition.hint
+            ? { ...definition.hint, keys: [...definition.hint.keys] }
+            : undefined,
+    }
+}
+
+function cloneActionBindings(bindings: readonly ActionBinding[] | undefined): ActionBinding[] | undefined {
+    if (!bindings) return undefined
+    return bindings.map((binding) => ({
+        keys: [...binding.keys],
+        displayKeys: binding.displayKeys ? [...binding.displayKeys] : undefined,
+    }))
+}
+
+function normalizeActionBindings(bindings: readonly ActionBinding[]): ActionBinding[] | undefined {
+    const normalized: ActionBinding[] = []
+    for (const binding of bindings) {
+        const keys = uniqueNonEmpty(binding.keys)
+        if (keys.length === 0) continue
+        const displayKeys = binding.displayKeys ? uniqueNonEmpty(binding.displayKeys) : undefined
+        normalized.push(displayKeys && displayKeys.length > 0 ? { keys, displayKeys } : { keys })
+    }
+    return normalized.length > 0 ? normalized : undefined
+}
+
+function uniqueNonEmpty(values: readonly string[]): string[] {
+    const out: string[] = []
+    for (const value of values) {
+        const trimmed = value.trim()
+        if (!trimmed || out.includes(trimmed)) continue
+        out.push(trimmed)
+    }
+    return out
+}
+
+const KEY_CODE_LABELS: Readonly<Record<string, string>> = {
+    ArrowUp: 'Up',
+    ArrowDown: 'Down',
+    ArrowLeft: 'Left',
+    ArrowRight: 'Right',
+    Backquote: '`',
+    Backslash: '\\',
+    BracketLeft: '[',
+    BracketRight: ']',
+    Comma: ',',
+    ControlLeft: 'Ctrl',
+    ControlRight: 'Ctrl',
+    Delete: 'Del',
+    Enter: 'Enter',
+    Equal: '=',
+    Escape: 'Esc',
+    MetaLeft: 'Meta',
+    MetaRight: 'Meta',
+    Minus: '-',
+    Period: '.',
+    Quote: "'",
+    Semicolon: ';',
+    ShiftLeft: 'Shift',
+    ShiftRight: 'Shift',
+    Slash: '/',
+    Space: 'Space',
+    Tab: 'Tab',
+}

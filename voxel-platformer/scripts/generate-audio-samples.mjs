@@ -127,12 +127,15 @@ writeWav('footstep-water-2.wav', mix(0.20, [
     noiseBurst(0.00, 0.05, 0.16, 6271),
 ]))
 
-// Standard jump — short upward chirp with a tiny "puff" of noise on
-// take-off. Higher pitch than a footstep so the ear separates it
-// instantly from the walking rhythm.
-writeWav('jump.wav', mix(0.18, [
-    chirp(0.00, 0.16, 240, 520, 0.32),
-    noiseBurst(0.00, 0.04, 0.14, 6201),
+// Standard jump — grounded adventure take-off. Low foot pressure,
+// a short cloth/ground scrape, and only a restrained lift tone so it
+// reads serious instead of cartoon-bright.
+writeWav('jump.wav', mix(0.24, [
+    kick(0.00, 0.18),
+    pluck(0.00, 0.12, 86, 0.28),
+    filteredNoise(0.00, 0.09, 0.10, 560, 6201),
+    chirpNoise(0.02, 0.17, 760, 260, 0.08, 6207),
+    triNote(0.03, 0.19, 196, 0.06),
 ]))
 
 // Landing thud — slightly lower-energy than arrow-hit. Low pluck +
@@ -144,21 +147,17 @@ writeWav('land.wav', mix(0.22, [
     filteredNoise(0.02, 0.20, 0.10, 500, 6221),
 ]))
 
-// High Jump — the dramatic spell. Four layers stacked:
-//   1. Rising frequency chirp (the "lift")
-//   2. Falling chirp-noise sweep (the "whoosh")
-//   3. Three ascending bells (the "magic shimmer")
-//   4. Low rumble underneath for body
-// Comes in noticeably louder than the plain jump on purpose; the
-// caller still scales it through the per-source volume.
-writeWav('high-jump.wav', mix(0.85, [
-    chirp(0.00, 0.42, 200, 1100, 0.42),
-    chirpNoise(0.00, 0.50, 2400, 600, 0.30, 6301),
-    note(0.10, 0.50, 880, 0.18),
-    note(0.18, 0.62, 1320, 0.16),
-    note(0.28, 0.76, 1760, 0.14),
-    rumble(0.00, 0.85, 100, 0.10, 6311),
-    filteredNoise(0.30, 0.85, 0.12, 1800, 6321),
+// High Jump — heavy enchanted take-off. No bright arpeggio: a hard
+// grounded push, low body, and a short cloth/air whoosh so it reads
+// more like adventure gear than arcade magic.
+writeWav('high-jump.wav', mix(0.64, [
+    kick(0.00, 0.22),
+    pluck(0.00, 0.20, 48, 0.44),
+    pluck(0.03, 0.28, 86, 0.24),
+    chirp(0.04, 0.36, 135, 360, 0.18),
+    chirpNoise(0.02, 0.46, 980, 240, 0.26, 6301),
+    filteredNoise(0.00, 0.18, 0.16, 520, 6311),
+    rumble(0.00, 0.64, 62, 0.15, 6321),
 ]))
 
 writeWav('death-stinger.wav', noteSequence(1.35, [

@@ -24,17 +24,19 @@ import { createZoneTriggerSystem } from './engine/ecs/systems/zone-trigger-syste
 import { createPlayerDeathSystem } from './engine/ecs/systems/player-death-system'
 import { createRestartSystem } from './engine/ecs/systems/restart-system'
 import { createAudioUnlockSystem } from './engine/ecs/systems/audio-unlock-system'
-import { createAudioListenerSystem } from './engine/ecs/systems/audio-listener-system'
+import { createPlayerAudioListenerSystem } from './engine/ecs/systems/audio-listener-system'
 import { AudioEngine } from './engine/audio'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
+import { createPlayerTorchSystem } from './game/player-torch-system'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
 import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from './game/sound-sources'
 import { createPlayerLocomotionAudioSystem } from './game/player-audio'
-import { createWeatherZoneSystem } from './game/weather'
+import { createEnvironmentFxSystem, createVisualFxZoneSystem } from './game/weather'
 import { defineZone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
+import { createGameMenuSystem } from './game/game-menu-system'
 import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
 import { deserializeLevel } from './engine/voxel/level-serializer'
 import { consumePlaytestLevel } from './editor/playtest'
@@ -53,7 +55,8 @@ async function main(): Promise<void> {
 
     // Lighting. Sun from south-east, target at the centre of the demo level so
     // the shadow camera covers the whole island.
-    renderer.scene.add(new AmbientLight(0xffffff, 0.45))
+    const defaultAmbient = new AmbientLight(0xffffff, 0.45)
+    renderer.scene.add(defaultAmbient)
     const sun = new DirectionalLight(0xfff0d4, 1.2)
     sun.position.set(32, 60, 24)
     sun.target.position.set(12, 0, 12)
@@ -71,6 +74,9 @@ async function main(): Promise<void> {
     // Voxel world + level + chunk renderer.
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const meta = loadLevel(chunks)
+    const hasAuthoredEnvironmentFx = Boolean(meta.ambientWeather)
+    defaultAmbient.visible = !hasAuthoredEnvironmentFx
+    sun.visible = !hasAuthoredEnvironmentFx
     sun.target.position.set(meta.size / 2, 0, meta.size / 2)
     const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
     chunkRenderer.rebuildAll()
@@ -104,7 +110,8 @@ async function main(): Promise<void> {
         .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
         .addSystem(createSoundSourceSystem(audio, meta.soundSources, { audioReady }), 'soundSources')
         .addSystem(createSoundZoneSystem(audio, meta.soundZones, { audioReady }), 'soundZones')
-        .addSystem(createWeatherZoneSystem(renderer.scene, audio, meta.weatherZones, meta.ambientWeather, () => renderer.iso.camera, { audioReady }), 'weatherZones')
+        .addSystem(createEnvironmentFxSystem(renderer.scene, meta.ambientWeather, () => renderer.iso.camera), 'environmentFx')
+        .addSystem(createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, { audioReady }), 'visualFxZones')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,
             onJump: () => audio.play(GameAudio.Jump, {
@@ -112,6 +119,7 @@ async function main(): Promise<void> {
                 rate: 0.97 + Math.random() * 0.06,
             }),
         }), 'playerControl')
+        .addSystem(createPlayerTorchSystem(), 'playerTorch')
         .addSystem(createProjectileLaunchSystem(actions, {
             actionId: GameAction.BowShot,
             onLaunch: () => audio.play(GameAudio.Bow, { deferUntilUnlocked: true }),
@@ -173,6 +181,10 @@ async function main(): Promise<void> {
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
             logPosition: { top: '48px', right: '8px', maxWidth: '320px' },
         }), 'debugOverlay')
+        .addSystem(createGameMenuSystem(engine.input, actions, audio, {
+            renderElement: renderer.webgpu.domElement,
+            exitHref: './editor.html',
+        }), 'gameMenu')
         .addSystem(createRestartSystem(), 'restart')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,
@@ -180,7 +192,7 @@ async function main(): Promise<void> {
             wheelZoom: true,
         }), 'cameraControl')
         .addSystem(createCameraFollowSystem(renderer.iso, { smoothing: 8 }), 'cameraFollow')
-        .addSystem(createAudioListenerSystem(audio, () => renderer.iso.camera), 'audioListener')
+        .addSystem(createPlayerAudioListenerSystem(audio, () => renderer.iso.camera), 'audioListener')
 
     mountRestartButton(world)
     if (isPlaytestMode()) mountBackToEditorButton()

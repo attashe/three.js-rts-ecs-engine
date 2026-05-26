@@ -25,6 +25,7 @@ export class Input {
     private wheelAccum = 0
     private pendingClicks: ClickEvent[] = []
     private downAt: { x: number; y: number; t: number; button: number } | null = null
+    private enabled = true
 
     constructor(target: HTMLElement = document.body) {
         this.target = target
@@ -39,6 +40,7 @@ export class Input {
     }
 
     private onKeyDown = (e: KeyboardEvent) => {
+        if (!this.enabled) return
         if (isEditableTarget(e.target)) return
         if (!e.repeat && !this.keys.has(e.code)) {
             this.pressed.add(e.code)
@@ -47,6 +49,7 @@ export class Input {
         this.keys.add(e.code)
     }
     private onKeyUp = (e: KeyboardEvent) => {
+        if (!this.enabled) return
         if (isEditableTarget(e.target)) return
         this.keys.delete(e.code)
     }
@@ -58,12 +61,15 @@ export class Input {
         this.downAt = null
     }
     private onPointerMove = (e: PointerEvent) => {
+        if (!this.enabled) return
         this.pointer = { x: e.clientX, y: e.clientY }
     }
     private onPointerDown = (e: PointerEvent) => {
+        if (!this.enabled) return
         this.downAt = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button }
     }
     private onPointerUp = (e: PointerEvent) => {
+        if (!this.enabled) return
         const d = this.downAt
         this.downAt = null
         if (!d || d.button !== e.button) return
@@ -75,6 +81,7 @@ export class Input {
         this.pendingClicks.push({ x: e.clientX, y: e.clientY, button: e.button })
     }
     private onWheel = (e: WheelEvent) => {
+        if (!this.enabled) return
         this.wheelAccum += e.deltaY
     }
     private onContextMenu = (e: MouseEvent) => {
@@ -146,6 +153,22 @@ export class Input {
         const out = this.pendingClicks
         this.pendingClicks = []
         return out
+    }
+
+    /** Clear all active input state. Useful when focus moves to modal UI. */
+    clear(): void {
+        this.keys.clear()
+        this.pressed.clear()
+        this.pressedAt.clear()
+        this.wheelAccum = 0
+        this.pendingClicks = []
+        this.downAt = null
+    }
+
+    /** Enable or disable raw input capture for modal UI overlays. */
+    setEnabled(enabled: boolean): void {
+        this.enabled = enabled
+        if (!enabled) this.clear()
     }
 
     dispose(): void {

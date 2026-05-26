@@ -7,7 +7,7 @@ import type { AudioManifest } from '../engine/audio'
  * Groups:
  *   - Game one-shots: pickup, bow, arrow-hit, death, death-stinger
  *   - Player locomotion: footstep variants (rotated for variety),
- *     jump take-off, landing thud, high-jump spell whoosh
+ *     jump take-off, landing thud, high-jump lift
  *   - Music: explore / calm / action / cave background loops
  *   - Ambient loops: weather, fire, liquids, magic (loopable beds the
  *     FX system pairs with its weather / fire / lava / water zones)
@@ -44,8 +44,9 @@ export const GameAudio = {
     //             submerged)
     //
     // `Jump` is the standard take-off; `Land` fires after enough
-    // airborne time; `HighJump` is the spell whoosh — deliberately
-    // louder and more layered than the plain jump.
+    // airborne time; `HighJump` is a heavier enchanted lift cue —
+    // louder and more layered than the plain jump without the bright
+    // arcade arpeggio.
     FootstepGrass1: 'sfx.footstep.grass.1',
     FootstepGrass2: 'sfx.footstep.grass.2',
     FootstepDirt1:  'sfx.footstep.dirt.1',

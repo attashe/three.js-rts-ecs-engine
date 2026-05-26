@@ -23,11 +23,20 @@ interface PlayerState {
     stepPhase: number
     /** Round-robin index into the active surface's footstep pool. */
     stepIdx: number
+    /** Last post-physics foot position. Footsteps use real movement
+     *  instead of intended velocity so collisions and acceleration stay
+     *  audible in sync with what the player sees. */
+    lastX: number
+    lastZ: number
+    /** True while the player is actively walking on the ground. Used to
+     *  give the first audible step a short lead-in instead of waiting a
+     *  whole stride from standstill. */
+    walking: boolean
 }
 
 export interface PlayerLocomotionAudioOptions {
     /** World-units between footsteps at the player's full walking
-     *  speed. Lower = more frequent. Default 1.6 — a brisk natural
+     *  speed. Lower = more frequent. Default 1.38 — a brisk natural
      *  cadence given the demo player's 5 m/s top speed. */
     stepDistance?: number
     /** Minimum airborne seconds before a landing fires. Stops a single
@@ -79,8 +88,9 @@ export function surfaceForBlock(block: number): FootstepSurface {
 /**
  * Plays footstep + landing cues for `PlayerControlled` entities.
  *
- * Footsteps: distance-driven cadence (not time-driven) so the cadence
- * scales naturally with movement speed. Surface is queried from the
+ * Footsteps: post-physics distance-driven cadence (not time-driven) so
+ * the cadence follows the movement that actually happened, including
+ * acceleration and blocked movement. Surface is queried from the
  * voxel one cell under the player's feet (or the voxel the foot is
  * in, when wading through water). Two variants per surface rotate
  * round-robin and each play gets a small random pitch jitter so the
@@ -100,7 +110,7 @@ export function createPlayerLocomotionAudioSystem(
     audio: AudioEngine,
     opts: PlayerLocomotionAudioOptions = {},
 ): System {
-    const stepDistance = opts.stepDistance ?? 1.6
+    const stepDistance = opts.stepDistance ?? 1.38
     const minAirTime = opts.minAirTimeForLand ?? 0.12
     const minHorizontalSpeed = opts.minHorizontalSpeed ?? 0.6
     const chunks = opts.chunks
@@ -133,10 +143,20 @@ export function createPlayerLocomotionAudioSystem(
                 const grounded = hasComponent(world, eid, Grounded)
                 let state = states.get(eid)
                 if (!state) {
-                    state = { grounded, airTime: 0, stepPhase: 0, stepIdx: 0 }
+                    state = {
+                        grounded,
+                        airTime: 0,
+                        stepPhase: 0,
+                        stepIdx: 0,
+                        lastX: Position.x[eid]!,
+                        lastZ: Position.z[eid]!,
+                        walking: false,
+                    }
                     states.set(eid, state)
                     continue
                 }
+
+                const wasGrounded = state.grounded
 
                 // ── Landing edge ────────────────────────────────────
                 // We sampled Velocity.y before physics zeroed it on
@@ -185,8 +205,17 @@ export function createPlayerLocomotionAudioSystem(
                     const vx = Velocity.x[eid]!
                     const vz = Velocity.z[eid]!
                     const speed = Math.hypot(vx, vz)
-                    if (speed >= minHorizontalSpeed) {
-                        state.stepPhase += speed * dt
+                    const dx = Position.x[eid]! - state.lastX
+                    const dz = Position.z[eid]! - state.lastZ
+                    const moved = Math.hypot(dx, dz)
+                    if (wasGrounded && speed >= minHorizontalSpeed && moved > 0.0005) {
+                        if (!state.walking) {
+                            state.stepPhase = Math.max(state.stepPhase, stepDistance * 0.55)
+                        }
+                        state.walking = true
+                        // Clamp one-frame movement contribution so teleports
+                        // or correction snaps do not dump several footfalls.
+                        state.stepPhase += Math.min(moved, stepDistance * 0.75)
                         if (state.stepPhase >= stepDistance) {
                             state.stepPhase -= stepDistance
                             const surface = surfaceUnder(eid)
@@ -200,6 +229,7 @@ export function createPlayerLocomotionAudioSystem(
                             })
                         }
                     } else {
+                        state.walking = false
                         // Decay the phase so the first step after
                         // stopping doesn't fire instantly from
                         // accumulated buffer.
@@ -208,6 +238,8 @@ export function createPlayerLocomotionAudioSystem(
                 }
 
                 state.grounded = grounded
+                state.lastX = Position.x[eid]!
+                state.lastZ = Position.z[eid]!
             }
 
             // Garbage-collect state for retired players (e.g. on death).

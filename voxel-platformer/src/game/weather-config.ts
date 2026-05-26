@@ -2,14 +2,14 @@ import type { AmbientWeatherState } from '../engine/fx/core/types'
 import { GameAudio } from './audio'
 
 /**
- * Plain-data side of the weather integration. Splitting it out from
+ * Plain-data side of the visual FX/environment integration. Splitting it out from
  * `weather.ts` (which owns the `WeatherSystem` runtime) keeps the
  * editor + level-translation paths free of three/webgpu deps so the
  * test runner can build them under plain `node`.
  */
 
 /**
- * Editor-authored weather zone, translated from `EditorWeatherZone`
+ * Editor-authored local Visual FX zone, translated from `EditorWeatherZone`
  * by `level-from-meta`. Pairs the FX preset id with optional looped
  * sound. `position` is the AABB **centre** (matches the FX system).
  */

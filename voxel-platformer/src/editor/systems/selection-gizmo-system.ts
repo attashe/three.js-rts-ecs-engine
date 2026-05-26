@@ -22,6 +22,7 @@ import type {
     EditorSoundSource,
     EditorSoundZone,
     EditorState,
+    EditorWeatherZone,
     EditorZone,
 } from '../editor-state'
 
@@ -31,6 +32,7 @@ type SelectionRef =
     | { kind: 'zone'; zone: EditorZone }
     | { kind: 'sound-source'; source: EditorSoundSource }
     | { kind: 'sound-zone'; zone: EditorSoundZone }
+    | { kind: 'effect-zone'; zone: EditorWeatherZone }
 
 interface SelectionBaseline {
     ref: SelectionRef
@@ -46,6 +48,8 @@ interface SelectionBaseline {
     soundZone?: EditorSoundZone
     soundZoneMin?: VoxelCoord
     soundZoneMax?: VoxelCoord
+    effectZone?: EditorWeatherZone
+    effectZonePosition?: { x: number; y: number; z: number }
 }
 
 const SELECTABLE_OPACITY = 0.07
@@ -198,6 +202,15 @@ export function createSelectionGizmoSystem(
                 selected: sameSelection(selected, { kind: 'sound-zone', zone }),
             })
         }
+        for (const zone of editorState.weatherZones) {
+            addBoxProxy(proxyGroup, proxyMeshes, {
+                ref: { kind: 'effect-zone', zone },
+                center: new Vector3(zone.position.x, zone.position.y, zone.position.z),
+                size: new Vector3(zone.size.x, zone.size.y, zone.size.z),
+                color: 0xffd6f0,
+                selected: sameSelection(selected, { kind: 'effect-zone', zone }),
+            })
+        }
     }
 
     return {
@@ -270,6 +283,14 @@ export function createSelectionGizmoSystem(
                 current.soundZone.min = addDeltaToVoxel(current.soundZoneMin, dx, dy, dz)
                 current.soundZone.max = addDeltaToVoxel(current.soundZoneMax, dx, dy, dz)
                 break
+            case 'effect-zone':
+                if (!current.effectZone || !current.effectZonePosition || !editorState.weatherZones.includes(current.effectZone)) return
+                current.effectZone.position = {
+                    x: current.effectZonePosition.x + dx,
+                    y: current.effectZonePosition.y + dy,
+                    z: current.effectZonePosition.z + dz,
+                }
+                break
         }
     }
 
@@ -287,6 +308,8 @@ export function createSelectionGizmoSystem(
                 return { ref, anchor, soundSource: ref.source, soundSourcePosition: { ...ref.source.position } }
             case 'sound-zone':
                 return { ref, anchor, soundZone: ref.zone, soundZoneMin: { ...ref.zone.min }, soundZoneMax: { ...ref.zone.max } }
+            case 'effect-zone':
+                return { ref, anchor, effectZone: ref.zone, effectZonePosition: { ...ref.zone.position } }
         }
     }
 }
@@ -393,6 +416,7 @@ function selectionPriority(ref: SelectionRef): number {
         case 'sound-source': return 1
         case 'zone': return 4
         case 'sound-zone': return 4
+        case 'effect-zone': return 4
     }
 }
 
@@ -405,6 +429,7 @@ function sameSelection(a: SelectionRef | null, b: SelectionRef | null): boolean 
         case 'zone': return b.kind === 'zone' && a.zone === b.zone
         case 'sound-source': return b.kind === 'sound-source' && a.source === b.source
         case 'sound-zone': return b.kind === 'sound-zone' && a.zone === b.zone
+        case 'effect-zone': return b.kind === 'effect-zone' && a.zone === b.zone
     }
 }
 
@@ -424,6 +449,9 @@ function anchorFor(ref: SelectionRef, state: EditorState): Vector3 | null {
         case 'sound-zone':
             if (!state.soundZones.includes(ref.zone)) return null
             return aabbCenter(ref.zone.min, ref.zone.max)
+        case 'effect-zone':
+            if (!state.weatherZones.includes(ref.zone)) return null
+            return new Vector3(ref.zone.position.x, ref.zone.position.y, ref.zone.position.z)
     }
 }
 
@@ -478,6 +506,7 @@ function selectionLabel(ref: SelectionRef): string {
         case 'zone': return `zone "${ref.zone.label ?? ref.zone.id}"`
         case 'sound-source': return `sound source "${ref.source.label ?? ref.source.id}"`
         case 'sound-zone': return `sound zone "${ref.zone.label ?? ref.zone.id}"`
+        case 'effect-zone': return `effect zone "${ref.zone.label ?? ref.zone.id}"`
     }
 }
 
@@ -493,6 +522,7 @@ function selectionFingerprint(state: EditorState, selected: SelectionRef | null)
         `zones:${state.zones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
         `sources:${state.soundSources.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.radius}`).join(';')}`,
         `soundZones:${state.soundZones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
+        `effectZones:${state.weatherZones.map((z) => `${z.id}:${z.position.x},${z.position.y},${z.position.z}:${z.size.x},${z.size.y},${z.size.z}`).join(';')}`,
     ].join('|')
 }
 
@@ -503,5 +533,6 @@ function selectionKey(ref: SelectionRef, state: EditorState): string {
         case 'zone': return `zone:${ref.zone.id}`
         case 'sound-source': return `sound-source:${ref.source.id}`
         case 'sound-zone': return `sound-zone:${ref.zone.id}`
+        case 'effect-zone': return `effect-zone:${ref.zone.id}`
     }
 }

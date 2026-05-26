@@ -1,13 +1,15 @@
 import { Camera, Object3D, type Scene } from 'three'
 import type { AmbientWeatherState, WeatherZoneParams } from './types'
 import { WeatherZone } from './weather-zone'
-import { AmbientWeather } from './ambient-weather'
+import { AmbientWeather, defaultAmbientState } from './ambient-weather'
 import { TextureRegistry } from '../textures/texture-registry'
 import { MaterialRegistry } from '../materials/material-registry'
 import { LightBudget } from '../lights/light-budget'
 import { getEmitter } from '../emitters/registry'
 
 export interface WeatherSystemOptions {
+    /** Whether this system owns level-wide sky/fog/sun/weather. Default true. */
+    ambient?: boolean
     /** Cap on simultaneous lit FX point lights. Default 6. */
     maxLights?: number
     /** Skip a zone's update if its centre is more than `cullDistance`
@@ -30,7 +32,7 @@ export interface WeatherSystemOptions {
  * scene down.
  */
 export class WeatherSystem {
-    readonly ambient: AmbientWeather
+    readonly ambient: AmbientWeather | DisabledAmbientWeather
     readonly textures = new TextureRegistry()
     readonly materials = new MaterialRegistry()
     private readonly zones = new Map<string, WeatherZone>()
@@ -41,7 +43,7 @@ export class WeatherSystem {
     private readonly cullDistance: number
 
     constructor(private readonly scene: Scene, opts: WeatherSystemOptions = {}) {
-        this.ambient = new AmbientWeather(scene)
+        this.ambient = opts.ambient === false ? new DisabledAmbientWeather() : new AmbientWeather(scene)
         this.lightBudget = new LightBudget(opts.maxLights ?? 6)
         this.cullDistance = opts.cullDistance ?? 80
     }
@@ -167,6 +169,22 @@ export class WeatherSystem {
         this.ambient.dispose()
         this.materials.dispose()
         this.textures.dispose()
+    }
+}
+
+class DisabledAmbientWeather {
+    readonly state: AmbientWeatherState = defaultAmbientState()
+
+    setState(patch: Partial<AmbientWeatherState>): void {
+        Object.assign(this.state, patch)
+    }
+
+    update(_dt: number, _elapsed: number, _camera: Camera, _dummy: Object3D): void {
+        // Zone-only systems deliberately do not own scene sky/fog/lights.
+    }
+
+    dispose(): void {
+        // Nothing to release.
     }
 }
 

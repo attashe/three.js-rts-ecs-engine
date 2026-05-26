@@ -12,6 +12,7 @@ import {
 } from '../save-load'
 import { launchPlaytest } from '../playtest'
 import { sectionEl, type RefreshableElement } from './common'
+import { buildEnvironmentAudioSection, buildGlobalVisualEnvironmentSection } from './environment-controls'
 
 export interface LevelTabOptions {
     world: GameWorld
@@ -139,5 +140,18 @@ export function buildLevelTab(opts: LevelTabOptions): RefreshableElement {
     section.appendChild(hint)
 
     root.appendChild(section)
-    return { element: root, refresh: () => {} }
+
+    const environmentAudio = buildEnvironmentAudioSection(opts.editorState)
+    root.appendChild(environmentAudio.element)
+
+    const visualEnvironment = buildGlobalVisualEnvironmentSection(opts.editorState)
+    root.appendChild(visualEnvironment.element)
+
+    return {
+        element: root,
+        refresh() {
+            environmentAudio.refresh()
+            visualEnvironment.refresh()
+        },
+    }
 }

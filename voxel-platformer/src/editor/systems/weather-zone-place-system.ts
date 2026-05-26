@@ -5,7 +5,7 @@ import { pushLog, type GameWorld, type VoxelCoord } from '../../engine/ecs/world
 import type { EditorState, EditorWeatherZone } from '../editor-state'
 
 /**
- * Click-to-place editor weather/FX zones. Active only when
+ * Click-to-place editor Visual FX zones. Active only when
  * `editorState.mode === 'place-weather'`.
  *
  *   LMB at the cursor cell drops a zone whose XZ extent is centred on
@@ -13,16 +13,16 @@ import type { EditorState, EditorWeatherZone } from '../editor-state'
  *   the working plane (`state.weatherZoneHeight`). The preset id and
  *   paired-sound settings come from the draft fields on `editorState`.
  *
- *   RMB removes the nearest weather zone within ~4 cells of the
- *   cursor (forgiving, since weather zones are typically large).
+ *   RMB removes the nearest effect zone within ~4 cells of the
+ *   cursor (forgiving, since effect zones are typically large).
  */
 export function createWeatherZonePlaceSystem(input: Input, editorState: EditorState): System {
     let counter = 0
     function nextId(): string {
         counter += 1
         const taken = new Set(editorState.weatherZones.map((z) => z.id))
-        while (taken.has(`weather-zone-${counter}`)) counter += 1
-        return `weather-zone-${counter}`
+        while (taken.has(`effect-zone-${counter}`)) counter += 1
+        return `effect-zone-${counter}`
     }
 
     return {
@@ -65,7 +65,7 @@ function placeZone(world: GameWorld, state: EditorState, cursor: VoxelCoord, id:
     }
     state.weatherZones.push(zone)
     state.selectedWeatherZoneId = zone.id
-    pushLog(world, `Weather zone "${zone.label ?? zone.id}" placed (${zone.presetId}).`)
+    pushLog(world, `Effect zone "${zone.label ?? zone.id}" placed (${zone.presetId}).`)
 }
 
 function removeNearest(world: GameWorld, state: EditorState): void {
@@ -87,7 +87,7 @@ function removeNearest(world: GameWorld, state: EditorState): void {
     if (bestIndex < 0) return
     const [removed] = state.weatherZones.splice(bestIndex, 1)
     if (state.selectedWeatherZoneId === removed?.id) state.selectedWeatherZoneId = null
-    if (removed) pushLog(world, `Removed weather zone "${removed.label ?? removed.id}".`)
+    if (removed) pushLog(world, `Removed effect zone "${removed.label ?? removed.id}".`)
 }
 
 function clamp(value: number, min: number, max: number): number {

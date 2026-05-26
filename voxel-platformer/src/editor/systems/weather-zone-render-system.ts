@@ -16,7 +16,7 @@ const SELECTED_COLOUR = 0xffd166
 const DEFAULT_COLOUR = 0xffd6f0
 
 /**
- * Editor-only wireframe overlay for placed weather/FX zones. Each
+ * Editor-only wireframe overlay for placed Visual FX zones. Each
  * zone gets a coloured AABB whose tint matches the preset's primary
  * particle colour, so the user can tell a fire box from a rain box
  * at a glance without reading labels. Selected zones use the global
@@ -28,7 +28,7 @@ const DEFAULT_COLOUR = 0xffd6f0
  */
 export function createWeatherZoneRenderSystem(scene: Scene, editorState: EditorState): System {
     const group = new Group()
-    group.name = 'EditorWeatherZones'
+    group.name = 'EditorEffectZones'
 
     const materials = new Map<number, LineBasicMaterial>()
     const selectedMat = new LineBasicMaterial({

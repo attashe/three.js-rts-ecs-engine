@@ -51,16 +51,16 @@ const expected = {
     'footstep-water-1.wav': { bytes: 4013, sha256: '87e1cc8e2e7bc1e10e4c756b3eb7caa675abde485c87ccc8c5213089f797f476' },
     'footstep-water-2.wav': { bytes: 4454, sha256: 'dafb2b6e2af2d7d8e0d98cada0864616f97fbbe8bf81016affd0840bc3f9cfc0' },
     'jump.wav': {
-        bytes: 4013,
-        sha256: 'ce429ce8ec5d27b38ae8f8ae265ee7f84196e60838d04801ea52d185da1a0f4a',
+        bytes: 5336,
+        sha256: '6a362bc34e7eb04e29935fc9a600e94f06a3b54516ebd63eff6381cb72da27b0',
     },
     'land.wav': {
         bytes: 4895,
         sha256: 'e26ee157b2c9fc0ad2304cf522c132b98e6317a8699ed9c1f246cdd9406e274c',
     },
     'high-jump.wav': {
-        bytes: 18786,
-        sha256: '645585cc1b5cb4c588d7423046ca1fdea6ba0de09fa15ce938d5bf0e081feb78',
+        bytes: 14156,
+        sha256: '05f69126a89b281c6a49b1a1792c58fc07f2080039ba0f7ef4db3f0ac721098b',
     },
 
     // ── Music loops ───────────────────────────────────────────────

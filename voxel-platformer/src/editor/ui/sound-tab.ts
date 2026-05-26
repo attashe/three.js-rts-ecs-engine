@@ -8,10 +8,6 @@ export interface SoundTabContext {
 }
 
 const SOURCE_ASSETS: readonly AudioAsset[] = GAME_AUDIO_MANIFEST.sounds ?? []
-const MUSIC_ASSETS: readonly AudioAsset[] = GAME_AUDIO_MANIFEST.music ?? []
-/** Pool the Environment dropdown can pick from: sfx + music together
- *  (any stereo asset is a valid level-wide bed). */
-const ENVIRONMENT_ASSETS: readonly AudioAsset[] = [...SOURCE_ASSETS, ...MUSIC_ASSETS]
 
 export function buildSoundTab(ctx: SoundTabContext): RefreshableElement {
     const state = ctx.editorState
@@ -21,24 +17,6 @@ export function buildSoundTab(ctx: SoundTabContext): RefreshableElement {
     root.style.display = 'flex'
     root.style.flexDirection = 'column'
     root.style.gap = '10px'
-
-    // ── Environment (level-wide ambient bed) ─────────────────────────
-    const envSection = sectionEl('Environment')
-    const envHint = document.createElement('div')
-    envHint.className = 'vpe-hint'
-    envHint.textContent = 'Plays in stereo throughout the level. Leaves the spatial channel for point sources + zones.'
-    envSection.appendChild(envHint)
-
-    const envSelect = environmentSelectField(state.environment.soundId, (id) => {
-        state.environment.soundId = id
-    })
-    envSection.appendChild(envSelect.row)
-
-    const envVol = numberField('Volume:', state.environment.volume, 0, 1, 0.05, (v) => {
-        state.environment.volume = v
-    })
-    envSection.appendChild(envVol.row)
-    root.appendChild(envSection)
 
     const placement = sectionEl('Sound source')
     const sourceHint = document.createElement('div')
@@ -174,11 +152,6 @@ export function buildSoundTab(ctx: SoundTabContext): RefreshableElement {
         zoneSizeY.input.value = String(state.soundZoneHeight)
         zoneVolume.input.value = String(state.soundZoneVolume)
         zoneFade.input.value = String(state.soundZoneFadeTime)
-    }
-
-    function syncEnvironmentControls(): void {
-        envSelect.input.value = state.environment.soundId ?? ''
-        envVol.input.value = String(state.environment.volume)
     }
 
     function renderSelected(): void {
@@ -366,7 +339,6 @@ export function buildSoundTab(ctx: SoundTabContext): RefreshableElement {
         ensureValidDefaultSound(state)
         if (!placement.contains(document.activeElement)) syncPlacementControls()
         if (!zonePlacement.contains(document.activeElement)) syncZonePlacementControls()
-        if (!envSection.contains(document.activeElement)) syncEnvironmentControls()
         syncPlaceButton()
         syncZonePlaceButton()
         if ((selectedSoundSource(state)?.id ?? '') !== selectedId) renderSelected()
@@ -423,36 +395,6 @@ function soundSelectField(
     }
     input.value = initial
     input.onchange = () => { onChange(input.value) }
-    row.append(label, input)
-    return { row, input }
-}
-
-/** Like `soundSelectField` but includes music + an explicit `(none)`
- *  option so the level can opt out of an environment bed entirely. */
-function environmentSelectField(
-    initial: string | null,
-    onChange: (id: string | null) => void,
-): { row: HTMLElement; input: HTMLSelectElement } {
-    const row = document.createElement('div')
-    row.className = 'vpe-field'
-    const label = document.createElement('span')
-    label.className = 'vpe-field-label'
-    label.textContent = 'Track:'
-    const input = document.createElement('select')
-    input.className = 'vpe-input'
-    input.style.flex = '2'
-    const none = document.createElement('option')
-    none.value = ''
-    none.textContent = '(none)'
-    input.appendChild(none)
-    for (const asset of ENVIRONMENT_ASSETS) {
-        const option = document.createElement('option')
-        option.value = asset.id
-        option.textContent = formatAssetName(asset)
-        input.appendChild(option)
-    }
-    input.value = initial ?? ''
-    input.onchange = () => { onChange(input.value ? input.value : null) }
     row.append(label, input)
     return { row, input }
 }

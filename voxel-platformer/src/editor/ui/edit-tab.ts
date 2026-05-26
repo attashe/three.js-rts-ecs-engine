@@ -587,11 +587,11 @@ function buildSoundModePanel(): RefreshableElement {
 }
 
 function buildWeatherModePanel(): RefreshableElement {
-    const section = sectionEl('Weather zone')
+    const section = sectionEl('Effect zone')
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
     hint.style.color = 'rgba(255, 220, 240, 0.78)'
-    hint.textContent = 'Use the Weather tab to pick the preset, tune the size, and toggle the paired sound.'
+    hint.textContent = 'Use the Visual FX tab to pick the preset, tune the size, and toggle the paired sound.'
     section.appendChild(hint)
     return { element: section, refresh: () => {} }
 }

@@ -1,7 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ActionMap, type ActionDefinition, type ActionInputSource } from '../src/engine/input/actions'
-import { GAME_ACTIONS, GAME_COMMAND_HINT_ACTIONS, GameAction } from '../src/game/actions'
+import {
+    ActionMap,
+    actionBindingDisplayKeys,
+    formatKeyCodeForDisplay,
+    withActionBindingOverrides,
+    type ActionDefinition,
+    type ActionInputSource,
+} from '../src/engine/input/actions'
+import {
+    createGameActionDefinitions,
+    GAME_ACTIONS,
+    GAME_COMMAND_HINT_ACTIONS,
+    GameAction,
+} from '../src/game/actions'
 
 class FakeInput implements ActionInputSource {
     held = new Set<string>()
@@ -123,4 +135,40 @@ test('game actions expose the platformer command hint set in order', () => {
         { keys: ['F'], label: 'Bow' },
     ])
     assert.equal(actions.get(GameAction.BowShot).bindings?.[0]?.keys[0], 'KeyF')
+})
+
+test('action binding overrides clone definitions without mutating defaults', () => {
+    const overridden = withActionBindingOverrides(definitions, {
+        'weapon.bowShot': [{ keys: ['KeyB', 'KeyB', ' '], displayKeys: ['B'] }],
+    })
+    const bow = overridden.find((definition) => definition.id === 'weapon.bowShot')
+
+    assert.deepEqual(bow?.bindings?.[0]?.keys, ['KeyB'])
+    assert.deepEqual(actionBindingDisplayKeys(bow!), ['B'])
+    assert.deepEqual(definitions[2]?.bindings?.[0]?.keys, ['KeyF'])
+})
+
+test('game action definitions accept keyboard overrides while preserving default constants', () => {
+    let now = 1000
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(
+        createGameActionDefinitions({ [GameAction.BowShot]: ['KeyB'] }),
+        input,
+        { now: () => now },
+    )
+
+    input.pressedAt.set('KeyF', now)
+    assert.equal(actions.consumePressed(GameAction.BowShot), null)
+
+    input.pressedAt.set('KeyB', now)
+    const intent = actions.consumePressed(GameAction.BowShot)
+    assert.equal(intent?.key, 'KeyB')
+    assert.equal(GAME_ACTIONS.find((definition) => definition.id === GameAction.BowShot)?.bindings?.[0]?.keys[0], 'KeyF')
+})
+
+test('key codes have compact display labels for settings UI', () => {
+    assert.equal(formatKeyCodeForDisplay('KeyW'), 'W')
+    assert.equal(formatKeyCodeForDisplay('Digit3'), '3')
+    assert.equal(formatKeyCodeForDisplay('ArrowLeft'), 'Left')
+    assert.equal(formatKeyCodeForDisplay('Space'), 'Space')
 })

@@ -28,10 +28,10 @@ export interface LevelMeta {
     soundZones: SoundZoneConfig[]
     /** Level-wide ambient bed (stereo, non-spatial). Optional. */
     environment?: EnvironmentConfig
-    /** FX/particle weather zones (rain, fire, magic, lava surface, …)
+    /** Local Visual FX zones (rain, fire, magic, lava surface, ...)
      *  paired with optional looped ambient beds. */
     weatherZones: WeatherZoneRuntimeConfig[]
-    /** Level-wide ambient weather snapshot (sky/fog/sun/drifting
+    /** Level-wide visual environment snapshot (sky/fog/sun/drifting
      *  rain & snow). Optional — absent ⇒ engine defaults. */
     ambientWeather?: AmbientWeatherRuntimeConfig
     /** XZ extent of the generated level, used by the demo to centre the camera. */

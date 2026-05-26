@@ -14,6 +14,7 @@ import { createEntity } from '../engine/ecs/entity'
 import {
     createBow,
     createMainCharacter,
+    createPlayerTorch,
     createQuiver,
     MAIN_CHARACTER_COLLIDER_HALF_HEIGHT,
     MAIN_CHARACTER_COLLIDER_RADIUS,
@@ -70,9 +71,18 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     }))
     root.add(createBackBow())
     root.add(createBackQuiver())
+    root.add(createHeldTorch())
 
     world.object3DByEid.set(eid, root)
     return eid
+}
+
+function createHeldTorch(): Group {
+    const torch = createPlayerTorch()
+    torch.position.set(0.35, 0.68, 0.18)
+    torch.rotation.set(0.16, -0.04, -0.14)
+    torch.scale.setScalar(0.94)
+    return torch
 }
 
 function createBackBow(): Group {

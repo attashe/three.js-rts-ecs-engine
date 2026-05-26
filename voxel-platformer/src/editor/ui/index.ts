@@ -23,7 +23,8 @@ export interface MountEditorPanelOptions {
  *  - **Edit** — camera + working-plane controls, palette, mode toolbar,
  *    and a contextual settings panel for the active placement mode. This
  *    is the only tab that swaps its body in response to state changes.
- *  - **Sound** — static spatial sound sources.
+ *  - **Sound** — spatial sound sources and local sound zones.
+ *  - **Visual FX** — local particle/light effect zones.
  *  - **Level** — name + save / load / playtest.
  *  - **Help** — keyboard / mouse cheatsheet.
  *
@@ -43,7 +44,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
     const bar = createTabBar([
         { id: 'edit', label: 'Edit', build: () => buildEditTab(opts) },
         { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
-        { id: 'weather', label: 'Weather', build: () => buildWeatherTab(opts) },
+        { id: 'weather', label: 'Visual FX', build: () => buildWeatherTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
         { id: 'help', label: 'Help', build: () => buildHelpTab() },
     ], 'edit')

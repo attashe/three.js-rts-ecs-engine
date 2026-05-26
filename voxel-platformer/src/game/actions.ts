@@ -1,4 +1,11 @@
-import { ActionMap, type ActionDefinition, type ActionId } from '../engine/input/actions'
+import {
+    ActionMap,
+    keyOverridesToActionBindings,
+    withActionBindingOverrides,
+    type ActionDefinition,
+    type ActionId,
+    type ActionKeyOverrideMap,
+} from '../engine/input/actions'
 import type { Input } from '../engine/input/input'
 
 export const GameAction = {
@@ -105,6 +112,15 @@ export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
     GameAction.CameraRotateLeft,
 ]
 
-export function createGameActionMap(input: Input): ActionMap {
-    return new ActionMap(GAME_ACTIONS, input)
+export type GameKeyboardOverrides = Partial<Record<GameActionId, readonly string[]>>
+
+export function createGameActionDefinitions(overrides: GameKeyboardOverrides = {}): ActionDefinition[] {
+    return withActionBindingOverrides(
+        GAME_ACTIONS,
+        keyOverridesToActionBindings(overrides as ActionKeyOverrideMap),
+    )
+}
+
+export function createGameActionMap(input: Input, overrides: GameKeyboardOverrides = {}): ActionMap {
+    return new ActionMap(createGameActionDefinitions(overrides), input)
 }

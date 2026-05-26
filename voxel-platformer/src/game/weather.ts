@@ -1,4 +1,5 @@
 import type { Camera, Scene } from 'three'
+import { query } from 'bitecs'
 import {
     WeatherSystem,
     WEATHER_PRESETS,
@@ -8,6 +9,7 @@ import {
     type WeatherZoneParams,
 } from '../engine/fx'
 import type { AudioEngine, SoundHandle } from '../engine/audio'
+import { PlayerControlled, Position } from '../engine/ecs/components'
 import type { System } from '../engine/ecs/systems/system'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import {
@@ -34,41 +36,53 @@ interface ZoneEntry {
     config: WeatherZoneRuntimeConfig
     fxZone: WeatherZone
     soundHandle: SoundHandle | null
+    soundGain: number
 }
 
-/**
- * Build a system that owns a `WeatherSystem` + paired ambient audio
- * for every editor-authored weather zone. `cameraProvider` is a thunk
- * so the caller can swap cameras without rebuilding.
- *
- * Order: `RenderOrder.cameraFollow + 3` — same idiom as
- * `audio-listener-system`, so the camera transform is settled before
- * the FX system reads it for culling + matrix writes.
- */
-export function createWeatherZoneSystem(
+/** Level-wide visual environment: sky dome, fog, sun/ambient light,
+ *  camera-following rain/snow/clouds, and lightning flashes. */
+export function createEnvironmentFxSystem(
     scene: Scene,
-    audio: AudioEngine,
-    zones: readonly WeatherZoneRuntimeConfig[],
     ambient: AmbientWeatherRuntimeConfig | undefined,
     cameraProvider: () => Camera,
-    opts: WeatherZoneSystemOptions = {},
 ): System {
-    // Skip the entire FX stack when the level has nothing to play.
-    // Instantiating `WeatherSystem` adds a sky dome + fog + ambient
-    // light + sun + hemi light to the scene as part of its
-    // `AmbientWeather` constructor — that would visually clobber any
-    // level (demo + editor-authored) that doesn't opt into weather.
-    if (zones.length === 0 && !ambient) {
-        return { name: 'weatherZones', update: () => {} }
-    }
+    if (!ambient) return { name: 'environmentFx', update: () => {} }
 
-    const fx = new WeatherSystem(scene)
+    const fx = new WeatherSystem(scene, { maxLights: 8, cullDistance: 120 })
     if (ambient) {
         const applied = ambient.presetId && WEATHER_PRESETS[ambient.presetId]
             ? { ...WEATHER_PRESETS[ambient.presetId]!.apply, ...ambient.state }
             : ambient.state
         fx.setAmbient(applied)
     }
+
+    return {
+        name: 'environmentFx',
+        order: RenderOrder.cameraFollow + 2,
+        update(_world, dt) {
+            fx.update(dt, cameraProvider())
+        },
+        dispose() {
+            fx.dispose()
+        },
+    }
+}
+
+/**
+ * Build a system that owns local Visual FX zones + paired spatial audio.
+ * This deliberately disables `WeatherSystem`'s ambient pass so placing a
+ * fire/rain/lava volume does not overwrite the level-wide sky/fog/lights.
+ */
+export function createVisualFxZoneSystem(
+    scene: Scene,
+    audio: AudioEngine,
+    zones: readonly WeatherZoneRuntimeConfig[],
+    cameraProvider: () => Camera,
+    opts: WeatherZoneSystemOptions = {},
+): System {
+    if (zones.length === 0) return { name: 'visualFxZones', update: () => {} }
+
+    const fx = new WeatherSystem(scene, { ambient: false, maxLights: 8, cullDistance: 120 })
     const entries: ZoneEntry[] = []
     let disposed = false
 
@@ -77,31 +91,32 @@ export function createWeatherZoneSystem(
             const params = paramsForConfig(config)
             const fxZone = fx.addZone(params)
             const handle = config.addSound ? armPairedSound(audio, config) : null
-            entries.push({ config, fxZone, soundHandle: handle })
+            entries.push({ config, fxZone, soundHandle: handle, soundGain: 0 })
         }
     }
 
     return {
-        name: 'weatherZones',
+        name: 'visualFxZones',
         order: RenderOrder.cameraFollow + 3,
         init() {
             if (opts.audioReady) {
                 void opts.audioReady.then(spawn).catch((err) => {
-                    console.warn('Weather zones starting without paired audio:', err)
+                    console.warn('Visual FX zones starting without paired audio:', err)
                     // Build FX anyway — particles don't need the audio
                     // engine; only the paired sounds will be missing.
                     for (const config of zones) {
                         const fxZone = fx.addZone(paramsForConfig(config))
-                        entries.push({ config, fxZone, soundHandle: null })
+                        entries.push({ config, fxZone, soundHandle: null, soundGain: 0 })
                     }
                 })
             } else {
                 spawn()
             }
         },
-        update(_world, dt) {
+        update(world, dt) {
             if (disposed) return
             fx.update(dt, cameraProvider())
+            updatePairedSoundGains(world, entries, dt)
         },
         dispose() {
             if (disposed) return
@@ -110,6 +125,39 @@ export function createWeatherZoneSystem(
             for (const entry of entries) entry.soundHandle?.stop(fade)
             entries.length = 0
             fx.dispose()
+        },
+    }
+}
+
+/** Backward-compatible wrapper for old callers. Prefer the explicit
+ *  `createEnvironmentFxSystem` + `createVisualFxZoneSystem` split. */
+export function createWeatherZoneSystem(
+    scene: Scene,
+    audio: AudioEngine,
+    zones: readonly WeatherZoneRuntimeConfig[],
+    ambient: AmbientWeatherRuntimeConfig | undefined,
+    cameraProvider: () => Camera,
+    opts: WeatherZoneSystemOptions = {},
+): System {
+    if (ambient && zones.length === 0) return createEnvironmentFxSystem(scene, ambient, cameraProvider)
+    if (!ambient) return createVisualFxZoneSystem(scene, audio, zones, cameraProvider, opts)
+
+    const environment = createEnvironmentFxSystem(scene, ambient, cameraProvider)
+    const zoneFx = createVisualFxZoneSystem(scene, audio, zones, cameraProvider, opts)
+    return {
+        name: 'environmentAndVisualFx',
+        order: RenderOrder.cameraFollow + 2,
+        init(world) {
+            environment.init?.(world)
+            zoneFx.init?.(world)
+        },
+        update(world, dt) {
+            environment.update(world, dt)
+            zoneFx.update(world, dt)
+        },
+        dispose() {
+            zoneFx.dispose?.()
+            environment.dispose?.()
         },
     }
 }
@@ -126,27 +174,70 @@ function paramsForConfig(config: WeatherZoneRuntimeConfig): WeatherZoneParams {
 function armPairedSound(audio: AudioEngine, config: WeatherZoneRuntimeConfig): SoundHandle | null {
     const id = config.soundId || defaultSoundForPreset(config.presetId)
     if (!id) return null
-    const diag = Math.hypot(config.size.x, config.size.y, config.size.z)
-    const maxDistance = Math.max(4, diag * 1.6)
-    const refDistance = Math.max(1, diag * 0.5)
     try {
-        return audio.playSpatial(id, config.position, {
+        // Visual FX zone loops are broad ambience. Panning a rain/fire
+        // bed from a moving point source is brittle with an isometric
+        // listener and can turn into corner-biased or staccato audio
+        // after camera/player motion. Keep the loop stereo and let the
+        // zone system drive locality with proximity-faded gain.
+        return audio.play(id, {
             deferUntilUnlocked: true,
             loop: true,
-            volume: clamp(config.soundVolume, 0, 1),
-            // Same hardening as sound zones — many weather zones in a
+            volume: 0,
+            // Same hardening as sound zones — many Visual FX zones in a
             // level may share one looped asset and the manifest's
             // `maxInstances` cap would otherwise steal voices silently.
             maxInstances: Number.POSITIVE_INFINITY,
             priority: 5,
-            maxDistance,
-            refDistance,
-            rolloffModel: 'linear',
         })
     } catch (err) {
-        console.warn(`Weather zone "${config.label ?? config.id}" paired sound "${id}" failed:`, err)
+        console.warn(`Visual FX zone "${config.label ?? config.id}" paired sound "${id}" failed:`, err)
         return null
     }
+}
+
+function updatePairedSoundGains(
+    world: Parameters<NonNullable<System['update']>>[0],
+    entries: ZoneEntry[],
+    dt: number,
+): void {
+    if (entries.length === 0) return
+
+    const players = query(world, [Position, PlayerControlled])
+    const pid = players[0]
+    const hasPlayer = pid !== undefined
+    const px = hasPlayer ? Position.x[pid]! : 0
+    const py = hasPlayer ? Position.y[pid]! : 0
+    const pz = hasPlayer ? Position.z[pid]! : 0
+    const alpha = 1 - Math.exp(-Math.max(0, dt) * 8)
+
+    for (const entry of entries) {
+        const handle = entry.soundHandle
+        if (!handle) continue
+        const target = hasPlayer
+            ? clamp(entry.config.soundVolume, 0, 1) * zoneAudioProximity(entry.config, px, py, pz)
+            : 0
+        entry.soundGain += (target - entry.soundGain) * alpha
+        if (Math.abs(entry.soundGain - target) < 0.004) entry.soundGain = target
+        handle.setVolume(entry.soundGain, 0)
+    }
+}
+
+function zoneAudioProximity(config: WeatherZoneRuntimeConfig, x: number, y: number, z: number): number {
+    const hx = Math.max(0.5, config.size.x * 0.5)
+    const hy = Math.max(0.5, config.size.y * 0.5)
+    const hz = Math.max(0.5, config.size.z * 0.5)
+    const dx = Math.max(Math.abs(x - config.position.x) - hx, 0)
+    const dy = Math.max(Math.abs(y - config.position.y) - hy, 0)
+    const dz = Math.max(Math.abs(z - config.position.z) - hz, 0)
+    const dist = Math.hypot(dx, dy, dz)
+    if (dist <= 0) return 1
+    const fadeDistance = zoneAudioFadeDistance(config)
+    return clamp(1 - dist / fadeDistance, 0, 1)
+}
+
+function zoneAudioFadeDistance(config: WeatherZoneRuntimeConfig): number {
+    return Math.max(4, Math.hypot(config.size.x, config.size.y, config.size.z) * 0.75)
 }
 
 function clamp(value: number, min: number, max: number): number {

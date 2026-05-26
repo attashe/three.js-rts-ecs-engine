@@ -109,7 +109,7 @@ export interface EditorSoundZone {
 }
 
 /**
- * Weather/FX particle zone — AABB volume that spawns one of the FX
+ * Visual FX particle zone — AABB volume that spawns one of the FX
  * package's emitter strategies (rain, fire, magic, lava surface, ...).
  *
  * The runtime translates `presetId` through `ZONE_PRESETS` to fill in
@@ -137,7 +137,7 @@ export interface EditorWeatherZone {
 }
 
 /**
- * Level-wide ambient weather — sky dome, fog, sun, lightning, drifting
+ * Level-wide visual environment — sky dome, fog, sun, lightning, drifting
  * rain/snow that follow the camera. Stored as a *snapshot* of every
  * `AmbientWeatherState` field plus the source preset id for re-applying
  * a clean preset in the editor without losing user overrides.
@@ -291,10 +291,10 @@ export interface EditorState {
     /** Crossfade time for enter/leave. */
     soundZoneFadeTime: number
 
-    /** Weather/FX particle zones placed in the editor. */
+    /** Local Visual FX particle zones placed in the editor. */
     weatherZones: EditorWeatherZone[]
     selectedWeatherZoneId: string | null
-    /** Preset id applied to the next placed weather zone. */
+    /** Preset id applied to the next placed effect zone. */
     weatherPresetId: string
     weatherZoneLabel: string
     /** XZ extent in cells, centred on the cursor. */
@@ -303,12 +303,12 @@ export interface EditorState {
     weatherZoneHeight: number
     /** "Add sound" checkbox draft — default true. */
     weatherZoneAddSound: boolean
-    /** Sound id override for the next placed weather zone. Empty ⇒
+    /** Sound id override for the next placed effect zone. Empty =>
      *  use the preset default from `defaultSoundForPreset`. */
     weatherZoneSoundId: string
     weatherZoneSoundVolume: number
 
-    /** Level-wide ambient weather (sky / fog / sun / drifting rain
+    /** Level-wide visual environment (sky / fog / sun / drifting rain
      *  & snow / lightning). Disabled by default. */
     ambientWeather: EditorAmbientWeather
 
@@ -330,34 +330,34 @@ export interface EditorState {
  * with ambient enabled vs disabled (modulo the sky dome + fog).
  */
 export const DEFAULT_AMBIENT_WEATHER: AmbientWeatherStateSnapshot = {
-    skyTop: '#5a90c8',
-    skyBottom: '#cfe2f0',
-    fogColor: '#cfe2f0',
-    fogDensity: 0.005,
-    sunIntensity: 1.3,
-    sunColor: '#fff0d4',
-    ambientIntensity: 0.6,
-    ambientColor: '#ffffff',
+    skyTop: '#7aa9d4',
+    skyBottom: '#c9d9e8',
+    fogColor: '#b5c6d6',
+    fogDensity: 0.012,
+    sunIntensity: 1.1,
+    sunColor: '#ffe9c4',
+    ambientIntensity: 0.5,
+    ambientColor: '#8aa3c4',
     timeOfDay: 12,
-    sunAzimuth: 35,
+    sunAzimuth: 135,
     rainOn: false,
-    rainCount: 1500,
-    rainSpeed: 14,
+    rainCount: 4000,
+    rainSpeed: 22,
     rainOpacity: 0.55,
-    rainColor: '#a6c8ff',
+    rainColor: '#aac8e8',
     snowOn: false,
-    snowCount: 1500,
-    snowSpeed: 2,
-    snowSway: 1,
-    snowOpacity: 0.78,
-    windX: 0.2,
+    snowCount: 2500,
+    snowSpeed: 1.8,
+    snowSway: 1.2,
+    snowOpacity: 0.95,
+    windX: 0,
     windZ: 0,
-    windGusts: 0,
+    windGusts: 0.2,
     lightningOn: false,
-    lightningRate: 0.2,
-    lightningIntensity: 32,
-    lightningColor: '#f0f6ff',
-    cloudCoverage: 0.05,
+    lightningRate: 0.25,
+    lightningIntensity: 30,
+    lightningColor: '#cfe0ff',
+    cloudCoverage: 0,
 }
 
 export function createEditorState(spawn: { x: number; y: number; z: number }): EditorState {
@@ -450,9 +450,9 @@ export interface EditorLevelMeta {
     /** AABB sound zones that fade ambient audio in/out as the player
      *  enters/leaves them. */
     soundZones?: EditorSoundZone[]
-    /** Weather/FX particle zones (rain, fire, magic, lava surface, …). */
+    /** Local Visual FX particle zones (rain, fire, magic, lava surface, ...). */
     weatherZones?: EditorWeatherZone[]
-    /** Level-wide ambient weather snapshot. Absent / `enabled: false`
+    /** Level-wide visual environment snapshot. Absent / `enabled: false`
      *  ⇒ playtest uses the engine's default lighting + sky. */
     ambientWeather?: EditorAmbientWeather
 }

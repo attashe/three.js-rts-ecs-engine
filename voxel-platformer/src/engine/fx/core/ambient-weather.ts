@@ -50,8 +50,11 @@ export class AmbientWeather {
     private readonly snow: AmbientField
     private readonly clouds: CloudField
     private readonly storm: LightningTimer
+    private readonly previousFog: Scene['fog']
+    private readonly sunOffset = { x: 30, y: 50, z: 20 }
 
     constructor(private readonly scene: Scene) {
+        this.previousFog = scene.fog
         // Sky dome — back-side sphere with vertex-colour gradient.
         const skyGeo = new SphereGeometry(240, 32, 16)
         this.skyColors = new Float32Array(skyGeo.attributes.position!.count * 3)
@@ -65,10 +68,19 @@ export class AmbientWeather {
 
         this.ambient = new AmbientLight(new Color(this.state.ambientColor), this.state.ambientIntensity)
         this.sun = new DirectionalLight(new Color(this.state.sunColor), this.state.sunIntensity)
-        this.sun.position.set(30, 50, 20)
+        this.sun.position.set(this.sunOffset.x, this.sunOffset.y, this.sunOffset.z)
+        this.sun.castShadow = true
+        this.sun.shadow.camera.left = -36
+        this.sun.shadow.camera.right = 36
+        this.sun.shadow.camera.top = 36
+        this.sun.shadow.camera.bottom = -36
+        this.sun.shadow.camera.near = 1
+        this.sun.shadow.camera.far = 180
+        this.sun.shadow.camera.updateProjectionMatrix()
+        this.sun.shadow.mapSize.set(1024, 1024)
         this.hemi = new HemisphereLight(0xb0c8e0, 0x2a2418, 0.3)
         this.lightning = new PointLight(new Color(this.state.lightningColor), 0, 200, 1.5)
-        scene.add(this.ambient, this.sun, this.hemi, this.lightning)
+        scene.add(this.ambient, this.sun, this.sun.target, this.hemi, this.lightning)
 
         this.rain = new AmbientField(scene, 'streak', { maxCount: 12000, geo: new PlaneGeometry(0.12, 0.9) })
         this.snow = new AmbientField(scene, 'flake', { maxCount: 8000, geo: new PlaneGeometry(0.4, 0.4) })
@@ -87,6 +99,8 @@ export class AmbientWeather {
     }
 
     update(dt: number, elapsed: number, camera: Camera, dummy: Object3D): void {
+        this.skyMesh.position.copy(camera.position)
+        this.positionSunForCamera(camera)
         const gust = Math.sin(elapsed * 0.4) * Math.cos(elapsed * 0.13) * this.state.windGusts
         const effWindX = this.state.windX + gust * 2
         const effWindZ = this.state.windZ + gust * 1.4
@@ -111,11 +125,12 @@ export class AmbientWeather {
             sway: this.state.snowSway,
         }, dt, elapsed, camera, dummy, 'snow')
         this.clouds.update(dt, elapsed, camera, this.state)
-        this.storm.update(dt, this.state, this.lightning)
+        this.storm.update(dt, this.state, this.lightning, camera)
     }
 
     dispose(): void {
-        this.scene.remove(this.skyMesh, this.ambient, this.sun, this.hemi, this.lightning)
+        this.scene.remove(this.skyMesh, this.ambient, this.sun, this.sun.target, this.hemi, this.lightning)
+        this.scene.fog = this.previousFog
         this.skyMesh.geometry.dispose()
         ;(this.skyMesh.material as { dispose?: () => void }).dispose?.()
         this.rain.dispose()
@@ -157,13 +172,29 @@ export class AmbientWeather {
         const az = this.state.sunAzimuth * Math.PI / 180
         const horiz = Math.cos(angle) * 60
         const height = Math.sin(angle) * 50
-        this.sun.position.set(horiz * Math.cos(az), height, horiz * Math.sin(az))
-        this.sun.target.position.set(0, 0, 0)
+        this.sunOffset.x = horiz * Math.cos(az)
+        this.sunOffset.y = height
+        this.sunOffset.z = horiz * Math.sin(az)
+        this.sun.position.set(this.sunOffset.x, this.sunOffset.y, this.sunOffset.z)
+        this.sun.target.position.set(this.sunOffset.x * -0.02, 0, this.sunOffset.z * -0.02)
         const horizonFalloff = clamp(smoothstep(height, -5, 8), 0, 1)
         this.sun.intensity = this.state.sunIntensity * horizonFalloff
         this.sun.color.set(this.state.sunColor)
         this.ambient.color.set(this.state.ambientColor)
         this.ambient.intensity = this.state.ambientIntensity
+    }
+
+    private positionSunForCamera(camera: Camera): void {
+        this.sun.position.set(
+            camera.position.x + this.sunOffset.x,
+            camera.position.y + this.sunOffset.y,
+            camera.position.z + this.sunOffset.z,
+        )
+        this.sun.target.position.set(
+            camera.position.x - this.sunOffset.x * 0.02,
+            camera.position.y,
+            camera.position.z - this.sunOffset.z * 0.02,
+        )
     }
 }
 
@@ -187,10 +218,21 @@ class AmbientField {
 
     constructor(private readonly scene: Scene, kind: 'streak' | 'flake', opts: { maxCount: number; geo: PlaneGeometry }) {
         const tex = kind === 'streak' ? makeAmbientStreak() : makeAmbientFlake()
-        this.material = new MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.8, depthWrite: false })
+        // depthTest stays on so blocks above the camera (overhangs,
+        // vertical mazes) properly occlude rain/snow streaks. depthWrite
+        // is off so transparent particles don't punch holes in the
+        // depth buffer for other transparents drawn after them.
+        this.material = new MeshBasicMaterial({
+            map: tex,
+            transparent: true,
+            opacity: 0.8,
+            depthTest: true,
+            depthWrite: false,
+        })
         this.mesh = new InstancedMesh(opts.geo, this.material, opts.maxCount)
         this.mesh.frustumCulled = false
         this.mesh.visible = false
+        this.mesh.renderOrder = 900
         scene.add(this.mesh)
         this.positions = new Float32Array(opts.maxCount * 3)
         this.phases = new Float32Array(opts.maxCount)
@@ -280,7 +322,9 @@ class CloudField {
         }
     }
 
-    update(dt: number, _elapsed: number, _camera: Camera, state: AmbientWeatherState): void {
+    update(dt: number, _elapsed: number, camera: Camera, state: AmbientWeatherState): void {
+        const cx = camera.position.x
+        const cz = camera.position.z
         const target = Math.round(this.sprites.length * state.cloudCoverage)
         for (let i = 0; i < this.sprites.length; i++) {
             const s = this.sprites[i]!
@@ -288,10 +332,10 @@ class CloudField {
             if (!s.visible) continue
             s.position.x += state.windX * dt * 0.4
             s.position.z += state.windZ * dt * 0.4
-            if (s.position.x >  120) s.position.x = -120
-            if (s.position.x < -120) s.position.x =  120
-            if (s.position.z >  120) s.position.z = -120
-            if (s.position.z < -120) s.position.z =  120
+            if (s.position.x - cx >  120) s.position.x = cx - 120
+            if (s.position.x - cx < -120) s.position.x = cx + 120
+            if (s.position.z - cz >  120) s.position.z = cz - 120
+            if (s.position.z - cz < -120) s.position.z = cz + 120
             const mat = s.material as SpriteMaterial
             mat.color.set(state.ambientColor).lerp(new Color(state.sunColor), 0.35)
             mat.opacity = 0.45 + state.cloudCoverage * 0.4
@@ -313,7 +357,7 @@ class LightningTimer {
     private flashT = 0
     private readonly flashDuration = 0.55
 
-    update(dt: number, state: AmbientWeatherState, light: PointLight): void {
+    update(dt: number, state: AmbientWeatherState, light: PointLight, camera: Camera): void {
         if (!state.lightningOn) {
             light.intensity = 0
             this.timer = 0
@@ -334,12 +378,16 @@ class LightningTimer {
             this.timer = 0
             this.nextStrike = 1 / Math.max(state.lightningRate, 0.01) + Math.random() * 4
             this.flashT = this.flashDuration
-            light.position.set((Math.random() - 0.5) * 70, 20 + Math.random() * 15, (Math.random() - 0.5) * 70)
+            light.position.set(
+                camera.position.x + (Math.random() - 0.5) * 70,
+                camera.position.y + 10 + Math.random() * 18,
+                camera.position.z + (Math.random() - 0.5) * 70,
+            )
         }
     }
 }
 
-function defaultAmbientState(): AmbientWeatherState {
+export function defaultAmbientState(): AmbientWeatherState {
     return {
         skyTop: '#7aa9d4',
         skyBottom: '#c9d9e8',
