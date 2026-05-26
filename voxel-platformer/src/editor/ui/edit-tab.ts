@@ -308,21 +308,10 @@ function buildPaletteSection(ctx: EditTabContext): RefreshableElement {
             materialChanged()
         }))
 
-        const colorRow = document.createElement('div')
-        colorRow.className = 'vpe-field'
-        const colorLabel = document.createElement('span')
-        colorLabel.className = 'vpe-field-label'
-        colorLabel.textContent = 'Color:'
-        const colorInput = document.createElement('input')
-        colorInput.className = 'vpe-input'
-        colorInput.type = 'color'
-        colorInput.value = colorToHex(entry.color)
-        colorInput.oninput = () => {
-            entry.color = hexToColor(colorInput.value)
+        editor.appendChild(colorRow('Color:', colorToHex(entry.color), (hex) => {
+            entry.color = hexToColor(hex)
             materialChanged()
-        }
-        colorRow.append(colorLabel, colorInput)
-        editor.appendChild(colorRow)
+        }))
 
         editor.appendChild(numberField('Opacity:', entry.opacity ?? 1, 0, 1, 0.05, (value) => {
             const opacity = Math.max(0, Math.min(1, value))
@@ -1000,7 +989,11 @@ function buildEmissiveBlock(entry: PaletteEntry, onChange: () => void): HTMLElem
         onChange()
     }))
 
-    root.appendChild(colorRow('Light col:', colorToHex(entry.lightColor ?? entry.emissive ?? [0, 0, 0]), (hex) => {
+    // Same fallback chain as voxelLightSpec() in the runtime — when both
+    // lightColor and emissive are unset, the spawned PointLight inherits
+    // the block's base colour. Mirroring that here so the UI swatch
+    // doesn't show black for a lamp that will actually emit colour.
+    root.appendChild(colorRow('Light col:', colorToHex(entry.lightColor ?? entry.emissive ?? entry.color), (hex) => {
         entry.lightColor = hexToColor(hex)
         onChange()
     }))

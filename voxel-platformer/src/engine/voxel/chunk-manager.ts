@@ -168,6 +168,15 @@ export class ChunkManager {
     }
 
     markAllDirty(): void {
-        for (const c of this.chunks.values()) this.addDirty(c.cx, c.cy, c.cz)
+        // Bump every chunk's version too. ChunkRenderer + BlockLightSystem
+        // both skip work when their cached version matches `chunk.version`
+        // (a dedup for boundary writes that mark the same chunk twice in
+        // one frame). Palette-driven re-renders — `replacePalette` and
+        // material-editor edits — don't touch voxel data, so without the
+        // bump those callers would silently no-op.
+        for (const c of this.chunks.values()) {
+            c.version++
+            this.addDirty(c.cx, c.cy, c.cz)
+        }
     }
 }
