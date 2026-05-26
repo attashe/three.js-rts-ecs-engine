@@ -70,3 +70,27 @@ test('greedyMesh emits the same number of UV / tileIndex entries as positions/no
     assert.equal(data.normals.length, expectedVerts * 3)
     assert.equal(data.colors.length, expectedVerts * 4)
 })
+
+test('editing textureKey on a palette entry flips the emitted tile index', () => {
+    // Clone DEFAULT_PALETTE so we can mutate without affecting other
+    // tests. The clone is shallow on `entries`, deep enough for our
+    // textureKey poke since each entry is its own object.
+    const palette = { entries: DEFAULT_PALETTE.entries.map((e) => ({ ...e })) }
+
+    // Start: BLOCK.glow has no textureKey, so it should fall through
+    // to slot 0 (blank).
+    const before = greedyMesh(singleCellSampler(BLOCK.glow), 4, palette)
+    for (const idx of before.tileIndices) {
+        assert.equal(idx, 0, 'baseline: glow falls through to blank')
+    }
+
+    // Author flips it to "brick" via the material editor → new mesh
+    // pass picks up the change. Mirrors the runtime flow:
+    // entry.textureKey = ... → markAllDirty → renderer re-runs
+    // greedyMesh against the freshly-mutated palette.
+    palette.entries[BLOCK.glow]!.textureKey = 'brick'
+    const after = greedyMesh(singleCellSampler(BLOCK.glow), 4, palette)
+    for (const idx of after.tileIndices) {
+        assert.notEqual(idx, 0, 'after textureKey change: should NOT be blank')
+    }
+})

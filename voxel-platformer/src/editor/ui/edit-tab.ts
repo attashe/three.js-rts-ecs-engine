@@ -1,4 +1,5 @@
 import { isCollidable, isPathSurface, isRaycastTarget, occludesFaces, type Palette, type PaletteEntry } from '../../engine/voxel/palette'
+import { TILE_NAMES, type TileName } from '../../engine/voxel/atlas-manifest'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
 import type { AudioAsset } from '../../engine/audio'
@@ -311,6 +312,14 @@ function buildPaletteSection(ctx: EditTabContext): RefreshableElement {
 
         editor.appendChild(colorRow('Color:', colorToHex(entry.color), (hex) => {
             entry.color = hexToColor(hex)
+            materialChanged()
+        }))
+
+        editor.appendChild(textureSelectField(entry.textureKey, (key) => {
+            if (key === null) delete entry.textureKey
+            else entry.textureKey = key
+            // Re-mesh: the per-vertex tileIndex attribute changes with
+            // the textureKey, so the chunks need a fresh greedyMesh.
             materialChanged()
         }))
 
@@ -1102,6 +1111,55 @@ function checkboxField(
     span.textContent = label
     field.append(input, span)
     return field
+}
+
+/**
+ * Material-editor surface-texture dropdown. The list is sourced from
+ * `TILE_NAMES` — the same registry the atlas builder uses — so adding
+ * a new tile in the manifest immediately surfaces it as a pickable
+ * option here, no UI changes required.
+ *
+ * The "(none)" option deletes `entry.textureKey`, which maps to slot
+ * 0 (`blank`) at render time. Plain-colour blocks live in this state.
+ *
+ * `blank` is hidden from the dropdown intentionally: it's the
+ * implementation-level fallback, not an authoring choice. A user who
+ * wants "no texture" picks "(none)", which is semantically distinct
+ * from "yes I want the explicit blank tile" — both happen to look
+ * the same on screen, but only `(none)` survives a future change to
+ * what the blank slot does.
+ */
+function textureSelectField(
+    initial: string | undefined,
+    onChange: (key: TileName | null) => void,
+): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'vpe-field'
+    const label = document.createElement('span')
+    label.className = 'vpe-field-label'
+    label.textContent = 'Texture:'
+    const select = document.createElement('select')
+    select.className = 'vpe-input'
+    select.style.flex = '2'
+    const none = document.createElement('option')
+    none.value = ''
+    none.textContent = '(none — plain colour)'
+    select.appendChild(none)
+    for (const name of TILE_NAMES) {
+        if (name === 'blank') continue
+        const opt = document.createElement('option')
+        opt.value = name
+        opt.textContent = name
+        select.appendChild(opt)
+    }
+    // Coerce the stored value back to a known tile name, or fall
+    // through to the empty (none) option if the saved key is unknown.
+    select.value = initial && TILE_NAMES.includes(initial as TileName) ? initial : ''
+    select.onchange = () => {
+        onChange(select.value ? (select.value as TileName) : null)
+    }
+    row.append(label, select)
+    return row
 }
 
 /** Per-piston movement-sound dropdown. Includes a `(none)` option so
