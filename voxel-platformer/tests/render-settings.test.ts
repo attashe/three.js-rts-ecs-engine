@@ -32,15 +32,15 @@ test('setRenderTextures updates the cached value and survives subsequent reads',
     assert.equal(getRenderTextures(), true)
 })
 
-test('getTorchSystem defaults to classic — the no-shadow Group-per-torch path', () => {
+test('getTorchSystem defaults to classic — the production InstancedMesh + PointLight pool path', () => {
     __resetTorchSystemCache()
     assert.equal(getTorchSystem(), 'classic')
 })
 
 test('setTorchSystem round-trips through the cache', () => {
     __resetTorchSystemCache()
-    setTorchSystem('shadowed')
-    assert.equal(getTorchSystem(), 'shadowed')
+    setTorchSystem('experimental')
+    assert.equal(getTorchSystem(), 'experimental')
     setTorchSystem('classic')
     assert.equal(getTorchSystem(), 'classic')
 })

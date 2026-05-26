@@ -18,6 +18,13 @@ export function modulateZoneLight(runtime: WeatherZoneRuntime, elapsed: number):
     }
     const base = runtime.params.lightIntensity
     let mod = 1
+    // Darkness zones publish their `lightIntensity` as a positive
+    // magnitude (friendlier for the editor's number input) and rely
+    // on the controller to flip it for the renderer. Doing the
+    // negation here — not in the preset — keeps the saved level
+    // format readable: every zone's lightIntensity is a magnitude.
+    let signedBase = base
+    if (runtime.params.type === 'darkness') signedBase = -Math.abs(base)
     const t = elapsed
     const phase = runtime.seed * 6.283
     switch (runtime.params.type) {
@@ -53,8 +60,14 @@ export function modulateZoneLight(runtime: WeatherZoneRuntime, elapsed: number):
         case 'water':
             mod = 0.55 + Math.sin(t * 1.9 + phase) * 0.08
             break
+        case 'darkness':
+            // Gentle breathing — keeps the dark pool from looking
+            // static. Stays close to 1 so the magnitude the level
+            // author dialled in still reads as the dominant value.
+            mod = 0.92 + Math.sin(t * 0.85 + phase) * 0.08
+            break
     }
-    const wanted = base * mod
+    const wanted = signedBase * mod
     runtime.light.intensity = wanted
     ;(runtime.light.userData as Record<string, unknown>).wanted = wanted
     runtime.light.color.set(new Color(runtime.params.lightColor))

@@ -36,18 +36,26 @@ let cachedPlayerTorchShadow: boolean | null = null
 /**
  * Which torch-block render system the client boots with.
  *
- * - `classic` — one Group + 4 Meshes per torch, pool of unshadowed
- *   PointLights. Cheapest setup, but draw calls scale linearly with
- *   torch count.
- * - `shadowed` — one InstancedMesh per part (handle / head / flame /
- *   core), pool of shadow-casting PointLights. Draw calls stay
- *   constant; each pool light pays a small cube-shadow-map render
- *   pass.
+ * - `classic` — the production system in `torch-block-system.ts`.
+ *   InstancedMesh-based geometry, pool of unshadowed PointLights.
+ *   Default. Fast, distinct lit pools, exactly matches the look
+ *   committed to the game.
+ * - `experimental` — `torch-block-system-v2.ts`. Same InstancedMesh
+ *   geometry, but the PointLight pool is replaced by a single
+ *   global LightProbe whose SH9 coefficients are recomputed each
+ *   frame from the nearest torches. No per-light shader cost, no
+ *   shadow maps; visually a softer "warm cave" wash rather than
+ *   distinct torch pools. Use this to evaluate alternative
+ *   illumination approaches before promoting them.
+ *
+ * Legacy storage values that may still be present in users'
+ * browsers (mapped to `experimental` on load):
+ *   - `shadowed`: the old name when v2 was the shadow-casting prototype.
  *
  * Both systems coexist in the codebase so we can A/B them; reading
  * the flag happens once at startup, so switching requires a reload.
  */
-export type TorchSystemKind = 'classic' | 'shadowed'
+export type TorchSystemKind = 'classic' | 'experimental'
 
 function loadFromStorage(): boolean {
     if (typeof localStorage === 'undefined') return DEFAULT_TEXTURES
@@ -119,7 +127,12 @@ function loadTorchSystem(): TorchSystemKind {
     if (typeof localStorage === 'undefined') return DEFAULT_TORCH_SYSTEM
     try {
         const raw = localStorage.getItem(TORCH_STORAGE_KEY)
-        if (raw === 'shadowed') return 'shadowed'
+        if (raw === 'experimental') return 'experimental'
+        // Legacy value from when v2 was the shadow-casting prototype.
+        // The current `experimental` slot is the LightProbe variant
+        // and is the spiritual successor; users with the old key
+        // get migrated transparently on next read.
+        if (raw === 'shadowed') return 'experimental'
         if (raw === 'classic') return 'classic'
     } catch {
         // Private-mode storage failure — fall back to the default.

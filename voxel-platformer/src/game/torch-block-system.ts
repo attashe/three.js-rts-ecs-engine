@@ -1,8 +1,12 @@
 import {
     Color,
-    Mesh,
+    InstancedMesh,
+    Matrix4,
+    MeshBasicMaterial,
     PointLight,
-    type Group,
+    Quaternion,
+    Vector3,
+    AdditiveBlending,
     type Scene,
 } from 'three'
 import { query } from 'bitecs'
@@ -10,17 +14,27 @@ import type { AudioEngine, SoundHandle, Vec3Like } from '../engine/audio'
 import type { System } from '../engine/ecs/systems/system'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import { PlayerControlled, Position } from '../engine/ecs/components'
-import { disposeObject3D } from '../engine/render/dispose-object'
 import { CHUNK_DIM, chunkKey, type ChunkKey } from '../engine/voxel/chunk'
 import { RENDER_LAYER } from '../engine/render/render-layers'
 import type { Chunk } from '../engine/voxel/chunk'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { isCollidable, isTorchBlock, occludesFaces } from '../engine/voxel/palette'
-import {
-    BLOCK_TORCH_LIGHT_SPEC,
-    createBlockTorch,
-    PLAYER_TORCH_FLAME,
-} from './assets'
+import { sharedCylinderGeometry, sharedMaterial, sharedSphereGeometry } from './assets/shared-primitives'
+
+/**
+ * Production torch render system. InstancedMesh-based geometry, pool
+ * of unshadowed PointLights, per-chunk version tracking, focus-driven
+ * active-set selection.
+ *
+ * History: this file used to spawn one `Group` with four `Mesh`
+ * children per torch (so 30 visible torches = 120 draw calls). The
+ * v2 experiment proved InstancedMesh + lower-poly geometry collapses
+ * the draw cost to 4 calls flat regardless of torch count, and the
+ * `maxShadows=0` default keeps the perf budget the v2 mesh
+ * architecture returns. That merged form is what lives here now —
+ * `torch-block-system-v2.ts` is reserved for further experimentation
+ * (currently a LightProbe-based illumination prototype).
+ */
 
 export type TorchMountKind = 'wall' | 'standing' | 'floating'
 
@@ -31,43 +45,10 @@ export interface TorchMount {
 }
 
 export interface TorchBlockRenderOptions {
-    /** Optional cut-plane for the editor's top-down view — torches with
-     *  Y above this plane are hidden so the editor isn't littered with
-     *  out-of-frame props. */
     cutY?: () => number | null
-    /**
-     * World-space focal point — typically the iso camera's `target`,
-     * which tracks the player. Used for two things:
-     *   1. Selecting which torches receive a pool light.
-     *   2. Deciding which torches are close enough to animate.
-     *
-     * This MUST NOT be the camera's position. For an iso camera, the
-     * camera sits ~50 units away from anything on screen, so every
-     * torch is at roughly the same camera-distance — picking "nearest
-     * to camera" produces near-arbitrary results that flicker as the
-     * camera drifts. Distance to the focus point (player / look-at) is
-     * the meaningful metric: 0 means "the player is standing on the
-     * torch", ~12 units means "the torch is at the edge of the iso
-     * viewport".
-     *
-     * If unset, the system falls back to the player entity's position
-     * (PlayerControlled + Position). If there is no player either, the
-     * pool lights stay parked and nothing animates.
-     */
     focus?: () => Vec3Like | null
-    /** Max distance from focus a torch is considered "near enough" to
-     *  receive a pool light AND animate its flame. Default 14 units,
-     *  matching the iso viewport's half-extent at default zoom. */
     focusRadius?: number
-    /** When false, no pool lights are created at all. The editor uses
-     *  this — the torches still mount and flicker visually, but
-     *  they don't add lights to the chunk shader. */
     lightsEnabled?: boolean
-    /** Pool size — number of PointLights pre-allocated and dynamically
-     *  assigned to the nearest torches each frame. Defaults to 3.
-     *  Each light in the scene adds a per-fragment lighting calculation
-     *  to every PBR material in the world, so don't push this too
-     *  high. */
     maxLights?: number
     audio?: AudioEngine
     audioReady?: Promise<unknown>
@@ -75,32 +56,46 @@ export interface TorchBlockRenderOptions {
     soundVolume?: number
     soundRadius?: number
     maxSoundSources?: number
+    /** Cap on simultaneously-rendered torches. Default 256 — beyond
+     *  this the system silently drops extras. */
+    maxInstances?: number
+    /** Cube shadow-map size for the shadow-casting pool slot(s).
+     *  Default 256 — small enough that one shadow light costs ~3 MB
+     *  and 6 face renders per frame. */
+    shadowMapSize?: number
+    /** How many pool slots cast shadows. Default 0 — block torches
+     *  never shadow-cast. The player-held torch handles direct
+     *  shadows separately (see `assets/torch.ts`). Each block-torch
+     *  shadow light adds 6 extra cube shadow-map renders per frame
+     *  plus the chunk scan in each face's projection, which on
+     *  mid-range GPUs eats the perf budget the instanced-mesh
+     *  architecture would otherwise return. */
+    maxShadows?: number
 }
 
-interface TorchBlockRecord {
-    group: Group
+interface TorchRecord {
+    /** Index into the four InstancedMeshes. Invalid (≥ live count)
+     *  while the torch is in the free list. */
+    slot: number
     signature: string
-    /** World Y of the block — drives cut-plane visibility in the editor. */
     y: number
-    /** Cached world-space position used by the focus-distance test,
-     *  pool light placement, and spatial sound. */
+    /** Cached centre — drives the focus distance test. */
     posX: number
     posY: number
     posZ: number
-    flames: TorchFlameRuntime[]
+    /** Base rotation quaternion (no flicker scale). Composed with the
+     *  per-frame scale to produce flame matrices. */
+    baseQuat: Quaternion
+    /** Base translation. */
+    basePos: Vector3
+    /** Per-torch flicker phase so neighbouring torches don't sync. */
     flickerPhase: number
-    /** Working scratch — squared distance from focus this frame. Reused
-     *  by light + sound selection so we compute it once per record. */
+    /** Working scratch — squared distance to focus this frame. */
     d2: number
     sound: SoundHandle | null
     soundX: number
     soundY: number
     soundZ: number
-}
-
-interface TorchFlameRuntime {
-    mesh: Mesh
-    baseScale: { x: number; y: number; z: number }
 }
 
 interface ChunkSnapshot {
@@ -110,9 +105,6 @@ interface ChunkSnapshot {
 
 interface LightPoolSlot {
     light: PointLight
-    /** Per-slot flicker phase. Assigning a slot to a different torch
-     *  keeps the slot's own phase, so the lit pool keeps animating
-     *  smoothly even as it swaps which physical torch it represents. */
     phase: number
     baseIntensity: number
     baseDistance: number
@@ -121,20 +113,18 @@ interface LightPoolSlot {
 const WALL_LEAN_RADIANS = 0.58
 const WALL_STANDOFF = 0.13
 const DEFAULT_TORCH_LIGHTS = 3
-// Doubled from 14 (≈ iso viewport's half-extent at zoom 1) to 28 so
-// torches turn on well before the player reaches them. At the previous
-// radius, torches lit up roughly when the character walked into them,
-// which read as "they only ignite on touch" instead of "they're
-// already lit ahead of me". 28 covers a full screen-width of lead time
-// in the typical iso view without bringing in torches the player can't
-// actually see yet.
 const DEFAULT_FOCUS_RADIUS = 28
 const DEFAULT_TORCH_SOUND_RADIUS = 5
 const DEFAULT_TORCH_SOUND_SOURCES = 3
-const LIGHT_Y_OFFSET = 0.66
+const DEFAULT_MAX_INSTANCES = 256
+const DEFAULT_SHADOW_MAP_SIZE = 256
 const PARK_X = 1e6
 const PARK_Y = -1e6
 const PARK_Z = 1e6
+
+/** Light position offset from the torch's base position. Mirrors the
+ *  flame's vertical position in the visual model. */
+const LIGHT_LOCAL_OFFSET = new Vector3(0, 0.66, 0.02)
 
 const WALL_DIRECTIONS = [
     { dx: -1, dz: 0, normalX: 1, normalZ: 0 },
@@ -143,57 +133,157 @@ const WALL_DIRECTIONS = [
     { dx: 0, dz: 1, normalX: 0, normalZ: -1 },
 ] as const
 
+// Part-local offsets within the torch's base coordinate frame.
+const HANDLE_LOCAL_Y = 0.22
+const HEAD_LOCAL_Y = 0.54
+const FLAME_LOCAL_Y = 0.74
+const CORE_LOCAL_Y = 0.7
+const FLAME_BASE_SCALE = new Vector3(0.74, 1.75, 0.74)
+const CORE_BASE_SCALE = new Vector3(0.72, 1.28, 0.72)
+const TORCH_SCALE = 0.96
+
+// Shared flame materials (module-level so all instances share the same
+// shader/program key).
+let outerFlameMat: MeshBasicMaterial | null = null
+let innerFlameMat: MeshBasicMaterial | null = null
+function getOuterFlameMaterial(): MeshBasicMaterial {
+    if (!outerFlameMat) {
+        outerFlameMat = new MeshBasicMaterial({
+            color: 0xff7a24,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+        })
+        outerFlameMat.blending = AdditiveBlending
+        outerFlameMat.toneMapped = false
+    }
+    return outerFlameMat
+}
+function getInnerFlameMaterial(): MeshBasicMaterial {
+    if (!innerFlameMat) {
+        innerFlameMat = new MeshBasicMaterial({
+            color: 0xffe083,
+            transparent: true,
+            opacity: 0.92,
+            depthWrite: false,
+        })
+        innerFlameMat.blending = AdditiveBlending
+        innerFlameMat.toneMapped = false
+    }
+    return innerFlameMat
+}
+
 export function createTorchBlockRenderSystem(
     scene: Scene,
     chunks: ChunkManager,
     opts: TorchBlockRenderOptions = {},
 ): System {
-    const records = new Map<string, TorchBlockRecord>()
+    const records = new Map<string, TorchRecord>()
     const chunkSnapshots = new Map<ChunkKey, ChunkSnapshot>()
     let paletteSignature = palettePropSignature(chunks)
+    const maxInstances = Math.max(1, Math.floor(opts.maxInstances ?? DEFAULT_MAX_INSTANCES))
     const lightsEnabled = opts.lightsEnabled !== false
     const poolSize = lightsEnabled ? Math.max(0, Math.floor(opts.maxLights ?? DEFAULT_TORCH_LIGHTS)) : 0
     const focusRadius = Math.max(1, opts.focusRadius ?? DEFAULT_FOCUS_RADIUS)
     const focusRadius2 = focusRadius * focusRadius
+    const shadowMapSize = Math.max(64, Math.floor(opts.shadowMapSize ?? DEFAULT_SHADOW_MAP_SIZE))
+    const maxShadows = Math.max(0, Math.min(poolSize, Math.floor(opts.maxShadows ?? 0)))
+
+    // ── Geometry. Lower-poly than the original v1 Group-based render;
+    //    the iso camera + tone mapping hide the segment reduction.
+    const handleGeo = sharedCylinderGeometry(0.025, 0.034, 0.58, 6)
+    const headGeo = sharedCylinderGeometry(0.07, 0.06, 0.13, 8)
+    const flameGeo = sharedSphereGeometry(0.1, 8, 6)
+    const coreGeo = sharedSphereGeometry(0.065, 6, 4)
+
+    // ── InstancedMeshes. Pre-allocated with `maxInstances` slots; we
+    //    grow `count` as torches are registered and swap-remove on
+    //    teardown so the visible range stays packed.
+    const handleMesh = new InstancedMesh(handleGeo, sharedMaterial(0x4a2715, 0.86), maxInstances)
+    const headMesh = new InstancedMesh(headGeo, sharedMaterial(0x1c1510, 0.78), maxInstances)
+    const flameMesh = new InstancedMesh(flameGeo, getOuterFlameMaterial(), maxInstances)
+    const coreMesh = new InstancedMesh(coreGeo, getInnerFlameMaterial(), maxInstances)
+
+    handleMesh.castShadow = true
+    headMesh.castShadow = true
+    handleMesh.receiveShadow = true
+    headMesh.receiveShadow = true
+    flameMesh.castShadow = false
+    coreMesh.castShadow = false
+    flameMesh.renderOrder = 1
+    coreMesh.renderOrder = 2
+    // Frustum culling for an InstancedMesh uses the GEOMETRY's
+    // bounding sphere (a small region around origin), not the
+    // per-instance positions. Since each InstancedMesh holds torches
+    // spread across the world, three.js would cull the whole mesh
+    // whenever the camera looked away from origin. Disable frustum
+    // culling at the mesh level and let the renderer walk the
+    // instance list directly.
+    handleMesh.frustumCulled = false
+    headMesh.frustumCulled = false
+    flameMesh.frustumCulled = false
+    coreMesh.frustumCulled = false
+
+    handleMesh.count = 0
+    headMesh.count = 0
+    flameMesh.count = 0
+    coreMesh.count = 0
+
+    scene.add(handleMesh, headMesh, flameMesh, coreMesh)
+
+    // ── Pool lights. The first `maxShadows` slots cast cube shadows;
+    //    the rest are cheap fills. `castShadow` is fixed at
+    //    construction (not toggled per frame): flipping it forces
+    //    three.js to recompile the shaders that sample the light's
+    //    shadow map, which would defeat the "scene state stable from
+    //    frame 0" property the pool design relies on.
     const lightPool: LightPoolSlot[] = []
     let lightsParked = false
-    let soundReady = !opts.audioReady
-    let soundDisabled = false
-    let elapsed = 0
-    let lastCutY: number | null | undefined
-    // Scratch buffers — reused each frame, never re-allocated.
-    const activeRecords: TorchBlockRecord[] = []
-    const tmpColor = new Color()
-    const tmpFocus = { x: 0, y: 0, z: 0 }
-
     for (let i = 0; i < poolSize; i++) {
-        const light = new PointLight(
-            new Color(BLOCK_TORCH_LIGHT_SPEC.color),
-            BLOCK_TORCH_LIGHT_SPEC.intensity,
-            BLOCK_TORCH_LIGHT_SPEC.distance,
-            BLOCK_TORCH_LIGHT_SPEC.decay,
-        )
+        const light = new PointLight(new Color(0xffa85a), 4.8, 9, 1.35)
         light.name = `BlockTorchPoolLight${i}`
-        light.castShadow = false
-        // Visible = true from the start so the renderer's light list is
-        // settled on frame zero — adding/removing lights forces a
-        // recompile of every PBR material in the scene, the stalls we
-        // used to see when a torch streamed in.
+        const castsShadow = i < maxShadows
+        light.castShadow = castsShadow
+        if (castsShadow) {
+            light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
+            light.shadow.camera.near = 0.1
+            light.shadow.camera.far = 9
+            light.shadow.bias = -0.001
+            light.shadow.normalBias = 0.04
+            light.shadow.camera.updateProjectionMatrix()
+        }
         light.visible = true
         light.position.set(PARK_X, PARK_Y, PARK_Z)
         light.intensity = 0
-        // Player rig is on a non-default render layer; enable it on
-        // every pool light so the player gets lit when walking past
-        // block torches.
+        // Illuminate the player rig (PLAYER layer) too — without this
+        // the player walks past block torches in pitch black.
         light.layers.enable(RENDER_LAYER.PLAYER)
         scene.add(light)
         lightPool.push({
             light,
             phase: Math.random() * Math.PI * 2,
-            baseIntensity: BLOCK_TORCH_LIGHT_SPEC.intensity,
-            baseDistance: BLOCK_TORCH_LIGHT_SPEC.distance,
+            baseIntensity: 4.8,
+            baseDistance: 9,
         })
     }
+
+    // ── Slot allocation. `keyBySlot` is the reverse map so swap-remove
+    //    can patch the swapped torch's record without scanning records.
+    const keyBySlot: (string | null)[] = new Array(maxInstances).fill(null)
+    let liveCount = 0
+
+    // Working scratch — never reallocated per frame.
+    const activeRecords: TorchRecord[] = []
+    const tmpFocus = { x: 0, y: 0, z: 0 }
+    const tmpMatrix = new Matrix4()
+    const tmpScale = new Vector3()
+    const tmpVec = new Vector3()
+    const tmpColor = new Color()
+
+    let soundReady = !opts.audioReady
+    let soundDisabled = false
+    let elapsed = 0
+    let lastCutY: number | null | undefined
 
     if (opts.audioReady) {
         void opts.audioReady.then(() => {
@@ -202,6 +292,128 @@ export function createTorchBlockRenderSystem(
             soundDisabled = true
             console.warn('Torch sounds skipped because audio failed to initialise:', err)
         })
+    }
+
+    function allocateSlot(): number {
+        if (liveCount >= maxInstances) return -1
+        const slot = liveCount
+        liveCount++
+        // CRITICAL: keep mesh.count in sync with liveCount. Three.js
+        // draws `count` instances regardless of how many matrices have
+        // been written; missing this assignment makes every torch
+        // invisible (the original v2 bug). The actual matrices get
+        // written by the caller in setMountTransform immediately after.
+        handleMesh.count = liveCount
+        headMesh.count = liveCount
+        flameMesh.count = liveCount
+        coreMesh.count = liveCount
+        return slot
+    }
+
+    function releaseSlot(slot: number): void {
+        const lastSlot = liveCount - 1
+        if (slot !== lastSlot) {
+            // Swap last → this. Copy matrices in every InstancedMesh
+            // so the layout stays packed [0, liveCount). Patch the
+            // record that owned the last slot to point at its new
+            // location.
+            const movedKey = keyBySlot[lastSlot]!
+            handleMesh.getMatrixAt(lastSlot, tmpMatrix)
+            handleMesh.setMatrixAt(slot, tmpMatrix)
+            headMesh.getMatrixAt(lastSlot, tmpMatrix)
+            headMesh.setMatrixAt(slot, tmpMatrix)
+            flameMesh.getMatrixAt(lastSlot, tmpMatrix)
+            flameMesh.setMatrixAt(slot, tmpMatrix)
+            coreMesh.getMatrixAt(lastSlot, tmpMatrix)
+            coreMesh.setMatrixAt(slot, tmpMatrix)
+            keyBySlot[slot] = movedKey
+            const movedRecord = records.get(movedKey)
+            if (movedRecord) movedRecord.slot = slot
+        }
+        keyBySlot[lastSlot] = null
+        liveCount--
+        handleMesh.count = liveCount
+        headMesh.count = liveCount
+        flameMesh.count = liveCount
+        coreMesh.count = liveCount
+        markAllInstanceBuffersDirty()
+    }
+
+    function markAllInstanceBuffersDirty(): void {
+        handleMesh.instanceMatrix.needsUpdate = true
+        headMesh.instanceMatrix.needsUpdate = true
+        flameMesh.instanceMatrix.needsUpdate = true
+        coreMesh.instanceMatrix.needsUpdate = true
+    }
+
+    function writeStaticParts(record: TorchRecord): void {
+        composeWithLocalY(record, HANDLE_LOCAL_Y, 1, tmpMatrix)
+        handleMesh.setMatrixAt(record.slot, tmpMatrix)
+        composeWithLocalY(record, HEAD_LOCAL_Y, 1, tmpMatrix)
+        headMesh.setMatrixAt(record.slot, tmpMatrix)
+    }
+
+    function composeWithLocalY(
+        record: TorchRecord,
+        localY: number,
+        scale: number,
+        out: Matrix4,
+    ): void {
+        tmpVec.set(0, localY, 0)
+        tmpVec.applyQuaternion(record.baseQuat)
+        tmpVec.add(record.basePos)
+        tmpScale.setScalar(scale * TORCH_SCALE)
+        out.compose(tmpVec, record.baseQuat, tmpScale)
+    }
+
+    function composeFlame(
+        record: TorchRecord,
+        localY: number,
+        baseScale: Vector3,
+        xzMul: number,
+        yMul: number,
+        out: Matrix4,
+    ): void {
+        tmpVec.set(0, localY, 0)
+        tmpVec.applyQuaternion(record.baseQuat)
+        tmpVec.add(record.basePos)
+        tmpScale.set(
+            baseScale.x * xzMul * TORCH_SCALE,
+            baseScale.y * yMul * TORCH_SCALE,
+            baseScale.z * xzMul * TORCH_SCALE,
+        )
+        out.compose(tmpVec, record.baseQuat, tmpScale)
+    }
+
+    function setMountTransform(record: TorchRecord, x: number, y: number, z: number, mount: TorchMount): void {
+        if (mount.kind === 'wall') {
+            const faceX = mount.normalX > 0 ? x : mount.normalX < 0 ? x + 1 : x + 0.5
+            const faceZ = mount.normalZ > 0 ? z : mount.normalZ < 0 ? z + 1 : z + 0.5
+            record.basePos.set(
+                faceX + mount.normalX * WALL_STANDOFF,
+                y + 0.24,
+                faceZ + mount.normalZ * WALL_STANDOFF,
+            )
+            const rx = mount.normalZ * WALL_LEAN_RADIANS
+            const rz = -mount.normalX * WALL_LEAN_RADIANS
+            setEulerQuat(record.baseQuat, rx, 0, rz)
+        } else {
+            record.basePos.set(x + 0.5, y + (mount.kind === 'standing' ? 0.08 : 0.24), z + 0.5)
+            record.baseQuat.identity()
+        }
+        record.posX = record.basePos.x
+        record.posY = record.basePos.y + LIGHT_LOCAL_OFFSET.y
+        record.posZ = record.basePos.z + LIGHT_LOCAL_OFFSET.z
+        record.soundX = record.basePos.x
+        record.soundY = record.basePos.y + 0.56
+        record.soundZ = record.basePos.z
+        writeStaticParts(record)
+        composeFlame(record, FLAME_LOCAL_Y, FLAME_BASE_SCALE, 1, 1, tmpMatrix)
+        flameMesh.setMatrixAt(record.slot, tmpMatrix)
+        composeFlame(record, CORE_LOCAL_Y, CORE_BASE_SCALE, 1, 1, tmpMatrix)
+        coreMesh.setMatrixAt(record.slot, tmpMatrix)
+        markAllInstanceBuffersDirty()
+        record.sound?.setPosition(soundPosition(record))
     }
 
     function syncChunk(chunk: Chunk, key: ChunkKey): void {
@@ -223,50 +435,31 @@ export function createTorchBlockRenderSystem(
                 const signature = mountSignature(mount)
                 let record = records.get(torchKey)
                 if (!record) {
-                    const group = createBlockTorch()
-                    // Torch root + non-flame children never move once
-                    // positioned. Opt out of three.js's per-frame
-                    // matrixAutoUpdate so it doesn't recompute their
-                    // local matrix every render. Flames still animate
-                    // their scale, so they keep autoUpdate on.
-                    group.matrixAutoUpdate = false
-                    for (const child of group.children) {
-                        if (child.userData[PLAYER_TORCH_FLAME]) continue
-                        child.matrixAutoUpdate = false
-                        child.updateMatrix()
-                    }
-                    const flames = collectTorchFlames(group)
+                    const slot = allocateSlot()
+                    if (slot < 0) return // pool exhausted; silently drop
                     record = {
-                        group,
+                        slot,
                         signature: '',
                         y: wy,
-                        posX: wx + 0.5,
-                        posY: wy + LIGHT_Y_OFFSET,
-                        posZ: wz + 0.5,
-                        flames,
+                        posX: 0,
+                        posY: 0,
+                        posZ: 0,
+                        baseQuat: new Quaternion(),
+                        basePos: new Vector3(),
                         flickerPhase: Math.random() * Math.PI * 2,
                         d2: Infinity,
                         sound: null,
-                        soundX: wx + 0.5,
-                        soundY: wy + 0.7,
-                        soundZ: wz + 0.5,
+                        soundX: 0,
+                        soundY: 0,
+                        soundZ: 0,
                     }
                     records.set(torchKey, record)
-                    scene.add(group)
+                    keyBySlot[slot] = torchKey
                 }
                 record.y = wy
                 if (record.signature !== signature) {
-                    applyTorchTransform(record.group, wx, wy, wz, mount)
-                    record.group.updateMatrix()
-                    record.group.updateMatrixWorld(true)
+                    setMountTransform(record, wx, wy, wz, mount)
                     record.signature = signature
-                    record.posX = record.group.position.x
-                    record.posY = record.group.position.y + LIGHT_Y_OFFSET
-                    record.posZ = record.group.position.z
-                    record.soundX = record.group.position.x
-                    record.soundY = record.group.position.y + 0.56
-                    record.soundZ = record.group.position.z
-                    record.sound?.setPosition(soundPosition(record))
                 }
             })
         }
@@ -277,7 +470,7 @@ export function createTorchBlockRenderSystem(
                 const record = records.get(oldKey)
                 if (!record) continue
                 stopTorchSound(record, 0.2)
-                disposeTorchRecord(record)
+                releaseSlot(record.slot)
                 records.delete(oldKey)
             }
         }
@@ -287,13 +480,9 @@ export function createTorchBlockRenderSystem(
     function syncTorches(): void {
         const palSig = palettePropSignature(chunks)
         if (palSig !== paletteSignature) {
-            // Palette swap / material edit may have moved the torch
-            // entry index. Invalidate every snapshot and let the
-            // per-chunk pass below repopulate.
             paletteSignature = palSig
             for (const snapshot of chunkSnapshots.values()) snapshot.version = -1
         }
-
         const seenChunks = new Set<ChunkKey>()
         for (const chunk of chunks.allChunks()) {
             const key = chunkKey(chunk.cx, chunk.cy, chunk.cz)
@@ -302,7 +491,6 @@ export function createTorchBlockRenderSystem(
             if (snapshot && snapshot.version === chunk.version) continue
             syncChunk(chunk, key)
         }
-
         for (const key of chunkSnapshots.keys()) {
             if (seenChunks.has(key)) continue
             const snapshot = chunkSnapshots.get(key)!
@@ -310,7 +498,7 @@ export function createTorchBlockRenderSystem(
                 const record = records.get(torchKey)
                 if (!record) continue
                 stopTorchSound(record, 0.2)
-                disposeTorchRecord(record)
+                releaseSlot(record.slot)
                 records.delete(torchKey)
             }
             chunkSnapshots.delete(key)
@@ -321,14 +509,31 @@ export function createTorchBlockRenderSystem(
         const cutY = opts.cutY?.() ?? null
         if (cutY === lastCutY) return
         lastCutY = cutY
-        for (const record of records.values()) {
-            record.group.visible = cutY === null || record.y <= cutY
+        const anyHidden = cutY !== null
+        if (!anyHidden) {
+            handleMesh.visible = true
+            headMesh.visible = true
+            flameMesh.visible = true
+            coreMesh.visible = true
+            return
         }
+        // Editor mode with cutY set — fall back to per-instance hide
+        // via zero-scale matrices for torches above the cut.
+        for (const record of records.values()) {
+            const hidden = record.y > cutY
+            const scale = hidden ? 0 : 1
+            composeWithLocalY(record, HANDLE_LOCAL_Y, scale, tmpMatrix)
+            handleMesh.setMatrixAt(record.slot, tmpMatrix)
+            composeWithLocalY(record, HEAD_LOCAL_Y, scale, tmpMatrix)
+            headMesh.setMatrixAt(record.slot, tmpMatrix)
+            composeFlame(record, FLAME_LOCAL_Y, FLAME_BASE_SCALE, scale, scale, tmpMatrix)
+            flameMesh.setMatrixAt(record.slot, tmpMatrix)
+            composeFlame(record, CORE_LOCAL_Y, CORE_BASE_SCALE, scale, scale, tmpMatrix)
+            coreMesh.setMatrixAt(record.slot, tmpMatrix)
+        }
+        markAllInstanceBuffersDirty()
     }
 
-    /** Pull the focus point from the option, falling back to the
-     *  player entity's world position. Returns null when neither is
-     *  available (true for editor with no spawn entity). */
     function resolveFocus(world: Parameters<System['update']>[0]): Vec3Like | null {
         const provided = opts.focus?.()
         if (provided) {
@@ -346,51 +551,32 @@ export function createTorchBlockRenderSystem(
         return tmpFocus
     }
 
-    /**
-     * Single-pass classification:
-     *   - For each visible torch, compute squared distance to focus.
-     *   - If within `focusRadius`, the torch is "active": flame
-     *     animation runs and it becomes a light-pool candidate.
-     *   - Otherwise it's inactive: skip work, keep last flame scale.
-     *
-     * Iterating once and caching `record.d2` lets the light-pool
-     * selection re-use the distance without recomputing it.
-     */
     function classifyAndAnimate(focus: Vec3Like | null): void {
         activeRecords.length = 0
         if (!focus) return
-
         for (const record of records.values()) {
-            if (!record.group.visible) continue
             const dx = record.posX - focus.x
             const dy = record.posY - focus.y
             const dz = record.posZ - focus.z
             const d2 = dx * dx + dy * dy + dz * dz
-            if (d2 > focusRadius2) {
-                record.d2 = d2
-                continue
-            }
             record.d2 = d2
+            if (d2 > focusRadius2) continue
             activeRecords.push(record)
 
             const pulse = flicker(elapsed, record.flickerPhase)
             const flameY = 0.9 + pulse * 0.22
             const flameXZ = 0.92 + (1 - pulse) * 0.1
-            for (const flame of record.flames) {
-                flame.mesh.scale.set(
-                    flame.baseScale.x * flameXZ,
-                    flame.baseScale.y * flameY,
-                    flame.baseScale.z * flameXZ,
-                )
-            }
+            composeFlame(record, FLAME_LOCAL_Y, FLAME_BASE_SCALE, flameXZ, flameY, tmpMatrix)
+            flameMesh.setMatrixAt(record.slot, tmpMatrix)
+            composeFlame(record, CORE_LOCAL_Y, CORE_BASE_SCALE, flameXZ, flameY, tmpMatrix)
+            coreMesh.setMatrixAt(record.slot, tmpMatrix)
+        }
+        if (activeRecords.length > 0) {
+            flameMesh.instanceMatrix.needsUpdate = true
+            coreMesh.instanceMatrix.needsUpdate = true
         }
     }
 
-    /**
-     * Sort the active set by distance and assign pool lights to the
-     * nearest `poolSize` torches. Park unused pool slots so they cost
-     * nothing in the lighting math.
-     */
     function assignLightPool(): void {
         if (poolSize === 0) return
         if (activeRecords.length === 0) {
@@ -398,13 +584,7 @@ export function createTorchBlockRenderSystem(
             return
         }
         lightsParked = false
-
-        // Active set is small (≤ ~30 torches in radius). Partial-sort
-        // would be cleaner but full sort is comparable cost at this
-        // size and dramatically simpler. The closer-to-focus tiebreak
-        // keeps the picks stable when two torches are equidistant.
         activeRecords.sort(compareByDistance)
-
         const lit = Math.min(poolSize, activeRecords.length)
         for (let i = 0; i < lit; i++) {
             const record = activeRecords[i]!
@@ -413,6 +593,10 @@ export function createTorchBlockRenderSystem(
             slot.light.position.set(record.posX, record.posY, record.posZ)
             slot.light.intensity = slot.baseIntensity * (0.84 + pulse * 0.32)
             slot.light.distance = slot.baseDistance * (0.95 + pulse * 0.12)
+            if (slot.light.castShadow) {
+                slot.light.shadow.camera.far = slot.light.distance
+                slot.light.shadow.camera.updateProjectionMatrix()
+            }
             tmpColor.setHSL(0.078 + pulse * 0.014, 1, 0.58 + pulse * 0.12)
             slot.light.color.copy(tmpColor)
         }
@@ -452,7 +636,6 @@ export function createTorchBlockRenderSystem(
         dispose() {
             for (const record of records.values()) {
                 stopTorchSound(record, 0.15)
-                disposeTorchRecord(record)
             }
             records.clear()
             chunkSnapshots.clear()
@@ -461,6 +644,11 @@ export function createTorchBlockRenderSystem(
                 slot.light.dispose()
             }
             lightPool.length = 0
+            scene.remove(handleMesh, headMesh, flameMesh, coreMesh)
+            handleMesh.dispose()
+            headMesh.dispose()
+            flameMesh.dispose()
+            coreMesh.dispose()
         },
     }
 
@@ -469,16 +657,14 @@ export function createTorchBlockRenderSystem(
         const soundId = opts.soundId
         if (!audio || !soundId || soundDisabled) return
         if (!soundReady) return
-
         const listener = playerListenerPosition(world)
         if (!listener) {
             stopAllTorchSounds(0.25)
             return
         }
-
         const radius = Math.max(0.1, opts.soundRadius ?? DEFAULT_TORCH_SOUND_RADIUS)
         const maxSources = Math.max(0, Math.floor(opts.maxSoundSources ?? DEFAULT_TORCH_SOUND_SOURCES))
-        const selected = pickNearestKeysWithinRadius(records, listener, radius, maxSources)
+        const selected = pickNearestSoundKeys(records, listener, radius, maxSources)
 
         for (const [key, record] of records) {
             const shouldPlay = selected.has(key)
@@ -519,9 +705,34 @@ export function createTorchBlockRenderSystem(
     }
 }
 
-function compareByDistance(a: TorchBlockRecord, b: TorchBlockRecord): number {
+function compareByDistance(a: TorchRecord, b: TorchRecord): number {
     return a.d2 - b.d2
 }
+
+function pickNearestSoundKeys(
+    records: Map<string, TorchRecord>,
+    listener: Vec3Like,
+    radius: number,
+    maxSources: number,
+): Set<string> {
+    const count = Math.max(0, Math.floor(maxSources))
+    if (count === 0) return new Set()
+    const r2 = Math.max(0, radius) ** 2
+    const candidates: { key: string; d2: number }[] = []
+    for (const [key, record] of records) {
+        const dx = record.soundX - listener.x
+        const dy = record.soundY - listener.y
+        const dz = record.soundZ - listener.z
+        const d2 = dx * dx + dy * dy + dz * dz
+        if (d2 <= r2) candidates.push({ key, d2 })
+    }
+    candidates.sort((a, b) => a.d2 - b.d2 || a.key.localeCompare(b.key))
+    return new Set(candidates.slice(0, count).map((c) => c.key))
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Pure helpers — exported for the public test suite.
+// ────────────────────────────────────────────────────────────────────
 
 export interface TorchSoundCandidate extends Vec3Like {
     key: string
@@ -531,9 +742,8 @@ export interface TorchLightCandidate extends Vec3Like {
     key: string
 }
 
-/** Legacy export retained for the public test suite. The runtime uses
- *  the in-place active-record sort instead, which avoids the per-call
- *  Array.map / new Set allocations this helper does. */
+/** Pick the N nearest-to-viewer candidates. Used internally by the
+ *  active-set sort and the test suite for documentation purposes. */
 export function selectTorchLightKeys(
     candidates: readonly TorchLightCandidate[],
     viewer: Vec3Like,
@@ -551,7 +761,8 @@ export function selectTorchLightKeys(
         .map((candidate) => candidate.key))
 }
 
-/** Legacy export retained for the public test suite. */
+/** Pick the N nearest candidates within a radius. Used by sound pool
+ *  selection and exposed for test documentation. */
 export function selectTorchSoundKeys(
     candidates: readonly TorchSoundCandidate[],
     listener: Vec3Like,
@@ -572,31 +783,6 @@ export function selectTorchSoundKeys(
         .map((candidate) => candidate.key))
 }
 
-/** Sound-side variant of the light-pool selector — operates directly
- *  on the records map without an intermediate candidate array. */
-function pickNearestKeysWithinRadius(
-    records: Map<string, TorchBlockRecord>,
-    listener: Vec3Like,
-    radius: number,
-    maxSources: number,
-): Set<string> {
-    const count = Math.max(0, Math.floor(maxSources))
-    if (count === 0) return new Set()
-    const r2 = Math.max(0, radius) ** 2
-
-    const candidates: { key: string; d2: number }[] = []
-    for (const [key, record] of records) {
-        if (!record.group.visible) continue
-        const dx = record.soundX - listener.x
-        const dy = record.soundY - listener.y
-        const dz = record.soundZ - listener.z
-        const d2 = dx * dx + dy * dy + dz * dz
-        if (d2 <= r2) candidates.push({ key, d2 })
-    }
-    candidates.sort((a, b) => a.d2 - b.d2 || a.key.localeCompare(b.key))
-    return new Set(candidates.slice(0, count).map((c) => c.key))
-}
-
 export function resolveTorchMount(chunks: ChunkManager, x: number, y: number, z: number): TorchMount {
     for (const direction of WALL_DIRECTIONS) {
         if (!isTorchSupport(chunks, x + direction.dx, y, z + direction.dz)) continue
@@ -611,49 +797,13 @@ function isTorchSupport(chunks: ChunkManager, x: number, y: number, z: number): 
     return isCollidable(chunks.palette, value) || occludesFaces(chunks.palette, value)
 }
 
-function applyTorchTransform(group: Group, x: number, y: number, z: number, mount: TorchMount): void {
-    group.rotation.set(0, 0, 0)
-    if (mount.kind === 'wall') {
-        const faceX = mount.normalX > 0 ? x : mount.normalX < 0 ? x + 1 : x + 0.5
-        const faceZ = mount.normalZ > 0 ? z : mount.normalZ < 0 ? z + 1 : z + 0.5
-        group.position.set(
-            faceX + mount.normalX * WALL_STANDOFF,
-            y + 0.24,
-            faceZ + mount.normalZ * WALL_STANDOFF,
-        )
-        group.rotation.z = -mount.normalX * WALL_LEAN_RADIANS
-        group.rotation.x = mount.normalZ * WALL_LEAN_RADIANS
-        return
-    }
-
-    group.position.set(x + 0.5, y + (mount.kind === 'standing' ? 0.08 : 0.24), z + 0.5)
-}
-
-function collectTorchFlames(group: Group): TorchFlameRuntime[] {
-    const flames: TorchFlameRuntime[] = []
-    group.traverse((obj) => {
-        if (!(obj instanceof Mesh)) return
-        if (!obj.userData[PLAYER_TORCH_FLAME]) return
-        flames.push({
-            mesh: obj,
-            baseScale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z },
-        })
-    })
-    return flames
-}
-
-function disposeTorchRecord(record: TorchBlockRecord): void {
-    record.group.removeFromParent()
-    disposeObject3D(record.group)
-}
-
-function stopTorchSound(record: TorchBlockRecord, fadeOut: number): void {
+function stopTorchSound(record: TorchRecord, fadeOut: number): void {
     if (!record.sound) return
     record.sound.stop(fadeOut)
     record.sound = null
 }
 
-function soundPosition(record: TorchBlockRecord): Vec3Like {
+function soundPosition(record: TorchRecord): Vec3Like {
     return { x: record.soundX, y: record.soundY, z: record.soundZ }
 }
 
@@ -689,4 +839,22 @@ function flicker(elapsed: number, phase: number): number {
     const b = Math.sin(elapsed * 23.1 + phase * 1.7) * 0.5 + 0.5
     const c = Math.sin(elapsed * 7.3 + phase * 0.4) * 0.5 + 0.5
     return Math.max(0, Math.min(1, a * 0.5 + b * 0.32 + c * 0.18))
+}
+
+/** Quick Euler→quaternion compose. Wall leans always pick one axis
+ *  or the other (xz pair only), so a small inline equivalent beats
+ *  reaching for three.Euler + setFromEuler each spawn. */
+function setEulerQuat(q: Quaternion, x: number, y: number, z: number): void {
+    const cx = Math.cos(x * 0.5)
+    const cy = Math.cos(y * 0.5)
+    const cz = Math.cos(z * 0.5)
+    const sx = Math.sin(x * 0.5)
+    const sy = Math.sin(y * 0.5)
+    const sz = Math.sin(z * 0.5)
+    q.set(
+        sx * cy * cz - cx * sy * sz,
+        cx * sy * cz + sx * cy * sz,
+        cx * cy * sz - sx * sy * cz,
+        cx * cy * cz + sx * sy * sz,
+    )
 }

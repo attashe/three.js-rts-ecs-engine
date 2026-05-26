@@ -58,17 +58,17 @@ export function buildDisplayControlsSection(): RefreshableElement {
     torchRow.className = 'vpe-field'
     const torchLabel = document.createElement('span')
     torchLabel.textContent = 'Torch system:'
-    torchLabel.title = 'Switch between v1 (Group-per-torch, no shadows) and v2 (InstancedMesh + shadow lights). Takes effect on next reload.'
+    torchLabel.title = 'Classic: production InstancedMesh + PointLight pool. Experimental: same meshes, replaces the light pool with a single global LightProbe (no per-light shader cost, softer ambient look). Takes effect on next reload.'
     const torchSelect = document.createElement('select')
     torchSelect.className = 'vpe-input'
     torchSelect.style.flex = '2'
     const classicOpt = document.createElement('option')
     classicOpt.value = 'classic'
-    classicOpt.textContent = 'Classic — flat lights'
-    const shadowedOpt = document.createElement('option')
-    shadowedOpt.value = 'shadowed'
-    shadowedOpt.textContent = 'Shadowed — instanced + shadows (2.0)'
-    torchSelect.append(classicOpt, shadowedOpt)
+    classicOpt.textContent = 'Classic — pool of PointLights (production)'
+    const experimentalOpt = document.createElement('option')
+    experimentalOpt.value = 'experimental'
+    experimentalOpt.textContent = 'Experimental — LightProbe ambient'
+    torchSelect.append(classicOpt, experimentalOpt)
     torchSelect.value = getTorchSystem()
     torchSelect.onchange = () => {
         setTorchSystem(torchSelect.value as TorchSystemKind)

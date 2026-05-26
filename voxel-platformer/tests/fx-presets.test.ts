@@ -11,7 +11,9 @@ test('every zone preset round-trips through applyZonePreset with no missing fiel
         for (const field of ['type', 'name', 'color', 'position', 'size', 'count', 'particleSize', 'opacity', 'speed', 'turbulence', 'windX', 'windZ', 'gravity', 'lifetime', 'streaks', 'streakLength', 'lightEnabled', 'lightColor', 'lightIntensity', 'lightDistance', 'lightning']) {
             assert.ok((field in params), `${key} missing ${field}`)
         }
-        assert.ok(params.count > 0, `${key} count must be positive`)
+        // Particle-less effects (darkness, future ambient-only zones)
+        // are valid; only the schema needs to be complete.
+        assert.ok(params.count >= 0, `${key} count must be non-negative`)
         assert.ok(params.size.x > 0 && params.size.y > 0 && params.size.z > 0, `${key} size must be positive`)
     }
 })

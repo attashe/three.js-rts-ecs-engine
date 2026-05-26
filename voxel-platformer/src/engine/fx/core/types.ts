@@ -22,6 +22,7 @@ export type EffectType =
     | 'firefly'
     | 'water'
     | 'lava'
+    | 'darkness'
 
 export interface Vec3Lite { x: number; y: number; z: number }
 

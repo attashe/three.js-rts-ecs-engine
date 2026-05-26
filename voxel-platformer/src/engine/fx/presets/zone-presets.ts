@@ -55,6 +55,18 @@ export const ZONE_PRESETS: Record<string, ZonePreset> = {
     lava: { id: 'lava', label: 'Lava Surface',
         params: { type: 'lava', name: 'Lava', color: '#ff6a24', count: 120, particleSize: 0.14, opacity: 0.92, speed: 1.2, turbulence: 1.0, windX: 0.12, windZ: 0.08, gravity: -0.2, lifetime: 2.1, streaks: false, streakLength: 0.08, lightEnabled: true, lightColor: '#ff8a3a', lightIntensity: 14, lightDistance: 32, lightning: false, size: { x: 12, y: 4.5, z: 12 } },
     },
+    // Darkness zone — no particles, no visible artefacts. The runtime
+    // PointLight is run at negative intensity (the controller negates
+    // `lightIntensity`), so this localised pool of "anti-light" pulls
+    // ambient + nearby torches' contribution down within its radius.
+    // `lightIntensity` is the magnitude (positive); 4–8 is the usable
+    // range — below 2 you barely see it, above 12 nearby walls go
+    // black and lose readability. Distance ≈ size.x / 2 by default;
+    // dial up the distance for cave-wide gloom, down for tight
+    // alcoves.
+    darkness: { id: 'darkness', label: 'Darkness',
+        params: { type: 'darkness', name: 'Darkness', color: '#1a1024', count: 0, particleSize: 0, opacity: 0, speed: 0, turbulence: 0, windX: 0, windZ: 0, gravity: 0, lifetime: 1, streaks: false, streakLength: 0, lightEnabled: true, lightColor: '#ffffff', lightIntensity: 5.5, lightDistance: 10, lightning: false, size: { x: 10, y: 6, z: 10 } },
+    },
 }
 
 /** Merge a preset with overrides into a complete `WeatherZoneParams`. */

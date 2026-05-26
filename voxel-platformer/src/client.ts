@@ -223,7 +223,7 @@ async function main(): Promise<void> {
             // user setting. Switching requires a page reload — the
             // two systems own different scene objects and can't be
             // safely hot-swapped without disposing chunks of state.
-            getTorchSystem() === 'shadowed'
+            getTorchSystem() === 'experimental'
                 ? createTorchBlockRenderSystemV2(renderer.scene, chunks, {
                     focus: () => renderer.iso.target,
                     audio,

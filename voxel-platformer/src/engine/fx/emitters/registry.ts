@@ -14,6 +14,7 @@ import { BoilingEmitter } from './boiling-emitter'
 import { FireflyEmitter } from './firefly-emitter'
 import { WaterEmitter } from './water-emitter'
 import { LavaEmitter } from './lava-emitter'
+import { DarknessEmitter } from './darkness-emitter'
 
 /**
  * Maps `EffectType` → emitter implementation. Custom effects plug in
@@ -41,6 +42,7 @@ add(new BoilingEmitter())
 add(new FireflyEmitter())
 add(new WaterEmitter())
 add(new LavaEmitter())
+add(new DarknessEmitter())
 
 export function getEmitter(type: EffectType): EmitterStrategy {
     const e = REGISTRY.get(type)
