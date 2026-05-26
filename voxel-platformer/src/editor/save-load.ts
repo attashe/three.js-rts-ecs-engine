@@ -236,6 +236,20 @@ export function loadLevelFromBuffer(
                 fadeTime: Number.isFinite(z.fadeTime) ? z.fadeTime : 1.2,
             })
         }
+        // Restore the level-wide music selection. Without this branch
+        // the Level-tab track dropdown silently resets to "(none)"
+        // every time the editor reopens — e.g. after a playtest
+        // round-trip via `restoreSessionLevel`, which constructs a
+        // fresh editorState and then expects this loader to repopulate
+        // it from the saved metadata.
+        if (loaded.metadata.environment) {
+            editorState.environment = {
+                soundId: loaded.metadata.environment.soundId,
+                volume: Number.isFinite(loaded.metadata.environment.volume)
+                    ? loaded.metadata.environment.volume
+                    : 0.4,
+            }
+        }
         for (const z of loaded.metadata.weatherZones ?? []) {
             editorState.weatherZones.push({
                 id: z.id,
