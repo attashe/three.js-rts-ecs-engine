@@ -77,7 +77,37 @@ export interface ZonePreset {
     params: Partial<WeatherZoneParams> & Pick<WeatherZoneParams, 'type' | 'color'>
 }
 
+/**
+ * Selects how the ambient pass paints sky, sun, and ambient light:
+ *
+ * - `outdoor` — derive sky/fog/sun/ambient from `timeOfDay` via the
+ *   day-cycle table, then layer multiplicative modulators (`skyTint`,
+ *   `sunIntensityMul`, `fogDensityMul`) on top. Authoring is "pick a
+ *   time", not "pick seven colours that match".
+ * - `indoor` — no sky dome, no directional sun, no hemisphere bounce.
+ *   Ambient + fog are the only contributions; block-emitted PointLights
+ *   are the primary illumination. Use for caves, dungeons, interiors.
+ * - `custom` — read every colour field literally from state. Back-compat
+ *   for stylised levels authored before the cycle existed, and the
+ *   escape hatch for non-realistic palettes.
+ */
+export type EnvironmentMode = 'outdoor' | 'indoor' | 'custom'
+
 export interface AmbientWeatherState {
+    mode: EnvironmentMode
+    /** Animate `timeOfDay` at runtime when true. Static (false) is the
+     *  default so simple levels stay deterministic. */
+    cycleEnabled: boolean
+    /** Real-time seconds per full 24h cycle when `cycleEnabled` is true.
+     *  600 = 10 minutes per in-game day. */
+    cycleSeconds: number
+    /** Multiplicative tint applied to derived sky top + bottom in outdoor
+     *  mode (linear-space RGB, defaults to [1,1,1] = identity). */
+    skyTint: [number, number, number]
+    /** Multiplier on derived sun intensity in outdoor mode. */
+    sunIntensityMul: number
+    /** Multiplier on derived fog density in outdoor mode. */
+    fogDensityMul: number
     skyTop: string
     skyBottom: string
     fogColor: string

@@ -23,6 +23,7 @@ import {
 } from 'three'
 import type { AmbientWeatherState } from './types'
 import { clamp, makeRng, rand, smoothstep } from './sim-utils'
+import { applyColor, applyColorTinted, sampleDayCycle, type CycleStop } from './day-cycle'
 
 /**
  * Global ambient weather: rain that follows the camera, snow that
@@ -99,18 +100,17 @@ export class AmbientWeather {
         this.clouds = new CloudField(scene)
         this.storm = new LightningTimer()
 
-        this.refreshSky()
-        this.refreshSun()
+        this.applyAtmosphere()
     }
 
     setState(patch: Partial<AmbientWeatherState>): void {
         Object.assign(this.state, patch)
-        this.refreshSky()
-        this.refreshFog()
-        this.refreshSun()
+        this.applyAtmosphere()
     }
 
     update(dt: number, elapsed: number, camera: Camera, dummy: Object3D): void {
+        this.tickTime(dt)
+        this.applyAtmosphere()
         this.skyMesh.position.copy(camera.position)
         this.positionSunForCamera(camera)
         const gust = Math.sin(elapsed * 0.4) * Math.cos(elapsed * 0.13) * this.state.windGusts
@@ -138,6 +138,126 @@ export class AmbientWeather {
         }, dt, elapsed, camera, dummy, 'snow')
         this.clouds.update(dt, elapsed, camera, this.state)
         this.storm.update(dt, this.state, this.lightning, camera)
+    }
+
+    /**
+     * Advance `timeOfDay` if the cycle is animated. Wraps at 24h.
+     * `cycleSeconds` is the *real-time* duration of one in-game day; a
+     * value of 600 means the in-game hour ticks at 24/600 hours per
+     * real second (one day every ten minutes).
+     */
+    private tickTime(dt: number): void {
+        if (!this.state.cycleEnabled) return
+        const seconds = Math.max(1, this.state.cycleSeconds)
+        const hoursPerSecond = 24 / seconds
+        this.state.timeOfDay = ((this.state.timeOfDay + dt * hoursPerSecond) % 24 + 24) % 24
+    }
+
+    /**
+     * Dispatch sky/sun/ambient/fog refresh by mode.
+     *
+     *  - `outdoor` → sample the day-cycle table, layer modulators, paint.
+     *  - `indoor` → hide sky dome + sun + hemi; ambient from authored
+     *    state only; fog from authored state if any.
+     *  - `custom` → legacy path: every colour field read literally.
+     */
+    private applyAtmosphere(): void {
+        const mode = this.state.mode ?? 'outdoor'
+        if (mode === 'indoor') {
+            this.applyIndoor()
+            return
+        }
+        if (mode === 'custom') {
+            this.applyCustom()
+            return
+        }
+        this.applyOutdoor()
+    }
+
+    private applyOutdoor(): void {
+        this.skyMesh.visible = true
+        this.sun.visible = true
+        const cycle = sampleDayCycle(this.state.timeOfDay)
+        const tint = sanitizeTint(this.state.skyTint)
+        const sunMul = Number.isFinite(this.state.sunIntensityMul) ? Math.max(0, this.state.sunIntensityMul) : 1
+        const fogMul = Number.isFinite(this.state.fogDensityMul) ? Math.max(0, this.state.fogDensityMul) : 1
+        this.paintSkyFromCycle(cycle, tint)
+        this.paintFogFromCycle(cycle, fogMul)
+        this.paintLightsFromCycle(cycle, sunMul)
+    }
+
+    private applyIndoor(): void {
+        this.skyMesh.visible = false
+        this.sun.visible = false
+        this.hemi.intensity = 0
+        const fog = this.scene.fog as FogExp2 | null
+        if (fog) {
+            fog.color.set(this.state.fogColor)
+            fog.density = this.state.fogDensity
+        }
+        this.ambient.color.set(this.state.ambientColor)
+        this.ambient.intensity = this.state.ambientIntensity
+    }
+
+    private applyCustom(): void {
+        this.skyMesh.visible = true
+        this.sun.visible = true
+        this.refreshSky()
+        this.refreshFog()
+        this.refreshSun()
+    }
+
+    private paintSkyFromCycle(cycle: CycleStop, tint: [number, number, number]): void {
+        const geo = this.skyMesh.geometry as SphereGeometry
+        const positions = geo.attributes.position as BufferAttribute
+        const radius = 240
+        const top = new Color()
+        const bot = new Color()
+        applyColorTinted(top, cycle.skyTop, tint)
+        applyColorTinted(bot, cycle.skyBottom, tint)
+        const dim = 1 - this.state.cloudCoverage * 0.25
+        top.multiplyScalar(dim)
+        bot.multiplyScalar(0.9 + dim * 0.1)
+        const tmp = new Color()
+        for (let i = 0; i < positions.count; i++) {
+            const ny = positions.getY(i) / radius
+            const t = smoothstep(ny, -0.25, 0.65)
+            tmp.copy(bot).lerp(top, t)
+            this.skyColors[i * 3]     = tmp.r
+            this.skyColors[i * 3 + 1] = tmp.g
+            this.skyColors[i * 3 + 2] = tmp.b
+        }
+        ;(geo.attributes.color as BufferAttribute).needsUpdate = true
+    }
+
+    private paintFogFromCycle(cycle: CycleStop, densityMul: number): void {
+        const fog = this.scene.fog as FogExp2 | null
+        if (!fog) return
+        fog.color.setRGB(cycle.fogColor[0], cycle.fogColor[1], cycle.fogColor[2])
+        fog.density = cycle.fogDensity * densityMul
+    }
+
+    private paintLightsFromCycle(cycle: CycleStop, sunMul: number): void {
+        // Compute sun direction from time-of-day + azimuth. Position +
+        // target get applied later by `positionSunForCamera` (so the
+        // shadow frustum follows the player). Only `sunOffset` and the
+        // light parameters need updating here.
+        const dayPhase = (this.state.timeOfDay - 6) / 12
+        const angle = dayPhase * Math.PI
+        const az = this.state.sunAzimuth * Math.PI / 180
+        const horiz = Math.cos(angle) * 60
+        const height = Math.sin(angle) * 50
+        this.sunOffset.x = horiz * Math.cos(az)
+        this.sunOffset.y = height
+        this.sunOffset.z = horiz * Math.sin(az)
+        const horizonFalloff = clamp(smoothstep(height, -5, 8), 0, 1)
+        applyColor(this.sun.color, cycle.sunColor)
+        this.sun.intensity = cycle.sunIntensity * sunMul * horizonFalloff
+        applyColor(this.ambient.color, cycle.ambientColor)
+        this.ambient.intensity = cycle.ambientIntensity
+        applyColor(this.hemi.color, cycle.hemiSky)
+        applyColor(this.hemi.groundColor, cycle.hemiGround)
+        this.hemi.intensity = cycle.hemiIntensity
     }
 
     dispose(): void {
@@ -412,6 +532,12 @@ class LightningTimer {
 
 export function defaultAmbientState(): AmbientWeatherState {
     return {
+        mode: 'outdoor',
+        cycleEnabled: false,
+        cycleSeconds: 600,
+        skyTint: [1, 1, 1],
+        sunIntensityMul: 1,
+        fogDensityMul: 1,
         skyTop: '#7aa9d4',
         skyBottom: '#c9d9e8',
         fogColor: '#b5c6d6',
@@ -441,6 +567,15 @@ export function defaultAmbientState(): AmbientWeatherState {
         lightningColor: '#cfe0ff',
         cloudCoverage: 0.0,
     }
+}
+
+function sanitizeTint(tint: [number, number, number] | undefined): [number, number, number] {
+    if (!tint) return [1, 1, 1]
+    return [
+        Number.isFinite(tint[0]) ? Math.max(0, tint[0]) : 1,
+        Number.isFinite(tint[1]) ? Math.max(0, tint[1]) : 1,
+        Number.isFinite(tint[2]) ? Math.max(0, tint[2]) : 1,
+    ]
 }
 
 function makeAmbientStreak(): CanvasTexture {

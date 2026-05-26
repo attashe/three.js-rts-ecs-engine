@@ -162,9 +162,19 @@ export interface EditorAmbientWeather {
     state: AmbientWeatherStateSnapshot
 }
 
+/** See `EnvironmentMode` in `engine/fx/core/types.ts`. Duplicated here
+ *  to keep the editor → engine import direction one-way. */
+export type EditorEnvironmentMode = 'outdoor' | 'indoor' | 'custom'
+
 /** Mirror of `AmbientWeatherState` from `engine/fx/core/types.ts`.
  *  Duplicated here to avoid a `engine → editor` import direction. */
 export interface AmbientWeatherStateSnapshot {
+    mode: EditorEnvironmentMode
+    cycleEnabled: boolean
+    cycleSeconds: number
+    skyTint: [number, number, number]
+    sunIntensityMul: number
+    fogDensityMul: number
     skyTop: string
     skyBottom: string
     fogColor: string
@@ -330,6 +340,12 @@ export interface EditorState {
  * with ambient enabled vs disabled (modulo the sky dome + fog).
  */
 export const DEFAULT_AMBIENT_WEATHER: AmbientWeatherStateSnapshot = {
+    mode: 'outdoor',
+    cycleEnabled: false,
+    cycleSeconds: 600,
+    skyTint: [1, 1, 1],
+    sunIntensityMul: 1,
+    fogDensityMul: 1,
     skyTop: '#7aa9d4',
     skyBottom: '#c9d9e8',
     fogColor: '#b5c6d6',
@@ -417,9 +433,12 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         weatherZoneSoundId: '',
         weatherZoneSoundVolume: 0.5,
         ambientWeather: {
-            enabled: false,
+            // Default to enabled now that an Outdoor mode "just works"
+            // without the author hand-picking sky/fog/sun colours — the
+            // day-cycle table fills them in at the chosen time.
+            enabled: true,
             presetId: 'clear',
-            state: { ...DEFAULT_AMBIENT_WEATHER },
+            state: { ...DEFAULT_AMBIENT_WEATHER, skyTint: [...DEFAULT_AMBIENT_WEATHER.skyTint] as [number, number, number] },
         },
         pistonMoveSoundId: null,
         pistonMoveSoundVolume: 0.5,

@@ -33,8 +33,15 @@ test('toLevelMeta serialises weather zones by value', () => {
     assert.equal(state.weatherZones[0]!.position.x, 6)
 })
 
-test('toLevelMeta omits ambient weather when disabled', () => {
+test('createEditorState enables ambient weather by default (outdoor mode just works)', () => {
     const state = createEditorState({ x: 1, y: 2, z: 3 })
+    assert.equal(state.ambientWeather.enabled, true)
+    assert.equal(state.ambientWeather.state.mode, 'outdoor')
+})
+
+test('toLevelMeta omits ambient weather when explicitly disabled', () => {
+    const state = createEditorState({ x: 1, y: 2, z: 3 })
+    state.ambientWeather.enabled = false
     const meta = toLevelMeta(state, 'ambient-test')
     assert.equal(meta.ambientWeather, undefined)
 })
