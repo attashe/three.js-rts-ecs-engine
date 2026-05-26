@@ -11,6 +11,7 @@ import {
     sharedMaterial,
     sharedSphereGeometry,
 } from './shared-primitives'
+import { getPlayerTorchShadow } from '../../engine/render/render-settings'
 
 export const PLAYER_TORCH_LIGHT = 'playerTorchLight'
 export const PLAYER_TORCH_FLAME = 'playerTorchFlame'
@@ -33,14 +34,30 @@ export function createPlayerTorch(): Group {
     const light = new PointLight(new Color(0xffb05f), 7.6, 14, 1.25)
     light.name = 'PlayerTorchLight'
     light.position.set(0, 0.71, 0.04)
-    // The torch fill is intentionally unshadowed. A point light sits
-    // inside the player's chest, so omnidirectional shadow casting
-    // projected the player body (cape/arms) and any nearby block —
-    // including ones above the head — as hard wedges across the lit
-    // pool. The fill is small (14u) and only ever near the player,
-    // so dropping shadows reads as "magic torchlight" rather than a
-    // missing feature.
-    light.castShadow = false
+    // Shadow casting from the player-held torch. Historical context:
+    // an earlier version disabled this because the light sits inside
+    // the player's chest, so omnidirectional shadow casting projected
+    // the player's own body (cape, arms) across the lit pool. The
+    // fix is the PLAYER render layer — the player goes on its own
+    // layer, and this shadow camera's `layers` mask (kept at the
+    // default WORLD-only) skips the player entirely. The world
+    // geometry around the player still casts shadows from the torch.
+    //
+    // The user can disable shadow casting at runtime via the
+    // `vp:render:player-torch-shadow` setting; we configure the
+    // shadow camera unconditionally so toggling it later is a
+    // cheap `light.castShadow = ...` (no re-init).
+    //
+    // Shadow map size 256² is the smallest that keeps the soft pool
+    // edge readable; the far-plane tracks the light's distance so the
+    // cube render only touches blocks within the lit radius.
+    light.castShadow = getPlayerTorchShadow()
+    light.shadow.mapSize.set(256, 256)
+    light.shadow.camera.near = 0.2
+    light.shadow.camera.far = light.distance
+    light.shadow.bias = -0.0008
+    light.shadow.normalBias = 0.04
+    light.shadow.camera.updateProjectionMatrix()
     light.userData[PLAYER_TORCH_LIGHT] = {
         baseIntensity: light.intensity,
         baseDistance: light.distance,

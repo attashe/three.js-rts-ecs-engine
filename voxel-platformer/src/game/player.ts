@@ -1,4 +1,4 @@
-import { Group } from 'three'
+import { Group, PointLight } from 'three'
 import { addComponents } from 'bitecs'
 import type { GameWorld } from '../engine/ecs/world'
 import {
@@ -19,6 +19,7 @@ import {
     MAIN_CHARACTER_COLLIDER_HALF_HEIGHT,
     MAIN_CHARACTER_COLLIDER_RADIUS,
 } from './assets'
+import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
 
 export interface PlayerOptions {
     spawn: { x: number; y: number; z: number }
@@ -72,6 +73,25 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     root.add(createBackBow())
     root.add(createBackQuiver())
     root.add(createHeldTorch())
+
+    // Move the entire player rig to the PLAYER layer. Cameras + lights
+    // that should still see/illuminate the player must opt into this
+    // layer via `enablePlayerVisibility()`; otherwise the player goes
+    // dark or invisible. The point of this isolation is so the
+    // player-held torch's shadow camera (which stays on the WORLD
+    // layer only) does not project the player's own body into its
+    // shadow map.
+    setLayerRecursive(root, RENDER_LAYER.PLAYER)
+    // The held torch's PointLight is now on the PLAYER layer only,
+    // which would stop it lighting the world. Re-broaden every light
+    // descendant to also include the WORLD layer — they need to
+    // illuminate both. (The light's `shadow.camera.layers` is a
+    // separate mask and stays at the default WORLD-only, so the
+    // shadow render still excludes the player body.)
+    root.traverse((obj) => {
+        if (!(obj instanceof PointLight)) return
+        obj.layers.enable(RENDER_LAYER.WORLD)
+    })
 
     world.object3DByEid.set(eid, root)
     return eid

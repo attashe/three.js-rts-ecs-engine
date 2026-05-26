@@ -5,6 +5,7 @@ import { LightBudget } from '../fx/lights/light-budget'
 import type { ChunkManager } from './chunk-manager'
 import { CHUNK_DIM, chunkKey, type ChunkKey } from './chunk'
 import { voxelLightSpec, type BlockLightSpec } from './palette'
+import { RENDER_LAYER } from '../render/render-layers'
 
 export interface BlockLightSystemOptions {
     scene: Scene
@@ -70,6 +71,11 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
     function spawnRecord(spec: BlockLightSpec, wx: number, wy: number, wz: number, ck: ChunkKey): BlockLightRecord {
         const light = new PointLight(new Color(), 0, 1, 1.6)
         light.position.set(wx + 0.5, wy + 0.5, wz + 0.5)
+        // Glow-block lights should also illuminate the player (who
+        // lives on a non-default render layer — see render-layers.ts).
+        // Without this, walking past a glow block leaves the player
+        // unlit.
+        light.layers.enable(RENDER_LAYER.PLAYER)
         applySpec(light, spec)
         scene.add(light)
         return { key: `${wx},${wy},${wz}`, light, chunkKey: ck }

@@ -1,4 +1,5 @@
 import { OrthographicCamera, Vector3 } from 'three'
+import { RENDER_LAYER } from './render-layers'
 
 export interface IsometricCameraOptions {
     /** Half-height of the visible area in world units (at zoom = 1). Default 12. */
@@ -66,6 +67,12 @@ export class IsometricCamera {
             this.distance * 4,
         )
         this.camera.up.set(0, 1, 0)
+        // The player rig lives on the PLAYER layer (see
+        // `render-layers.ts`); enable it on the main camera so we
+        // actually see the character. Default Object3D.layers covers
+        // only WORLD (0) — without this the entire player would be
+        // invisible.
+        this.camera.layers.enable(RENDER_LAYER.PLAYER)
         this.syncPosition()
     }
 

@@ -1,9 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+    __resetPlayerTorchShadowCache,
     __resetRenderTexturesCache,
+    __resetTorchSystemCache,
+    getPlayerTorchShadow,
     getRenderTextures,
+    getTorchSystem,
+    setPlayerTorchShadow,
     setRenderTextures,
+    setTorchSystem,
+    subscribePlayerTorchShadow,
     subscribeRenderTextures,
 } from '../src/engine/render/render-settings'
 
@@ -23,6 +30,43 @@ test('setRenderTextures updates the cached value and survives subsequent reads',
     assert.equal(getRenderTextures(), false)
     setRenderTextures(true)
     assert.equal(getRenderTextures(), true)
+})
+
+test('getTorchSystem defaults to classic — the no-shadow Group-per-torch path', () => {
+    __resetTorchSystemCache()
+    assert.equal(getTorchSystem(), 'classic')
+})
+
+test('setTorchSystem round-trips through the cache', () => {
+    __resetTorchSystemCache()
+    setTorchSystem('shadowed')
+    assert.equal(getTorchSystem(), 'shadowed')
+    setTorchSystem('classic')
+    assert.equal(getTorchSystem(), 'classic')
+})
+
+test('getPlayerTorchShadow defaults to true (shadows on)', () => {
+    __resetPlayerTorchShadowCache()
+    assert.equal(getPlayerTorchShadow(), true)
+})
+
+test('setPlayerTorchShadow round-trips + notifies live subscribers only on change', () => {
+    __resetPlayerTorchShadowCache()
+    setPlayerTorchShadow(true)
+    const seen: boolean[] = []
+    const unsubscribe = subscribePlayerTorchShadow((v) => seen.push(v))
+
+    setPlayerTorchShadow(true)   // no change → no callback
+    setPlayerTorchShadow(false)  // change → 1
+    setPlayerTorchShadow(false)  // no change → no callback
+    setPlayerTorchShadow(true)   // change → 2
+
+    assert.deepEqual(seen, [false, true])
+    assert.equal(getPlayerTorchShadow(), true)
+
+    unsubscribe()
+    setPlayerTorchShadow(false)
+    assert.equal(seen.length, 2, 'unsubscribed listener should stop firing')
 })
 
 test('subscribers fire only when the value actually changes', () => {

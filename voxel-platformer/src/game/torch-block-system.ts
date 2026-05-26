@@ -12,6 +12,7 @@ import { RenderOrder } from '../engine/ecs/systems/orders'
 import { PlayerControlled, Position } from '../engine/ecs/components'
 import { disposeObject3D } from '../engine/render/dispose-object'
 import { CHUNK_DIM, chunkKey, type ChunkKey } from '../engine/voxel/chunk'
+import { RENDER_LAYER } from '../engine/render/render-layers'
 import type { Chunk } from '../engine/voxel/chunk'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { isCollidable, isTorchBlock, occludesFaces } from '../engine/voxel/palette'
@@ -181,6 +182,10 @@ export function createTorchBlockRenderSystem(
         light.visible = true
         light.position.set(PARK_X, PARK_Y, PARK_Z)
         light.intensity = 0
+        // Player rig is on a non-default render layer; enable it on
+        // every pool light so the player gets lit when walking past
+        // block torches.
+        light.layers.enable(RENDER_LAYER.PLAYER)
         scene.add(light)
         lightPool.push({
             light,

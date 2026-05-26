@@ -31,7 +31,10 @@ import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
+import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/render-layers'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
+import { createTorchBlockRenderSystemV2 } from './game/torch-block-system-v2'
+import { getTorchSystem } from './engine/render/render-settings'
 import { spawnCoinPile } from './game/pickups'
 import { registerPistonMechanism } from './game/mechanisms'
 import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from './game/sound-sources'
@@ -59,6 +62,7 @@ async function main(): Promise<void> {
     // Lighting. Sun from south-east, target at the centre of the demo level so
     // the shadow camera covers the whole island.
     const defaultAmbient = new AmbientLight(0xffffff, 0.45)
+    enablePlayerVisibility(defaultAmbient)
     renderer.scene.add(defaultAmbient)
     const sun = new DirectionalLight(0xfff0d4, 1.2)
     sun.position.set(32, 60, 24)
@@ -71,6 +75,10 @@ async function main(): Promise<void> {
     sun.shadow.camera.near = 1
     sun.shadow.camera.far = 160
     sun.shadow.mapSize.set(1024, 1024)
+    // Player rig lives on a non-default render layer; opt the sun
+    // into illuminating + shadowing it. Without this the player
+    // appears unlit and casts no sun shadow.
+    castShadowOnPlayer(sun)
     renderer.scene.add(sun)
     renderer.scene.add(sun.target)
 
@@ -210,12 +218,26 @@ async function main(): Promise<void> {
             camera: () => renderer.iso.camera,
         }), 'blockLights')
         .addSystem(chunkRenderSystem, 'chunkRender')
-        .addSystem(createTorchBlockRenderSystem(renderer.scene, chunks, {
-            focus: () => renderer.iso.target,
-            audio,
-            audioReady,
-            soundId: GameAudio.TorchFire,
-        }), 'torchBlocks')
+        .addSystem(
+            // Pick the torch render system at startup based on the
+            // user setting. Switching requires a page reload — the
+            // two systems own different scene objects and can't be
+            // safely hot-swapped without disposing chunks of state.
+            getTorchSystem() === 'shadowed'
+                ? createTorchBlockRenderSystemV2(renderer.scene, chunks, {
+                    focus: () => renderer.iso.target,
+                    audio,
+                    audioReady,
+                    soundId: GameAudio.TorchFire,
+                })
+                : createTorchBlockRenderSystem(renderer.scene, chunks, {
+                    focus: () => renderer.iso.target,
+                    audio,
+                    audioReady,
+                    soundId: GameAudio.TorchFire,
+                }),
+            'torchBlocks',
+        )
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Push the log panel below the top-right ↻ Restart / ← Editor
         // buttons so it doesn't cover them. Buttons sit at top: 8px with

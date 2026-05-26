@@ -19,10 +19,35 @@
 const STORAGE_KEY = 'vp:render:textures'
 const DEFAULT_TEXTURES = true
 
+const TORCH_STORAGE_KEY = 'vp:render:torches'
+const DEFAULT_TORCH_SYSTEM: TorchSystemKind = 'classic'
+
+const PLAYER_TORCH_SHADOW_KEY = 'vp:render:player-torch-shadow'
+const DEFAULT_PLAYER_TORCH_SHADOW = true
+
 type Listener = (enabled: boolean) => void
 
 const listeners = new Set<Listener>()
+const playerTorchShadowListeners = new Set<Listener>()
 let cached: boolean | null = null
+let cachedTorchSystem: TorchSystemKind | null = null
+let cachedPlayerTorchShadow: boolean | null = null
+
+/**
+ * Which torch-block render system the client boots with.
+ *
+ * - `classic` — one Group + 4 Meshes per torch, pool of unshadowed
+ *   PointLights. Cheapest setup, but draw calls scale linearly with
+ *   torch count.
+ * - `shadowed` — one InstancedMesh per part (handle / head / flame /
+ *   core), pool of shadow-casting PointLights. Draw calls stay
+ *   constant; each pool light pays a small cube-shadow-map render
+ *   pass.
+ *
+ * Both systems coexist in the codebase so we can A/B them; reading
+ * the flag happens once at startup, so switching requires a reload.
+ */
+export type TorchSystemKind = 'classic' | 'shadowed'
 
 function loadFromStorage(): boolean {
     if (typeof localStorage === 'undefined') return DEFAULT_TEXTURES
@@ -82,4 +107,105 @@ export function subscribeRenderTextures(listener: Listener): () => void {
  *  storage round-trip. Don't call from production code. */
 export function __resetRenderTexturesCache(): void {
     cached = null
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Torch system selector. Reads happen once at engine startup, so we
+// don't ship a subscriber API for this flag — flipping it from the
+// editor triggers a page reload prompt via the UI layer.
+// ─────────────────────────────────────────────────────────────────────
+
+function loadTorchSystem(): TorchSystemKind {
+    if (typeof localStorage === 'undefined') return DEFAULT_TORCH_SYSTEM
+    try {
+        const raw = localStorage.getItem(TORCH_STORAGE_KEY)
+        if (raw === 'shadowed') return 'shadowed'
+        if (raw === 'classic') return 'classic'
+    } catch {
+        // Private-mode storage failure — fall back to the default.
+    }
+    return DEFAULT_TORCH_SYSTEM
+}
+
+function persistTorchSystem(value: TorchSystemKind): void {
+    if (typeof localStorage === 'undefined') return
+    try {
+        localStorage.setItem(TORCH_STORAGE_KEY, value)
+    } catch {
+        // Same private-mode case.
+    }
+}
+
+export function getTorchSystem(): TorchSystemKind {
+    if (cachedTorchSystem === null) cachedTorchSystem = loadTorchSystem()
+    return cachedTorchSystem
+}
+
+export function setTorchSystem(value: TorchSystemKind): void {
+    if (cachedTorchSystem === null) cachedTorchSystem = loadTorchSystem()
+    if (cachedTorchSystem === value) return
+    cachedTorchSystem = value
+    persistTorchSystem(value)
+}
+
+export function __resetTorchSystemCache(): void {
+    cachedTorchSystem = null
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Player-held torch shadow casting. Unlike the v1/v2 torch-system
+// selector this one IS live-toggleable — flipping `castShadow` on a
+// single existing light forces three.js to recompile only the
+// shaders that sample that light's shadow map (a one-time stall),
+// not the wholesale recompile that adding/removing lights causes. So
+// the host can subscribe and react without a page reload.
+// ─────────────────────────────────────────────────────────────────────
+
+function loadPlayerTorchShadow(): boolean {
+    if (typeof localStorage === 'undefined') return DEFAULT_PLAYER_TORCH_SHADOW
+    try {
+        const raw = localStorage.getItem(PLAYER_TORCH_SHADOW_KEY)
+        if (raw === '0' || raw === 'false') return false
+        if (raw === '1' || raw === 'true') return true
+    } catch {
+        // Private-mode fallback — accept the default.
+    }
+    return DEFAULT_PLAYER_TORCH_SHADOW
+}
+
+function persistPlayerTorchShadow(value: boolean): void {
+    if (typeof localStorage === 'undefined') return
+    try {
+        localStorage.setItem(PLAYER_TORCH_SHADOW_KEY, value ? '1' : '0')
+    } catch {
+        // Same private-mode case.
+    }
+}
+
+export function getPlayerTorchShadow(): boolean {
+    if (cachedPlayerTorchShadow === null) cachedPlayerTorchShadow = loadPlayerTorchShadow()
+    return cachedPlayerTorchShadow
+}
+
+export function setPlayerTorchShadow(enabled: boolean): void {
+    if (cachedPlayerTorchShadow === null) cachedPlayerTorchShadow = loadPlayerTorchShadow()
+    if (cachedPlayerTorchShadow === enabled) return
+    cachedPlayerTorchShadow = enabled
+    persistPlayerTorchShadow(enabled)
+    for (const listener of playerTorchShadowListeners) {
+        try {
+            listener(enabled)
+        } catch (err) {
+            console.warn('playerTorchShadow listener threw:', err)
+        }
+    }
+}
+
+export function subscribePlayerTorchShadow(listener: Listener): () => void {
+    playerTorchShadowListeners.add(listener)
+    return () => { playerTorchShadowListeners.delete(listener) }
+}
+
+export function __resetPlayerTorchShadowCache(): void {
+    cachedPlayerTorchShadow = null
 }

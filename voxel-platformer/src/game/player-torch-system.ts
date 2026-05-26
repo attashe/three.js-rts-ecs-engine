@@ -6,6 +6,10 @@ import {
     PLAYER_TORCH_LIGHT,
     type PlayerTorchLightUserData,
 } from './assets'
+import {
+    getPlayerTorchShadow,
+    subscribePlayerTorchShadow,
+} from '../engine/render/render-settings'
 
 interface TorchRuntime {
     light: PointLight
@@ -22,19 +26,39 @@ export function createPlayerTorchSystem(): System {
     const torches: TorchRuntime[] = []
     let elapsed = 0
     let rescanTimer = 0
+    let shadowEnabled = getPlayerTorchShadow()
+
+    function applyShadowToAll(): void {
+        for (const torch of torches) {
+            if (torch.light.castShadow !== shadowEnabled) {
+                torch.light.castShadow = shadowEnabled
+            }
+        }
+    }
+
+    subscribePlayerTorchShadow((enabled) => {
+        shadowEnabled = enabled
+        applyShadowToAll()
+    })
 
     return {
         name: 'playerTorch',
         order: RenderOrder.renderSync + 5,
         init(world) {
             collectTorches(world.object3DByEid.values(), torches)
+            applyShadowToAll()
         },
         update(world, dt) {
             elapsed += dt
             rescanTimer -= dt
             if (rescanTimer <= 0) {
                 rescanTimer = 1
+                const before = torches.length
                 collectTorches(world.object3DByEid.values(), torches)
+                // Newly-discovered torches inherit whatever castShadow
+                // their factory set, but the user may have toggled the
+                // setting since createPlayerTorch ran. Re-apply.
+                if (torches.length !== before) applyShadowToAll()
             }
 
             for (let i = torches.length - 1; i >= 0; i--) {

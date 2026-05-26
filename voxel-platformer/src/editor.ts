@@ -33,6 +33,7 @@ import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane
 import { createViewModeSystem } from './editor/systems/view-mode-system'
 import { createAxisGizmoSystem } from './editor/systems/axis-gizmo-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
+import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/render-layers'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { mountEditorPanel } from './editor/editor-ui'
 import { consumePlaytestLevel } from './editor/playtest'
@@ -46,7 +47,9 @@ async function main(): Promise<void> {
     const actions = createEditorActionMap(engine.input)
 
     // Lighting matches the game so painted voxels look the same in editor + play.
-    renderer.scene.add(new AmbientLight(0xffffff, 0.5))
+    const editorAmbient = new AmbientLight(0xffffff, 0.5)
+    enablePlayerVisibility(editorAmbient)
+    renderer.scene.add(editorAmbient)
     const sun = new DirectionalLight(0xfff0d4, 1.1)
     sun.position.set(32, 60, 24)
     sun.target.position.set(12, 0, 12)
@@ -58,6 +61,11 @@ async function main(): Promise<void> {
     sun.shadow.camera.near = 1
     sun.shadow.camera.far = 180
     sun.shadow.mapSize.set(1024, 1024)
+    // The player rig is on a non-default render layer; enable it on
+    // the sun + its shadow camera so the character is sunlit and casts
+    // sun shadows. (The editor has no player by default but this is
+    // cheap and keeps editor/game lighting symmetric.)
+    castShadowOnPlayer(sun)
     renderer.scene.add(sun)
     renderer.scene.add(sun.target)
 

@@ -25,6 +25,7 @@ import {
 import type { AmbientWeatherState } from './types'
 import { clamp, makeRng, rand, smoothstep } from './sim-utils'
 import { applyColor, applyColorTinted, sampleDayCycle, type CycleStop } from './day-cycle'
+import { castShadowOnPlayer, enablePlayerVisibility } from '../../render/render-layers'
 
 /**
  * Global ambient weather: rain that follows the camera, snow that
@@ -101,6 +102,15 @@ export class AmbientWeather {
         this.sun.shadow.normalBias = 0.04
         this.hemi = new HemisphereLight(0xb0c8e0, 0x2a2418, 0.3)
         this.lightning = new PointLight(new Color(this.state.lightningColor), 0, 200, 1.5)
+        // Player lives on its own render layer; without enabling it
+        // on every light here the character renders unlit under
+        // ambient weather (no sun, no sky bounce, no flash). The
+        // sun's shadow camera also needs the player layer so the
+        // character casts sun shadows. See render-layers.ts.
+        castShadowOnPlayer(this.sun)
+        enablePlayerVisibility(this.ambient)
+        enablePlayerVisibility(this.hemi)
+        enablePlayerVisibility(this.lightning)
         scene.add(this.ambient, this.sun, this.sun.target, this.hemi, this.lightning)
 
         this.rain = new AmbientField(scene, 'streak', { maxCount: 12000, geo: new PlaneGeometry(0.12, 0.9) })
@@ -451,7 +461,18 @@ class AmbientField {
             let px = this.positions[ix]!, py = this.positions[ix + 1]!, pz = this.positions[ix + 2]!
             if (py < -3) {
                 px = cx + (Math.random() - 0.5) * 45
-                py = 40 + Math.random() * 15
+                // Respawn Y spans the full vertical column the initial
+                // seeding uses (8 → 55), not the previous narrow
+                // 40 → 55 band. The narrow band collapsed the
+                // particles' lifetime distribution after a single
+                // cycle: at the rain's default 22 u/s fall speed the
+                // window of (40..55 → -3) maps to ~2.0..2.6 s of
+                // remaining life, so within a minute every particle
+                // had a near-identical countdown and they all hit -3
+                // in unison. With 8 → 55 the lifetime spread is
+                // ~0.5..2.6 s and stays uncorrelated indefinitely —
+                // continuous rain instead of pulsed waves.
+                py = 8 + Math.random() * 47
                 pz = cz + (Math.random() - 0.5) * 45
                 this.positions[ix] = px; this.positions[ix + 1] = py; this.positions[ix + 2] = pz
             }
