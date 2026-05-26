@@ -1,4 +1,11 @@
-import { isRenderableVoxel, occludesFaces, voxelEmissive, voxelOpacity, type Palette } from './palette'
+import {
+    isRenderableVoxel,
+    occludesFaces,
+    paletteTileIndex,
+    voxelEmissive,
+    voxelOpacity,
+    type Palette,
+} from './palette'
 
 /**
  * Sample function — returns the palette index at a voxel coord. The mesher
@@ -19,6 +26,22 @@ export interface MeshData {
     /** Linear-space emissive RGB per vertex (intensity already folded in).
      *  All zeros for non-glowing blocks; summed by the chunk shader. */
     emissive: Float32Array
+    /**
+     * Per-vertex UV in [0, W] × [0, H] for a W×H merged quad. The shader
+     * applies `fract` to get the per-voxel local UV (0..1) and offsets
+     * into the atlas using `tileIndices`. UVs run along the mesher's
+     * `u` and `v` axes for the current sweep direction, so the same
+     * tile orientation appears on every face of a block regardless of
+     * which axis was being swept.
+     */
+    uvs: Float32Array
+    /**
+     * Atlas tile slot index per vertex (all 4 corners of a quad share
+     * the same value). The chunk shader uses
+     * `mod(tileIndex, TILES_PER_ROW)` + `floor(tileIndex /
+     * TILES_PER_ROW)` to derive the tile's atlas-space origin.
+     */
+    tileIndices: Float32Array
     /** Triangle indices. Two triangles per quad: (0,1,2) and (0,2,3) for +face, mirrored for -face. */
     indices: Uint32Array
     /** Convenience counts. */
@@ -31,6 +54,8 @@ const EMPTY: MeshData = {
     normals: new Float32Array(0),
     colors: new Float32Array(0),
     emissive: new Float32Array(0),
+    uvs: new Float32Array(0),
+    tileIndices: new Float32Array(0),
     indices: new Uint32Array(0),
     vertexCount: 0,
     triangleCount: 0,
@@ -58,6 +83,8 @@ export function greedyMesh(
     const normals: number[] = []
     const colors: number[] = []
     const emissive: number[] = []
+    const uvs: number[] = []
+    const tileIndices: number[] = []
     const indices: number[] = []
     let vertexBase = 0
 
@@ -143,19 +170,31 @@ export function greedyMesh(
                     const c2x = c1x + dv[0], c2y = c1y + dv[1], c2z = c1z + dv[2]
                     const c3x = c0x + dv[0], c3y = c0y + dv[1], c3z = c0z + dv[2]
 
+                    // Per-corner UVs span [0, w] × [0, h] so the shader's
+                    // fract(uv) cycles a full 0..1 tile across every voxel
+                    // of the merged rectangle. Corner-order mirrors the
+                    // position push order below.
+                    //   c0 → (0, 0)
+                    //   c1 → (w, 0)
+                    //   c2 → (w, h)
+                    //   c3 → (0, h)
                     if (isPositive) {
                         positions.push(c0x, c0y, c0z, c1x, c1y, c1z, c2x, c2y, c2z, c3x, c3y, c3z)
+                        uvs.push(0, 0, w, 0, w, h, 0, h)
                     } else {
                         // Reverse winding for -d faces so the cross-product points -d.
                         positions.push(c0x, c0y, c0z, c3x, c3y, c3z, c2x, c2y, c2z, c1x, c1y, c1z)
+                        uvs.push(0, 0, 0, h, w, h, w, 0)
                     }
 
                     const nx = d === 0 ? (isPositive ? 1 : -1) : 0
                     const ny = d === 1 ? (isPositive ? 1 : -1) : 0
                     const nz = d === 2 ? (isPositive ? 1 : -1) : 0
+                    const tileIndex = paletteTileIndex(palette, paletteIdx)
                     for (let k = 0; k < 4; k++) normals.push(nx, ny, nz)
                     for (let k = 0; k < 4; k++) colors.push(r, g, b, a)
                     for (let k = 0; k < 4; k++) emissive.push(er, eg, eb)
+                    for (let k = 0; k < 4; k++) tileIndices.push(tileIndex)
 
                     indices.push(
                         vertexBase, vertexBase + 1, vertexBase + 2,
@@ -182,6 +221,8 @@ export function greedyMesh(
         normals: new Float32Array(normals),
         colors: new Float32Array(colors),
         emissive: new Float32Array(emissive),
+        uvs: new Float32Array(uvs),
+        tileIndices: new Float32Array(tileIndices),
         indices: new Uint32Array(indices),
         vertexCount: positions.length / 3,
         triangleCount: indices.length / 3,

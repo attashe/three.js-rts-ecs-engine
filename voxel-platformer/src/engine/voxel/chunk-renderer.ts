@@ -1,9 +1,11 @@
-import { BufferAttribute, BufferGeometry, Mesh, type Scene } from 'three'
+import { BufferAttribute, BufferGeometry, DataTexture, Mesh, type Scene } from 'three'
 import type { MeshStandardNodeMaterial } from 'three/webgpu'
 import type { ChunkManager } from './chunk-manager'
 import { Chunk, CHUNK_DIM, chunkKey, type ChunkKey } from './chunk'
+import { buildVoxelAtlas } from './atlas-builder'
 import { greedyMesh } from './greedy-mesher'
-import { createVoxelVertexColor, type VoxelMaterial } from '../render/materials/voxel-vertex-color'
+import { createAtlasTexture, createVoxelVertexColor, type VoxelMaterial } from '../render/materials/voxel-vertex-color'
+import { getRenderTextures, subscribeRenderTextures } from '../render/render-settings'
 
 /**
  * Owns the THREE.Mesh per chunk. Each frame, drains `manager.drainDirty()`
@@ -19,15 +21,33 @@ export class ChunkRenderer {
     private readonly manager: ChunkManager
     private readonly material: MeshStandardNodeMaterial
     private readonly voxelMaterial: VoxelMaterial
+    private readonly atlasTexture: DataTexture
     private readonly meshByKey: Map<ChunkKey, Mesh> = new Map()
     private readonly meshedVersion: Map<ChunkKey, number> = new Map()
+    private readonly unsubscribeTextures: () => void
     private cutY: number | null = null
 
     constructor(scene: Scene, manager: ChunkManager) {
         this.scene = scene
         this.manager = manager
-        this.voxelMaterial = createVoxelVertexColor({ flatShading: true })
+        // Build the atlas once at startup — it's a few hundred KB of
+        // RGBA, deterministic, and shared by every chunk mesh in the
+        // scene. Mirror this in the chunk material so the toggle uniform
+        // and the texture sampler refer to the same DataTexture.
+        const atlas = buildVoxelAtlas()
+        this.atlasTexture = createAtlasTexture(atlas.rgba, atlas.width, atlas.height)
+        this.voxelMaterial = createVoxelVertexColor({
+            flatShading: true,
+            atlas: this.atlasTexture,
+            texturesEnabled: getRenderTextures(),
+        })
         this.material = this.voxelMaterial.material
+        // Live toggle: when the user flips the Display setting we just
+        // update the uniform. No remesh — geometry is unaffected, only
+        // the per-fragment multiplier changes.
+        this.unsubscribeTextures = subscribeRenderTextures((enabled) => {
+            this.voxelMaterial.setTexturesEnabled(enabled)
+        })
     }
 
     /** Mark the working-plane row. The material uses this to fade covered
@@ -127,6 +147,8 @@ export class ChunkRenderer {
         geom.setAttribute('normal', new BufferAttribute(data.normals, 3))
         geom.setAttribute('color', new BufferAttribute(data.colors, 4))
         geom.setAttribute('emissive', new BufferAttribute(data.emissive, 3))
+        geom.setAttribute('voxelUV', new BufferAttribute(data.uvs, 2))
+        geom.setAttribute('voxelTileIndex', new BufferAttribute(data.tileIndices, 1))
         geom.setIndex(new BufferAttribute(data.indices, 1))
         geom.computeBoundingSphere()
         geom.computeBoundingBox()
@@ -135,6 +157,7 @@ export class ChunkRenderer {
     }
 
     dispose(): void {
+        this.unsubscribeTextures()
         for (const mesh of this.meshByKey.values()) {
             this.scene.remove(mesh)
             mesh.geometry.dispose()
@@ -142,5 +165,6 @@ export class ChunkRenderer {
         this.meshByKey.clear()
         this.meshedVersion.clear()
         this.material.dispose()
+        this.atlasTexture.dispose()
     }
 }

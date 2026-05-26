@@ -1,6 +1,25 @@
-import { attribute, positionWorld, select, texture as tslTexture, uniform, vertexColor } from 'three/tsl'
+import {
+    attribute,
+    float,
+    mix,
+    positionWorld,
+    select,
+    texture as tslTexture,
+    uniform,
+    vec2,
+    vertexColor,
+} from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
-import { DataTexture, NearestFilter, RedFormat, RepeatWrapping, UnsignedByteType } from 'three'
+import {
+    DataTexture,
+    NearestFilter,
+    RGBAFormat,
+    RedFormat,
+    RepeatWrapping,
+    UnsignedByteType,
+    type Texture,
+} from 'three'
+import { TILES_PER_ROW, TILE_UV_SIZE } from '../../voxel/atlas-manifest'
 
 export interface VoxelVertexColorOpts {
     /** PBR roughness. 0 = mirror, 1 = chalky. Default 0.85. */
@@ -20,6 +39,31 @@ export interface VoxelVertexColorOpts {
      *  Default 256 — large enough for the editor's demo levels; far-away
      *  cells wrap modulo this size. */
     maskSize?: number
+    /**
+     * Surface atlas to sample for per-block texture detail. Build with
+     * `buildVoxelAtlas()` and wrap with `createAtlasTexture()`. When
+     * absent the material runs in flat-only mode — the atlas branch in
+     * the shader collapses to a 1.0 multiplier, so blocks render
+     * exactly like the pre-texture build.
+     */
+    atlas?: Texture | null
+    /** Initial toggle state for the texture pass. Default `true`. */
+    texturesEnabled?: boolean
+    /** Lower bound of the tile-luminance tint range when textures are
+     *  on. Default 0.80 — a fully-dark tile texel darkens the block
+     *  to 80% of its vertex colour.
+     *
+     *  IMPORTANT: keep `tintHigh` at 1.0. The `blank` tile is uniform
+     *  1.0 and is the fallback used by every palette entry without
+     *  `textureKey`. If `tintHigh` ever exceeds 1.0, plain-colour
+     *  blocks render *brighter* than they did before this texture
+     *  pass existed — which is exactly the regression the optional
+     *  `textureKey` was designed to avoid. */
+    tintLow?: number
+    /** Upper bound. Default 1.0. See `tintLow` for why this should
+     *  stay at 1.0 unless you also want to disable the "plain blocks
+     *  look the same" guarantee. */
+    tintHigh?: number
 }
 
 export interface VoxelMaterial {
@@ -35,6 +79,9 @@ export interface VoxelMaterial {
     /** Replace the cover mask. Each `{x, z}` is a world-cell column that
      *  contains hidden geometry above the current working plane. */
     setCoverMaskCells(cells: Iterable<{ x: number; z: number }>): void
+    /** Toggle the atlas-sampling pass at runtime. When `false` every
+     *  block — textured or not — renders as pure vertex colour. */
+    setTexturesEnabled(enabled: boolean): void
 }
 
 const NO_CUT_Y = 1e6
@@ -43,27 +90,35 @@ const DEFAULT_MASK_SIZE = 256
 /**
  * PBR-lit voxel material with optional working-plane indicators.
  *
- * With a cut active, two effects layer onto the per-vertex colour:
- *   1. **Above the working plane** (`y ≥ cutY + 1.5`, half-cell centre) —
- *      translucent ghosts at `aboveCutOpacity` so upper geometry doesn't
- *      obscure the working layer in top-down view.
- *   2. **Active-layer cells with hidden geometry above them** — the
- *      painted colour is multiplied by `coveredCellDarken`, producing
- *      a faded-but-readable covered state.
+ * Two visual layers compose into the final colour:
  *
- * Cells *at* the working plane row render with their normal colour at
- * full opacity — they're what you're editing, so they should look like
- * themselves. The cover mask is a 2-D `DataTexture` sampled per-fragment
- * at the cell's XZ position; it wraps modulo `maskSize` so coordinates
- * far from the origin alias (fine for the demo editor's small worlds).
+ *  1. **Per-vertex colour** — the palette entry's authored RGB, the
+ *     same value the old flat-only material rendered.
+ *  2. **Atlas surface tile** — a 32×32 grayscale tile from the
+ *     procedural voxel atlas, sampled per-fragment using the
+ *     `voxelUV` and `voxelTileIndex` mesh attributes. The tile value
+ *     drives a tight tint range (default ±10%) multiplied into the
+ *     base colour, so the block keeps its hue and the texture only
+ *     adds small surface detail.
+ *
+ * The atlas pass is gated by a uniform so the host can flip it on/off
+ * at runtime. Off-state multiplier is exactly 1.0, which makes the
+ * material visually identical to the pre-texture build.
+ *
+ * Cut-plane behaviour (working-plane fade + cover mask) is unchanged
+ * from the previous revision — those nodes layer on top of the
+ * tinted base colour.
  */
 export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMaterial {
     const darken = opts.coveredCellDarken ?? 0.65
     const aboveOpacity = opts.aboveCutOpacity ?? 0.30
     const maskSize = opts.maskSize ?? DEFAULT_MASK_SIZE
+    const tintLow = opts.tintLow ?? 0.80
+    const tintHigh = opts.tintHigh ?? 1.0
 
     const cutActiveUniform = uniform(0)
     const cutYUniform = uniform(NO_CUT_Y)
+    const useTexturesUniform = uniform(opts.texturesEnabled === false ? 0 : 1)
     const maskData = new Uint8Array(maskSize * maskSize)
     const maskTex = new DataTexture(maskData, maskSize, maskSize, RedFormat, UnsignedByteType)
     maskTex.magFilter = NearestFilter
@@ -78,27 +133,42 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
         flatShading: opts.flatShading ?? true,
     })
 
+    // ── Atlas sampling ────────────────────────────────────────────────
+    // The mesher emits `voxelUV` in [0, W] × [0, H] for a W×H merged
+    // quad. `fract` collapses it to per-voxel 0..1; we then offset
+    // into the tile's atlas-space origin. Nearest sampling (set on the
+    // atlas DataTexture) keeps tile boundaries pixel-perfect — no
+    // bilinear bleed across slots.
+    const tileIndex = attribute<'float'>('voxelTileIndex', 'float')
+    const tileX = tileIndex.mod(float(TILES_PER_ROW))
+    const tileY = tileIndex.div(float(TILES_PER_ROW)).floor()
+    const tileOriginU = tileX.mul(float(TILE_UV_SIZE))
+    const tileOriginV = tileY.mul(float(TILE_UV_SIZE))
+    const voxelUV = attribute<'vec2'>('voxelUV', 'vec2')
+    const localUV = voxelUV.fract().mul(float(TILE_UV_SIZE))
+    const atlasUV = vec2(tileOriginU.add(localUV.x), tileOriginV.add(localUV.y))
+    // When no atlas is supplied we fall back to a flat 1.0 sample —
+    // the shader path is identical, just yields 1.0 everywhere so the
+    // tint range collapses to a no-op.
+    const atlasSample = opts.atlas ? tslTexture(opts.atlas, atlasUV).r : float(1.0)
+    const texturedFactor = mix(float(tintLow), float(tintHigh), atlasSample)
+    const tileFactor = mix(float(1.0), texturedFactor, useTexturesUniform)
+
+    // ── Cut-plane fade + cover mask (unchanged behaviour) ────────────
     const y = positionWorld.y
-    // Half-cell offsets — the cell at world Y = N occupies y in [N, N+1].
-    // Comparing against `cutY + 0.5` and `cutY + 1.5` (cell centres)
-    // keeps boundary faces classified by which cell they geometrically
-    // belong to instead of flipping at integer Y boundaries.
     const halfBelow = cutYUniform.add(0.5)
     const halfAbove = cutYUniform.add(1.5)
     const cutActive = cutActiveUniform.greaterThan(0.5)
     const isAbove = cutActive.and(y.greaterThanEqual(halfAbove))
     const isActiveLayer = y.greaterThanEqual(halfBelow).and(y.lessThan(halfAbove))
 
-    // Mask sample. Floor positionWorld.xz to an integer cell coordinate,
-    // wrap modulo maskSize, and look up the red channel — non-zero means
-    // "hidden non-air exists above this XZ column".
     const cellXZ = positionWorld.xz.floor()
-    const uv = cellXZ.add(0.5).div(maskSize)
-    const maskValue = tslTexture(maskTex, uv).r
+    const maskUV = cellXZ.add(0.5).div(maskSize)
+    const maskValue = tslTexture(maskTex, maskUV).r
     const isCovered = cutActive.and(isActiveLayer).and(maskValue.greaterThan(0.5))
 
     const base = vertexColor()
-    const baseColor = base.rgb
+    const baseColor = base.rgb.mul(tileFactor)
     m.colorNode = select(isCovered, baseColor.mul(darken), baseColor)
     m.opacityNode = base.a.mul(select(isAbove, aboveOpacity, 1.0))
     // Per-vertex emissive RGB (intensity pre-multiplied by the mesher).
@@ -131,5 +201,24 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
             }
             maskTex.needsUpdate = true
         },
+        setTexturesEnabled(enabled) {
+            useTexturesUniform.value = enabled ? 1 : 0
+        },
     }
+}
+
+/**
+ * Wrap a `buildVoxelAtlas()` pixel buffer in a `DataTexture` configured
+ * for pixel-perfect voxel sampling — nearest filtering, no mipmaps, no
+ * wrapping. The caller owns the resulting texture and should `dispose`
+ * it on teardown.
+ */
+export function createAtlasTexture(rgba: Uint8Array, width: number, height: number): DataTexture {
+    const tex = new DataTexture(rgba, width, height, RGBAFormat, UnsignedByteType)
+    tex.magFilter = NearestFilter
+    tex.minFilter = NearestFilter
+    // Default ClampToEdgeWrapping — the shader's per-voxel UV math
+    // already keeps the sample inside the tile's region.
+    tex.needsUpdate = true
+    return tex
 }

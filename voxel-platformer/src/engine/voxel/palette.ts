@@ -7,6 +7,8 @@
 // reference indices, so changing index 5 from "stone" to "water" silently
 // breaks every existing level.
 
+import { TILE_INDEX } from './atlas-manifest'
+
 export interface PaletteEntry {
     /** Display name. */
     name: string
@@ -44,6 +46,18 @@ export interface PaletteEntry {
     lightCastsShadow?: boolean
     /** Optional non-cube prop renderer for authored special blocks. */
     renderAs?: 'torch'
+    /**
+     * Atlas tile name driving the chunk-mesh surface detail. When
+     * omitted the block renders as a flat colour (the historical
+     * behaviour) — internally it maps to tile slot 0 (the `blank`
+     * tile), which is a uniform 1.0 multiplier in the shader, so a
+     * missing texture key is indistinguishable from "no texture".
+     *
+     * Add a key here and a matching painter in `atlas-builder.ts` to
+     * texture a block. Tile names are validated against
+     * `atlas-manifest.TILE_NAMES` via `paletteTileIndex`.
+     */
+    textureKey?: string
 }
 
 export interface BlockMovementTraits {
@@ -84,14 +98,16 @@ export const BLOCK = {
 export const DEFAULT_PALETTE: Palette = {
     entries: [
         { name: 'air',   color: [0, 0, 0],          solid: false },
-        { name: 'grass', color: [0.36, 0.65, 0.30], solid: true },
-        { name: 'dirt',  color: [0.45, 0.30, 0.20], solid: true },
-        { name: 'stone', color: [0.55, 0.55, 0.58], solid: true },
-        { name: 'sand',  color: [0.93, 0.85, 0.62], solid: true },
-        { name: 'wood',  color: [0.42, 0.27, 0.16], solid: true },
-        { name: 'leaf',  color: [0.20, 0.45, 0.18], solid: true },
-        { name: 'plank', color: [0.78, 0.62, 0.40], solid: true },
-        { name: 'brick', color: [0.66, 0.30, 0.25], solid: true },
+        { name: 'grass', color: [0.36, 0.65, 0.30], solid: true, textureKey: 'grass' },
+        { name: 'dirt',  color: [0.45, 0.30, 0.20], solid: true, textureKey: 'dirt' },
+        { name: 'stone', color: [0.55, 0.55, 0.58], solid: true, textureKey: 'stone' },
+        { name: 'sand',  color: [0.93, 0.85, 0.62], solid: true, textureKey: 'sand' },
+        { name: 'wood',  color: [0.42, 0.27, 0.16], solid: true, textureKey: 'wood' },
+        { name: 'leaf',  color: [0.20, 0.45, 0.18], solid: true, textureKey: 'leaf' },
+        { name: 'plank', color: [0.78, 0.62, 0.40], solid: true, textureKey: 'plank' },
+        { name: 'brick', color: [0.66, 0.30, 0.25], solid: true, textureKey: 'brick' },
+        // `glow` stays flat — the emissive PointLight + bright authored
+        // colour are the whole visual; a tile here would just muddy it.
         {
             name: 'glow',
             color: [1.00, 0.78, 0.40],
@@ -103,6 +119,7 @@ export const DEFAULT_PALETTE: Palette = {
             lightDistance: 10,
         },
         { name: 'no-walk ward', color: [0.58, 0.18, 0.70], solid: true, pathSurface: false },
+        // `door` is a hand-authored prop colour; left flat for now.
         { name: 'door',  color: [0.50, 0.30, 0.16], solid: true },
         {
             name: 'water',
@@ -124,6 +141,7 @@ export const DEFAULT_PALETTE: Palette = {
             raycastTarget: true,
             pathSurface: false,
             opacity: 0.42,
+            textureKey: 'cloud',
         },
         {
             name: 'torch',
@@ -142,6 +160,17 @@ export const DEFAULT_PALETTE: Palette = {
 /** Look up a palette entry by index. Returns AIR's entry on out-of-range. */
 export function paletteEntry(palette: Palette, index: number): PaletteEntry {
     return palette.entries[index] ?? palette.entries[AIR]!
+}
+
+/** Atlas tile slot to use for this block. Returns 0 (the `blank`
+ *  tile — uniform 1.0) when the entry has no `textureKey` or the key
+ *  doesn't match a known tile, so plain-colour blocks fall through to
+ *  the same shader path without a branch. */
+export function paletteTileIndex(palette: Palette, index: number): number {
+    const entry = paletteEntry(palette, index)
+    if (!entry.textureKey) return 0
+    const slot = (TILE_INDEX as Record<string, number | undefined>)[entry.textureKey]
+    return slot ?? 0
 }
 
 /** Convenience: legacy combined solidity query. Prefer a narrower trait in new code. */

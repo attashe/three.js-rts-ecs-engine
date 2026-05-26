@@ -24,6 +24,7 @@ export {
     isTorchBlock,
     occludesFaces,
     paletteEntry,
+    paletteTileIndex,
     voxelOpacity,
     voxelEmissive,
     voxelLightSpec,
@@ -32,6 +33,19 @@ export {
     clonePalette,
 } from './palette'
 export type { BlockLightSpec, BlockMovementTraits, Palette, PaletteEntry } from './palette'
+
+export {
+    ATLAS_SIZE,
+    TILE_INDEX,
+    TILE_NAMES,
+    TILE_SIZE,
+    TILE_SLOT_COUNT,
+    TILES_PER_ROW,
+    TILE_UV_SIZE,
+} from './atlas-manifest'
+export type { TileName } from './atlas-manifest'
+export { buildVoxelAtlas } from './atlas-builder'
+export type { AtlasBuildResult } from './atlas-builder'
 
 export { createBlockLightSystem } from './block-light-system'
 export type { BlockLightSystemOptions } from './block-light-system'
