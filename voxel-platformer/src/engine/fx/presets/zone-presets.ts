@@ -59,13 +59,21 @@ export const ZONE_PRESETS: Record<string, ZonePreset> = {
     // PointLight is run at negative intensity (the controller negates
     // `lightIntensity`), so this localised pool of "anti-light" pulls
     // ambient + nearby torches' contribution down within its radius.
-    // `lightIntensity` is the magnitude (positive); 4–8 is the usable
-    // range — below 2 you barely see it, above 12 nearby walls go
-    // black and lose readability. Distance ≈ size.x / 2 by default;
-    // dial up the distance for cave-wide gloom, down for tight
-    // alcoves.
+    //
+    // `lightIntensity` is the magnitude. Default 22 is high on purpose:
+    // a PointLight's contribution falls off as `intensity / d^decay`,
+    // and we configure `decay = 1.0` for darkness zones (see
+    // `weather-zone.ts` → `decayFor`), but even with the gentler
+    // falloff the negative contribution has to OVERPOWER whatever the
+    // sun, ambient, and any nearby torches are adding to that fragment
+    // — that's usually 4–10 units worth of positive light. Below 15
+    // the effect reads as "slightly dim" rather than "darkened pool".
+    // Above 35 nearby blocks crush to black and lose readability.
+    //
+    // `lightDistance: 14` is the visible radius. Smaller (≤ 8) for
+    // tight alcoves; larger (≥ 18) for cave-wide gloom.
     darkness: { id: 'darkness', label: 'Darkness',
-        params: { type: 'darkness', name: 'Darkness', color: '#1a1024', count: 0, particleSize: 0, opacity: 0, speed: 0, turbulence: 0, windX: 0, windZ: 0, gravity: 0, lifetime: 1, streaks: false, streakLength: 0, lightEnabled: true, lightColor: '#ffffff', lightIntensity: 5.5, lightDistance: 10, lightning: false, size: { x: 10, y: 6, z: 10 } },
+        params: { type: 'darkness', name: 'Darkness', color: '#1a1024', count: 0, particleSize: 0, opacity: 0, speed: 0, turbulence: 0, windX: 0, windZ: 0, gravity: 0, lifetime: 1, streaks: false, streakLength: 0, lightEnabled: true, lightColor: '#ffffff', lightIntensity: 22, lightDistance: 14, lightning: false, size: { x: 10, y: 6, z: 10 } },
     },
 }
 

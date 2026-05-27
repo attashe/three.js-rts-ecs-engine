@@ -40,6 +40,7 @@ import { registerPistonMechanism } from './game/mechanisms'
 import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from './game/sound-sources'
 import { createPlayerLocomotionAudioSystem } from './game/player-audio'
 import { createEnvironmentFxSystem, createVisualFxZoneSystem } from './game/weather'
+import { createPropRenderSystem } from './game/props/prop-system'
 import { defineZone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
 import { createGameMenuSystem } from './game/game-menu-system'
@@ -129,6 +130,7 @@ async function main(): Promise<void> {
             () => renderer.iso.target,
         ), 'environmentFx')
         .addSystem(createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, { audioReady }), 'visualFxZones')
+        .addSystem(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }), 'propRender')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,
             onJump: () => audio.play(GameAudio.Jump, {

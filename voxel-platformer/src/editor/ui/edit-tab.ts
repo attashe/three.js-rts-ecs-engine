@@ -221,7 +221,19 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
             return buildSoundModePanel()
         case 'place-weather':
             return buildWeatherModePanel()
+        case 'place-prop':
+        case 'scatter-props':
+            return buildPropModePanel()
     }
+}
+
+function buildPropModePanel(): RefreshableElement {
+    const section = sectionEl('Props')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.textContent = 'Switch to the Props tab to pick single placement or scatter brush settings.'
+    section.appendChild(hint)
+    return { element: section, refresh() {} }
 }
 
 // ────────────────────────────────────────────────────────────────────────

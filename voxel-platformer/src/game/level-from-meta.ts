@@ -86,6 +86,15 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         }
         : undefined
 
+    const props = (meta.props ?? []).map((p) => ({
+        id: p.id,
+        kind: p.kind,
+        position: { ...p.position },
+        yaw: p.yaw,
+        scale: p.scale,
+        gridAligned: p.gridAligned,
+    }))
+
     return {
         spawn: { x: meta.spawn.x, y: meta.spawn.y, z: meta.spawn.z },
         stoneSpawners: [],
@@ -96,6 +105,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         soundZones,
         environment,
         weatherZones,
+        props,
         ambientWeather,
         size: fallbackSize,
     }

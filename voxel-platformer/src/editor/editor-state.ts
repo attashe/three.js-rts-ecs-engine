@@ -5,6 +5,7 @@ import type { ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
 import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
 import type { PistonDirection } from './piston-direction'
+import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
 
 export type EditorMode =
     | 'select'
@@ -17,11 +18,14 @@ export type EditorMode =
     | 'place-sound'
     | 'place-sound-zone'
     | 'place-weather'
+    | 'place-prop'
+    | 'scatter-props'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut. */
 export type EditorViewMode = 'iso' | 'top-down'
 export type EditorPistonMotion = 'teleport' | 'physical'
 export type EditorZoneTriggerMode = ZoneTriggerSource | 'both'
+export type PropScatterShape = 'square' | 'circle'
 
 export interface EditorPickup {
     /** World-space pickup position (foot of the visual). Stored in editor
@@ -78,6 +82,22 @@ export interface EditorSoundSource {
     volume: number
     loop: boolean
     autoplay: boolean
+}
+
+export interface EditorPropScatterItem {
+    id: string
+    kind: EditorPropKind
+    enabled: boolean
+    /** Expected number of props per brush cell for each scatter stroke. */
+    density: number
+    /** Base uniform scale for this scatter item. */
+    scale: number
+    /** Random scale delta as a fraction of `scale`, e.g. 0.25 => ±25%. */
+    scaleVariation: number
+    /** Base yaw in radians. */
+    yaw: number
+    /** Random yaw delta in radians around `yaw`. */
+    yawVariation: number
 }
 
 /**
@@ -318,6 +338,30 @@ export interface EditorState {
     weatherZoneSoundId: string
     weatherZoneSoundVolume: number
 
+    /** Decorative props placed in the editor (flowers, bushes,
+     *  tables, ...). Authoring data only — the runtime system reads
+     *  this array directly to drive InstancedMesh slots. */
+    props: EditorProp[]
+    /** Currently selected prop for tab-side editing. */
+    selectedPropId: string | null
+    /** Prop kind applied to the next placed prop. */
+    propKind: EditorPropKind
+    /** Whether the next placed prop snaps to the voxel grid (XZ to
+     *  cell centre, Y to surface top). Off = free-float at the raycast
+     *  hit point. */
+    propGridAlign: boolean
+    /** Yaw rotation (radians) applied to the next placed prop. */
+    propYaw: number
+    /** Uniform scale applied to the next placed prop. */
+    propScale: number
+    /** Prop scatter brush shape. */
+    propScatterShape: PropScatterShape
+    /** Scatter brush diameter / side length in cells. */
+    propScatterSize: number
+    /** Editor-only recipe list used by scatter mode. Scatter strokes emit
+     *  ordinary `props`, so this list does not need runtime persistence. */
+    propScatterItems: EditorPropScatterItem[]
+
     /** Level-wide visual environment (sky / fog / sun / drifting rain
      *  & snow / lightning). Disabled by default. */
     ambientWeather: EditorAmbientWeather
@@ -432,6 +476,15 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         weatherZoneAddSound: true,
         weatherZoneSoundId: '',
         weatherZoneSoundVolume: 0.5,
+        props: [],
+        selectedPropId: null,
+        propKind: PROP_KINDS[0],
+        propGridAlign: true,
+        propYaw: 0,
+        propScale: 1,
+        propScatterShape: 'circle',
+        propScatterSize: 5,
+        propScatterItems: [],
         ambientWeather: {
             // Default to enabled now that an Outdoor mode "just works"
             // without the author hand-picking sky/fog/sun colours — the
@@ -471,6 +524,9 @@ export interface EditorLevelMeta {
     soundZones?: EditorSoundZone[]
     /** Local Visual FX particle zones (rain, fire, magic, lava surface, ...). */
     weatherZones?: EditorWeatherZone[]
+    /** Decorative misc objects (flowers, tables, books, ...). Absent
+     *  / empty ⇒ no props in the level. */
+    props?: EditorProp[]
     /** Level-wide visual environment snapshot. Absent / `enabled: false`
      *  ⇒ playtest uses the engine's default lighting + sky. */
     ambientWeather?: EditorAmbientWeather
@@ -538,6 +594,14 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             addSound: z.addSound,
             soundId: z.soundId,
             soundVolume: z.soundVolume,
+        })),
+        props: state.props.length === 0 ? undefined : state.props.map((p) => ({
+            id: p.id,
+            kind: p.kind,
+            position: { ...p.position },
+            yaw: p.yaw,
+            scale: p.scale,
+            gridAligned: p.gridAligned,
         })),
         ambientWeather: state.ambientWeather.enabled
             ? {

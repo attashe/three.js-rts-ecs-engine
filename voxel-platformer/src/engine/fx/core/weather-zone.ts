@@ -199,6 +199,13 @@ function decayFor(type: WeatherZoneParams['type']): number {
         case 'explosion': return 1.2
         case 'firefly': return 1.7
         case 'lava': return 1.45
+        // Slow falloff for darkness so the negative contribution
+        // reaches the edge of `lightDistance` instead of vanishing
+        // into the quadratic-default within the first few units. At
+        // decay = 1 the dark pool is roughly hemispherical and
+        // uniform; the breathing modulator in `fx-light-controller`
+        // adds the only temporal variation.
+        case 'darkness': return 1.0
         default: return 2.0
     }
 }

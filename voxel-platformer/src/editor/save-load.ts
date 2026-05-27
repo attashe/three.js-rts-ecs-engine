@@ -78,6 +78,8 @@ function clearWorldAndEditorState(
     editorState.selectedSoundZoneId = null
     editorState.weatherZones = []
     editorState.selectedWeatherZoneId = null
+    editorState.props = []
+    editorState.selectedPropId = null
     // Leave ambientWeather alone — it's level-wide state the user
     // explicitly authored. A fresh "new level" call will overwrite it
     // via createEditorState anyway.
@@ -234,6 +236,16 @@ export function loadLevelFromBuffer(
                 soundId: z.soundId,
                 volume: Number.isFinite(z.volume) ? z.volume : 0.5,
                 fadeTime: Number.isFinite(z.fadeTime) ? z.fadeTime : 1.2,
+            })
+        }
+        for (const p of loaded.metadata.props ?? []) {
+            editorState.props.push({
+                id: p.id,
+                kind: p.kind,
+                position: { ...p.position },
+                yaw: Number.isFinite(p.yaw) ? p.yaw : 0,
+                scale: Number.isFinite(p.scale) && p.scale > 0 ? p.scale : 1,
+                gridAligned: p.gridAligned ?? true,
             })
         }
         // Restore the level-wide music selection. Without this branch

@@ -5,6 +5,7 @@ import type { PistonMechanismConfig } from './mechanisms'
 import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
+import type { EditorProp } from './props/prop-types'
 
 export interface CoinPileSpawn {
     position: { x: number; y: number; z: number }
@@ -31,6 +32,10 @@ export interface LevelMeta {
     /** Local Visual FX zones (rain, fire, magic, lava surface, ...)
      *  paired with optional looped ambient beds. */
     weatherZones: WeatherZoneRuntimeConfig[]
+    /** Decorative misc objects authored in the editor (flowers,
+     *  bushes, tables, ...). Rendered via `createPropRenderSystem`
+     *  in `client.ts`. */
+    props: EditorProp[]
     /** Level-wide visual environment snapshot (sky/fog/sun/drifting
      *  rain & snow). Optional — absent ⇒ engine defaults. */
     ambientWeather?: AmbientWeatherRuntimeConfig
@@ -190,6 +195,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         // user picks (or clears) the track from the Sound tab.
         environment: { soundId: 'music.background', volume: 0.36 },
         weatherZones: [],
+        props: [],
         size,
     }
 }

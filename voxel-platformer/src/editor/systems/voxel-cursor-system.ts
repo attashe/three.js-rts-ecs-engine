@@ -19,6 +19,7 @@ import { RenderOrder } from '../../engine/ecs/systems/orders'
 import { brushDragFootprint, brushFootprint, isDragBrush } from '../brush'
 import type { EditorState } from '../editor-state'
 import { addOffset, pistonOffset } from '../piston-direction'
+import { scatterBrushCells } from './prop-place-system'
 
 const MAX_RAY = 60
 const RMB = 2
@@ -156,7 +157,9 @@ function resolveCursorCell(
         if (
             (editorState.mode === 'paint' && !eraseGesture) ||
             editorState.mode === 'place-spawn' ||
-            editorState.mode === 'place-sound'
+            editorState.mode === 'place-sound' ||
+            editorState.mode === 'place-prop' ||
+            editorState.mode === 'scatter-props'
         ) {
             return {
                 x: hit.voxel.x + hit.normal.x,
@@ -176,7 +179,8 @@ function resolveCursorCell(
  *  the full XZ footprint at the working plane; paint / erase show the brush
  *  footprint. */
 function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; z: number }): { x: number; y: number; z: number }[] {
-    if (state.mode === 'spawn-pickup' || state.mode === 'place-spawn' || state.mode === 'place-sound') return [cursor]
+    if (state.mode === 'spawn-pickup' || state.mode === 'place-spawn' || state.mode === 'place-sound' || state.mode === 'place-prop') return [cursor]
+    if (state.mode === 'scatter-props') return scatterBrushCells(state, cursor)
     if (state.mode === 'place-piston') {
         const target = addOffset(cursor, pistonOffset(state.pistonDirection, state.pistonDistance))
         return [cursor, target]
@@ -230,6 +234,8 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'place-sound': return SOUND_OUTLINE_COLOUR
         case 'place-sound-zone': return 0x4af6c8
         case 'place-weather': return 0xffd6f0
+        case 'place-prop': return 0xb3e5b3
+        case 'scatter-props': return 0x9be66f
     }
 }
 
@@ -243,6 +249,7 @@ function ghostColour(chunks: ChunkManager, state: EditorState): [number, number,
     if (state.mode === 'place-sound') return [0.4, 0.9, 1]
     if (state.mode === 'place-sound-zone') return [0.29, 0.96, 0.78]
     if (state.mode === 'place-weather') return [1, 0.84, 0.94]
+    if (state.mode === 'scatter-props') return [0.6, 0.9, 0.44]
     const entry = chunks.palette.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]
