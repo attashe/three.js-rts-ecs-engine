@@ -41,6 +41,8 @@ import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from
 import { createPlayerLocomotionAudioSystem } from './game/player-audio'
 import { createEnvironmentFxSystem, createVisualFxZoneSystem } from './game/weather'
 import { createPropRenderSystem } from './game/props/prop-system'
+import { createGameScriptSystem } from './game/script-system'
+import { createInteractionSystem } from './game/interaction-system'
 import { defineZone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
 import { createGameMenuSystem } from './game/game-menu-system'
@@ -51,6 +53,7 @@ import { levelMetaFromEditor } from './game/level-from-meta'
 import type { EditorLevelMeta } from './editor/editor-state'
 import type { LevelMeta } from './game/level'
 import type { GameWorld } from './engine/ecs/world'
+import demoQuestSource from '../examples/scripts/demo-quest.js?raw'
 
 async function main(): Promise<void> {
     const engine = new Engine({ fixedHz: 60 })
@@ -154,7 +157,11 @@ async function main(): Promise<void> {
         .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
         .addSystem(createPickupSystem({
             onCollected: (kind) => audio.play(
-                kind === PickupKind.Arrow ? GameAudio.PickupArrow : GameAudio.PickupGold,
+                kind === PickupKind.Arrow
+                    ? GameAudio.PickupArrow
+                    : kind === PickupKind.ScriptItem
+                        ? GameAudio.QuestChime
+                        : GameAudio.PickupGold,
                 { deferUntilUnlocked: true },
             ),
         }), 'pickup')
@@ -178,6 +185,13 @@ async function main(): Promise<void> {
             },
         }), 'piston')
         .addSystem(createZoneTriggerSystem(chunks), 'zoneTrigger')
+        .addSystem(createGameScriptSystem({
+            world,
+            chunks,
+            audio,
+            audioManifest: GAME_AUDIO_MANIFEST,
+            getScripts: () => meta.scripts,
+        }), 'scriptEngine')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks, {
             // One-shot stone-impact sfx — fires every time a falling
@@ -251,6 +265,11 @@ async function main(): Promise<void> {
             renderElement: renderer.webgpu.domElement,
             exitHref: './editor.html',
         }), 'gameMenu')
+        .addSystem(createInteractionSystem({
+            actions,
+            camera: () => renderer.iso.camera,
+            domElement: renderer.webgpu.domElement,
+        }), 'interaction')
         .addSystem(createRestartSystem(), 'restart')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,
@@ -322,7 +341,15 @@ function loadLevel(chunks: ChunkManager): LevelMeta {
             }
         }
     }
-    return generatePlatformerLevel(chunks)
+    const demo = generatePlatformerLevel(chunks)
+    demo.scripts = [{
+        id: 'demo-quest',
+        name: 'demo-quest.js',
+        source: demoQuestSource,
+        fromFile: true,
+        sourcePath: 'examples/scripts/demo-quest.js',
+    }]
+    return demo
 }
 
 function copyChunks(src: ChunkManager, dst: ChunkManager): void {

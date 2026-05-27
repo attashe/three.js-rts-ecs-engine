@@ -10,6 +10,7 @@ import {
     isRaycastTarget,
     isRenderableVoxel,
     isTorchBlock,
+    torchBlockState,
     voxelOpacity,
 } from '../src/engine/voxel/palette'
 import { voxelAABBOverlap } from '../src/engine/voxel/voxel-collide'
@@ -18,6 +19,7 @@ import { resolveTorchMount, selectTorchLightKeys, selectTorchSoundKeys } from '.
 test('default torch is a raycastable non-physical prop block', () => {
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.torch]?.name, 'torch')
     assert.equal(isTorchBlock(DEFAULT_PALETTE, BLOCK.torch), true)
+    assert.equal(torchBlockState(DEFAULT_PALETTE, BLOCK.torch), 'lit')
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.torch), false)
     assert.equal(isRaycastTarget(DEFAULT_PALETTE, BLOCK.torch), true)
     assert.equal(isRenderableVoxel(DEFAULT_PALETTE, BLOCK.torch), false)
@@ -35,6 +37,16 @@ test('default torch is a raycastable non-physical prop block', () => {
     }), false)
 })
 
+test('unlit lantern is a visible prop block without torch effects', () => {
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.unlitLantern]?.name, 'unlit lantern')
+    assert.equal(isTorchBlock(DEFAULT_PALETTE, BLOCK.unlitLantern), true)
+    assert.equal(torchBlockState(DEFAULT_PALETTE, BLOCK.unlitLantern), 'unlit')
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.unlitLantern), false)
+    assert.equal(isRaycastTarget(DEFAULT_PALETTE, BLOCK.unlitLantern), true)
+    assert.equal(isRenderableVoxel(DEFAULT_PALETTE, BLOCK.unlitLantern), false)
+    assert.equal(voxelOpacity(DEFAULT_PALETTE, BLOCK.unlitLantern), 0)
+})
+
 test('older palettes keep custom material index when torch is appended', () => {
     const oldPalette = clonePalette(DEFAULT_PALETTE)
     oldPalette.entries.length = BLOCK.torch
@@ -46,11 +58,14 @@ test('older palettes keep custom material index when torch is appended', () => {
 
     const chunks = new ChunkManager(oldPalette)
     const torchIndex = chunks.palette.entries.findIndex((entry) => entry.renderAs === 'torch')
+    const unlitLanternIndex = chunks.palette.entries.findIndex((entry) => entry.renderAs === 'torch-off')
 
     assert.equal(chunks.palette.entries[BLOCK.torch]?.name, 'custom index fourteen')
     assert.equal(isTorchBlock(chunks.palette, BLOCK.torch), false)
     assert.ok(torchIndex > BLOCK.torch)
     assert.equal(chunks.palette.entries[torchIndex]?.name, 'torch')
+    assert.ok(unlitLanternIndex > BLOCK.torch)
+    assert.equal(chunks.palette.entries[unlitLanternIndex]?.name, 'unlit lantern')
 })
 
 test('torch block alignment prefers walls, then floor support, then floating', () => {

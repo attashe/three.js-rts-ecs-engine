@@ -6,6 +6,7 @@ import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
 import type { EditorProp } from './props/prop-types'
+import type { ScriptEntry } from '../engine/script/types'
 
 export interface CoinPileSpawn {
     position: { x: number; y: number; z: number }
@@ -36,6 +37,8 @@ export interface LevelMeta {
      *  bushes, tables, ...). Rendered via `createPropRenderSystem`
      *  in `client.ts`. */
     props: EditorProp[]
+    /** Plain JavaScript scripts run by the script engine. */
+    scripts: ScriptEntry[]
     /** Level-wide visual environment snapshot (sky/fog/sun/drifting
      *  rain & snow). Optional — absent ⇒ engine defaults. */
     ambientWeather?: AmbientWeatherRuntimeConfig
@@ -52,11 +55,12 @@ export interface LevelMeta {
  *  - A short cliff with two stone spawners that drop pebbles and cobbles into
  *    the plaza so the physics is observable.
  *
- * No mechanisms, no NPCs, no doors — pure terrain.
+ * Includes a small NPC-led collection quest driven by the script engine.
  */
 export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     const size = 24
     const groundY = 4
+    const keeperLantern = { x: 9, y: groundY + 1, z: 9 }
 
     // Grass plaza floor — one block thick, dirt under it for visual fringe at
     // the cliff cut.
@@ -101,6 +105,11 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             chunks.setVoxel(2, y, z, BLOCK.brick)
         }
     }
+
+    // Quest lantern: starts cold and dark. The demo quest script
+    // swaps this special unlit prop-block to BLOCK.torch when the
+    // player returns all three Sun Shards to Keeper Arlen.
+    chunks.setVoxel(keeperLantern.x, keeperLantern.y, keeperLantern.z, BLOCK.unlitLantern)
 
     // Cliff with two stone spawners on the east side of the plaza.
     const cliffTop = groundY + 4
@@ -182,12 +191,58 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         },
     ]
 
+    // Quest trigger zones. These are AABB regions on top of the
+    // level's existing terrain. They have no `script` field — the
+    // legacy `ZoneScriptAction` surface is empty — but the script
+    // engine emits `zone-enter` / `zone-exit` for them so
+    // editor-authored .js scripts can react.
+    //
+    // See `voxel-platformer/examples/scripts/demo-quest.js` for the
+    // canonical script that consumes these events.
+    const zones: Zone[] = [
+        {
+            id: 'zone.demo.keeper',
+            kind: 'interact',
+            label: 'Keeper Arlen',
+            // Conversation range around the keeper NPC. It is deliberately an
+            // interact zone, not an automatic trigger, so the quest advances
+            // only when the player presses E near the NPC.
+            min: { x: 9.25, y: groundY + 1, z: 8.25 },
+            max: { x: 11.75, y: groundY + 3, z: 10.75 },
+            interaction: {
+                prompt: 'Interaction',
+                anchor: { x: 10.5, y: groundY + 2.16, z: 9.5 },
+                radius: 2.45,
+            },
+        },
+        {
+            id: 'zone.demo.stairs',
+            kind: 'trigger',
+            label: 'Staircase top',
+            // Sits on top of the topmost plank step (y = groundY + 3,
+            // step depth z∈[12,14]). Goes one cell above so the
+            // player-AABB triggers it.
+            min: { x: 16, y: groundY + 3, z: 12 },
+            max: { x: 21, y: groundY + 5, z: 14 },
+        },
+        {
+            id: 'zone.demo.island',
+            kind: 'trigger',
+            label: 'Floating island',
+            // The piston-target island top is y = groundY + 3. The
+            // standing cell is y = groundY + 4. We span both so the
+            // event fires whether the player rides up or jumps.
+            min: { x: 7, y: groundY + 4, z: 20 },
+            max: { x: 10, y: groundY + 6, z: 23 },
+        },
+    ]
+
     return {
         spawn: { x: size / 2, y: groundY + 1, z: size / 2 },
         stoneSpawners,
         coinPiles,
         pistons,
-        zones: [],
+        zones,
         soundSources: [],
         soundZones: [],
         // Demo level keeps the existing background music bed. Editor-
@@ -195,7 +250,17 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         // user picks (or clears) the track from the Sound tab.
         environment: { soundId: 'music.background', volume: 0.36 },
         weatherZones: [],
-        props: [],
+        props: [
+            {
+                id: 'demo:npc:keeper',
+                kind: 'npc-keeper',
+                position: { x: 10.5, y: groundY + 1, z: 9.5 },
+                yaw: Math.PI * 0.18,
+                scale: 1.2,
+                gridAligned: true,
+            },
+        ],
+        scripts: [],
         size,
     }
 }

@@ -30,8 +30,8 @@ export const MovementState = {
 export const Pickup = {}
 
 /** Categorises a pickup. `kind` is one of the PickupKind values in
- *  pickup-system.ts (1 = gold, 2 = arrow); `amount` is added to the
- *  matching slot on world.inventory at collection time. */
+ *  pickup-system.ts (1 = gold, 2 = arrow, 3 = script item). `amount`
+ *  is added to the matching inventory slot for inventory-backed kinds. */
 export const PickupValue = {
     kind: new Uint8Array(MAX_ENTITIES),
     amount: new Uint16Array(MAX_ENTITIES),

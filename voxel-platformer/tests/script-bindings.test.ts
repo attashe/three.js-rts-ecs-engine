@@ -9,6 +9,7 @@ import type {
     LogFacade,
     PickupsFacade,
     PlayerFacade,
+    UiFacade,
     VoxelCoord,
     ZoneFacade,
 } from '../src/engine/script/types'
@@ -22,6 +23,7 @@ function stubs() {
         chunksSet: [], chunksFill: [], chunksGet: [],
         playerTeleport: [], playerKill: [],
         pickupSpawn: [],
+        uiSay: [],
         log: [],
         zoneContains: [],
     }
@@ -46,6 +48,9 @@ function stubs() {
     const pickups: PickupsFacade = {
         spawn(kind, pos, opts) { calls.pickupSpawn.push({ kind, pos, opts }); return `id-${kind}` },
     }
+    const ui: UiFacade = {
+        say(targetId, message, opts) { calls.uiSay.push({ targetId, message, opts }) },
+    }
     const zone: ZoneFacade = {
         contains(zoneId, who) { calls.zoneContains.push({ zoneId, who }); return zoneId === 'inside' },
     }
@@ -54,7 +59,7 @@ function stubs() {
     }
     return {
         calls,
-        deps: { audio, chunks, player, pickups, zone, log },
+        deps: { audio, chunks, player, pickups, ui, zone, log },
         setPlayerPos(p: VoxelCoord | null) { playerPos = p },
         setGold(g: number) { gold = g },
     }
@@ -92,10 +97,16 @@ test('player bindings: position is live, teleport/kill forward', () => {
     const s = stubs()
     const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
     assert.deepEqual(ctx.player.position, { x: 1, y: 2, z: 3 })
+    assert.equal(ctx.player.alive, true)
     s.setPlayerPos({ x: 9, y: 9, z: 9 })
     assert.deepEqual(ctx.player.position, { x: 9, y: 9, z: 9 })
     s.setPlayerPos(null)
-    assert.equal(ctx.player.position, null)
+    // Sentinel position: NaN coords so AABB checks short-circuit
+    // without authors having to null-guard. alive is the explicit
+    // "is there a player" flag.
+    const dead = ctx.player.position
+    assert.ok(Number.isNaN(dead.x) && Number.isNaN(dead.y) && Number.isNaN(dead.z))
+    assert.equal(ctx.player.alive, false)
     assert.equal(ctx.player.inventory.gold, 7)
     s.setGold(42)
     assert.equal(ctx.player.inventory.gold, 42)
@@ -105,12 +116,58 @@ test('player bindings: position is live, teleport/kill forward', () => {
     assert.deepEqual(s.calls.playerKill, [{ reason: 'test' }])
 })
 
+test('player.position sentinel makes AABB checks fail naturally', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    s.setPlayerPos(null)
+    const pos = ctx.player.position
+    // The geom.box helper is what scripts actually call — verify the
+    // sentinel propagates through it as "false, please skip".
+    const inside = ctx.geom.box({ x: 0, y: 0, z: 0 }, { x: 10, y: 10, z: 10 }, pos)
+    assert.equal(inside, false)
+})
+
+test('time.delta is the most recent advance(dt) input', () => {
+    const s = stubs()
+    const runtime = createRuntime()
+    const ctx = buildScriptContext({ runtime, ...s.deps, flags: new Map() })
+    assert.equal(ctx.time.delta, 0, 'zero before any tick')
+    runtime.advance(0.05)
+    assert.ok(Math.abs(ctx.time.delta - 0.05) < 1e-9)
+    runtime.advance(0.1)
+    assert.ok(Math.abs(ctx.time.delta - 0.1) < 1e-9)
+})
+
+test('geom.box inclusive-min exclusive-max + distSq', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    const min = { x: 0, y: 0, z: 0 }
+    const max = { x: 2, y: 2, z: 2 }
+    assert.equal(ctx.geom.box(min, max, { x: 0, y: 0, z: 0 }), true,  'min corner: inclusive')
+    assert.equal(ctx.geom.box(min, max, { x: 1.5, y: 1, z: 1 }), true)
+    assert.equal(ctx.geom.box(min, max, { x: 2, y: 1, z: 1 }), false, 'max corner: exclusive')
+    assert.equal(ctx.geom.box(min, max, { x: -1, y: 0, z: 0 }), false)
+    assert.equal(ctx.geom.distSq({ x: 0, y: 0, z: 0 }, { x: 3, y: 4, z: 0 }), 25)
+    assert.equal(ctx.geom.distSq({ x: 1, y: 1, z: 1 }, { x: 1, y: 1, z: 1 }), 0)
+})
+
 test('pickups.spawn forwards and returns a handle id', () => {
     const s = stubs()
     const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
     const id = ctx.pickups.spawn('coin', { x: 1, y: 1, z: 1 }, { amount: 5 })
     assert.equal(id, 'id-coin')
     assert.deepEqual(s.calls.pickupSpawn, [{ kind: 'coin', pos: { x: 1, y: 1, z: 1 }, opts: { amount: 5 } }])
+})
+
+test('ui.say forwards target, message, and display options', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    ctx.ui.say('zone.demo.keeper', 'hello there', { seconds: 4 })
+    assert.deepEqual(s.calls.uiSay, [{
+        targetId: 'zone.demo.keeper',
+        message: 'hello there',
+        opts: { seconds: 4 },
+    }])
 })
 
 test('flags.get / set is backed by the injected Map and persists across reads', () => {

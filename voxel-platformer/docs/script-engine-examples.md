@@ -52,7 +52,9 @@ chunks.getBlock(x, y, z): number
 audio.play(soundId, opts?: { loop?, volume?, fade? })
 audio.stop(soundId)
 
-pickups.spawn(kind, pos, opts?: { amount? })
+pickups.spawn(kind, pos, opts?: { amount?, id?, label? })
+
+ui.say(targetId, message, opts?: { seconds? })
 
 flags.get(name)
 flags.set(name, value)
@@ -139,11 +141,11 @@ on('zone-enter', { zoneId: GROVE, once: true }, async () => {
 
 ## 2. Sample quest — "The Lost Amulet"
 
-**Goal.** A small three-step quest. The priestess (a zone, since we
-have no NPCs yet) tells the player to fetch a lost amulet from the
-eastern crypt. The player picks the amulet up. The player returns to
-the priestess and is rewarded with 25 gold. The state persists across
-saves, so reloading mid-quest doesn't reset progress.
+**Goal.** A small three-step quest. The priestess NPC tells the
+player to fetch a lost amulet from the eastern crypt. The player
+picks the amulet up. The player returns to the priestess and is
+rewarded with 25 gold. The state persists across saves, so reloading
+mid-quest doesn't reset progress.
 
 ```js
 // quest-lost-amulet.js — three-step quest with persistent state

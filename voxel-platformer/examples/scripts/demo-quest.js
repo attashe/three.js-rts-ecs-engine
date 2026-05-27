@@ -1,110 +1,165 @@
-// demo-quest.js — "Three Tokens of the Plaza"
+// demo-quest.js — "Fragments for the Keeper"
 //
-// A three-stage scavenger hunt for the platformer demo level. The
-// player visits the staircase top, earns five gold, then climbs the
-// floating island — each stage spawns a small reward + plays a chime,
-// and the final stage drops a 50-gold pile + plays a fanfare.
+// NPC-led demo quest for the procedural platformer level:
 //
-// This script is hand-authored against the Slice 1 API. Several
-// patterns here are obvious polling-style workarounds that will
-// disappear when Slice 3 ships the real `zone-enter` and
-// `pickup-taken` emitters:
+//   1. Talk to Keeper Arlen near the spawn plaza.
+//   2. Collect three Sun Shards placed around the movement tutorial spaces.
+//   3. Return to Arlen for a gold reward and completion fanfare.
 //
-//   - Stage 1 polls player.position every 0.25 s instead of waiting
-//     on `on('zone-enter', { zoneId: 'quest.demo.stairs' }, ...)`.
-//   - Stage 2 polls player.inventory.gold instead of reacting to a
-//     `pickup-taken` event for the specific token.
-//   - Stage 3 polls player.position against a hard-coded AABB instead
-//     of `on('zone-enter', { zoneId: 'quest.demo.island' }, ...)`.
-//
-// All three would collapse to event handlers in Slice 3 — see
-// docs/script-engine-slice-1-review.md for the verdict.
+// This intentionally uses only the public script API from
+// docs/script-engine.md: zones, pickup ids, flags, audio, logs, and
+// cross-script `emit`.
 
-// Demo level coords (from src/game/level.ts):
-//   - Grass plaza  : 24×24 at y = 4. Player stands on y = 5.
-//   - Staircase top: x∈[16,20], z∈[12,14], y = 7 (player at y = 8)
-//   - West wall    : x = 2, brick. There's a coin pile at (4, 5, 5).
-//   - Floating island: x∈[7,9], z∈[20,22], top at y = 7. Player at y = 8.
+const STATE = 'demo.quest.keeper.state' // unknown | active | ready | done
+const KEEPER_ZONE = 'zone.demo.keeper'
+const ITEM_KIND = 'sun-shard'
+const LANTERN_POS = { x: 9, y: 5, z: 9 }
+const BLOCK_TORCH = 14
+const BLOCK_UNLIT_LANTERN = 15
 
-const STAGE_FLAG = 'demo.quest.stage'
+const SHARDS = [
+    {
+        id: 'demo.quest.shard.stairs',
+        name: 'stair shard',
+        pos: { x: 18, y: 8, z: 13 },
+        hint: 'above the plank stairs',
+    },
+    {
+        id: 'demo.quest.shard.wall',
+        name: 'wall shard',
+        pos: { x: 4, y: 5, z: 7 },
+        hint: 'near the west wall',
+    },
+    {
+        id: 'demo.quest.shard.island',
+        name: 'island shard',
+        pos: { x: 9, y: 8, z: 22 },
+        hint: 'on the floating island',
+    },
+]
 
-// Author-facing summary of where each token sits. Lifting the coords
-// out of the handler bodies keeps the state machine readable.
-const TOKEN_STAIRS  = { x: 18, y: 8,  z: 13 }
-const TOKEN_WALL    = { x: 4,  y: 5,  z: 4  }
-const REWARD_ISLAND = { x: 8,  y: 8,  z: 21 }
+const REWARD = { x: 10.5, y: 5, z: 10.6 }
 
 on('level-start', () => {
-    const stage = flags.get(STAGE_FLAG) ?? 0
-    if (stage >= 3) {
-        log("Three Tokens of the Plaza — already complete.")
+    const questState = state()
+    if (questState === 'done') {
+        lightLantern()
+        log('Keeper Arlen waits by the lantern. The Sun Shards are already safe.')
         return
     }
-    log("Three Tokens of the Plaza — find what waits on the stairs.")
+
+    extinguishLantern()
+    log('Keeper Arlen waits near the old lantern.')
+    if (questState === 'active') {
+        ensureShardsSpawned()
+        log(`Quest: collect ${remainingShards().length} Sun Shard(s), then return to Arlen.`)
+    } else if (questState === 'ready') {
+        log('Quest: return to Keeper Arlen with the Sun Shards.')
+    }
+})
+
+on('input', { action: 'interact', targetId: KEEPER_ZONE }, () => {
+    const questState = state()
+    if (questState === 'unknown') {
+        flags.set(STATE, 'active')
+        sayKeeper('The plaza lantern is dying. Find the three Sun Shards and bring their light back to me.')
+        ensureShardsSpawned()
+        audio.play('sfx.quest.chime')
+        return
+    }
+
+    if (questState === 'active') {
+        ensureShardsSpawned()
+        const missing = remainingShards()
+        sayKeeper(`${missing.length} shard(s) still wait: ${missing.map((s) => s.hint).join(', ')}.`)
+        return
+    }
+
+    if (questState === 'ready') {
+        completeQuest()
+        return
+    }
+
+    sayKeeper('The lantern holds. Walk carefully, friend.')
+})
+
+on('pickup-taken', { kind: ITEM_KIND }, (event) => {
+    if (state() !== 'active') return
+    const shard = SHARDS.find((s) => s.id === event.pickupId)
+    if (!shard) return
+
+    const key = shardFlag(shard.id)
+    if (flags.get(key) === true) return
+    flags.set(key, true)
+
+    const missing = remainingShards()
     audio.play('sfx.quest.chime')
-    if (stage > 0) {
-        log(`(Resuming at stage ${stage}/3.)`)
+    if (missing.length > 0) {
+        log(`Sun Shard found: ${shard.name}. ${missing.length} remain.`)
+    } else {
+        flags.set(STATE, 'ready')
+        log('The last Sun Shard warms your pack. Return to Keeper Arlen.')
     }
 })
 
-// Polling tick. 0.25 s is a fine trade for a demo — at 60 Hz fixed
-// step the engine fires this 4× per second.
-on('timer', { periodSeconds: 0.25 }, () => {
-    const pos = player.position
-    if (!pos) return
-    const stage = flags.get(STAGE_FLAG) ?? 0
-
-    // Stage 1: walk to the staircase top.
-    if (stage === 0 && onStaircaseTop(pos)) {
-        advanceTo(1, "You're at the top of the stairs. A token glints.", TOKEN_STAIRS, 5)
-        return
-    }
-
-    // Stage 2: accumulate five gold from anywhere in the plaza.
-    // Without `pickup-taken` we can't see the specific pickup; the
-    // "any 5 gold" check is the best we can do today.
-    if (stage === 1 && player.inventory.gold >= 5) {
-        advanceTo(2, "A second token reveals itself near the west wall.", TOKEN_WALL, 5)
-        return
-    }
-
-    // Stage 3: reach the floating island. Final reward + fanfare.
-    if (stage === 2 && onFloatingIsland(pos)) {
-        flags.set(STAGE_FLAG, 3)
-        log("The plaza is satisfied. You feel suddenly wealthy.")
-        audio.play('sfx.quest.fanfare')
-        pickups.spawn('coin', REWARD_ISLAND, { amount: 50 })
-        emit('quest.demo.complete')
-    }
-})
-
-// A second script (or, in Slice 2, a second ScriptEntry) would listen
-// for the completion event. We co-locate the listener here for the
-// demo so authoring + reacting live in one file.
 on('quest.demo.complete', () => {
-    log("[quest] Demo quest complete — score recorded.")
     flags.set('demo.quest.completedAt', time.now)
+    log('[quest] Fragments for the Keeper complete.')
 })
 
-function advanceTo(nextStage, message, tokenPos, amount) {
-    flags.set(STAGE_FLAG, nextStage)
-    log(message)
-    audio.play('sfx.quest.chime')
-    pickups.spawn('coin', tokenPos, { amount })
+on('player.died', () => {
+    const questState = state()
+    if (questState === 'active') {
+        log(`(Hint: ${remainingShards().length} Sun Shard(s) remain.)`)
+    } else if (questState === 'ready') {
+        log('(Hint: return to Keeper Arlen.)')
+    }
+})
+
+function completeQuest() {
+    flags.set(STATE, 'done')
+    lightLantern()
+    sayKeeper('You brought the sun back in pieces. Take this for the road.')
+    audio.play('sfx.quest.fanfare')
+    pickups.spawn('coin', REWARD, {
+        id: 'demo.quest.reward.gold',
+        amount: 50,
+        label: "Keeper Arlen's reward",
+    })
+    emit('quest.demo.complete')
 }
 
-// Player AABB is roughly 0.6 m wide. The staircase top is a 5-wide,
-// 2-deep grass strip at y = 7, so the player standing on it has
-// y ≈ 8 and lands inside the 5×2 footprint. We pad ±0.5 on x/z so
-// the player AABB centre doesn't have to hit the cell edge exactly.
-function onStaircaseTop(pos) {
-    return pos.x >= 15.5 && pos.x <= 20.5
-        && pos.z >= 11.5 && pos.z <= 14.5
-        && pos.y >= 7.5
+function sayKeeper(message) {
+    ui.say(KEEPER_ZONE, message, { seconds: 4.5 })
+    log(`Keeper Arlen: '${message}'`)
 }
 
-function onFloatingIsland(pos) {
-    return pos.x >= 6.5 && pos.x <= 9.5
-        && pos.z >= 19.5 && pos.z <= 22.5
-        && pos.y >= 7.5
+function lightLantern() {
+    chunks.setBlock(LANTERN_POS.x, LANTERN_POS.y, LANTERN_POS.z, BLOCK_TORCH)
+}
+
+function extinguishLantern() {
+    chunks.setBlock(LANTERN_POS.x, LANTERN_POS.y, LANTERN_POS.z, BLOCK_UNLIT_LANTERN)
+}
+
+function ensureShardsSpawned() {
+    for (const shard of SHARDS) {
+        if (flags.get(shardFlag(shard.id)) === true) continue
+        pickups.spawn(ITEM_KIND, shard.pos, {
+            id: shard.id,
+            label: 'Sun Shard',
+        })
+    }
+}
+
+function remainingShards() {
+    return SHARDS.filter((shard) => flags.get(shardFlag(shard.id)) !== true)
+}
+
+function shardFlag(id) {
+    return `${id}.collected`
+}
+
+function state() {
+    return flags.get(STATE) ?? 'unknown'
 }

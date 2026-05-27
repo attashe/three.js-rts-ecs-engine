@@ -1,7 +1,9 @@
 # Script Engine — Design Doc
 
-Status: **proposal**, not yet implemented. Branch target:
-`feature/script-engine` (to be created after this doc is approved).
+Status: **Slice 1 + 1.5 implemented** on `feature/surface-improve`.
+Slice 2 (editor UI) blocked until the implementation passes a second
+review. See `script-engine-slice-1-review.md` for the verdict that
+drove Slice 1.5 changes, and the §11 implementation status below.
 
 Scripts are how the editor authors quests, cinematics, and event-driven
 gameplay logic on top of the existing zone / pickup / piston systems.
@@ -155,6 +157,28 @@ determinism. We document this; we don't enforce it. For frame-exact
 replay we'd additionally need to snapshot the wait queue + handler
 state into the replay log — out of scope for v1.
 
+### 2.6 Apply vs. flags — what resets and what survives
+
+When the editor presses **Apply** (or a test calls
+`sys.apply()`), the runtime tears down every handler and re-compiles
+every enabled script. The Apply path is *not* a level reload — it's
+a hot-reload of the script logic on top of the same simulation. The
+explicit contract:
+
+- **Reset on Apply**: subscriptions, in-flight `wait()` promises,
+  `time.now`, `time.tick`, `time.delta`, the seeded RNG, the
+  "last death signal" watchdog.
+- **Preserved across Apply**: `flags` (persistent authoring state),
+  the world (chunks, entities, positions, inventory), `level.reset`
+  is emitted *before* clearing subs so currently-registered handlers
+  can run final cleanup. `level-start` is emitted *after* the fresh
+  compile so the new handlers see the start signal.
+
+A script that does `if (time.now < 0.5) doStartupStuff()` will
+re-fire its startup work on Apply — that's why we say "Apply IS the
+restart event," and why `on('level-start', ...)` is the safer hook
+for one-shot bootstrap code that should re-run on hot-reload.
+
 ---
 
 ## 3. The engine API
@@ -199,7 +223,7 @@ at the top of every body.
 | `zone-inside` | `{ zoneId, everyTicks? }` | same as `zone-enter` |
 | `timer` | `{ periodSeconds, oneshot? }` | `{ tick }` |
 | `pickup-taken` | `{ pickupId?, kind? }` | `{ pickupId, kind, position, amount? }` |
-| `input` | `{ action, edge }` | `{ action, edge }` |
+| `input` | `{ action, edge, targetId? }` | `{ action, edge, targetId?, zoneId?, point?, entityId? }` |
 | `player.died` | — | `{ reason? }` |
 | `level.reset` | — | — fires when **Apply** re-runs scripts |
 
@@ -238,10 +262,16 @@ spans many seconds and might be interrupted mid-run.
 
 ```ts
 // Player
-player.position             // { x, y, z } — getter, always fresh
+player.position             // { x, y, z } — getter, always fresh.
+                            //   When no player entity exists right now
+                            //   (mid-respawn, pre-spawn), the coords
+                            //   are NaN so AABB / distance tests return
+                            //   false without explicit null guards.
+player.alive                // boolean — explicit "is there a player"
+                            //   flag for handlers that need it.
 player.teleport(x, y, z)
 player.kill(reason?: string)
-player.setCheckpoint(pos?: VoxelCoord)
+player.setCheckpoint(pos?: VoxelCoord)  // Slice 3
 player.inventory.gold       // number — getter
 
 // Voxel grid
@@ -251,7 +281,7 @@ chunks.fillBlocks(min: VoxelCoord, max: VoxelCoord, block: number)
 
 // Pickups — spawn returns a stable id you can pass to despawn.
 pickups.spawn(kind: string, pos: VoxelCoord,
-              opts?: { amount?: number }): PickupId
+              opts?: { amount?: number; id?: string; label?: string }): PickupId
 pickups.despawn(id: PickupId): void
 
 // Pistons
@@ -274,16 +304,27 @@ flags.set(name: string, value: number | string | boolean): void
 // Time + deterministic random
 time.now                  // seconds since level start — getter
 time.tick                 // integer fixed-tick count — getter
+time.delta                // seconds elapsed in the most recent tick;
+                          //   use for smooth interpolation in handlers
 random(min: number, max: number): number
 
 // Zone queries
 zone.contains(zoneId: string, who?: 'player' | VoxelCoord): boolean
+
+// Geometry helpers — pure, no world state. Use when you need an AABB
+// test in a place that doesn't justify authoring a real zone (e.g. a
+// computed bounding box around a runtime-placed prop).
+geom.box(min: VoxelCoord, max: VoxelCoord, point: VoxelCoord): boolean
+geom.distSq(a: VoxelCoord, b: VoxelCoord): number
 
 // Coroutine primitive
 wait(seconds: number): Promise<void>
 
 // Log
 log(message: string, kind?: 'info' | 'warn' | 'error'): void
+
+// UI
+ui.say(targetId: string, message: string, opts?: { seconds?: number }): void
 ```
 
 Cross-script messaging uses the unified `on / emit / once` from §3.1
@@ -569,6 +610,63 @@ on('level-start', async () => {
     log("...your adventure begins.")
 })
 ```
+
+## 11. Implementation status
+
+| Surface | Slice 1 | Slice 1.5 | Notes |
+| ------- | :-----: | :-------: | ----- |
+| Runtime kernel (`on/emit/once/wait`)         | ✅ | — | — |
+| Custom events                                 | ✅ | — | — |
+| `level-start` / `level.reset`                 | ✅ | — | — |
+| `timer` event                                 | ✅ | — | — |
+| `flags`, `time.now/tick`, `random`            | ✅ | — | — |
+| `audio.play/stop`                             | ✅ | — | `fade` opt landed Slice 1 |
+| `chunks.getBlock/setBlock/fillBlocks`         | ✅ | — | — |
+| `pickups.spawn`                               | ✅ | — | `despawn` deferred |
+| `player.position/teleport/kill/inventory`    | ✅ | ✅ | sentinel pos + `alive` flag in 1.5 |
+| `zone.contains`                               | ✅ | — | — |
+| `geom.box`, `geom.distSq`                     | — | ✅ | new |
+| `time.delta`                                  | — | ✅ | new |
+| `zone-enter`, `zone-exit` events              | — | ✅ | tapped in ZoneTriggerSystem |
+| `pickup-taken` event                          | — | ✅ | tapped in pickup-system |
+| `player.died` event                           | — | ✅ | watchdog inside script-engine-system |
+| `input` event                                 | — | ✅ | Interaction key emits `action: "interact"` |
+| `player.setCheckpoint`                        | — | — | Slice 3 — needs checkpoint system |
+| `pickups.despawn` + stable pickup ids         | — | — | Slice 3 |
+| `pistons.setEnabled/flip`                     | — | — | Slice 3 — needs piston id surface |
+| `ZoneScriptAction` migration                  | — | — | Slice 3 |
+| Editor "Logic" tab (file loader + paste)      | — | — | **Slice 2 — blocked on second review** |
+
+### What's still on the roadmap
+
+- **Editor UI (Slice 2)**: Logic tab + file loader + paste textarea +
+  Apply button. Blocked until the language polish from Slice 1.5
+  passes a second authoring exercise. Once authors can write
+  ergonomic event-driven scripts (which 1.5 makes possible),
+  shipping the UI unlocks real use.
+- **Slice 3**: the heavier integration work —
+  `player.setCheckpoint` (new checkpoint state on world),
+  `pickups.despawn` (stable pickup ids),
+  `pistons.*` (piston id surface),
+  `ZoneScriptAction` → `ScriptEntry` migration (drop the legacy
+  union; `executeZoneScript` removed).
+
+Implementation file layout — for anyone navigating the runtime:
+
+| File | Purpose |
+| ---- | ------- |
+| `src/engine/script/types.ts`              | shared shapes |
+| `src/engine/script/runtime.ts`            | dispatcher kernel |
+| `src/engine/script/bindings.ts`           | host adapter layer |
+| `src/engine/script/compile.ts`            | `AsyncFunction` wrapper |
+| `src/engine/script/script-engine-system.ts` | ECS system + queue drainer + death watchdog |
+| `src/engine/ecs/world.ts`                  | `ScriptTriggerEvent`, `scriptTriggerEvents` queue, helpers |
+| `examples/scripts/demo-quest.js`           | canonical demo quest (event-driven) |
+| `docs/script-engine.md`                    | this file |
+| `docs/script-engine-examples.md`           | three canonical use-case examples |
+| `docs/script-engine-slice-1-review.md`     | review that drove Slice 1.5 |
+
+---
 
 ### A.5 Quest: collect three relics
 

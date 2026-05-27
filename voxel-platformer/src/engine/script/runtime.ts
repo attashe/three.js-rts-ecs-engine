@@ -55,6 +55,9 @@ export interface ScriptRuntime {
     readonly now: number
     /** Integer tick count since last reset. */
     readonly tick: number
+    /** Seconds elapsed during the most recent `advance(dt)` call.
+     *  Zero before the first tick. */
+    readonly delta: number
 
     /** Seeded uniform in `[min, max)`. */
     random(min: number, max: number): number
@@ -79,6 +82,7 @@ export function createRuntime(initialSeed: number = 0xdeadbeef): ScriptRuntime {
     const waits: WaitEntry[] = []
     let simTime = 0
     let simTick = 0
+    let lastDt = 0
     let nextSubId = 1
     let rng = mulberry32(initialSeed)
     let errorHandler: (where: string, err: unknown) => void = (where, err) => {
@@ -142,6 +146,7 @@ export function createRuntime(initialSeed: number = 0xdeadbeef): ScriptRuntime {
 
     function advance(dt: number): void {
         if (!Number.isFinite(dt) || dt <= 0) return
+        lastDt = dt
         simTime += dt
         simTick += 1
 
@@ -196,6 +201,7 @@ export function createRuntime(initialSeed: number = 0xdeadbeef): ScriptRuntime {
 
         simTime = 0
         simTick = 0
+        lastDt = 0
         if (seed !== undefined) rng = mulberry32(seed)
 
         // Emit AFTER clearing so handlers registered during the reset
@@ -234,6 +240,7 @@ export function createRuntime(initialSeed: number = 0xdeadbeef): ScriptRuntime {
         wait,
         get now() { return simTime },
         get tick() { return simTick },
+        get delta() { return lastDt },
         random: (min, max) => min + rng() * (max - min),
         advance,
         reset,

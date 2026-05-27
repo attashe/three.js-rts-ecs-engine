@@ -54,9 +54,9 @@ export interface LevelStartEvent { kind: 'level-start' }
 export interface LevelResetEvent { kind: 'level.reset' }
 export interface TimerEvent { kind: 'timer'; tick: number }
 
-// Slice 1 deliberately ships the registry-facing types only; the
-// `zone-enter`, `pickup-taken`, `input`, `player.died` payload shapes
-// land alongside their respective emitters in Slice 3.
+// Built-in event payloads are intentionally kept loose at the public
+// facade boundary. Producer systems own the concrete queue payloads;
+// scripts filter by ordinary object properties through runtime.ts.
 
 // ─── Narrow host facades ──────────────────────────────────────────────
 // The bindings layer talks to these interfaces instead of importing
@@ -76,6 +76,9 @@ export interface ChunksFacade {
 }
 
 export interface PlayerFacade {
+    /** Returns null when the player entity doesn't exist (mid-respawn,
+     *  pre-spawn). The binding layer translates null to a sentinel
+     *  position so scripts don't have to null-check. */
     getPosition(): VoxelCoord | null
     getGold(): number
     teleport(x: number, y: number, z: number): void
@@ -83,7 +86,7 @@ export interface PlayerFacade {
 }
 
 export interface PickupsFacade {
-    spawn(kind: string, pos: VoxelCoord, opts?: { amount?: number }): string
+    spawn(kind: string, pos: VoxelCoord, opts?: PickupSpawnOptions): string
 }
 
 export interface ZoneFacade {
@@ -92,6 +95,10 @@ export interface ZoneFacade {
 
 export interface LogFacade {
     log(message: string, kind?: 'info' | 'warn' | 'error'): void
+}
+
+export interface UiFacade {
+    say(targetId: string, message: string, opts?: { seconds?: number }): void
 }
 
 // ─── ScriptContext ────────────────────────────────────────────────────
@@ -130,13 +137,20 @@ export interface ScriptContext {
     flags: FlagsApi
     time: TimeApi
     zone: ZoneApi
+    geom: GeomApi
+    ui: UiApi
     random(min: number, max: number): number
 }
 
 export interface PlayerApi {
     /** Live getter — always returns the current player foot position,
-     *  or `null` if no player entity exists right now. */
-    readonly position: VoxelCoord | null
+     *  or a sentinel `{ x: NaN, y: NaN, z: NaN }` when no player
+     *  entity exists right now. Sentinel coords make every AABB check
+     *  return false naturally, so handlers don't need null guards. */
+    readonly position: VoxelCoord
+    /** True iff there's a live player entity. Use for explicit
+     *  "skip while dead" gates: `if (!player.alive) return`. */
+    readonly alive: boolean
     readonly inventory: { readonly gold: number }
     teleport(x: number, y: number, z: number): void
     kill(reason?: string): void
@@ -154,7 +168,16 @@ export interface AudioApi {
 }
 
 export interface PickupsApi {
-    spawn(kind: string, pos: VoxelCoord, opts?: { amount?: number }): string
+    spawn(kind: string, pos: VoxelCoord, opts?: PickupSpawnOptions): string
+}
+
+export interface PickupSpawnOptions {
+    amount?: number
+    /** Stable author id. Re-spawning with the same id returns the existing
+     *  live pickup instead of creating a duplicate. */
+    id?: string
+    /** Human-readable item name for pickup logs. */
+    label?: string
 }
 
 export type FlagValue = number | string | boolean
@@ -169,8 +192,28 @@ export interface TimeApi {
     readonly now: number
     /** Integer fixed-tick count since `now` was last reset. */
     readonly tick: number
+    /** Seconds elapsed during the most recent fixed-step tick. Use
+     *  for smooth interpolation inside a script (e.g. raising a door
+     *  by `0.5 * delta` per tick). Zero before the first tick. */
+    readonly delta: number
 }
 
 export interface ZoneApi {
     contains(zoneId: string, who?: 'player' | VoxelCoord): boolean
+}
+
+export interface UiApi {
+    /** Show a short world-anchored popup near an NPC/item target. `targetId`
+     *  usually matches an interact zone id. */
+    say(targetId: string, message: string, opts?: { seconds?: number }): void
+}
+
+export interface GeomApi {
+    /** Inclusive-min, exclusive-max AABB test. Matches the convention
+     *  zones use (`isPointInZone`) so a script can compute "near a
+     *  cell range" without authoring a real zone. */
+    box(min: VoxelCoord, max: VoxelCoord, point: VoxelCoord): boolean
+    /** Squared distance between two points. Cheaper than `Math.hypot`
+     *  for "is closer than R" checks: `geom.distSq(a, b) < R * R`. */
+    distSq(a: VoxelCoord, b: VoxelCoord): number
 }

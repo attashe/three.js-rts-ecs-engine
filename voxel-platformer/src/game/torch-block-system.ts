@@ -18,7 +18,7 @@ import { CHUNK_DIM, chunkKey, type ChunkKey } from '../engine/voxel/chunk'
 import { RENDER_LAYER } from '../engine/render/render-layers'
 import type { Chunk } from '../engine/voxel/chunk'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
-import { isCollidable, isTorchBlock, occludesFaces } from '../engine/voxel/palette'
+import { isCollidable, occludesFaces, torchBlockState } from '../engine/voxel/palette'
 import { sharedCylinderGeometry, sharedMaterial, sharedSphereGeometry } from './assets/shared-primitives'
 
 /**
@@ -90,6 +90,9 @@ interface TorchRecord {
     basePos: Vector3
     /** Per-torch flicker phase so neighbouring torches don't sync. */
     flickerPhase: number
+    /** Unlit lanterns share the static torch geometry but produce no flame,
+     *  point light, probe contribution, or ambient loop. */
+    lit: boolean
     /** Working scratch — squared distance to focus this frame. */
     d2: number
     sound: SoundHandle | null
@@ -408,9 +411,10 @@ export function createTorchBlockRenderSystem(
         record.soundY = record.basePos.y + 0.56
         record.soundZ = record.basePos.z
         writeStaticParts(record)
-        composeFlame(record, FLAME_LOCAL_Y, FLAME_BASE_SCALE, 1, 1, tmpMatrix)
+        const flameScale = record.lit ? 1 : 0
+        composeFlame(record, FLAME_LOCAL_Y, FLAME_BASE_SCALE, flameScale, flameScale, tmpMatrix)
         flameMesh.setMatrixAt(record.slot, tmpMatrix)
-        composeFlame(record, CORE_LOCAL_Y, CORE_BASE_SCALE, 1, 1, tmpMatrix)
+        composeFlame(record, CORE_LOCAL_Y, CORE_BASE_SCALE, flameScale, flameScale, tmpMatrix)
         coreMesh.setMatrixAt(record.slot, tmpMatrix)
         markAllInstanceBuffersDirty()
         record.sound?.setPosition(soundPosition(record))
@@ -424,7 +428,9 @@ export function createTorchBlockRenderSystem(
         const newKeys = new Set<string>()
         if (chunk.nonAirCount > 0) {
             chunk.forEachSolid((lx, ly, lz, value) => {
-                if (!isTorchBlock(chunks.palette, value)) return
+                const state = torchBlockState(chunks.palette, value)
+                if (!state) return
+                const lit = state === 'lit'
                 const wx = baseX + lx
                 const wy = baseY + ly
                 const wz = baseZ + lz
@@ -432,7 +438,7 @@ export function createTorchBlockRenderSystem(
                 newKeys.add(torchKey)
 
                 const mount = resolveTorchMount(chunks, wx, wy, wz)
-                const signature = mountSignature(mount)
+                const signature = `${lit ? 'lit' : 'unlit'}:${mountSignature(mount)}`
                 let record = records.get(torchKey)
                 if (!record) {
                     const slot = allocateSlot()
@@ -447,6 +453,7 @@ export function createTorchBlockRenderSystem(
                         baseQuat: new Quaternion(),
                         basePos: new Vector3(),
                         flickerPhase: Math.random() * Math.PI * 2,
+                        lit,
                         d2: Infinity,
                         sound: null,
                         soundX: 0,
@@ -457,6 +464,8 @@ export function createTorchBlockRenderSystem(
                     keyBySlot[slot] = torchKey
                 }
                 record.y = wy
+                record.lit = lit
+                if (!record.lit) stopTorchSound(record, 0.2)
                 if (record.signature !== signature) {
                     setMountTransform(record, wx, wy, wz, mount)
                     record.signature = signature
@@ -526,9 +535,10 @@ export function createTorchBlockRenderSystem(
             handleMesh.setMatrixAt(record.slot, tmpMatrix)
             composeWithLocalY(record, HEAD_LOCAL_Y, scale, tmpMatrix)
             headMesh.setMatrixAt(record.slot, tmpMatrix)
-            composeFlame(record, FLAME_LOCAL_Y, FLAME_BASE_SCALE, scale, scale, tmpMatrix)
+            const flameScale = record.lit ? scale : 0
+            composeFlame(record, FLAME_LOCAL_Y, FLAME_BASE_SCALE, flameScale, flameScale, tmpMatrix)
             flameMesh.setMatrixAt(record.slot, tmpMatrix)
-            composeFlame(record, CORE_LOCAL_Y, CORE_BASE_SCALE, scale, scale, tmpMatrix)
+            composeFlame(record, CORE_LOCAL_Y, CORE_BASE_SCALE, flameScale, flameScale, tmpMatrix)
             coreMesh.setMatrixAt(record.slot, tmpMatrix)
         }
         markAllInstanceBuffersDirty()
@@ -555,6 +565,7 @@ export function createTorchBlockRenderSystem(
         activeRecords.length = 0
         if (!focus) return
         for (const record of records.values()) {
+            if (!record.lit) continue
             const dx = record.posX - focus.x
             const dy = record.posY - focus.y
             const dz = record.posZ - focus.z
@@ -720,6 +731,7 @@ function pickNearestSoundKeys(
     const r2 = Math.max(0, radius) ** 2
     const candidates: { key: string; d2: number }[] = []
     for (const [key, record] of records) {
+        if (!record.lit) continue
         const dx = record.soundX - listener.x
         const dy = record.soundY - listener.y
         const dz = record.soundZ - listener.z

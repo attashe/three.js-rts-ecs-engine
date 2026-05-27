@@ -23,7 +23,7 @@
 
 import { FixedOrder } from '../ecs/systems/orders'
 import type { System } from '../ecs/systems/system'
-import type { GameWorld } from '../ecs/world'
+import { consumeScriptTriggerEvents, type GameWorld, type ScriptTriggerEvent } from '../ecs/world'
 import { buildScriptContext } from './bindings'
 import { compileScript, type CompileFailure, type CompileSuccess } from './compile'
 import { createRuntime, type ScriptRuntime } from './runtime'
@@ -36,6 +36,7 @@ import type {
     PlayerFacade,
     ScriptContext,
     ScriptEntry,
+    UiFacade,
     ZoneFacade,
 } from './types'
 
@@ -46,6 +47,7 @@ export interface ScriptEngineSystemOptions {
     pickups: PickupsFacade
     zone: ZoneFacade
     log: LogFacade
+    ui?: UiFacade
     /** Pulled fresh on every `apply()` / `init()` so the editor can mutate
      *  the script list without re-creating the system. */
     getScripts: () => readonly ScriptEntry[]
@@ -99,6 +101,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         pickups: opts.pickups,
         zone: opts.zone,
         log: opts.log,
+        ui: opts.ui,
         flags,
     })
 
@@ -125,13 +128,74 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         }
     }
 
+    // Death watchdog. `world.deathSignal` is set-once and never
+    // cleared until page reload, so we detect the transition by
+    // remembering the value we last observed and firing exactly once
+    // when it goes from null → set. apply() resets this so a fresh
+    // load doesn't suppress the next death event.
+    let lastDeathSignal: string | null = null
+
     function apply(): void {
         // Emit level.reset BEFORE clearing subs so any currently-
         // registered handler can react (e.g. stop a music loop).
         runtime.emit('level.reset')
         runtime.reset(opts.rngSeed ?? 0xdeadbeef)
+        lastDeathSignal = null
         compileAll()
         runtime.emit('level-start')
+    }
+
+    function dispatchScriptTriggers(world: GameWorld | null | undefined): void {
+        if (!world) return
+        const events = consumeScriptTriggerEvents(world)
+        for (let i = 0; i < events.length; i++) emitTriggerEvent(events[i]!)
+        // Death watchdog: emit once when the signal transitions to set.
+        const ds = world.deathSignal ?? null
+        if (ds && ds !== lastDeathSignal) {
+            runtime.emit('player.died', { reason: ds })
+        }
+        lastDeathSignal = ds
+    }
+
+    function emitTriggerEvent(evt: ScriptTriggerEvent): void {
+        switch (evt.kind) {
+            case 'zone-enter':
+            case 'zone-exit':
+                runtime.emit(evt.kind, {
+                    zoneId: evt.zoneId,
+                    source: evt.source,
+                    point: evt.point,
+                    entityId: evt.entityId,
+                })
+                return
+            case 'pickup-taken':
+                runtime.emit('pickup-taken', {
+                    // Spelled `kind` here (not `pickupKind`) so the
+                    // filter shape `on('pickup-taken', { kind: 'coin' })`
+                    // matches naturally — the queue-level payload uses
+                    // `pickupKind` to avoid colliding with the
+                    // discriminator.
+                    kind: evt.pickupKind,
+                    pickupId: evt.pickupId,
+                    amount: evt.amount,
+                    position: evt.position,
+                    entityId: evt.entityId,
+                })
+                return
+            case 'player.died':
+                runtime.emit('player.died', { reason: evt.reason })
+                return
+            case 'input':
+                runtime.emit('input', {
+                    action: evt.action,
+                    edge: evt.edge,
+                    targetId: evt.targetId,
+                    zoneId: evt.zoneId,
+                    point: evt.point,
+                    entityId: evt.entityId,
+                })
+                return
+        }
     }
 
     const system: ScriptEngineSystem = {
@@ -141,17 +205,22 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         // pickups collected, pistons stepped, deaths registered.
         // Scripts read final state and react to it.
         order: FixedOrder.postPhysics + 5,
-        init(_world: GameWorld): void {
+        init(world: GameWorld): void {
             compileAll()
             runtime.emit('level-start')
+            // Producer systems may have already pushed events in init
+            // (rare but possible). Drain whatever's there.
+            dispatchScriptTriggers(world)
         },
-        update(_world: GameWorld, dt: number): void {
+        update(world: GameWorld, dt: number): void {
             runtime.advance(dt)
+            dispatchScriptTriggers(world)
         },
         dispose(): void {
             runtime.reset()
             flags.clear()
             broken.clear()
+            lastDeathSignal = null
         },
         apply,
         runtime,

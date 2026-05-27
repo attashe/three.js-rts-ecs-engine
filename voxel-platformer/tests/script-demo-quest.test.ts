@@ -7,50 +7,44 @@ import type {
     AudioFacade,
     ChunksFacade,
     LogFacade,
+    PickupSpawnOptions,
     PickupsFacade,
     PlayerFacade,
     ScriptEntry,
     VoxelCoord,
     ZoneFacade,
 } from '../src/engine/script/types'
-import type { GameWorld } from '../src/engine/ecs/world'
+import {
+    createGameWorld,
+    pushScriptTriggerEvent,
+    type GameWorld,
+} from '../src/engine/ecs/world'
 
-/**
- * End-to-end test for the canonical demo quest at
- * `voxel-platformer/examples/scripts/demo-quest.js`. The script source is
- * loaded verbatim from disk (no inlining) so this test stays in sync
- * with whatever a level designer would actually paste into the editor's
- * Logic tab. The harness simulates the player walking the demo level:
- * standing on the staircase top, collecting a couple of coin piles to
- * cross the gold gate, and finally stepping onto the floating island.
- *
- * Polls happen on a 0.25 s timer per the script. To advance N seconds
- * of sim-time we call `update(world, dt)` repeatedly with small dts;
- * the engine drains microtasks between calls so handlers actually run.
- */
-
-// Compiled test runner cwd is the project root (voxel-platformer/),
-// matching `npm run test`'s expectations. import.meta isn't available
-// under the CJS test build, so we use a project-relative path.
 const QUEST_SOURCE_PATH = resolve(process.cwd(), 'examples', 'scripts', 'demo-quest.js')
 const QUEST_SOURCE = readFileSync(QUEST_SOURCE_PATH, 'utf8')
 
 interface Harness {
     sys: ReturnType<typeof createScriptEngineSystem>
+    world: GameWorld
     log: string[]
     audioPlays: string[]
-    pickupSpawns: { kind: string; pos: VoxelCoord; opts?: { amount?: number } }[]
-    setPlayerPos: (p: VoxelCoord | null) => void
-    setGold: (g: number) => void
+    pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[]
+    popupMessages: { targetId: string; message: string; seconds?: number }[]
+    chunkSets: { x: number; y: number; z: number; block: number }[]
+    interact: (targetId: string) => void
+    takePickup: (kind: string, pickupId?: string, amount?: number, position?: VoxelCoord) => void
+    die: (reason?: string) => void
     tick: (seconds: number) => Promise<void>
 }
 
 function makeHarness(): Harness {
-    let playerPos: VoxelCoord | null = { x: 12, y: 5, z: 12 }  // spawn centre
-    let gold = 0
+    const world = createGameWorld()
     const log: string[] = []
     const audioPlays: string[] = []
-    const pickupSpawns: { kind: string; pos: VoxelCoord; opts?: { amount?: number } }[] = []
+    const pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[] = []
+    const popupMessages: { targetId: string; message: string; seconds?: number }[] = []
+    const chunkSets: { x: number; y: number; z: number; block: number }[] = []
+    const livePickupIds = new Set<string>()
 
     const audio: AudioFacade = {
         play(id) { audioPlays.push(id); return { id } },
@@ -58,19 +52,21 @@ function makeHarness(): Harness {
     }
     const chunks: ChunksFacade = {
         getBlock: () => 0,
-        setBlock() {},
+        setBlock(x, y, z, block) { chunkSets.push({ x, y, z, block }) },
         fillBlocks() {},
     }
     const player: PlayerFacade = {
-        getPosition: () => playerPos,
-        getGold: () => gold,
+        getPosition: () => ({ x: 12, y: 5, z: 12 }),
+        getGold: () => 0,
         teleport() {},
         kill() {},
     }
     const pickups: PickupsFacade = {
         spawn(kind, pos, opts) {
+            if (opts?.id && livePickupIds.has(opts.id)) return opts.id
             pickupSpawns.push({ kind, pos, opts })
-            return `id-${kind}-${pickupSpawns.length}`
+            if (opts?.id) livePickupIds.add(opts.id)
+            return opts?.id ?? `id-${kind}-${pickupSpawns.length}`
         },
     }
     const zone: ZoneFacade = {
@@ -82,149 +78,204 @@ function makeHarness(): Harness {
 
     const sys = createScriptEngineSystem({
         audio, chunks, player, pickups, zone, log: logFacade,
+        ui: {
+            say(targetId, message, opts) {
+                popupMessages.push({ targetId, message, seconds: opts?.seconds })
+            },
+        },
         getScripts: () => [{
             id: 'demo-quest',
             name: 'demo-quest.js',
             source: QUEST_SOURCE,
         } satisfies ScriptEntry],
         onScriptError: (entry, where, err) => {
-            // Surface script errors as test failures — anything thrown
-            // by the quest is a bug we want to see.
             throw new Error(`[${entry.id}@${where}] ${err instanceof Error ? err.message : String(err)}`)
         },
     })
 
     return {
         sys,
+        world,
         log,
         audioPlays,
         pickupSpawns,
-        setPlayerPos: (p) => { playerPos = p },
-        setGold: (g) => { gold = g },
+        popupMessages,
+        chunkSets,
+        interact(targetId) {
+            pushScriptTriggerEvent(world, {
+                kind: 'input',
+                action: 'interact',
+                edge: 'pressed',
+                targetId,
+                zoneId: targetId,
+                point: { x: 0, y: 0, z: 0 },
+                entityId: 1,
+            })
+        },
+        takePickup(kind, pickupId, amount = 1, position = { x: 0, y: 0, z: 0 }) {
+            if (pickupId) livePickupIds.delete(pickupId)
+            pushScriptTriggerEvent(world, {
+                kind: 'pickup-taken',
+                pickupKind: kind,
+                pickupId,
+                amount,
+                position,
+                entityId: 2,
+            })
+        },
+        die(reason = 'fell-into-void') {
+            world.deathSignal = reason as GameWorld['deathSignal']
+        },
         async tick(seconds: number) {
-            // Run in 0.05 s slices so microtasks (the script's async
-            // handlers) drain between each step, the same way the
-            // engine's real fixed loop does.
             const slice = 0.05
             const steps = Math.max(1, Math.round(seconds / slice))
             for (let i = 0; i < steps; i++) {
-                sys.update(null as unknown as GameWorld, slice)
+                sys.update(world, slice)
                 await flushMicrotasks()
             }
         },
     }
 }
 
-function flushMicrotasks(): Promise<void> {
-    return new Promise<void>((r) => setImmediate(r))
-}
+const flushMicrotasks = () => new Promise<void>((r) => setImmediate(r))
 
-test('demo quest: compiles cleanly and fires the intro on level-start', async () => {
+const KEEPER_ZONE = 'zone.demo.keeper'
+const SHARDS = [
+    'demo.quest.shard.stairs',
+    'demo.quest.shard.wall',
+    'demo.quest.shard.island',
+] as const
+
+test('demo quest: compiles cleanly and introduces Keeper Arlen on level-start', async () => {
     const h = makeHarness()
-    h.sys.init?.(null as unknown as GameWorld)
+    h.sys.init?.(h.world)
     await flushMicrotasks()
-    assert.deepEqual(h.sys.broken.size, 0, 'demo quest must compile + run without errors')
-    assert.ok(h.log[0]?.includes('Three Tokens of the Plaza'))
-    assert.equal(h.audioPlays[0], 'sfx.quest.chime')
+    assert.equal(h.sys.broken.size, 0)
+    assert.ok(h.log[0]?.includes('Keeper Arlen'))
+    assert.equal(h.pickupSpawns.length, 0, 'quest items wait until the NPC starts the quest')
+    assert.deepEqual(h.chunkSets[h.chunkSets.length - 1], { x: 9, y: 5, z: 9, block: 15 })
 })
 
-test('demo quest: idle player never advances past stage 0', async () => {
+test('demo quest: talking to the keeper starts the quest and spawns three shards', async () => {
     const h = makeHarness()
-    h.sys.init?.(null as unknown as GameWorld)
-    // Player stays at the spawn coords — outside the staircase footprint.
-    await h.tick(5.0)
-    assert.equal(h.sys.flags.get('demo.quest.stage') ?? 0, 0)
-    assert.equal(h.pickupSpawns.length, 0)
-})
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
 
-test('demo quest: stage 1 fires when player stands on the staircase top', async () => {
-    const h = makeHarness()
-    h.sys.init?.(null as unknown as GameWorld)
-    h.setPlayerPos({ x: 18, y: 8, z: 12 })  // staircase top
-    await h.tick(0.6)
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 1)
-    assert.equal(h.pickupSpawns.length, 1)
-    assert.deepEqual(h.pickupSpawns[0]?.pos, { x: 18, y: 8, z: 13 })
-    assert.equal(h.pickupSpawns[0]?.opts?.amount, 5)
-})
-
-test('demo quest: stage 2 fires once gold reaches 5', async () => {
-    const h = makeHarness()
-    h.sys.init?.(null as unknown as GameWorld)
-
-    // Walk onto the staircase to trigger stage 1.
-    h.setPlayerPos({ x: 18, y: 8, z: 12 })
-    await h.tick(0.6)
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 1)
-
-    // Step off the stairs (so the stage 1 condition stops being true)
-    // and accumulate gold elsewhere.
-    h.setPlayerPos({ x: 12, y: 5, z: 12 })
-    h.setGold(4)
-    await h.tick(0.6)
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 1, 'not yet — 4 < 5')
-    h.setGold(5)
-    await h.tick(0.5)
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 2)
-    assert.equal(h.pickupSpawns.length, 2)
-    assert.deepEqual(h.pickupSpawns[1]?.pos, { x: 4, y: 5, z: 4 })
-})
-
-test('demo quest: stage 3 reward + fanfare + custom emit on reaching the island', async () => {
-    const h = makeHarness()
-    h.sys.init?.(null as unknown as GameWorld)
-
-    h.setPlayerPos({ x: 18, y: 8, z: 12 })
-    await h.tick(0.6)
-    h.setPlayerPos({ x: 12, y: 5, z: 12 })
-    h.setGold(5)
-    await h.tick(0.5)
-
-    // Final stage: player on the floating island.
-    h.setPlayerPos({ x: 8, y: 8, z: 21 })
-    await h.tick(0.5)
-
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 3)
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'active')
     assert.equal(h.pickupSpawns.length, 3)
-    assert.equal(h.pickupSpawns[2]?.opts?.amount, 50)
+    assert.deepEqual(h.pickupSpawns.map((p) => p.opts?.id), [...SHARDS])
+    assert.ok(h.pickupSpawns.every((p) => p.kind === 'sun-shard'))
+    assert.deepEqual(h.pickupSpawns.find((p) => p.opts?.id === SHARDS[1])?.pos, { x: 4, y: 5, z: 7 })
+    assert.ok(h.audioPlays.includes('sfx.quest.chime'))
+    assert.ok(h.popupMessages.some((m) =>
+        m.targetId === KEEPER_ZONE && m.message.includes('plaza lantern'),
+    ))
+})
+
+test('demo quest: collecting all shards marks the quest ready to turn in', async () => {
+    const h = makeHarness()
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+
+    h.takePickup('sun-shard', SHARDS[0])
+    await h.tick(0.1)
+    assert.equal(h.sys.flags.get(`${SHARDS[0]}.collected`), true)
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'active')
+
+    h.takePickup('sun-shard', SHARDS[1])
+    h.takePickup('sun-shard', SHARDS[2])
+    await h.tick(0.1)
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'ready')
+    assert.ok(h.log.some((l) => l.includes('Return to Keeper Arlen')))
+})
+
+test('demo quest: returning to the keeper completes the quest and rewards gold', async () => {
+    const h = makeHarness()
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+    for (const shard of SHARDS) h.takePickup('sun-shard', shard)
+    await h.tick(0.1)
+
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'done')
+    const reward = h.pickupSpawns.find((p) => p.opts?.id === 'demo.quest.reward.gold')
+    assert.equal(reward?.kind, 'coin')
+    assert.equal(reward?.opts?.amount, 50)
     assert.ok(h.audioPlays.includes('sfx.quest.fanfare'))
-
-    // The script also installs an `on('quest.demo.complete', ...)`
-    // listener that stamps a timestamp into flags. Verify the chain
-    // worked end-to-end.
-    const stamp = h.sys.flags.get('demo.quest.completedAt')
-    assert.equal(typeof stamp, 'number')
+    assert.equal(typeof h.sys.flags.get('demo.quest.completedAt'), 'number')
+    assert.ok(h.chunkSets.some((edit) =>
+        edit.x === 9 && edit.y === 5 && edit.z === 9 && edit.block === 14,
+    ), 'turn-in should replace the dead lantern with the lit torch block')
 })
 
-test('demo quest: re-entering level after completion announces "already complete"', async () => {
+test('demo quest: shard pickup before the keeper asks does not progress', async () => {
     const h = makeHarness()
-    h.sys.flags as unknown as Map<string, unknown>  // (smoke-test the readonly view)
+    h.sys.init?.(h.world)
+    h.takePickup('sun-shard', SHARDS[0])
+    await h.tick(0.1)
 
-    // Pre-populate the flag the way a saved level binary would.
-    // (`createScriptEngineSystem` exposes `flags` as ReadonlyMap, but
-    // the underlying Map is the same instance — we cast to mutate.)
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state') ?? 'unknown', 'unknown')
+    assert.equal(h.sys.flags.get(`${SHARDS[0]}.collected`), undefined)
+})
+
+test('demo quest: interacting after completion gives the finished dialogue', async () => {
+    const h = makeHarness()
     const flagsMut = h.sys.flags as unknown as Map<string, unknown>
-    flagsMut.set('demo.quest.stage', 3)
-
-    h.sys.init?.(null as unknown as GameWorld)
+    flagsMut.set('demo.quest.keeper.state', 'done')
+    h.sys.init?.(h.world)
     await flushMicrotasks()
-    assert.ok(h.log.some((l) => l.includes('already complete')))
+    assert.deepEqual(h.chunkSets[h.chunkSets.length - 1], { x: 9, y: 5, z: 9, block: 14 })
+
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+    assert.ok(h.log.some((l) => l.includes('lantern holds')))
+    assert.ok(h.popupMessages.some((m) => m.message.includes('lantern holds')))
 })
 
-test('demo quest: stage progression survives apply()', async () => {
+test('demo quest: player.died during active quest shows remaining-shard hint', async () => {
     const h = makeHarness()
-    h.sys.init?.(null as unknown as GameWorld)
-    h.setPlayerPos({ x: 18, y: 8, z: 12 })
-    await h.tick(0.6)
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 1)
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+    h.takePickup('sun-shard', SHARDS[0])
+    await h.tick(0.1)
 
-    // Editor presses Apply. Handlers torn down + re-registered, but
-    // flags persist — same as in the editor's real flow.
+    h.die('fell-into-void')
+    await h.tick(0.1)
+    assert.ok(h.log.some((l) => l.includes('2 Sun Shard')))
+})
+
+test('demo quest: duplicate keeper entries do not advance beyond active or double-complete', async () => {
+    const h = makeHarness()
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'active')
+    assert.equal(h.pickupSpawns.length, 3,
+        'stable pickup ids keep repeated conversations from creating duplicate live shards')
+})
+
+test('demo quest: state progression survives apply()', async () => {
+    const h = makeHarness()
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+    h.takePickup('sun-shard', SHARDS[0])
+    await h.tick(0.1)
+
     h.sys.apply()
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 1)
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'active')
+    assert.equal(h.sys.flags.get(`${SHARDS[0]}.collected`), true)
 
-    // The player is still on the staircase; the new stage-1 check has
-    // gold-gate semantics, so position alone shouldn't advance.
-    await h.tick(0.5)
-    assert.equal(h.sys.flags.get('demo.quest.stage'), 1)
+    h.takePickup('sun-shard', SHARDS[1])
+    h.takePickup('sun-shard', SHARDS[2])
+    await h.tick(0.1)
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'ready')
 })

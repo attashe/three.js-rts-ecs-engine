@@ -25,7 +25,7 @@ const AsyncFunctionCtor: new (...args: string[]) => (ctx: ScriptContext) => Prom
 const PRELUDE_LOCALS = [
     'on', 'once', 'emit', 'wait', 'log',
     'player', 'chunks', 'pickups', 'audio',
-    'flags', 'time', 'zone', 'random',
+    'flags', 'time', 'zone', 'geom', 'ui', 'random',
 ].join(', ')
 
 export interface CompileSuccess {

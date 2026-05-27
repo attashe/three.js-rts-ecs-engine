@@ -2,7 +2,7 @@ import { createWorld, type World } from 'bitecs'
 import type { Object3D } from 'three'
 import { ObstacleRegistry } from './obstacle-registry'
 import { EngineMetrics } from '../metrics'
-import type { Zone, ZoneTriggerEvent } from './zones'
+import type { Zone, ZoneTriggerEvent, ZoneTriggerSource } from './zones'
 
 export interface VoxelCoord {
     x: number
@@ -15,6 +15,22 @@ export interface VoxelCoord {
 export interface PickupInventory {
     gold: number
     arrows: number
+}
+
+export interface PickupScriptMeta {
+    /** Script-facing pickup kind, e.g. `coin`, `arrow`, `sun-shard`. */
+    kind: string
+    /** Stable author id. Lets scripts filter `pickup-taken` by `pickupId`. */
+    pickupId?: string
+    /** Human-readable item name for pickup log lines. */
+    label?: string
+}
+
+export interface PopupMessage {
+    id: number
+    targetId: string
+    message: string
+    seconds: number
 }
 
 /**
@@ -86,6 +102,13 @@ export interface GameContext {
     /** AABBs of settled rigid bodies the voxel-sweep treats as solid. */
     obstacles: ObstacleRegistry
     inventory: PickupInventory
+    /** Optional script-facing metadata for pickup entities. ECS components
+     *  keep only numeric kind/amount; this side table carries author ids and
+     *  custom item names for script-driven quests. */
+    pickupMetaByEid: Map<number, PickupScriptMeta>
+    /** Stable script id -> live pickup entity. Used by `pickups.spawn` to make
+     *  quest item spawning idempotent across script Apply / level-start runs. */
+    pickupEntityByScriptId: Map<string, number>
     /** Active piston mechanisms — voxel-toggling moving platforms. */
     pistons: PistonMechanism[]
     /** Named AABB regions placed by the editor (or seeded by `level.ts`).
@@ -99,10 +122,60 @@ export interface GameContext {
     /** Capped ring of recent gameplay messages — pickup notifications, spell
      *  casts, etc. Rendered by debug-overlay-system. */
     log: string[]
+    /** Short world-anchored UI messages, usually script-authored NPC lines. */
+    popupMessages: PopupMessage[]
+    nextPopupMessageId: number
     /** When non-null, the level should restart. `restart-system` reads
      *  this each render frame and triggers a page reload. */
     deathSignal: DeathReason | null
+    /** Queue of trigger events for the script engine to drain each
+     *  fixed tick. Producer systems (zone trigger, pickup, death) push
+     *  events here; `script-engine-system` consumes + emits via
+     *  `runtime.emit(...)`. Unlike `zoneEvents` (a capped history),
+     *  this is an *unbounded queue that's expected to be drained every
+     *  tick* — if no script engine is registered, events accumulate
+     *  briefly but the script engine is always registered alongside
+     *  the producers in production.
+     *
+     *  See `voxel-platformer/docs/script-engine.md` §3.1 for the
+     *  built-in event taxonomy these correspond to. */
+    scriptTriggerEvents: ScriptTriggerEvent[]
 }
+
+/** Tagged union of trigger events the script engine dispatches. Each
+ *  variant corresponds to one of the built-in event names in §3.1 of
+ *  the design doc — the script engine maps `kind` → name when emitting. */
+export type ScriptTriggerEvent =
+    | {
+        kind: 'zone-enter' | 'zone-exit'
+        zoneId: string
+        source: ZoneTriggerSource
+        point: VoxelCoord
+        entityId: number
+    }
+    | {
+        kind: 'pickup-taken'
+        /** Script-facing pickup kind: `coin`, `arrow`, or a custom item kind. */
+        pickupKind: string
+        /** Stable author id when the pickup was spawned with one. */
+        pickupId?: string
+        amount: number
+        position: VoxelCoord
+        entityId: number
+    }
+    | {
+        kind: 'player.died'
+        reason: DeathReason
+    }
+    | {
+        kind: 'input'
+        action: string
+        edge: 'pressed' | 'held' | 'released'
+        targetId?: string
+        zoneId?: string
+        point?: VoxelCoord
+        entityId?: number
+    }
 
 export type GameWorld = World<GameContext>
 
@@ -112,11 +185,16 @@ export function createGameWorld(): GameWorld {
         object3DByEid: new Map<number, Object3D>(),
         obstacles: new ObstacleRegistry(),
         inventory: { gold: 0, arrows: 0 },
+        pickupMetaByEid: new Map<number, PickupScriptMeta>(),
+        pickupEntityByScriptId: new Map<string, number>(),
         pistons: [],
         zones: new Map<string, Zone>(),
         zoneEvents: [],
         log: [],
+        popupMessages: [],
+        nextPopupMessageId: 1,
         deathSignal: null,
+        scriptTriggerEvents: [],
     })
 }
 
@@ -125,6 +203,23 @@ export function pushLog(world: GameWorld, message: string): void {
     world.log.push(message)
     if (world.log.length > MAX_LOG_ENTRIES) {
         world.log.splice(0, world.log.length - MAX_LOG_ENTRIES)
+    }
+}
+
+export function pushPopupMessage(
+    world: GameWorld,
+    message: Omit<PopupMessage, 'id' | 'seconds'> & { seconds?: number },
+): void {
+    const text = message.message.trim()
+    if (!text) return
+    world.popupMessages.push({
+        id: world.nextPopupMessageId++,
+        targetId: message.targetId,
+        message: text,
+        seconds: Number.isFinite(message.seconds) ? Math.max(0.5, message.seconds ?? 3.5) : 3.5,
+    })
+    if (world.popupMessages.length > 24) {
+        world.popupMessages.splice(0, world.popupMessages.length - 24)
     }
 }
 
@@ -137,3 +232,23 @@ export function pushZoneEvent(world: GameWorld, event: ZoneTriggerEvent): void {
         world.zoneEvents.splice(0, world.zoneEvents.length - MAX_ZONE_EVENTS)
     }
 }
+
+/** Push a trigger event for the script engine to dispatch on the next
+ *  `script-engine-system` update. Producer systems call this from their
+ *  detection code; the script engine drains the queue per tick. */
+export function pushScriptTriggerEvent(world: GameWorld, event: ScriptTriggerEvent): void {
+    world.scriptTriggerEvents.push(event)
+}
+
+/** Drain the trigger queue. Returns the previous contents and replaces
+ *  the queue with a fresh empty array — cheaper than `splice(0)` for
+ *  long bursts because we hand back the existing array instead of
+ *  copying. Returns an empty array if the queue is already empty. */
+export function consumeScriptTriggerEvents(world: GameWorld): readonly ScriptTriggerEvent[] {
+    if (world.scriptTriggerEvents.length === 0) return EMPTY_TRIGGER_QUEUE
+    const out = world.scriptTriggerEvents
+    world.scriptTriggerEvents = []
+    return out
+}
+
+const EMPTY_TRIGGER_QUEUE: readonly ScriptTriggerEvent[] = Object.freeze([])

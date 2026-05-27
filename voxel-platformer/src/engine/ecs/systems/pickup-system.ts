@@ -1,7 +1,7 @@
 import { hasComponent, query } from 'bitecs'
 import { Pickup, PickupValue, PlayerControlled, Position } from '../components'
 import { despawnEntity } from '../entity'
-import { pushLog } from '../world'
+import { pushLog, pushScriptTriggerEvent } from '../world'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 
@@ -10,6 +10,7 @@ import { FixedOrder } from './orders'
 export const PickupKind = {
     Gold: 1,
     Arrow: 2,
+    ScriptItem: 3,
 } as const
 
 export interface PickupSystemOptions {
@@ -25,8 +26,9 @@ export interface PickupSystemOptions {
  * AABB centre against every entity with `Pickup + Position` and, if within
  * `radius`, debit the entity into `world.inventory` and despawn it.
  *
- * Kind dispatch is intentionally small: gold + arrows only, no item registry.
- * Bring back the registry when the project grows an inventory UI.
+ * Kind dispatch is intentionally small: gold and arrows mutate inventory;
+ * script-owned quest items emit `pickup-taken` metadata without entering a
+ * general inventory registry.
  */
 export function createPickupSystem(opts: PickupSystemOptions = {}): System {
     const radius = opts.radius ?? 0.9
@@ -53,9 +55,34 @@ export function createPickupSystem(opts: PickupSystemOptions = {}): System {
 
                 const kind = hasComponent(world, eid, PickupValue) ? PickupValue.kind[eid] : 0
                 const amount = hasComponent(world, eid, PickupValue) ? PickupValue.amount[eid] : 0
+                const safeAmount = Math.max(1, amount)
+                const meta = world.pickupMetaByEid.get(eid)
+                const scriptKind = meta?.kind ?? scriptPickupKind(kind)
                 applyPickup(world, kind, amount)
-                pushLog(world, formatPickupLog(kind, Math.max(1, amount)))
+                pushLog(world, formatPickupLog(kind, safeAmount, meta?.label))
                 opts.onCollected?.(kind, amount)
+                // Snapshot the pickup's position before despawn — the
+                // entity is about to disappear and any subscriber
+                // reading `event.position` would otherwise get
+                // freed-slot garbage.
+                if (scriptKind !== null) {
+                    pushScriptTriggerEvent(world, {
+                        kind: 'pickup-taken',
+                        pickupKind: scriptKind,
+                        pickupId: meta?.pickupId,
+                        amount: safeAmount,
+                        position: {
+                            x: Position.x[eid] ?? 0,
+                            y: Position.y[eid] ?? 0,
+                            z: Position.z[eid] ?? 0,
+                        },
+                        entityId: eid,
+                    })
+                }
+                world.pickupMetaByEid.delete(eid)
+                if (meta?.pickupId && world.pickupEntityByScriptId.get(meta.pickupId) === eid) {
+                    world.pickupEntityByScriptId.delete(meta.pickupId)
+                }
                 despawnEntity(world, eid)
             }
         },
@@ -68,7 +95,18 @@ function applyPickup(world: Parameters<System['update']>[0], kind: number, amoun
     else if (kind === PickupKind.Arrow) world.inventory.arrows += safeAmount
 }
 
-function formatPickupLog(kind: number, amount: number): string {
+/** Translate the numeric `PickupKind` code into the string form
+ *  scripts use in `on('pickup-taken', { kind: 'coin' }, ...)`.
+ *  Returns null for kinds the script layer doesn't yet expose so we
+ *  don't spam the queue with `{ pickupKind: undefined }`. */
+function scriptPickupKind(kind: number): string | null {
+    if (kind === PickupKind.Gold) return 'coin'
+    if (kind === PickupKind.Arrow) return 'arrow'
+    return null
+}
+
+function formatPickupLog(kind: number, amount: number, label?: string): string {
+    if (label) return `Picked up ${label}.`
     if (kind === PickupKind.Gold) return `Picked up ${amount} gold.`
     if (kind === PickupKind.Arrow) return `Picked up ${amount === 1 ? 'an arrow' : `${amount} arrows`}.`
     return `Picked up something.`

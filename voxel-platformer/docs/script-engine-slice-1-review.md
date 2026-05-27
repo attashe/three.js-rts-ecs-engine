@@ -1,5 +1,14 @@
 # Script Engine Slice 1 — Critical Review
 
+> **Closed.** The verdict in §3 (do not start Slice 2 until language
+> polish lands) was acted on in Slice 1.5; the prescribed five-item
+> patch shipped along with an NPC-led demo quest, a `ui.say`
+> floating-message stack, and an `input` event tied to interactive
+> zones. See `script-engine-slice-1-5-review.md` for the closure
+> report and the small set of follow-ups still on the punch list.
+
+
+
 Written after authoring a real quest (`examples/scripts/demo-quest.js`) against
 the Slice 1 API. Goal: judge whether the language we shipped is actually
 pleasant to write in, and call out where the design is short.

@@ -9,7 +9,13 @@ import {
 } from '../components'
 import { MovingObjectKind } from '../../../game/moving-objects'
 import type { ChunkManager } from '../../voxel/chunk-manager'
-import { pushLog, pushZoneEvent, type GameWorld, type VoxelCoord } from '../world'
+import {
+    pushLog,
+    pushScriptTriggerEvent,
+    pushZoneEvent,
+    type GameWorld,
+    type VoxelCoord,
+} from '../world'
 import {
     isTriggerZone,
     zoneAcceptsTrigger,
@@ -45,6 +51,11 @@ interface Point {
  */
 export function createZoneTriggerSystem(chunks: ChunkManager, opts: ZoneTriggerSystemOptions = {}): System {
     const activePlayers = new Set<string>()
+    // Side-table of the metadata an exit event needs (zoneId, source,
+    // entityId, last-seen point). Populated on enter, drained on exit.
+    // Keeps the exit path from re-querying entity / zone state after
+    // the player has already left.
+    const activePlayerMeta = new Map<string, ActiveTriggerMeta>()
     const firedArrows = new Set<string>()
     const prevArrowCenter = new Map<number, Point>()
     const log = opts.log ?? true
@@ -55,16 +66,38 @@ export function createZoneTriggerSystem(chunks: ChunkManager, opts: ZoneTriggerS
         update(world, dt) {
             const zones = [...world.zones.values()].filter(isTriggerZone)
             if (zones.length === 0) {
+                // Synthesise exits for anyone we were tracking so
+                // scripts that subscribed to `zone-exit` see one event
+                // when the level swaps out all its zones. Cheap insurance.
+                for (const meta of activePlayerMeta.values()) emitExit(world, meta)
                 activePlayers.clear()
+                activePlayerMeta.clear()
                 firedArrows.clear()
                 prevArrowCenter.clear()
                 return
             }
 
-            updatePlayerTriggers(world, chunks, zones, activePlayers, opts.onTrigger, log)
+            updatePlayerTriggers(world, chunks, zones, activePlayers, activePlayerMeta, opts.onTrigger, log)
             updateArrowTriggers(world, chunks, zones, prevArrowCenter, firedArrows, opts.onTrigger, log, dt)
         },
     }
+}
+
+interface ActiveTriggerMeta {
+    zoneId: string
+    source: ZoneTriggerSource
+    eid: number
+    point: VoxelCoord
+}
+
+function emitExit(world: GameWorld, meta: ActiveTriggerMeta): void {
+    pushScriptTriggerEvent(world, {
+        kind: 'zone-exit',
+        zoneId: meta.zoneId,
+        source: meta.source,
+        point: { ...meta.point },
+        entityId: meta.eid,
+    })
 }
 
 function updatePlayerTriggers(
@@ -72,6 +105,7 @@ function updatePlayerTriggers(
     chunks: ChunkManager,
     zones: Zone[],
     activePlayers: Set<string>,
+    activePlayerMeta: Map<string, ActiveTriggerMeta>,
     onTrigger: ZoneTriggerSystemOptions['onTrigger'],
     log: boolean,
 ): void {
@@ -88,12 +122,31 @@ function updatePlayerTriggers(
             currentHits.add(key)
             if (activePlayers.has(key)) continue
             activePlayers.add(key)
-            emitZoneTrigger(world, chunks, zone, 'player', eid, entityCenter(world, eid), onTrigger, log)
+            const point = entityCenter(world, eid)
+            activePlayerMeta.set(key, { zoneId: zone.id, source: 'player', eid, point: { ...point } })
+            emitZoneTrigger(world, chunks, zone, 'player', eid, point, onTrigger, log)
+            // Mirror the existing trigger emission into the script
+            // engine queue. Keeps the legacy `executeZoneScript` path
+            // working for the still-in-use ZoneScriptAction surface
+            // until Slice 3 retires it.
+            pushScriptTriggerEvent(world, {
+                kind: 'zone-enter',
+                zoneId: zone.id,
+                source: 'player',
+                point: { ...point },
+                entityId: eid,
+            })
         }
     }
 
     for (const key of activePlayers) {
-        if (!currentHits.has(key)) activePlayers.delete(key)
+        if (currentHits.has(key)) continue
+        const meta = activePlayerMeta.get(key)
+        if (meta) {
+            emitExit(world, meta)
+            activePlayerMeta.delete(key)
+        }
+        activePlayers.delete(key)
     }
 }
 
@@ -130,6 +183,16 @@ function updateArrowTriggers(
             if (!arrowIntersectsZone(world, eid, prev, curr, zone)) continue
             firedArrows.add(key)
             emitZoneTrigger(world, chunks, zone, 'arrow', eid, curr, onTrigger, log)
+            // Arrows pass through — emit only enter, never exit, so
+            // scripts can react to "an arrow hit this zone" without
+            // racing against an exit fired the same frame.
+            pushScriptTriggerEvent(world, {
+                kind: 'zone-enter',
+                zoneId: zone.id,
+                source: 'arrow',
+                point: { ...curr },
+                entityId: eid,
+            })
         }
 
         prevArrowCenter.set(eid, curr)

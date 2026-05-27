@@ -91,3 +91,23 @@ test('loadLevelFromBuffer defaults yaw/scale/gridAligned when meta omits them', 
     assert.equal(p.scale, 1, 'non-positive scale → 1')
     assert.equal(p.gridAligned, true, 'missing gridAligned → true (the default UI state)')
 })
+
+test('scripts survive a save -> load round-trip through metadata', () => {
+    const state = createEditorState({ x: 0, y: 0, z: 0 })
+    state.scripts.push({
+        id: 'quest-a',
+        name: 'quest-a.js',
+        source: `on('level-start', () => log('hi'))`,
+        enabled: true,
+    })
+
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const meta = toLevelMeta(state, 'script-test')
+    assert.equal(meta.scripts?.length, 1)
+
+    const buffer = serializeLevel(chunks, meta)
+    const restoreState = createEditorState({ x: 0, y: 0, z: 0 })
+    loadLevelFromBuffer(buffer, createGameWorld(), new ChunkManager(DEFAULT_PALETTE), restoreState)
+
+    assert.deepEqual(restoreState.scripts, state.scripts)
+})

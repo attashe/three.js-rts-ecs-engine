@@ -8,6 +8,7 @@ import {
     sharedCylinderGeometry,
     sharedMaterial,
     sharedSphereGeometry,
+    sharedTorusGeometry,
 } from './shared-primitives'
 
 function material(color: number, roughness = 0.7, metalness = 0): MeshStandardMaterial {
@@ -62,6 +63,39 @@ export function createCoinPile(): Group {
         coin.rotation.z = tiltZ
         root.add(coin)
     }
+    return shadows(root)
+}
+
+export function createQuestShard(): Group {
+    const root = new Group()
+    root.name = 'QuestShard'
+
+    const amber = material(0xffb84d, 0.42, 0.18)
+    const hotCore = material(0xfff1a6, 0.32, 0.08)
+    const brass = material(0x7a5427, 0.64, 0.12)
+
+    const upper = new Mesh(sharedConeGeometry(0.12, 0.32, 6), amber)
+    upper.name = 'ShardUpper'
+    upper.position.y = 0.34
+    root.add(upper)
+
+    const lower = new Mesh(sharedConeGeometry(0.10, 0.24, 6), amber)
+    lower.name = 'ShardLower'
+    lower.position.y = 0.12
+    lower.rotation.x = Math.PI
+    root.add(lower)
+
+    const core = new Mesh(sharedSphereGeometry(0.055, 8, 6), hotCore)
+    core.name = 'ShardCore'
+    core.position.y = 0.24
+    root.add(core)
+
+    const ring = new Mesh(sharedTorusGeometry(0.16, 0.012, 6, 16), brass)
+    ring.name = 'ShardRing'
+    ring.position.y = 0.08
+    ring.rotation.x = Math.PI * 0.5
+    root.add(ring)
+
     return shadows(root)
 }
 

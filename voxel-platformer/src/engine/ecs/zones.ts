@@ -53,6 +53,18 @@ export interface Zone {
     readonly triggerSources?: readonly ZoneTriggerSource[]
     /** Optional data-driven actions executed when the trigger activates. */
     readonly script?: ZoneScript
+    /** Optional interaction affordance. Zones with `kind: "interact"` are
+     *  sampled by the gameplay interaction system instead of firing
+     *  automatic enter/exit trigger events. */
+    readonly interaction?: {
+        /** Screen prompt text shown next to the interaction key. */
+        readonly prompt?: string
+        /** World-space anchor for prompt/dialogue projection. Defaults to
+         *  the top-center of the zone. */
+        readonly anchor?: VoxelCoord
+        /** Max distance from the anchor/zone center for interaction. */
+        readonly radius?: number
+    }
 }
 
 export interface ZoneTriggerEvent {

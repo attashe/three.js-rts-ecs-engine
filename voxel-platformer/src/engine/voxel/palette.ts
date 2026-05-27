@@ -45,7 +45,7 @@ export interface PaletteEntry {
      *  diagnose the shadow pipeline. */
     lightCastsShadow?: boolean
     /** Optional non-cube prop renderer for authored special blocks. */
-    renderAs?: 'torch'
+    renderAs?: 'torch' | 'torch-off'
     /**
      * Atlas tile name driving the chunk-mesh surface detail. When
      * omitted the block renders as a flat colour (the historical
@@ -89,6 +89,7 @@ export const BLOCK = {
     water: 12,
     cloud: 13,
     torch: 14,
+    unlitLantern: 15,
 } as const
 
 /**
@@ -154,6 +155,17 @@ export const DEFAULT_PALETTE: Palette = {
             opacity: 0,
             renderAs: 'torch',
         },
+        {
+            name: 'unlit lantern',
+            color: [0.18, 0.13, 0.08],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0,
+            renderAs: 'torch-off',
+        },
     ],
 }
 
@@ -194,8 +206,17 @@ export function isRaycastTarget(palette: Palette, index: number): boolean {
 }
 
 export function isTorchBlock(palette: Palette, index: number): boolean {
-    if (index === AIR) return false
-    return paletteEntry(palette, index).renderAs === 'torch'
+    return torchBlockState(palette, index) !== null
+}
+
+export type TorchBlockState = 'lit' | 'unlit'
+
+export function torchBlockState(palette: Palette, index: number): TorchBlockState | null {
+    if (index === AIR) return null
+    const renderAs = paletteEntry(palette, index).renderAs
+    if (renderAs === 'torch') return 'lit'
+    if (renderAs === 'torch-off') return 'unlit'
+    return null
 }
 
 export function isPathSurface(palette: Palette, index: number): boolean {
@@ -284,11 +305,17 @@ export function clonePalette(palette: Palette): Palette {
 }
 
 export function appendMissingDefaultPaletteEntries(palette: Palette): void {
-    if (!palette.entries.some((entry) => entry.renderAs === 'torch')) {
-        const torch = clonePalette({ entries: [DEFAULT_PALETTE.entries[BLOCK.torch]!] }).entries[0]!
-        torch.name = uniquePaletteName(palette, torch.name)
-        palette.entries.push(torch)
-    }
+    appendMissingSpecialBlock(palette, BLOCK.torch)
+    appendMissingSpecialBlock(palette, BLOCK.unlitLantern)
+}
+
+function appendMissingSpecialBlock(palette: Palette, defaultIndex: number): void {
+    const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
+    if (!defaultEntry?.renderAs) return
+    if (palette.entries.some((entry) => entry.renderAs === defaultEntry.renderAs)) return
+    const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
+    entry.name = uniquePaletteName(palette, entry.name)
+    palette.entries.push(entry)
 }
 
 function uniquePaletteName(palette: Palette, wanted: string): string {

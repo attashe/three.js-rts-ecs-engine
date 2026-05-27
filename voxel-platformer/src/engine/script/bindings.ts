@@ -19,13 +19,23 @@ import type {
     EventHandler,
     FlagsApi,
     FlagValue,
+    GeomApi,
     LogFacade,
     PickupsFacade,
     PlayerFacade,
     ScriptContext,
+    UiFacade,
+    VoxelCoord,
     ZoneFacade,
 } from './types'
 import type { ScriptRuntime } from './runtime'
+
+/** Returned by `player.position` when the player entity doesn't
+ *  exist. Every AABB / distance check using these coords yields false
+ *  (NaN propagates through comparisons), so script handlers don't
+ *  need explicit null guards. Authors who want to know explicitly
+ *  whether the player exists can read `player.alive`. */
+const NULL_POSITION: VoxelCoord = Object.freeze({ x: NaN, y: NaN, z: NaN }) as VoxelCoord
 
 export interface BindingsDeps {
     runtime: ScriptRuntime
@@ -35,6 +45,7 @@ export interface BindingsDeps {
     pickups: PickupsFacade
     zone: ZoneFacade
     log: LogFacade
+    ui?: UiFacade
     /** Backing store for `flags.get / set`. Owned by the script engine
      *  system so it can persist into level metadata on save. */
     flags: Map<string, FlagValue>
@@ -42,6 +53,7 @@ export interface BindingsDeps {
 
 export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const { runtime, audio, chunks, player, pickups, zone, log, flags } = deps
+    const ui = deps.ui ?? NOOP_UI
 
     // `on(...)` has two shapes: with filter object, or without (for
     // string-named custom events). Detect by checking arg 2's type —
@@ -78,7 +90,8 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
         log: (msg, kind) => log.log(msg, kind),
 
         player: {
-            get position() { return player.getPosition() },
+            get position() { return player.getPosition() ?? NULL_POSITION },
+            get alive() { return player.getPosition() !== null },
             get inventory() {
                 return {
                     get gold() { return player.getGold() },
@@ -108,6 +121,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
         time: {
             get now() { return runtime.now },
             get tick() { return runtime.tick },
+            get delta() { return runtime.delta },
         },
 
         zone: {
@@ -116,8 +130,35 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             },
         },
 
+        geom: makeGeomApi(),
+
+        ui: {
+            say: (targetId, message, opts) => ui.say(targetId, message, opts),
+        },
+
         random: (min, max) => runtime.random(min, max),
     }
 
     return ctx
+}
+
+const NOOP_UI: UiFacade = {
+    say() {},
+}
+
+function makeGeomApi(): GeomApi {
+    return {
+        box(min, max, point) {
+            // Inclusive min, exclusive max — same convention zones use.
+            return point.x >= min.x && point.x < max.x
+                && point.y >= min.y && point.y < max.y
+                && point.z >= min.z && point.z < max.z
+        },
+        distSq(a, b) {
+            const dx = a.x - b.x
+            const dy = a.y - b.y
+            const dz = a.z - b.z
+            return dx * dx + dy * dy + dz * dz
+        },
+    }
 }

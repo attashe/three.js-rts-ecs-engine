@@ -1,4 +1,4 @@
-import { copyZoneScriptAction, type EditorLevelMeta } from '../editor/editor-state'
+import { copyScriptEntry, copyZoneScriptAction, type EditorLevelMeta } from '../editor/editor-state'
 import type { Zone } from '../engine/ecs/zones'
 import type { LevelMeta, CoinPileSpawn } from './level'
 import type { PistonMechanismConfig } from './mechanisms'
@@ -106,6 +106,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         environment,
         weatherZones,
         props,
+        scripts: (meta.scripts ?? []).map(copyScriptEntry),
         ambientWeather,
         size: fallbackSize,
     }

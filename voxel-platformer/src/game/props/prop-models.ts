@@ -73,6 +73,7 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'chair-2':   return buildChair(2)
         case 'book':      return buildBook(1)
         case 'book-2':    return buildBook(2)
+        case 'npc-keeper': return buildKeeperNpc()
     }
 }
 
@@ -361,6 +362,63 @@ function buildBook(variant: 1 | 2): BufferGeometry {
     paintVertexColor(pages, 0.94, 0.90, 0.80)
 
     return mergeAndCleanup([pages, cover, spine])
+}
+
+function buildKeeperNpc(): BufferGeometry {
+    const parts: BufferGeometry[] = []
+
+    const robe = new CylinderGeometry(0.23, 0.31, 0.76, 8)
+    robe.translate(0, 0.38, 0)
+    paintVertexColor(robe, 0.18, 0.23, 0.32)
+    parts.push(robe)
+
+    const shoulderWrap = new CylinderGeometry(0.25, 0.23, 0.12, 8)
+    shoulderWrap.translate(0, 0.74, 0)
+    paintVertexColor(shoulderWrap, 0.33, 0.20, 0.12)
+    parts.push(shoulderWrap)
+
+    const hood = new SphereGeometry(0.22, 10, 8)
+    hood.scale(1.0, 1.08, 0.94)
+    hood.translate(0, 0.93, 0)
+    paintVertexColor(hood, 0.16, 0.18, 0.25)
+    parts.push(hood)
+
+    const face = new BoxGeometry(0.13, 0.12, 0.045)
+    face.translate(0.18, 0.90, 0)
+    paintVertexColor(face, 0.78, 0.58, 0.40)
+    parts.push(face)
+
+    const sash = new BoxGeometry(0.08, 0.56, 0.035)
+    sash.rotateZ(-0.38)
+    sash.translate(0.02, 0.47, -0.24)
+    paintVertexColor(sash, 0.70, 0.46, 0.18)
+    parts.push(sash)
+
+    const staff = new CylinderGeometry(0.018, 0.023, 0.92, 6)
+    staff.translate(0.33, 0.46, 0.18)
+    paintVertexColor(staff, 0.30, 0.18, 0.08)
+    parts.push(staff)
+
+    const lanternFrame = new BoxGeometry(0.13, 0.17, 0.13)
+    lanternFrame.translate(0.33, 0.36, 0.18)
+    paintVertexColor(lanternFrame, 0.12, 0.10, 0.07)
+    parts.push(lanternFrame)
+
+    const lanternGlow = new SphereGeometry(0.075, 8, 6)
+    lanternGlow.scale(0.78, 0.92, 0.78)
+    lanternGlow.translate(0.33, 0.36, 0.18)
+    paintVertexColor(lanternGlow, 1.0, 0.70, 0.28)
+    parts.push(lanternGlow)
+
+    const footA = new BoxGeometry(0.12, 0.06, 0.16)
+    footA.translate(0.08, 0.03, 0.10)
+    paintVertexColor(footA, 0.10, 0.08, 0.06)
+    const footB = footA.clone()
+    footB.translate(-0.16, 0, -0.20)
+    paintVertexColor(footB, 0.10, 0.08, 0.06)
+    parts.push(footA, footB)
+
+    return mergeAndCleanup(parts)
 }
 
 function mushroomParts(spec: {

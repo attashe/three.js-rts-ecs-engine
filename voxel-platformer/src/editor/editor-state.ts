@@ -2,6 +2,7 @@ import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import type { VoxelCoord } from '../engine/ecs/world'
 import type { ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
+import type { ScriptEntry } from '../engine/script/types'
 import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
 import type { PistonDirection } from './piston-direction'
@@ -362,6 +363,9 @@ export interface EditorState {
      *  ordinary `props`, so this list does not need runtime persistence. */
     propScatterItems: EditorPropScatterItem[]
 
+    /** Plain JavaScript scripts persisted with the level and run in playtest. */
+    scripts: ScriptEntry[]
+
     /** Level-wide visual environment (sky / fog / sun / drifting rain
      *  & snow / lightning). Disabled by default. */
     ambientWeather: EditorAmbientWeather
@@ -485,6 +489,7 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         propScatterShape: 'circle',
         propScatterSize: 5,
         propScatterItems: [],
+        scripts: [],
         ambientWeather: {
             // Default to enabled now that an Outdoor mode "just works"
             // without the author hand-picking sky/fog/sun colours — the
@@ -530,6 +535,8 @@ export interface EditorLevelMeta {
     /** Level-wide visual environment snapshot. Absent / `enabled: false`
      *  ⇒ playtest uses the engine's default lighting + sky. */
     ambientWeather?: EditorAmbientWeather
+    /** Plain JavaScript scripts run by the script engine during playtest. */
+    scripts?: ScriptEntry[]
 }
 
 export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
@@ -603,6 +610,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             scale: p.scale,
             gridAligned: p.gridAligned,
         })),
+        scripts: state.scripts.length === 0 ? undefined : state.scripts.map(copyScriptEntry),
         ambientWeather: state.ambientWeather.enabled
             ? {
                 enabled: true,
@@ -611,6 +619,18 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             }
             : undefined,
     }
+}
+
+export function copyScriptEntry(entry: ScriptEntry): ScriptEntry {
+    const out: ScriptEntry = {
+        id: entry.id,
+        name: entry.name,
+        source: entry.source,
+    }
+    if (entry.fromFile !== undefined) out.fromFile = entry.fromFile
+    if (entry.sourcePath !== undefined) out.sourcePath = entry.sourcePath
+    if (entry.enabled !== undefined) out.enabled = entry.enabled
+    return out
 }
 
 /** Re-export so editor-ui only needs editor-state to know default block ids. */

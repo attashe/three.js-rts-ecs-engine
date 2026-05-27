@@ -1,7 +1,7 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { deserializeLevel, serializeLevel } from '../engine/voxel/level-serializer'
-import { copyZoneScriptAction, DEFAULT_AMBIENT_WEATHER, type EditorState, type EditorLevelMeta } from './editor-state'
+import { copyScriptEntry, copyZoneScriptAction, DEFAULT_AMBIENT_WEATHER, type EditorState, type EditorLevelMeta } from './editor-state'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
 import { toLevelMeta } from './editor-state'
 import { despawnEntity } from '../engine/ecs/entity'
@@ -58,6 +58,8 @@ function clearWorldAndEditorState(
         if (p.eid >= 0) despawnEntity(world, p.eid)
     }
     editorState.pickups = []
+    world.pickupMetaByEid.clear()
+    world.pickupEntityByScriptId.clear()
 
     for (const p of world.pistons) {
         if (p.eid >= 0) {
@@ -70,6 +72,8 @@ function clearWorldAndEditorState(
 
     world.zones.clear()
     world.zoneEvents.length = 0
+    world.popupMessages.length = 0
+    world.nextPopupMessageId = 1
     editorState.zones = []
 
     editorState.soundSources = []
@@ -80,6 +84,7 @@ function clearWorldAndEditorState(
     editorState.selectedWeatherZoneId = null
     editorState.props = []
     editorState.selectedPropId = null
+    editorState.scripts = []
     // Leave ambientWeather alone — it's level-wide state the user
     // explicitly authored. A fresh "new level" call will overwrite it
     // via createEditorState anyway.
@@ -248,6 +253,7 @@ export function loadLevelFromBuffer(
                 gridAligned: p.gridAligned ?? true,
             })
         }
+        editorState.scripts = (loaded.metadata.scripts ?? []).map(copyScriptEntry)
         // Restore the level-wide music selection. Without this branch
         // the Level-tab track dropdown silently resets to "(none)"
         // every time the editor reopens — e.g. after a playtest

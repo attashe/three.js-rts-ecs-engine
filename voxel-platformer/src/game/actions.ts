@@ -18,6 +18,7 @@ export const GameAction = {
     HighJump: 'spell.highJump',
     AirPush: 'spell.airPush',
     BowShot: 'weapon.bowShot',
+    Interact: 'interact',
     CameraRotateLeft: 'camera.rotateLeft',
     CameraRotateRight: 'camera.rotateRight',
     CameraZoom: 'camera.zoom',
@@ -100,6 +101,13 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
         cooldownMs: 520,
         hint: { group: 'shoot', label: 'Bow', keys: ['F'], order: 50 },
     },
+    {
+        id: GameAction.Interact,
+        label: 'Interaction',
+        bindings: [{ keys: ['KeyE'] }],
+        bufferMs: 160,
+        hint: { group: 'interact', label: 'Interaction', keys: ['E'], order: 55 },
+    },
 ]
 
 export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
@@ -109,6 +117,7 @@ export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
     GameAction.HighJump,
     GameAction.AirPush,
     GameAction.BowShot,
+    GameAction.Interact,
     GameAction.CameraRotateLeft,
 ]
 

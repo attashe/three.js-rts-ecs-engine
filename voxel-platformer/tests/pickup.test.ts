@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { addComponent, addEntity, hasComponent } from 'bitecs'
 import { Pickup, PickupValue, PlayerControlled, Position } from '../src/engine/ecs/components'
 import { createPickupSystem, PickupKind } from '../src/engine/ecs/systems/pickup-system'
-import { createGameWorld } from '../src/engine/ecs/world'
+import { consumeScriptTriggerEvents, createGameWorld } from '../src/engine/ecs/world'
 
 function addPlayer(world: ReturnType<typeof createGameWorld>, x: number, y: number, z: number): number {
     const eid = addEntity(world)
@@ -85,4 +85,32 @@ test('PickupSystem: amount defaults to 1 when the slot is 0 (defensive)', () => 
 
     createPickupSystem({ radius: 0.9 }).update(world, 1 / 60)
     assert.equal(world.inventory.gold, 1)
+})
+
+test('PickupSystem: script item metadata emits custom kind and pickupId without inventory gain', () => {
+    const world = createGameWorld()
+    addPlayer(world, 0, 0, 0)
+    const item = addPickupEntity(world, PickupKind.ScriptItem, 1, 0.2, 0, 0)
+    world.pickupMetaByEid.set(item, {
+        kind: 'sun-shard',
+        pickupId: 'demo.shard.stairs',
+        label: 'Sun Shard',
+    })
+    world.pickupEntityByScriptId.set('demo.shard.stairs', item)
+
+    createPickupSystem({ radius: 0.9 }).update(world, 1 / 60)
+
+    assert.equal(world.inventory.gold, 0)
+    assert.equal(world.inventory.arrows, 0)
+    assert.equal(world.pickupMetaByEid.has(item), false)
+    assert.equal(world.pickupEntityByScriptId.has('demo.shard.stairs'), false)
+    const events = consumeScriptTriggerEvents(world)
+    assert.deepEqual(events[0], {
+        kind: 'pickup-taken',
+        pickupKind: 'sun-shard',
+        pickupId: 'demo.shard.stairs',
+        amount: 1,
+        position: { x: 0.20000000298023224, y: 0, z: 0 },
+        entityId: item,
+    })
 })
