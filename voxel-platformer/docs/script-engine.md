@@ -1,9 +1,12 @@
 # Script Engine — Design Doc
 
-Status: **Slice 1 + 1.5 implemented** on `feature/surface-improve`.
-Slice 2 (editor UI) blocked until the implementation passes a second
-review. See `script-engine-slice-1-review.md` for the verdict that
-drove Slice 1.5 changes, and the §11 implementation status below.
+Status: **Slices 1, 1.5, 1.6, 2 implemented** on `feature/surface-improve`.
+Authors can now (a) load `.js` files or paste snippets into the editor's
+**Logic** tab, (b) react to zone enter/exit, pickup-taken, player-died,
+and input events, (c) call into world state via the host bindings
+(`chunks`, `audio`, `pickups`, `player`, `flags`, `ui`, `dayCycle`,
+`weather`, `zone`, `geom`). See `script-engine-slice-1-5-review.md`
+and the §11 implementation status below.
 
 Scripts are how the editor authors quests, cinematics, and event-driven
 gameplay logic on top of the existing zone / pickup / piston systems.
@@ -225,6 +228,7 @@ at the top of every body.
 | `pickup-taken` | `{ pickupId?, kind? }` | `{ pickupId, kind, position, amount? }` |
 | `input` | `{ action, edge, targetId? }` | `{ action, edge, targetId?, zoneId?, point?, entityId? }` |
 | `player.died` | — | `{ reason? }` |
+| `flag.changed` | `{ name }` | `{ name, value, previousValue }` |
 | `level.reset` | — | — fires when **Apply** re-runs scripts |
 
 Custom events: any string the author picks. `emit(name, data)` from
@@ -308,8 +312,30 @@ time.delta                // seconds elapsed in the most recent tick;
                           //   use for smooth interpolation in handlers
 random(min: number, max: number): number
 
-// Zone queries
+// Zone queries + activation toggle. `setActive` clones the existing
+// zone with the new flag, so the readonly identity holds. Deactivating
+// mid-overlap synthesises a `zone-exit` next tick.
 zone.contains(zoneId: string, who?: 'player' | VoxelCoord): boolean
+zone.exists(zoneId: string): boolean
+zone.isActive(zoneId: string): boolean
+zone.setActive(zoneId: string, active: boolean): boolean
+
+// Day cycle — drives the ambient weather clock. Use `setEnabled(false)`
+// to freeze the sky for a cinematic; `setHour` writes the in-world
+// hour [0,24); `setSpeed(secondsPerDay)` controls cycle speed.
+dayCycle.hour                    // getter
+dayCycle.enabled                 // getter
+dayCycle.setHour(hour: number): void
+dayCycle.setEnabled(enabled: boolean): void
+dayCycle.setSpeed(secondsPerDay: number): void
+
+// Weather — toggle global rain/snow/lightning or apply a named preset
+// from `WEATHER_PRESETS` ('clear', 'cloudy', 'rain', 'storm', 'snow',
+// 'dawn'). Returns false on `applyPreset` if the id isn't registered.
+weather.setRain(on: boolean): void
+weather.setSnow(on: boolean): void
+weather.setLightning(on: boolean): void
+weather.applyPreset(presetId: string): boolean
 
 // Geometry helpers — pure, no world state. Use when you need an AABB
 // test in a place that doesn't justify authoring a real zone (e.g. a
@@ -631,23 +657,26 @@ on('level-start', async () => {
 | `pickup-taken` event                          | — | ✅ | tapped in pickup-system |
 | `player.died` event                           | — | ✅ | watchdog inside script-engine-system |
 | `input` event                                 | — | ✅ | Interaction key emits `action: "interact"` |
+| `ui.say` floating bubbles                     | — | ✅ | wired via `interaction-system` |
+| Stable pickup ids + idempotent spawn          | — | ✅ | `pickups.spawn(..., { id, label })` |
+| `Zone.active` + `zone.setActive/isActive/exists` | — | — / 1.6 | inactive zones synthesise zone-exit |
+| `flag.changed` event                          | — | — / 1.6 | cross-script observation w/o polling |
+| `dayCycle.setHour/setEnabled/setSpeed`        | — | — / 1.6 | drives ambient state |
+| `weather.setRain/setSnow/setLightning/applyPreset` | — | — / 1.6 | hooks `AmbientWeather.setState` + presets |
+| Editor "Logic" tab (file loader + paste)      | — | — / 2 | ✅ live |
 | `player.setCheckpoint`                        | — | — | Slice 3 — needs checkpoint system |
-| `pickups.despawn` + stable pickup ids         | — | — | Slice 3 |
+| `pickups.despawn`                             | — | — | Slice 3 |
 | `pistons.setEnabled/flip`                     | — | — | Slice 3 — needs piston id surface |
+| `weather.setZoneEnabled` (toggle FX zones)    | — | — | Slice 3 — needs respawn-by-id surface |
 | `ZoneScriptAction` migration                  | — | — | Slice 3 |
-| Editor "Logic" tab (file loader + paste)      | — | — | **Slice 2 — blocked on second review** |
 
 ### What's still on the roadmap
 
-- **Editor UI (Slice 2)**: Logic tab + file loader + paste textarea +
-  Apply button. Blocked until the language polish from Slice 1.5
-  passes a second authoring exercise. Once authors can write
-  ergonomic event-driven scripts (which 1.5 makes possible),
-  shipping the UI unlocks real use.
 - **Slice 3**: the heavier integration work —
   `player.setCheckpoint` (new checkpoint state on world),
   `pickups.despawn` (stable pickup ids),
   `pistons.*` (piston id surface),
+  `weather.setZoneEnabled` (FX-zone respawn-by-id),
   `ZoneScriptAction` → `ScriptEntry` migration (drop the legacy
   union; `executeZoneScript` removed).
 

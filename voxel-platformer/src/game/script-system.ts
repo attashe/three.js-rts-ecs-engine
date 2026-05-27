@@ -2,16 +2,19 @@ import { hasComponent, query } from 'bitecs'
 import type { AudioEngine, AudioManifest, SoundHandle } from '../engine/audio'
 import { PlayerControlled, Position, Velocity } from '../engine/ecs/components'
 import { pushLog, pushPopupMessage, type GameWorld, type VoxelCoord } from '../engine/ecs/world'
-import { isPointInZone } from '../engine/ecs/zones'
+import { isPointInZone, isZoneActive, setZoneActive } from '../engine/ecs/zones'
+import { WEATHER_PRESETS, type WeatherSystem } from '../engine/fx'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { createScriptEngineSystem } from '../engine/script/script-engine-system'
 import type {
     AudioFacade,
     ChunksFacade,
+    DayCycleFacade,
     LogFacade,
     PickupsFacade,
     PlayerFacade,
     ScriptEntry,
+    WeatherFacade,
     ZoneFacade,
 } from '../engine/script/types'
 import { spawnScriptPickup } from './pickups'
@@ -21,6 +24,10 @@ export interface GameScriptSystemOptions {
     chunks: ChunkManager
     audio: AudioEngine
     audioManifest: AudioManifest
+    /** The WeatherSystem from `createEnvironmentFxSystem`. Required for
+     *  the `weather.*` and `dayCycle.*` bindings; pass `null` if the
+     *  level has no ambient weather and scripts shouldn't touch it. */
+    weatherSystem?: WeatherSystem | null
     getScripts: () => readonly ScriptEntry[]
 }
 
@@ -127,6 +134,16 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                 : who
             return point !== null && isPointInZone(z, point)
         },
+        exists(zoneId) {
+            return opts.world.zones.has(zoneId)
+        },
+        isActive(zoneId) {
+            const z = opts.world.zones.get(zoneId)
+            return z !== undefined && isZoneActive(z)
+        },
+        setActive(zoneId, active) {
+            return setZoneActive(opts.world, zoneId, active)
+        },
     }
 
     const log: LogFacade = {
@@ -135,6 +152,13 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
             if (trimmed) pushLog(opts.world, trimmed)
         },
     }
+
+    // Weather + day-cycle bindings are wired only when an ambient
+    // weather system exists for the level. Scripts that try to call
+    // `weather.setRain(...)` on a level with no ambient see the
+    // no-op fallback in bindings.ts.
+    const weather = opts.weatherSystem ? buildWeatherFacade(opts.weatherSystem) : undefined
+    const dayCycle = opts.weatherSystem ? buildDayCycleFacade(opts.weatherSystem) : undefined
 
     return createScriptEngineSystem({
         audio,
@@ -152,6 +176,8 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                 })
             },
         },
+        dayCycle,
+        weather,
         getScripts: opts.getScripts,
         onScriptError: (entry, where, err) => {
             const msg = err instanceof Error ? err.message : String(err)
@@ -159,6 +185,71 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
             console.error(`[script ${entry.name} @ ${where}]`, err)
         },
     })
+}
+
+function buildDayCycleFacade(weather: WeatherSystem): DayCycleFacade {
+    return {
+        getHour() {
+            return readAmbientField(weather, 'timeOfDay', 12)
+        },
+        setHour(hour) {
+            const wrapped = wrapHour(hour)
+            weather.ambient.setState({ timeOfDay: wrapped })
+        },
+        isEnabled() {
+            return readAmbientField(weather, 'cycleEnabled', false) === true
+        },
+        setEnabled(on) {
+            weather.ambient.setState({ cycleEnabled: on })
+        },
+        setSpeed(sec) {
+            const safe = Number.isFinite(sec) ? Math.max(1, sec) : 120
+            weather.ambient.setState({ cycleSeconds: safe })
+        },
+    }
+}
+
+function buildWeatherFacade(weather: WeatherSystem): WeatherFacade {
+    return {
+        setRain(on) { weather.ambient.setState({ rainOn: on }) },
+        setSnow(on) { weather.ambient.setState({ snowOn: on }) },
+        setLightning(on) { weather.ambient.setState({ lightningOn: on }) },
+        applyPreset(presetId) {
+            const preset = WEATHER_PRESETS[presetId]
+            if (!preset) return false
+            weather.ambient.setState(preset.apply)
+            return true
+        },
+        // Toggling FX zones (rain volumes, fire pits, etc.) by id is
+        // out of v1.6 — the FX-zone system caches params at spawn and
+        // doesn't expose a re-spawn-by-id surface yet. Return false
+        // so authors get an obvious "wasn't wired" signal instead of
+        // silent success.
+        setZoneEnabled() { return false },
+        isZoneEnabled() { return false },
+    }
+}
+
+function wrapHour(hour: number): number {
+    if (!Number.isFinite(hour)) return 12
+    const m = hour % 24
+    return m < 0 ? m + 24 : m
+}
+
+function readAmbientField<K extends 'timeOfDay' | 'cycleEnabled'>(
+    weather: WeatherSystem,
+    field: K,
+    fallback: K extends 'timeOfDay' ? number : boolean,
+): K extends 'timeOfDay' ? number : boolean {
+    // The DisabledAmbientWeather branch has no `state`; widen via
+    // unknown before narrowing so we don't lie about the type when
+    // ambient was turned off.
+    const ambient = weather.ambient as unknown as { state?: Record<string, unknown> }
+    const value = ambient.state?.[field]
+    if (field === 'timeOfDay') {
+        return (typeof value === 'number' && Number.isFinite(value) ? value : fallback) as K extends 'timeOfDay' ? number : boolean
+    }
+    return (typeof value === 'boolean' ? value : fallback) as K extends 'timeOfDay' ? number : boolean
 }
 
 function playerEid(world: GameWorld): number | null {

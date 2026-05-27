@@ -30,6 +30,7 @@ import { createRuntime, type ScriptRuntime } from './runtime'
 import type {
     AudioFacade,
     ChunksFacade,
+    DayCycleFacade,
     FlagValue,
     LogFacade,
     PickupsFacade,
@@ -37,6 +38,7 @@ import type {
     ScriptContext,
     ScriptEntry,
     UiFacade,
+    WeatherFacade,
     ZoneFacade,
 } from './types'
 
@@ -48,6 +50,11 @@ export interface ScriptEngineSystemOptions {
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
+    /** Optional. When omitted, scripts call `dayCycle.*` and see
+     *  bindings.ts's NOOP_DAY_CYCLE (returns midday, ignores writes). */
+    dayCycle?: DayCycleFacade
+    /** Optional. When omitted, `weather.*` is a noop returning false. */
+    weather?: WeatherFacade
     /** Pulled fresh on every `apply()` / `init()` so the editor can mutate
      *  the script list without re-creating the system. */
     getScripts: () => readonly ScriptEntry[]
@@ -102,6 +109,8 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         zone: opts.zone,
         log: opts.log,
         ui: opts.ui,
+        dayCycle: opts.dayCycle,
+        weather: opts.weather,
         flags,
     })
 

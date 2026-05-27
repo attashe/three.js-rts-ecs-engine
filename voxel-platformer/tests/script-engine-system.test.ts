@@ -35,6 +35,9 @@ function makeDeps(scripts: ScriptEntry[]) {
     }
     const zone: ZoneFacade = {
         contains: () => false,
+        exists: () => false,
+        isActive: () => false,
+        setActive: () => false,
     }
     const logFacade: LogFacade = {
         log(msg) { log.push(msg) },

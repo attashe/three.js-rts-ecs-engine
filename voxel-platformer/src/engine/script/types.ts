@@ -91,6 +91,11 @@ export interface PickupsFacade {
 
 export interface ZoneFacade {
     contains(zoneId: string, who: 'player' | VoxelCoord): boolean
+    exists(zoneId: string): boolean
+    isActive(zoneId: string): boolean
+    /** Returns true on a successful change, false if the zone doesn't
+     *  exist. No-op when the current state already matches. */
+    setActive(zoneId: string, active: boolean): boolean
 }
 
 export interface LogFacade {
@@ -99,6 +104,43 @@ export interface LogFacade {
 
 export interface UiFacade {
     say(targetId: string, message: string, opts?: { seconds?: number }): void
+}
+
+/** Drives the sky clock. Hour is in [0, 24); the underlying
+ *  `AmbientWeather` state wraps. Setting any of these mutates state in
+ *  place; the sun controller picks the new value up on the next
+ *  render frame. */
+export interface DayCycleFacade {
+    getHour(): number
+    /** Set the in-world hour (0..24, wraps). */
+    setHour(hour: number): void
+    /** Pause the cycle so `getHour()` stays put — `setHour` still
+     *  works. Useful for cinematics that need a fixed-time backdrop. */
+    setEnabled(enabled: boolean): void
+    isEnabled(): boolean
+    /** Real-time seconds per in-game day. Larger = slower cycle. */
+    setSpeed(secondsPerDay: number): void
+}
+
+/** Ambient weather + named-preset application. Weather *zones*
+ *  (rain volumes, fire pits, etc.) are still authored statically in
+ *  level metadata for now — `setZoneEnabled` could be added later,
+ *  but in v1 scripts can change global rain/snow/lightning toggles
+ *  via this binding. */
+export interface WeatherFacade {
+    setRain(on: boolean): void
+    setSnow(on: boolean): void
+    setLightning(on: boolean): void
+    /** Apply a named preset from `WEATHER_PRESETS` (e.g. 'clear',
+     *  'rain', 'storm', 'dawn'). Returns true on success, false if
+     *  the preset id isn't registered. */
+    applyPreset(presetId: string): boolean
+    /** Toggle a named weather zone (rain volumes, magic columns, …)
+     *  authored in the level. Adds or removes from the live
+     *  WeatherSystem in place. Returns true on a successful change,
+     *  false if the zone id isn't known. */
+    setZoneEnabled(zoneId: string, enabled: boolean): boolean
+    isZoneEnabled(zoneId: string): boolean
 }
 
 // ─── ScriptContext ────────────────────────────────────────────────────
@@ -139,7 +181,29 @@ export interface ScriptContext {
     zone: ZoneApi
     geom: GeomApi
     ui: UiApi
+    dayCycle: DayCycleApi
+    weather: WeatherApi
     random(min: number, max: number): number
+}
+
+export interface DayCycleApi {
+    /** Current hour of the in-world day, `[0, 24)`. */
+    readonly hour: number
+    /** True while the clock is advancing on its own; false when
+     *  paused by `setEnabled(false)`. */
+    readonly enabled: boolean
+    setHour(hour: number): void
+    setEnabled(enabled: boolean): void
+    setSpeed(secondsPerDay: number): void
+}
+
+export interface WeatherApi {
+    setRain(on: boolean): void
+    setSnow(on: boolean): void
+    setLightning(on: boolean): void
+    applyPreset(presetId: string): boolean
+    setZoneEnabled(zoneId: string, enabled: boolean): boolean
+    isZoneEnabled(zoneId: string): boolean
 }
 
 export interface PlayerApi {
@@ -200,6 +264,15 @@ export interface TimeApi {
 
 export interface ZoneApi {
     contains(zoneId: string, who?: 'player' | VoxelCoord): boolean
+    /** True if a zone with this id is currently registered. */
+    exists(zoneId: string): boolean
+    /** True for registered + active zones; false for missing or
+     *  deactivated ones. */
+    isActive(zoneId: string): boolean
+    /** Toggle a zone on/off. Returns true on success, false if the
+     *  zone doesn't exist. Deactivating mid-overlap synthesises a
+     *  `zone-exit` event next tick. */
+    setActive(zoneId: string, active: boolean): boolean
 }
 
 export interface UiApi {

@@ -53,6 +53,9 @@ function stubs() {
     }
     const zone: ZoneFacade = {
         contains(zoneId, who) { calls.zoneContains.push({ zoneId, who }); return zoneId === 'inside' },
+        exists: () => true,
+        isActive: () => true,
+        setActive: () => true,
     }
     const log: LogFacade = {
         log(message, kind) { calls.log.push({ message, kind }) },

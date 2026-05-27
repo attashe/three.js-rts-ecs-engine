@@ -56,13 +56,26 @@ interface PendingThunder {
  *  target / player). When omitted, `AmbientWeather` projects the
  *  camera ray onto the ground plane — good enough as a fallback but
  *  prone to drift on yaw rotation. */
+/** Environment FX system + a side-channel handle on the underlying
+ *  `WeatherSystem`. Scripts read/write the ambient state via this
+ *  handle — see `createGameScriptSystem`. Returns null when the
+ *  caller passed no ambient config (silent demo levels). */
+export interface EnvironmentFxSystem extends System {
+    readonly weatherSystem: WeatherSystem | null
+}
+
 export function createEnvironmentFxSystem(
     scene: Scene,
     ambient: AmbientWeatherRuntimeConfig | undefined,
     cameraProvider: () => Camera,
     focusProvider?: () => { x: number; y: number; z: number },
-): System {
-    if (!ambient) return { name: 'environmentFx', update: () => {} }
+): EnvironmentFxSystem {
+    if (!ambient) {
+        return Object.assign(
+            { name: 'environmentFx', update: () => {} } as System,
+            { weatherSystem: null },
+        )
+    }
 
     const fx = new WeatherSystem(scene, { maxLights: 8, cullDistance: 120 })
     if (ambient) {
@@ -72,7 +85,7 @@ export function createEnvironmentFxSystem(
         fx.setAmbient(applied)
     }
 
-    return {
+    const system: System = {
         name: 'environmentFx',
         order: RenderOrder.cameraFollow + 2,
         update(_world, dt) {
@@ -83,6 +96,7 @@ export function createEnvironmentFxSystem(
             fx.dispose()
         },
     }
+    return Object.assign(system, { weatherSystem: fx })
 }
 
 /**

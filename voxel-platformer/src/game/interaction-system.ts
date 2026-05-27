@@ -4,7 +4,7 @@ import { BoxCollider, PlayerControlled, Position } from '../engine/ecs/component
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { System } from '../engine/ecs/systems/system'
 import { pushScriptTriggerEvent, type GameWorld, type VoxelCoord } from '../engine/ecs/world'
-import type { Zone } from '../engine/ecs/zones'
+import { isZoneActive, type Zone } from '../engine/ecs/zones'
 import type { ActionMap } from '../engine/input/actions'
 import { GameAction } from './actions'
 
@@ -129,6 +129,7 @@ function nearestInteractionTarget(
     let best: InteractionTarget | null = null
     for (const zone of world.zones.values()) {
         if (!isInteractionZone(zone)) continue
+        if (!isZoneActive(zone)) continue
         const anchor = interactionAnchor(zone)
         const radius = zone.interaction?.radius ?? 2.2
         const dx = player.x - anchor.x
@@ -143,7 +144,7 @@ function nearestInteractionTarget(
 
 function targetForId(world: GameWorld, targetId: string): InteractionTarget | null {
     const zone = world.zones.get(targetId)
-    if (!zone || !isInteractionZone(zone)) return null
+    if (!zone || !isInteractionZone(zone) || !isZoneActive(zone)) return null
     return { zone, anchor: interactionAnchor(zone), distanceSq: 0 }
 }
 

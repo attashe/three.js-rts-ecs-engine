@@ -121,17 +121,19 @@ async function main(): Promise<void> {
     // undefined ⇒ playtest is genuinely silent.
     void audioReady.then(() => startEnvironment(audio, meta.environment, GAME_AUDIO_MANIFEST))
 
+    const environmentFx = createEnvironmentFxSystem(
+        renderer.scene,
+        meta.ambientWeather,
+        () => renderer.iso.camera,
+        () => renderer.iso.target,
+    )
+
     engine
         .addSystem(createSunFollowSystem(sun, () => renderer.iso.target), 'sunFollow')
         .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
         .addSystem(createSoundSourceSystem(audio, meta.soundSources, { audioReady }), 'soundSources')
         .addSystem(createSoundZoneSystem(audio, meta.soundZones, { audioReady }), 'soundZones')
-        .addSystem(createEnvironmentFxSystem(
-            renderer.scene,
-            meta.ambientWeather,
-            () => renderer.iso.camera,
-            () => renderer.iso.target,
-        ), 'environmentFx')
+        .addSystem(environmentFx, 'environmentFx')
         .addSystem(createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, { audioReady }), 'visualFxZones')
         .addSystem(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }), 'propRender')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
@@ -190,6 +192,7 @@ async function main(): Promise<void> {
             chunks,
             audio,
             audioManifest: GAME_AUDIO_MANIFEST,
+            weatherSystem: environmentFx.weatherSystem,
             getScripts: () => meta.scripts,
         }), 'scriptEngine')
         .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')

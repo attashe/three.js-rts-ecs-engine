@@ -15,6 +15,7 @@
 import type {
     AudioFacade,
     ChunksFacade,
+    DayCycleFacade,
     Disposer,
     EventHandler,
     FlagsApi,
@@ -26,6 +27,7 @@ import type {
     ScriptContext,
     UiFacade,
     VoxelCoord,
+    WeatherFacade,
     ZoneFacade,
 } from './types'
 import type { ScriptRuntime } from './runtime'
@@ -46,6 +48,8 @@ export interface BindingsDeps {
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
+    dayCycle?: DayCycleFacade
+    weather?: WeatherFacade
     /** Backing store for `flags.get / set`. Owned by the script engine
      *  system so it can persist into level metadata on save. */
     flags: Map<string, FlagValue>
@@ -54,6 +58,8 @@ export interface BindingsDeps {
 export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const { runtime, audio, chunks, player, pickups, zone, log, flags } = deps
     const ui = deps.ui ?? NOOP_UI
+    const dayCycle = deps.dayCycle ?? NOOP_DAY_CYCLE
+    const weather = deps.weather ?? NOOP_WEATHER
 
     // `on(...)` has two shapes: with filter object, or without (for
     // string-named custom events). Detect by checking arg 2's type —
@@ -78,7 +84,16 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             return flags.get(name)
         },
         set(name, value) {
+            const previousValue = flags.get(name)
             flags.set(name, value)
+            // Cheap cross-script observability: any script can listen
+            // for `on('flag.changed', { name: 'quest.x' }, ...)`
+            // instead of polling `flags.get` each tick. Skip emission
+            // when the value is unchanged so a handler that writes the
+            // current value back doesn't fire a noisy self-event.
+            if (previousValue !== value) {
+                runtime.emit('flag.changed', { name, value, previousValue })
+            }
         },
     }
 
@@ -128,12 +143,32 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             contains(zoneId, who = 'player') {
                 return zone.contains(zoneId, who)
             },
+            exists(zoneId) { return zone.exists(zoneId) },
+            isActive(zoneId) { return zone.isActive(zoneId) },
+            setActive(zoneId, active) { return zone.setActive(zoneId, active) },
         },
 
         geom: makeGeomApi(),
 
         ui: {
             say: (targetId, message, opts) => ui.say(targetId, message, opts),
+        },
+
+        dayCycle: {
+            get hour() { return dayCycle.getHour() },
+            get enabled() { return dayCycle.isEnabled() },
+            setHour(h) { dayCycle.setHour(h) },
+            setEnabled(on) { dayCycle.setEnabled(on) },
+            setSpeed(sec) { dayCycle.setSpeed(sec) },
+        },
+
+        weather: {
+            setRain(on) { weather.setRain(on) },
+            setSnow(on) { weather.setSnow(on) },
+            setLightning(on) { weather.setLightning(on) },
+            applyPreset(id) { return weather.applyPreset(id) },
+            setZoneEnabled(zoneId, on) { return weather.setZoneEnabled(zoneId, on) },
+            isZoneEnabled(zoneId) { return weather.isZoneEnabled(zoneId) },
         },
 
         random: (min, max) => runtime.random(min, max),
@@ -144,6 +179,23 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
 
 const NOOP_UI: UiFacade = {
     say() {},
+}
+
+const NOOP_DAY_CYCLE: DayCycleFacade = {
+    getHour() { return 12 },
+    setHour() {},
+    setEnabled() {},
+    isEnabled() { return false },
+    setSpeed() {},
+}
+
+const NOOP_WEATHER: WeatherFacade = {
+    setRain() {},
+    setSnow() {},
+    setLightning() {},
+    applyPreset() { return false },
+    setZoneEnabled() { return false },
+    isZoneEnabled() { return false },
 }
 
 function makeGeomApi(): GeomApi {

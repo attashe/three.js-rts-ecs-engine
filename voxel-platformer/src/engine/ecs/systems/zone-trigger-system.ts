@@ -18,6 +18,7 @@ import {
 } from '../world'
 import {
     isTriggerZone,
+    isZoneActive,
     zoneAcceptsTrigger,
     type Zone,
     type ZoneScriptAction,
@@ -64,7 +65,12 @@ export function createZoneTriggerSystem(chunks: ChunkManager, opts: ZoneTriggerS
         fixed: true,
         order: FixedOrder.postPhysics - 20,
         update(world, dt) {
-            const zones = [...world.zones.values()].filter(isTriggerZone)
+            // Inactive zones (toggled off by `zone.setActive`) skip
+            // detection entirely. Players who were already inside an
+            // about-to-deactivate zone naturally drop out of
+            // `currentHits` next tick, which fires zone-exit through
+            // the existing exit-on-miss path.
+            const zones = [...world.zones.values()].filter((z) => isTriggerZone(z) && isZoneActive(z))
             if (zones.length === 0) {
                 // Synthesise exits for anyone we were tracking so
                 // scripts that subscribed to `zone-exit` see one event

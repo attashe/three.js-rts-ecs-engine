@@ -126,6 +126,11 @@ function completeQuest() {
         amount: 50,
         label: "Keeper Arlen's reward",
     })
+    // Visible world-state feedback: shift the sky to evening and pause
+    // the day cycle so the dusk holds. Demonstrates the dayCycle.*
+    // bindings without taking over the demo level's lighting.
+    dayCycle.setHour(19.0)
+    dayCycle.setEnabled(false)
     emit('quest.demo.complete')
 }
 

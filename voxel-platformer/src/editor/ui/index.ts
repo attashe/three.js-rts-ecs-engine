@@ -10,6 +10,7 @@ import { buildHelpTab } from './help-tab'
 import { buildSoundTab } from './sound-tab'
 import { buildWeatherTab } from './weather-tab'
 import { buildPropsTab } from './props-tab'
+import { buildLogicTab } from './logic-tab'
 
 export interface MountEditorPanelOptions {
     world: GameWorld
@@ -47,6 +48,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
         { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
         { id: 'weather', label: 'Visual FX', build: () => buildWeatherTab(opts) },
         { id: 'props', label: 'Props', build: () => buildPropsTab(opts) },
+        { id: 'logic', label: 'Logic', build: () => buildLogicTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
         { id: 'help', label: 'Help', build: () => buildHelpTab() },
     ], 'edit')

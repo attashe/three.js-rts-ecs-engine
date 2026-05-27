@@ -65,6 +65,14 @@ export interface Zone {
         /** Max distance from the anchor/zone center for interaction. */
         readonly radius?: number
     }
+    /** When `false`, the zone is treated as if not registered:
+     *  zone-trigger-system + interaction-system skip it, so no
+     *  zone-enter / zone-exit events fire and no interaction prompt
+     *  appears. Missing or `true` ⇒ active. Toggle from a script via
+     *  `zone.setActive(zoneId, on)`; under the hood that clones the
+     *  zone with the new flag and re-registers it so the readonly
+     *  identity is preserved. */
+    readonly active?: boolean
 }
 
 export interface ZoneTriggerEvent {
@@ -78,6 +86,28 @@ export interface ZoneTriggerEvent {
 /** Register or replace a zone on the world by id. */
 export function defineZone(world: GameWorld, zone: Zone): void {
     world.zones.set(zone.id, zone)
+}
+
+/** True if the zone is currently active (default when `active` is
+ *  missing). The negation is used by zone-trigger / interaction systems
+ *  to skip processing without losing the registration. */
+export function isZoneActive(zone: Zone): boolean {
+    return zone.active !== false
+}
+
+/** Toggle a zone's `active` flag. Returns true on a successful change,
+ *  false if the zone wasn't registered. No-op when the flag already
+ *  matches `active`. Clones the existing zone with the new flag so the
+ *  readonly identity holds — iterators that captured the previous Zone
+ *  reference may see stale data for the rest of the current tick, but
+ *  every system in the project reads via the Map each tick, so this is
+ *  safe in practice. */
+export function setZoneActive(world: GameWorld, id: string, active: boolean): boolean {
+    const existing = world.zones.get(id)
+    if (!existing) return false
+    if (isZoneActive(existing) === active) return true
+    defineZone(world, { ...existing, active })
+    return true
 }
 
 /** Remove a zone from the world. */

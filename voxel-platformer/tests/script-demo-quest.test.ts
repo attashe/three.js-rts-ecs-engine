@@ -71,10 +71,18 @@ function makeHarness(): Harness {
     }
     const zone: ZoneFacade = {
         contains: () => false,
+        exists: () => true,
+        isActive: () => true,
+        setActive: () => true,
     }
     const logFacade: LogFacade = {
         log(msg) { log.push(msg) },
     }
+
+    // Capture dayCycle calls so the test can assert dusk-on-completion.
+    const dayCycleCalls: { method: string; args: unknown[] }[] = []
+    let cycleHour = 8
+    let cycleEnabled = true
 
     const sys = createScriptEngineSystem({
         audio, chunks, player, pickups, zone, log: logFacade,
@@ -82,6 +90,13 @@ function makeHarness(): Harness {
             say(targetId, message, opts) {
                 popupMessages.push({ targetId, message, seconds: opts?.seconds })
             },
+        },
+        dayCycle: {
+            getHour() { return cycleHour },
+            setHour(h) { cycleHour = h; dayCycleCalls.push({ method: 'setHour', args: [h] }) },
+            isEnabled() { return cycleEnabled },
+            setEnabled(on) { cycleEnabled = on; dayCycleCalls.push({ method: 'setEnabled', args: [on] }) },
+            setSpeed(sec) { dayCycleCalls.push({ method: 'setSpeed', args: [sec] }) },
         },
         getScripts: () => [{
             id: 'demo-quest',
@@ -92,6 +107,7 @@ function makeHarness(): Harness {
             throw new Error(`[${entry.id}@${where}] ${err instanceof Error ? err.message : String(err)}`)
         },
     })
+    ;(sys as unknown as { __dayCycleCalls: typeof dayCycleCalls }).__dayCycleCalls = dayCycleCalls
 
     return {
         sys,
@@ -201,6 +217,14 @@ test('demo quest: returning to the keeper completes the quest and rewards gold',
 
     h.interact(KEEPER_ZONE)
     await h.tick(0.1)
+
+    // Quest completion shifts the sky to dusk and pauses the cycle —
+    // a visible demonstration of the new dayCycle.* bindings.
+    const calls = (h.sys as unknown as { __dayCycleCalls: { method: string; args: unknown[] }[] }).__dayCycleCalls
+    assert.ok(calls.some((c) => c.method === 'setHour' && c.args[0] === 19),
+        'completion should call dayCycle.setHour(19)')
+    assert.ok(calls.some((c) => c.method === 'setEnabled' && c.args[0] === false),
+        'completion should pause the day cycle')
 
     assert.equal(h.sys.flags.get('demo.quest.keeper.state'), 'done')
     const reward = h.pickupSpawns.find((p) => p.opts?.id === 'demo.quest.reward.gold')
