@@ -276,6 +276,27 @@ writeWav('magic-chime.wav', mix(0.74, [
     filteredNoise(0.00, 0.74, 0.05, 3000, 4011),
 ]))
 
+// ── Quest cues ──────────────────────────────────────────────────────
+// Short, melodic, distinct from the in-world ambient chimes so the
+// player parses them as "the script said something" rather than
+// "something just happened nearby." The chime is a quick two-note
+// rise; the fanfare is a major triad arpeggio with a sparkle tail.
+
+writeWav('quest-chime.wav', mix(0.48, [
+    note(0.00, 0.18, 1175, 0.50),  // D6
+    note(0.10, 0.42, 1760, 0.46),  // A6
+    note(0.18, 0.42, 2349, 0.18),  // D7 — high sparkle
+]))
+
+writeWav('quest-fanfare.wav', mix(0.92, [
+    note(0.00, 0.22, 880,  0.50),  // A5
+    note(0.12, 0.34, 1108, 0.50),  // C#6
+    note(0.24, 0.46, 1318, 0.50),  // E6
+    note(0.36, 0.78, 1760, 0.48),  // A6 (sustained)
+    note(0.40, 0.78, 2217, 0.18),  // C#7 — sparkle
+    filteredNoise(0.00, 0.92, 0.04, 4500, 4101),
+]))
+
 
 // ─────────────────────────────────────────────────────────────────────
 // WAV writer

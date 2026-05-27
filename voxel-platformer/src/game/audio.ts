@@ -84,6 +84,14 @@ export const GameAudio = {
     StoneImpact: 'sfx.stone.impact',
     Bubble: 'sfx.bubble',
     MagicChime: 'sfx.magic.chime',
+
+    // ── Script-engine cues ───────────────────────────────────────────
+    // Played by editor-authored scripts on quest-stage progression and
+    // completion. Distinct from the in-world `MagicChime` so the
+    // player can tell "the script said something" apart from "magic
+    // happened near me".
+    QuestChime:   'sfx.quest.chime',
+    QuestFanfare: 'sfx.quest.fanfare',
 } as const
 
 export type GameAudioId = (typeof GameAudio)[keyof typeof GameAudio]
@@ -140,6 +148,8 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.StoneImpact,    url: path('stone-impact.wav'),    volume: 0.52, maxInstances: 6, priority: 2 },
         { id: GameAudio.Bubble,         url: path('bubble.wav'),          volume: 0.42, maxInstances: 8, priority: 1 },
         { id: GameAudio.MagicChime,     url: path('magic-chime.wav'),     volume: 0.48, maxInstances: 4, priority: 2 },
+        { id: GameAudio.QuestChime,     url: path('quest-chime.wav'),     volume: 0.55, maxInstances: 4, priority: 3 },
+        { id: GameAudio.QuestFanfare,   url: path('quest-fanfare.wav'),   volume: 0.62, maxInstances: 2, priority: 5 },
     ],
     music: [
         { id: GameAudio.Background,       url: path('background-loop.wav'),       volume: 0.36, loop: true, priority: 1 },
