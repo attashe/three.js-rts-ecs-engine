@@ -235,6 +235,34 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             min: { x: 7, y: groundY + 4, z: 20 },
             max: { x: 10, y: groundY + 6, z: 23 },
         },
+        {
+            // Lantern Trial side quest: the Sundial on the floating
+            // island. Distinct interact zone from `zone.demo.island`
+            // (a trigger) so the prompt only shows up at the dial
+            // itself, not anywhere on the island top.
+            id: 'zone.demo.sundial',
+            kind: 'interact',
+            label: 'Floating Sundial',
+            min: { x: 7.6, y: groundY + 4, z: 20.6 },
+            max: { x: 9.2, y: groundY + 6, z: 22.0 },
+            interaction: {
+                prompt: 'Examine',
+                anchor: { x: 8.5, y: groundY + 4.8, z: 21.3 },
+                radius: 2.4,
+            },
+        },
+        {
+            // Hidden vault beneath the plaza. The trial activates this
+            // when the player collects the fourth hour stone; entering
+            // closes the trial out. Inactive by default so it doesn't
+            // fire for players who haven't started the side quest.
+            id: 'zone.demo.vault',
+            kind: 'trigger',
+            label: 'Plaza Vault',
+            min: { x: 4, y: groundY + 1, z: 4 },
+            max: { x: 7, y: groundY + 3, z: 7 },
+            active: false,
+        },
     ]
 
     return {
@@ -258,6 +286,17 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
                 yaw: Math.PI * 0.18,
                 scale: 1.2,
                 gridAligned: true,
+            },
+            {
+                // Sundial on the floating island — the Lantern Trial's
+                // interactable. Placed at the centre of the island so
+                // the player can reach it via the elevator piston.
+                id: 'demo:sundial',
+                kind: 'sundial',
+                position: { x: 8.5, y: groundY + 4, z: 21.3 },
+                yaw: -Math.PI * 0.18,
+                scale: 1.4,
+                gridAligned: false,
             },
         ],
         scripts: [],

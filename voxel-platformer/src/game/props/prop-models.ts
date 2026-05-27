@@ -74,6 +74,7 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'book':      return buildBook(1)
         case 'book-2':    return buildBook(2)
         case 'npc-keeper': return buildKeeperNpc()
+        case 'sundial':   return buildSundial()
     }
 }
 
@@ -465,6 +466,51 @@ function mushroomParts(spec: {
         }
     }
     return parts
+}
+
+function buildSundial(): BufferGeometry {
+    // Stone column + golden dial face + gnomon blade. The
+    // Lantern Trial uses this as its talking interactable.
+    const parts: BufferGeometry[] = []
+
+    const pedestal = new CylinderGeometry(0.16, 0.20, 0.30, 12)
+    pedestal.translate(0, 0.15, 0)
+    paintVertexColor(pedestal, 0.46, 0.42, 0.36)
+    parts.push(pedestal)
+
+    const collar = new CylinderGeometry(0.21, 0.21, 0.04, 12)
+    collar.translate(0, 0.32, 0)
+    paintVertexColor(collar, 0.34, 0.30, 0.24)
+    parts.push(collar)
+
+    const dial = new CylinderGeometry(0.32, 0.32, 0.05, 24)
+    dial.translate(0, 0.36, 0)
+    paintVertexColor(dial, 0.86, 0.72, 0.36)
+    parts.push(dial)
+
+    // Hour marks — four short blocks at cardinal positions on the
+    // dial face. Subtle visual detail; reads as "this is a timepiece"
+    // even at iso scale.
+    const markPositions: [number, number][] = [
+        [0.26, 0], [-0.26, 0], [0, 0.26], [0, -0.26],
+    ]
+    for (const [mx, mz] of markPositions) {
+        const mark = new BoxGeometry(0.04, 0.012, 0.04)
+        mark.translate(mx, 0.39, mz)
+        paintVertexColor(mark, 0.42, 0.34, 0.16)
+        parts.push(mark)
+    }
+
+    // Gnomon — a thin triangular blade approximated by a tall box
+    // rotated slightly so it casts a believable shadow line. The
+    // tilt sells "the sundial knows the hour".
+    const gnomon = new BoxGeometry(0.025, 0.30, 0.20)
+    gnomon.translate(0, 0.52, 0)
+    gnomon.rotateX(-0.42) // ~24° tilt north — visible from iso view
+    paintVertexColor(gnomon, 0.95, 0.84, 0.46)
+    parts.push(gnomon)
+
+    return mergeAndCleanup(parts)
 }
 
 // ────────────────────────────────────────────────────────────────────

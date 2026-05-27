@@ -29,6 +29,7 @@ export const PROP_KINDS = [
     'book',
     'book-2',
     'npc-keeper',
+    'sundial',
 ] as const
 
 export type EditorPropKind = (typeof PROP_KINDS)[number]
@@ -71,4 +72,5 @@ export const PROP_LABELS: Record<EditorPropKind, string> = {
     book: 'Book 1',
     'book-2': 'Book 2',
     'npc-keeper': 'Keeper NPC',
+    sundial: 'Sundial',
 }
