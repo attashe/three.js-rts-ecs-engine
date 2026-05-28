@@ -12,6 +12,7 @@ import type {
     DayCycleFacade,
     LogFacade,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     ScriptEntry,
     TravelFacade,
@@ -194,6 +195,37 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         exists(id) { return scriptPickupExists(opts.world, id) },
     }
 
+    const pistons: PistonsFacade = {
+        setEnabled(id, enabled) {
+            const piston = opts.world.pistonsById.get(id)
+            if (!piston) return false
+            piston.enabled = !!enabled
+            // Drop any queued flip request alongside the disable so a
+            // re-enable doesn't immediately fire an action queued ages ago.
+            if (!piston.enabled) piston.pendingFlip = false
+            return true
+        },
+        isEnabled(id) {
+            const piston = opts.world.pistonsById.get(id)
+            return piston !== undefined && piston.enabled
+        },
+        flip(id) {
+            const piston = opts.world.pistonsById.get(id)
+            if (!piston) return false
+            if (!piston.enabled) return false
+            // Physical pistons mid-travel cannot accept a new request —
+            // reversing the interpolation mid-way would leave the entity
+            // stranded between cells. Teleport pistons have no
+            // intermediate state, so they always accept.
+            if (piston.motion === 'physical' && piston.moving === 1) return false
+            piston.pendingFlip = true
+            return true
+        },
+        list() {
+            return Array.from(opts.world.pistonsById.keys())
+        },
+    }
+
     const zone: ZoneFacade = {
         contains(zoneId, who) {
             const z = opts.world.zones.get(zoneId)
@@ -237,6 +269,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         chunks,
         player,
         pickups,
+        pistons,
         zone,
         log,
         ui: {

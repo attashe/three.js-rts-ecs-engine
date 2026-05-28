@@ -15,7 +15,7 @@ export interface IsometricCameraOptions {
     target?: Vector3
 }
 
-export type ViewMode = 'iso' | 'top-down'
+export type ViewMode = 'iso' | 'top-down' | 'orbit'
 
 /**
  * Fixed-angle isometric camera rig built on OrthographicCamera. Phase 2 ships
@@ -78,12 +78,25 @@ export class IsometricCamera {
 
     getViewMode(): ViewMode { return this.mode }
 
-    /** Switch between fixed-iso and straight-down ortho views. The top-down
-     *  view sets `camera.up` from the current yaw so screen-up matches the
-     *  iso view's pan-forward direction — keyboard pan keeps the same feel. */
+    /** Switch between fixed-iso, straight-down ortho, and editor orbit views.
+     *  The top-down view sets `camera.up` from the current yaw so screen-up
+     *  matches the iso view's pan-forward direction — keyboard pan keeps the
+     *  same feel. Orbit leaves the camera transform to OrbitControls. */
     setViewMode(mode: ViewMode): void {
         if (this.mode === mode) return
+        const previousMode = this.mode
         this.mode = mode
+        if (mode === 'orbit') {
+            if (previousMode === 'top-down') {
+                this.pitch = this.isoPitch
+                this.recomputeOffset()
+                this.camera.position.copy(this.target).add(this.offset)
+            }
+            this.camera.up.set(0, 1, 0)
+            this.camera.lookAt(this.target)
+            this.applyCutPlane()
+            return
+        }
         this.pitch = mode === 'top-down' ? Math.PI / 2 : this.isoPitch
         this.recomputeOffset()
         this.syncPosition()
@@ -118,6 +131,11 @@ export class IsometricCamera {
 
     /** Re-place the camera so it sits at the fixed offset from the current target. */
     syncPosition(): void {
+        if (this.mode === 'orbit') {
+            this.camera.lookAt(this.target)
+            this.applyCutPlane()
+            return
+        }
         if (this.mode === 'top-down') {
             // Set up to -pan-forward so screen-right aligns with
             // getPanRight (D moves view right, S moves view down, etc).

@@ -31,7 +31,7 @@ import { AudioEngine, type SoundHandle } from './engine/audio'
 import { Pickup as PickupComponent, PickupValue, Position } from './engine/ecs/components'
 import { despawnEntity } from './engine/ecs/entity'
 import { DEMO_LEVEL_ID } from './game/procedural-level-ids'
-import { generateDemoProceduralLevel, type ProceduralScriptSources } from './game/procedural-levels'
+import { getProceduralLevelDefinition, type ProceduralScriptSources } from './game/procedural-levels'
 import { spawnPlayer } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
@@ -59,6 +59,7 @@ import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
 import { copyPlayerSettings, type PlayerSettings } from './game/player-settings'
 import { deserializeLevel, serializeLevel } from './engine/voxel/level-serializer'
 import { consumePlaytestLevel } from './editor/playtest'
+import { createProceduralEditorLevel } from './editor/procedural-level-export'
 import { levelMetaFromEditor } from './game/level-from-meta'
 import { loadLevelBufferById, normalizeLevelId } from './game/level-library'
 import type { EditorLevelMeta } from './editor/editor-state'
@@ -69,11 +70,13 @@ import type { FlagValue, ScriptEntry, TravelFacade } from './engine/script/types
 import demoQuestSource from '../examples/scripts/demo-quest.js?raw'
 import lanternTrialSource from '../examples/scripts/lantern-trial.js?raw'
 import hasteShrineSource from '../examples/scripts/haste-shrine.js?raw'
+import paidPortalShrineSource from '../examples/scripts/paid-portal-shrine.js?raw'
 
 const BROWSER_PROCEDURAL_SCRIPT_SOURCES: ProceduralScriptSources = {
     'examples/scripts/demo-quest.js': demoQuestSource,
     'examples/scripts/lantern-trial.js': lanternTrialSource,
     'examples/scripts/haste-shrine.js': hasteShrineSource,
+    'examples/scripts/paid-portal-shrine.js': paidPortalShrineSource,
 }
 
 interface LoadedLocation {
@@ -277,7 +280,13 @@ async function main(): Promise<void> {
             () => renderer.iso.camera,
             () => renderer.iso.target,
         )
-        const visualFxZones = createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, { audioReady })
+        const visualFxZones = createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, {
+            audioReady,
+            // Pre-compile WebGPU pipelines for every authored zone — script-toggled
+            // zones (e.g. the demo's portal-magic FX) would otherwise stall the main
+            // thread on first activation while shaders compile.
+            warmupShaders: (scene, camera) => renderer.webgpu.compileAsync(scene, camera),
+        })
         const scriptEngine = createGameScriptSystem({
             world,
             chunks,
@@ -460,6 +469,8 @@ async function main(): Promise<void> {
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
             logPosition: { top: '48px', right: '8px', maxWidth: '320px' },
+            cameraProvider: () => renderer.iso.camera,
+            renderElement: renderer.webgpu.domElement,
         }), 'debugOverlay')
         .addSystem(createGameMenuSystem(engine.input, actions, audio, {
             renderElement: renderer.webgpu.domElement,
@@ -528,6 +539,7 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.pickupMetaByEid.clear()
     world.pickupEntityByScriptId.clear()
     world.pistons.length = 0
+    world.pistonsById.clear()
     world.zones.clear()
     world.zoneEvents.length = 0
     world.popupMessages.length = 0
@@ -620,7 +632,7 @@ async function loadInitialLocation(): Promise<LoadedLocation> {
             console.error(`Project level "${requested}" failed to load — falling back to demo:`, err)
         }
     }
-    return loadDemoLocation()
+    return loadBuiltinDemoLocation()
 }
 
 async function loadProjectLocation(
@@ -635,12 +647,17 @@ async function loadProjectLocation(
             restoredFlags: new Map(snapshot.flags),
         }
     }
+    // Canonical procedural levels must come from source during game travel.
+    // The exported .vplevel copies are for the editor/library path and can be
+    // stale while a dev server stays open across procedural-level edits.
+    const procedural = loadProceduralLocation(normalized)
+    if (procedural) return procedural
     try {
         return loadedEditorLocationFromBuffer(normalized, await loadLevelBufferById(normalized))
     } catch (err) {
         if (normalized === DEMO_LEVEL_ID) {
             console.warn('Disk-backed demo level failed to load — using procedural fallback:', err)
-            return loadDemoLocation()
+            return loadBuiltinDemoLocation()
         }
         throw err
     }
@@ -651,7 +668,7 @@ async function loadLocationForRestart(active: ActiveLocation, chunks: ChunkManag
     if (active.editorMeta) {
         return loadedEditorLocationFromBuffer(active.id, serializeLevel(chunks, active.editorMeta))
     }
-    return loadDemoLocation()
+    return loadBuiltinDemoLocation()
 }
 
 function loadedEditorLocationFromBuffer(id: string, buffer: ArrayBuffer): LoadedLocation {
@@ -670,10 +687,24 @@ function loadedEditorLocationFromBuffer(id: string, buffer: ArrayBuffer): Loaded
     }
 }
 
-function loadDemoLocation(): LoadedLocation {
-    const chunks = new ChunkManager(DEFAULT_PALETTE)
-    const demo = generateDemoProceduralLevel(chunks, BROWSER_PROCEDURAL_SCRIPT_SOURCES)
-    return { id: DEMO_LEVEL_ID, meta: demo, chunks }
+function loadProceduralLocation(id: string): LoadedLocation | null {
+    const normalized = normalizeLevelId(id)
+    const definition = getProceduralLevelDefinition(normalized)
+    if (!definition) return null
+    const level = createProceduralEditorLevel(definition.id, BROWSER_PROCEDURAL_SCRIPT_SOURCES)
+    return {
+        id: level.id,
+        meta: level.runtimeMeta,
+        editorMeta: level.editorMeta,
+        sourceBuffer: level.buffer.slice(0),
+        chunks: level.chunks,
+    }
+}
+
+function loadBuiltinDemoLocation(): LoadedLocation {
+    const loaded = loadProceduralLocation(DEMO_LEVEL_ID)
+    if (!loaded) throw new Error('Built-in demo level is not registered')
+    return loaded
 }
 
 function mountLocationTitle(): { show(name: string): void } {

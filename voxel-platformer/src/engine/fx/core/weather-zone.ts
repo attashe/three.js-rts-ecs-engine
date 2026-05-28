@@ -53,6 +53,7 @@ export class WeatherZone {
             events: [],
             seed,
             visible: true,
+            active: true,
             dirty: false,
             findExtra: (type: string): ExtraLayer | undefined => {
                 for (const e of this.runtime.extras) if (e.type === type) return e
@@ -92,8 +93,20 @@ export class WeatherZone {
         if (!strategy) return
         if (this.runtime.dirty) this.rebuild()
         this.runtime.elapsed = elapsed
+        if (!this.runtime.active) {
+            this.runtime.visible = false
+            this.group.visible = false
+            this.runtime.light.intensity = 0
+            this.runtime.light.userData.wanted = 0
+            return
+        }
         modulateZoneLight(this.runtime, elapsed)
-        if (!this.runtime.visible) return
+        this.group.visible = this.runtime.visible
+        if (!this.runtime.visible) {
+            this.runtime.light.intensity = 0
+            this.runtime.light.userData.wanted = 0
+            return
+        }
         strategy.update(this.runtime, dt, elapsed, this.rng)
         this.group.getWorldPosition(this.worldPosition)
         const ctx: WriteContext = { cameraPosition: camera.position, zonePosition: this.worldPosition, dummy }
@@ -132,6 +145,22 @@ export class WeatherZone {
     setStrategy(strategy: EmitterStrategy): void {
         this.strategy = strategy
         this.runtime.dirty = true
+    }
+
+    setActive(active: boolean): void {
+        this.runtime.active = active
+        // Let WeatherSystem's next update/culling pass reveal active zones
+        // after the emitter has written matrices. This avoids one-frame
+        // flashes from newly-enabled warm zones rendering identity matrices.
+        this.runtime.visible = false
+        this.group.visible = false
+        this.runtime.light.visible = active && this.runtime.params.lightEnabled
+        if (!active) {
+            this.runtime.light.intensity = 0
+            this.runtime.light.userData.wanted = 0
+        } else {
+            this.runtime.light.userData.wanted = this.runtime.params.lightIntensity
+        }
     }
 
     dispose(): void {
@@ -179,7 +208,7 @@ export class WeatherZone {
         this.runtime.light.color.set(new Color(p.lightColor))
         this.runtime.light.distance = lightDistanceFor(p)
         this.runtime.light.decay = decayFor(p.type)
-        this.runtime.light.visible = p.lightEnabled
+        this.runtime.light.visible = this.runtime.active && p.lightEnabled
         if (this.runtime.surface) {
             this.runtime.surface.position.set(0, liquidSurfaceLevel(p), 0)
             this.runtime.surface.scale.set(p.size.x * 0.94, 1, p.size.z * 0.94)

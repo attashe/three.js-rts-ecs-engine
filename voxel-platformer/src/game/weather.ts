@@ -34,6 +34,13 @@ export interface WeatherZoneSystemOptions {
     audioReady?: Promise<unknown>
     /** Fade applied when the system is disposed. */
     fadeOut?: number
+    /** Hook the renderer's shader pre-compile pipeline (e.g.
+     *  `(s, c) => renderer.webgpu.compileAsync(s, c)`). Called once at
+     *  init so the first activation of a pre-allocated-but-disabled
+     *  FX zone doesn't freeze on shader compile. The system briefly
+     *  reveals hidden zones for the duration of the compile and
+     *  restores them when the promise settles. */
+    warmupShaders?: (scene: Scene, camera: Camera) => Promise<unknown>
 }
 
 interface ZoneEntry {
@@ -169,6 +176,11 @@ export function createVisualFxZoneSystem(
                 }).catch((err) => {
                     console.warn('Visual FX zones starting without paired audio:', err)
                     audioReady = true
+                })
+            }
+            if (opts.warmupShaders) {
+                void fx.warmShaders(opts.warmupShaders, cameraProvider()).catch((err) => {
+                    console.warn('Visual FX zones shader warmup failed:', err)
                 })
             }
         },

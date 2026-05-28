@@ -187,7 +187,10 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
     let lastListFingerprint = ''
 
     function rebuildList(): void {
-        const fp = state.scripts.map((e) => `${e.id}:${e.name}:${e.enabled ?? true}:${e.source.length}`).join('|')
+        // Fingerprint also folds in source length so an edit re-renders
+        // the row (its parse-error banner needs to refresh on every
+        // content change).
+        const fp = state.scripts.map((e) => `${e.id}:${e.name}:${e.enabled ?? true}:${e.source.length}:${hashShort(e.source)}`).join('|')
         if (fp === lastListFingerprint && editingId === null) return
         lastListFingerprint = fp
         listEl.innerHTML = ''
@@ -290,6 +293,30 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
             path.textContent = entry.sourcePath
             card.appendChild(path)
         }
+
+        // Per-entry parse-error banner. Runs the same AsyncFunction parse
+        // the runtime uses, so a syntax error caught here exactly matches
+        // the playtest "broken at compile" error a Slice 1 reviewer would
+        // have hit silently. Runtime errors during playtest land in the
+        // in-game debug overlay (via pushLog) and the browser console;
+        // the editor doesn't run the script engine so it can't surface
+        // those without an editor↔playtest bridge — out of scope here.
+        const parseResult = parseCheck(entry.source)
+        if (!parseResult.ok) {
+            const banner = document.createElement('div')
+            banner.className = 'vpe-hint'
+            banner.style.fontFamily = 'ui-monospace, monospace'
+            banner.style.color = '#ff7e7e'
+            banner.style.background = 'rgba(220, 60, 60, 0.10)'
+            banner.style.border = '1px solid rgba(255, 126, 126, 0.40)'
+            banner.style.borderRadius = '3px'
+            banner.style.padding = '4px 6px'
+            banner.style.whiteSpace = 'pre-wrap'
+            banner.style.fontSize = '11px'
+            banner.textContent = `Parse error: ${parseResult.error}`
+            banner.title = 'Editing this script will re-run the parse check on save.'
+            card.appendChild(banner)
+        }
         return card
     }
 
@@ -367,6 +394,19 @@ function makeReloadButton(entry: ScriptEntry, refresh: () => void): HTMLButtonEl
         refresh()
     })
     return btn
+}
+
+/** Cheap content fingerprint so the row-list cache invalidates when a
+ *  source string changes (without storing the full source per entry in
+ *  the fingerprint). Collisions are tolerated — at worst a row skips a
+ *  re-render for a content change of identical length and FNV-1a hash. */
+function hashShort(s: string): number {
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i)
+        h = Math.imul(h, 0x01000193) >>> 0
+    }
+    return h | 0
 }
 
 interface ParseSuccess { ok: true }

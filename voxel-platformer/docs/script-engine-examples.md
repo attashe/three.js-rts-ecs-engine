@@ -67,6 +67,10 @@ ui.dialogue({
   lines: [{ speaker?, text, choices?: [{ id, text }] }]
 }): Promise<{ choiceId?, choiceIndex?, text? }>
 
+// Dialogue avatars use replaceable PNG keys such as `keeper`, `player`,
+// `sundial`, `book`, and `npc`, or an explicit image path like
+// `/avatars/merchant.png`.
+
 flags.get(name)
 flags.set(name, value)
 

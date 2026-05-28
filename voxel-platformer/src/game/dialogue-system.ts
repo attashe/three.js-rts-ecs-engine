@@ -45,6 +45,7 @@ interface DialogueDom {
     title: HTMLDivElement
     speakerName: HTMLDivElement
     avatar: HTMLDivElement
+    avatarImage: HTMLImageElement
     avatarInitial: HTMLDivElement
     text: HTMLDivElement
     choices: HTMLDivElement
@@ -248,7 +249,7 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
         d.speakerName.textContent = speaker.name
         d.text.textContent = line.text
         d.avatarInitial.textContent = avatarInitials(speaker)
-        paintAvatar(d.avatar, speaker)
+        paintAvatar(d.avatar, d.avatarImage, d.avatarInitial, speaker)
 
         d.panel.style.gridTemplateColumns = side === 'right'
             ? 'minmax(0, 1fr) 104px'
@@ -398,7 +399,21 @@ function buildDialogueDom(): DialogueDom {
         border: '1px solid rgba(238, 246, 242, 0.18)',
         display: 'grid',
         placeItems: 'center',
+        position: 'relative',
+        overflow: 'hidden',
         boxShadow: 'inset 0 -24px 36px rgba(0, 0, 0, 0.24)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    const avatarImage = document.createElement('img')
+    avatarImage.alt = ''
+    avatarImage.decoding = 'async'
+    avatarImage.loading = 'eager'
+    Object.assign(avatarImage.style, {
+        position: 'absolute',
+        inset: '0',
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        display: 'none',
     } satisfies Partial<CSSStyleDeclaration>)
     const avatarInitial = document.createElement('div')
     Object.assign(avatarInitial.style, {
@@ -411,8 +426,10 @@ function buildDialogueDom(): DialogueDom {
         background: 'rgba(255, 255, 255, 0.08)',
         color: '#fff5d6',
         font: '800 18px ui-sans-serif, system-ui, sans-serif',
+        position: 'relative',
+        zIndex: '1',
     } satisfies Partial<CSSStyleDeclaration>)
-    avatar.appendChild(avatarInitial)
+    avatar.append(avatarImage, avatarInitial)
     panel.appendChild(avatar)
 
     const speakerName = document.createElement('div')
@@ -451,7 +468,7 @@ function buildDialogueDom(): DialogueDom {
     } satisfies Partial<CSSStyleDeclaration>)
     panel.appendChild(progress)
 
-    return { root, panel, title, speakerName, avatar, avatarInitial, text, choices, progress }
+    return { root, panel, title, speakerName, avatar, avatarImage, avatarInitial, text, choices, progress }
 }
 
 /** Identity used by the re-entrancy gate. A second `ui.dialogue` call for the
@@ -529,14 +546,47 @@ function avatarInitials(speaker: SpeakerView): string {
     return initials || '?'
 }
 
-function paintAvatar(el: HTMLElement, speaker: SpeakerView): void {
+function paintAvatar(el: HTMLElement, img: HTMLImageElement, initial: HTMLElement, speaker: SpeakerView): void {
     const theme = avatarTheme(speaker.avatar)
     el.style.background = theme.background
     el.style.borderColor = theme.border
+    img.alt = `${speaker.name} portrait`
+
+    const url = dialogueAvatarImageUrl(speaker.avatar)
+    if (!url) {
+        img.removeAttribute('src')
+        img.dataset.avatarSrc = ''
+        img.style.display = 'none'
+        initial.style.display = 'grid'
+        return
+    }
+
+    if (img.dataset.avatarSrc !== url) {
+        img.dataset.avatarSrc = url
+        img.style.display = 'none'
+        initial.style.display = 'grid'
+        img.onload = () => {
+            if (img.dataset.avatarSrc !== url) return
+            img.style.display = 'block'
+            initial.style.display = 'none'
+        }
+        img.onerror = () => {
+            if (img.dataset.avatarSrc !== url) return
+            img.style.display = 'none'
+            initial.style.display = 'grid'
+        }
+        img.src = url
+        return
+    }
+
+    if (img.complete && img.naturalWidth > 0) {
+        img.style.display = 'block'
+        initial.style.display = 'none'
+    }
 }
 
 function avatarTheme(avatar: string): { background: string; border: string } {
-    switch (avatar) {
+    switch (avatar.trim().toLowerCase()) {
         case 'keeper':
             return { background: 'linear-gradient(180deg, #374b63 0%, #1a222d 100%)', border: 'rgba(255, 224, 131, 0.34)' }
         case 'player':
@@ -548,4 +598,26 @@ function avatarTheme(avatar: string): { background: string; border: string } {
         default:
             return { background: 'linear-gradient(180deg, #313b3c 0%, #151a1b 100%)', border: 'rgba(238, 246, 242, 0.18)' }
     }
+}
+
+const BUILTIN_AVATAR_IMAGES: Record<string, string> = {
+    book: '/avatars/book.png',
+    keeper: '/avatars/keeper.png',
+    npc: '/avatars/npc.png',
+    player: '/avatars/player.png',
+    sundial: '/avatars/sundial.png',
+}
+
+export function dialogueAvatarImageUrl(avatar: string | undefined): string | null {
+    const value = avatar?.trim()
+    if (!value) return null
+    const builtIn = BUILTIN_AVATAR_IMAGES[value.toLowerCase()]
+    if (builtIn) return builtIn
+    return isAvatarImagePath(value) ? value : null
+}
+
+function isAvatarImagePath(value: string): boolean {
+    if (/^data:image\/(?:png|jpeg|jpg|webp|gif);/i.test(value)) return true
+    if (!/\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(value)) return false
+    return /^(?:https?:\/\/|\/|\.\/|\.\.\/|avatars\/)/i.test(value)
 }

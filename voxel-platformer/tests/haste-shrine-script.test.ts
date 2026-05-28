@@ -9,6 +9,7 @@ import type {
     LogFacade,
     PickupSpawnOptions,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     ScriptEntry,
     UiFacade,
@@ -80,6 +81,12 @@ function makeHarness(): Harness {
         despawn() { return false },
         exists() { return false },
     }
+    const pistons: PistonsFacade = {
+        setEnabled() { return false },
+        isEnabled() { return false },
+        flip() { return false },
+        list() { return [] },
+    }
     const zone: ZoneFacade = {
         contains: () => false,
         exists: (id) => id === SHRINE_ZONE,
@@ -100,6 +107,7 @@ function makeHarness(): Harness {
         chunks,
         player,
         pickups,
+        pistons,
         zone,
         log,
         ui,

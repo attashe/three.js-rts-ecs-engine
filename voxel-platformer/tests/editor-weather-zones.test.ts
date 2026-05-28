@@ -69,7 +69,7 @@ test('levelMetaFromEditor translates weather zones with default sound mapping', 
         zones: [],
         weatherZones: [
             { id: 'a', presetId: 'rain', position: { x: 0, y: 0, z: 0 }, size: { x: 10, y: 6, z: 10 }, addSound: true, soundVolume: 0.5 },
-            { id: 'b', presetId: 'fire', position: { x: 5, y: 0, z: 5 }, size: { x: 3, y: 3, z: 3 }, addSound: false, soundVolume: 0.5 },
+            { id: 'b', presetId: 'fire', position: { x: 5, y: 0, z: 5 }, size: { x: 3, y: 3, z: 3 }, enabled: false, addSound: false, soundVolume: 0.5 },
             { id: 'c', presetId: 'magic', position: { x: 0, y: 0, z: 0 }, size: { x: 4, y: 4, z: 4 }, addSound: true, soundVolume: 3, soundId: GameAudio.AmbWater },
         ],
     }
@@ -77,6 +77,7 @@ test('levelMetaFromEditor translates weather zones with default sound mapping', 
     assert.equal(runtime.weatherZones.length, 3)
     assert.equal(runtime.weatherZones[0]!.addSound, true)
     assert.equal(runtime.weatherZones[1]!.addSound, false)
+    assert.equal(runtime.weatherZones[1]!.enabled, false)
     // Volume is clamped to [0, 1].
     assert.equal(runtime.weatherZones[2]!.soundVolume, 1)
     // soundId override is preserved.

@@ -23,6 +23,7 @@ import type {
     DayCycleFacade,
     LogFacade,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     WeatherFacade,
     ZoneFacade,
@@ -146,6 +147,12 @@ function stubs() {
     }
     const audio: AudioFacade = { play() { return null }, stop() {} }
     const pickups: PickupsFacade = { spawn() { return 'stub' }, despawn() { return false }, exists() { return false } }
+    const pistons: PistonsFacade = {
+        setEnabled() { return false },
+        isEnabled() { return false },
+        flip() { return false },
+        list() { return [] },
+    }
     const zone: ZoneFacade = {
         contains: () => false,
         exists: () => false,
@@ -153,7 +160,7 @@ function stubs() {
         setActive: () => false,
     }
     const log: LogFacade = { log() {} }
-    return { player, chunks, audio, pickups, zone, log }
+    return { player, chunks, audio, pickups, pistons, zone, log }
 }
 
 test('flags.set emits flag.changed with name + value + previousValue', () => {

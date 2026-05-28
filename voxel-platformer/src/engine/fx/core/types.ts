@@ -197,6 +197,9 @@ export interface WeatherZoneRuntime {
     /** Set to true while the zone is within the active LOD/visibility
      *  budget; emitters can skip work when false. */
     visible: boolean
+    /** Author/runtime enable flag. Disabled zones stay allocated so script
+     *  toggles can be cheap, but they do not simulate, render, or light. */
+    active: boolean
     /** Set to true to schedule a re-build on the next update. */
     dirty: boolean
     findExtra(type: string): ExtraLayer | undefined

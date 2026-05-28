@@ -35,6 +35,7 @@ import type {
     LevelMetaFacade,
     LogFacade,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     ScriptContext,
     ScriptEntry,
@@ -49,6 +50,7 @@ export interface ScriptEngineSystemOptions {
     chunks: ChunksFacade
     player: PlayerFacade
     pickups: PickupsFacade
+    pistons: PistonsFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -115,6 +117,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         chunks: opts.chunks,
         player: opts.player,
         pickups: opts.pickups,
+        pistons: opts.pistons,
         zone: opts.zone,
         log: opts.log,
         ui: opts.ui,

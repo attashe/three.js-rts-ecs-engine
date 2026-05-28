@@ -22,6 +22,9 @@ export interface WeatherZoneRuntimeConfig {
     presetId: string
     position: { x: number; y: number; z: number }
     size: { x: number; y: number; z: number }
+    /** Starts live by default. Scripts can toggle authored zones through
+     *  `weather.setZoneEnabled`; set false for effects that a quest opens. */
+    enabled?: boolean
     /** Whether the runtime should play a paired ambient bed at the
      *  zone's position. The editor's "Add sound" checkbox controls this. */
     addSound: boolean

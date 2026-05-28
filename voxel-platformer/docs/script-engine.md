@@ -297,9 +297,18 @@ pickups.spawn(kind: string, pos: VoxelCoord,
 pickups.despawn(id: PickupId): boolean  // true on success, false if not live
 pickups.exists(id: PickupId): boolean
 
-// Pistons
-pistons.setEnabled(id: string, enabled: boolean)
-pistons.flip(id: string)
+// Pistons — set/flip the runtime gate on a level-authored piston by id.
+// Pistons without an authored id are silently invisible to scripts (so
+// procedural levels can still register unnamed pistons safely). `flip`
+// queues a force-flip that the next fixed tick consumes; on a physical
+// piston already mid-travel it returns false rather than corrupting the
+// active interpolation. `setEnabled(false)` freezes the piston in place
+// — teleport voxel writes stay atomic, physical piston obstacle AABBs
+// stay in the registry so a rider keeps standing on a frozen platform.
+pistons.setEnabled(id: string, enabled: boolean): boolean   // false on unknown id
+pistons.isEnabled(id: string): boolean
+pistons.flip(id: string): boolean                           // false if unknown, disabled, or mid-physical-travel
+pistons.list(): string[]                                    // enumerate ids in registration order
 
 // Audio — `fade` cross-fades over N seconds on play / stop.
 audio.play(soundId: string,
@@ -384,6 +393,10 @@ ui.dialogue({
   }]
 }): Promise<{ choiceId?, choiceIndex?, text? }>
 ```
+
+Dialogue `avatar` values can use built-in replaceable PNG keys
+(`keeper`, `player`, `sundial`, `book`, `npc`) or an explicit image path such
+as `/avatars/merchant.png`. Unknown strings fall back to the labelled badge.
 
 Cross-script messaging uses the unified `on / emit / once` from §3.1
 — there's no separate `signal.*` namespace.
@@ -697,22 +710,32 @@ on('level-start', async () => {
 | `dayCycle.setHour/setEnabled/setSpeed`        | — | — / 1.6 | drives ambient state |
 | `weather.setRain/setSnow/setLightning/applyPreset` | — | — / 1.6 | hooks `AmbientWeather.setState` + presets |
 | Editor "Logic" tab (file loader + paste)      | — | — / 2 | ✅ live |
-| `player.setCheckpoint`                        | — | — | Slice 3 — needs checkpoint system |
-| `pickups.despawn`                             | — | — | Slice 3 |
-| `pistons.setEnabled/flip`                     | — | — | Slice 3 — needs piston id surface |
+| `player.setCheckpoint` / `clearCheckpoint`    | — | ✅ | Slice 3 — `world.lastCheckpoint` + session checkpoint store |
+| `pickups.despawn` / `pickups.exists`          | — | ✅ | Slice 3 — closes the stable-id lifecycle |
+| `pistons.setEnabled/isEnabled/flip/list`      | — | ✅ | Slice 3 — `world.pistonsById`, `pendingFlip` force-flip path |
 | `weather.setZoneEnabled` (toggle FX zones)    | — | ✅ | Slice 3 — controller tracks configs / live / enabled |
 | `weather.setZonePreset` (re-spawn with new preset) | — | ✅ | Slice 3 — pairs with setZoneEnabled |
-| `ZoneScriptAction` migration                  | — | — | Slice 3 |
+| `level.spawn / size / name` getters           | — | ✅ | Slice 3 — read-only snapshot of `LevelMeta` |
+| `//# sourceURL=` pragma for runtime errors    | — | ✅ | Slice 3 — devtools attach script name to stack frames |
+| Per-row parse-error banner in Logic tab       | — | ✅ | Slice 3 — runs `parseCheck` at row render time |
+| `ZoneScriptAction` migration                  | — | — | Deferred — legacy union still inert in production levels |
 
 ### What's still on the roadmap
 
-- **Slice 3**: the heavier integration work —
-  `player.setCheckpoint` (new checkpoint state on world),
-  `pickups.despawn` (stable pickup ids),
-  `pistons.*` (piston id surface),
-  `weather.setZoneEnabled` (FX-zone respawn-by-id),
-  `ZoneScriptAction` → `ScriptEntry` migration (drop the legacy
-  union; `executeZoneScript` removed).
+- **Slice 4 (or follow-up cleanup)**:
+  - `ZoneScriptAction` → `ScriptEntry` migration (drop the legacy
+    union; `executeZoneScript` removed). Nothing in production
+    depends on it; this is a deprecation sweep, not feature work.
+  - Editor↔playtest bridge for surfacing playtest *runtime* errors
+    under each Logic-tab row. The §3.6 status drawer's parse half
+    landed in Slice 3; the runtime half needs sessionStorage round-trip
+    from the playtest tab back to the editor.
+  - Multi-bubble `ui.say` + `ui.clear` for back-to-back NPC dialogue.
+  - Named-place registry (`level.coord('lantern.position')`).
+  - Persistent checkpoints across saves (currently per-session).
+  - Lighthouse Vigil validation quest — drafted in
+    `docs/script-engine-slice-3-plan.md` §4.1 but not authored. Run
+    it before committing to the Slice 3 binding shapes long-term.
 
 Implementation file layout — for anyone navigating the runtime:
 

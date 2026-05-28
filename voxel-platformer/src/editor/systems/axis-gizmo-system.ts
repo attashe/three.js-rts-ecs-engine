@@ -46,7 +46,7 @@ export function createAxisGizmoSystem(iso: IsometricCamera): System {
     const projectedTip = new Vector3()
 
     return {
-        order: RenderOrder.cameraControl + 2,
+        order: RenderOrder.cameraControl + 3,
         init() {
             injectCss()
             document.body.appendChild(root)

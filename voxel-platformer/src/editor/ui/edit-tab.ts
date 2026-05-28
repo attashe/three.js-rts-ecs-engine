@@ -110,12 +110,13 @@ export function buildEditTab(ctx: EditTabContext): RefreshableElement {
 function buildCameraPlaneSection(state: EditorState): RefreshableElement {
     const section = sectionEl('Camera / Plane')
 
-    // View mode toggle (Iso / Top). Compact button pair.
+    // View mode toggle (Iso / Top / Orbit). Compact button row.
     const viewRow = document.createElement('div')
     viewRow.className = 'vpe-row'
     const viewModes: { mode: EditorViewMode; label: string; hint: string }[] = [
-        { mode: 'iso', label: 'Iso', hint: 'Default isometric view (V to toggle)' },
-        { mode: 'top-down', label: 'Top', hint: 'Top-down — hides above the plane (V to toggle)' },
+        { mode: 'iso', label: 'Iso', hint: 'Default isometric view (V cycles camera modes)' },
+        { mode: 'top-down', label: 'Top', hint: 'Top-down — hides above the plane (V cycles camera modes)' },
+        { mode: 'orbit', label: 'Orbit', hint: 'Free orbit inspection view, like the FX demo' },
     ]
     const viewButtons: { mode: EditorViewMode; btn: HTMLButtonElement }[] = []
     for (const m of viewModes) {
@@ -177,7 +178,7 @@ function buildCameraPlaneSection(state: EditorState): RefreshableElement {
 
     const shortcuts = document.createElement('div')
     shortcuts.className = 'vpe-hint'
-    shortcuts.textContent = 'Z/X: plane ±1 (Shift = ±4) · V: view · L: lock'
+    shortcuts.textContent = 'Z/X: plane ±1 (Shift = ±4) · V: camera mode · L: lock'
     section.appendChild(shortcuts)
 
     function syncView(): void {

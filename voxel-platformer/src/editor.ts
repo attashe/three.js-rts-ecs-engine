@@ -36,6 +36,7 @@ import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
 import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
 import { createViewModeSystem } from './editor/systems/view-mode-system'
 import { createAxisGizmoSystem } from './editor/systems/axis-gizmo-system'
+import { createOrbitCameraSystem } from './editor/systems/orbit-camera-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
 import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/render-layers'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
@@ -149,6 +150,8 @@ async function main(): Promise<void> {
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
             metricsPosition: { bottom: '8px', left: '8px' },
             logPosition: { bottom: '8px', right: '8px', maxWidth: '320px' },
+            cameraProvider: () => renderer.iso.camera,
+            renderElement: renderer.webgpu.domElement,
         }), 'debugOverlay')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: true,
@@ -157,6 +160,7 @@ async function main(): Promise<void> {
             panSpeed: 12,
         }), 'cameraControl')
         .addSystem(createViewModeSystem(renderer.iso, chunkRenderer, chunks, editorState), 'viewMode')
+        .addSystem(createOrbitCameraSystem(renderer.iso, engine.input, renderer.webgpu.domElement, editorState), 'orbitCamera')
         .addSystem(createAxisGizmoSystem(renderer.iso), 'axisGizmo')
 
     await engine.start()

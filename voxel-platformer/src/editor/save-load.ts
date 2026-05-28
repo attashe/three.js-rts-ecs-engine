@@ -71,6 +71,7 @@ function clearWorldAndEditorState(
         }
     }
     world.pistons.length = 0
+    world.pistonsById.clear()
     editorState.pistons = []
 
     world.zones.clear()
@@ -197,6 +198,7 @@ export function loadLevelFromBuffer(
         }
         for (const p of loaded.metadata.pistons ?? []) {
             registerPistonMechanism(world, chunks, {
+                id: p.id,
                 from: { ...p.from },
                 to: { ...p.to },
                 block: p.block,
@@ -206,6 +208,7 @@ export function loadLevelFromBuffer(
                 characterPolicy: p.characterPolicy,
             })
             editorState.pistons.push({
+                id: p.id,
                 from: { ...p.from },
                 to: { ...p.to },
                 block: p.block,
@@ -299,6 +302,7 @@ export function loadLevelFromBuffer(
                 presetId: z.presetId,
                 position: { ...z.position },
                 size: { ...z.size },
+                enabled: z.enabled === false ? false : undefined,
                 addSound: z.addSound ?? true,
                 soundId: z.soundId,
                 soundVolume: Number.isFinite(z.soundVolume) ? z.soundVolume : 0.5,

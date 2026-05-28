@@ -24,6 +24,7 @@ import type {
     LevelMetaFacade,
     LogFacade,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     ScriptContext,
     TravelFacade,
@@ -47,6 +48,7 @@ export interface BindingsDeps {
     chunks: ChunksFacade
     player: PlayerFacade
     pickups: PickupsFacade
+    pistons: PistonsFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -60,7 +62,7 @@ export interface BindingsDeps {
 }
 
 export function buildScriptContext(deps: BindingsDeps): ScriptContext {
-    const { runtime, audio, chunks, player, pickups, zone, log, flags } = deps
+    const { runtime, audio, chunks, player, pickups, pistons, zone, log, flags } = deps
     const ui = deps.ui ?? NOOP_UI
     const dayCycle = deps.dayCycle ?? NOOP_DAY_CYCLE
     const weather = deps.weather ?? NOOP_WEATHER
@@ -151,6 +153,13 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             spawn: (kind, pos, opts) => pickups.spawn(kind, pos, opts),
             despawn: (id) => pickups.despawn(id),
             exists: (id) => pickups.exists(id),
+        },
+
+        pistons: {
+            setEnabled: (id, enabled) => pistons.setEnabled(id, enabled),
+            isEnabled: (id) => pistons.isEnabled(id),
+            flip: (id) => pistons.flip(id),
+            list: () => pistons.list(),
         },
 
         flags: flagsApi,

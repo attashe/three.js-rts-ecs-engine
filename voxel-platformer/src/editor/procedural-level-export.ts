@@ -67,6 +67,7 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             amount: pile.amount ?? 1,
         })),
         pistons: meta.pistons.map((piston) => ({
+            id: piston.id,
             from: { ...piston.from },
             to: { ...piston.to },
             block: piston.block,
@@ -121,6 +122,7 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             presetId: zone.presetId,
             position: { ...zone.position },
             size: { ...zone.size },
+            ...(zone.enabled === false ? { enabled: false } : {}),
             addSound: zone.addSound,
             soundId: zone.soundId,
             soundVolume: zone.soundVolume,

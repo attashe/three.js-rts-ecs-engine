@@ -76,6 +76,7 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'npc-keeper': return buildKeeperNpc()
         case 'sundial':   return buildSundial()
         case 'haste-shrine': return buildHasteShrine()
+        case 'portal-shrine': return buildPortalShrine()
     }
 }
 
@@ -662,6 +663,66 @@ function buildHasteShrine(): BufferGeometry {
         rune.rotateZ(-0.62)
         rune.translate(0.13, y, 0.13)
         paintVertexColor(rune, 0.20, 0.92, 0.90)
+        parts.push(rune)
+    }
+
+    return mergeAndCleanup(parts)
+}
+
+function buildPortalShrine(): BufferGeometry {
+    // Toll shrine for portal activation. Reuses the same compact silhouette
+    // as the Haste shrine, but shifts the palette to violet/gold and adds a
+    // small arch so it connects visually with the nearby gate.
+    const parts: BufferGeometry[] = []
+
+    const base = new CylinderGeometry(0.34, 0.44, 0.18, 12)
+    base.translate(0, 0.09, 0)
+    paintVertexColor(base, 0.26, 0.24, 0.34)
+    parts.push(base)
+
+    const step = new CylinderGeometry(0.27, 0.31, 0.10, 12)
+    step.translate(0, 0.23, 0)
+    paintVertexColor(step, 0.42, 0.36, 0.50)
+    parts.push(step)
+
+    const pillar = new BoxGeometry(0.24, 0.62, 0.24)
+    pillar.translate(0, 0.58, 0)
+    paintVertexColor(pillar, 0.55, 0.50, 0.66)
+    parts.push(pillar)
+
+    const cap = new CylinderGeometry(0.22, 0.26, 0.10, 8)
+    cap.translate(0, 0.94, 0)
+    paintVertexColor(cap, 0.86, 0.67, 0.24)
+    parts.push(cap)
+
+    const gem = new SphereGeometry(0.145, 10, 6)
+    gem.scale(1, 1.24, 1)
+    gem.translate(0, 1.10, 0)
+    paintVertexColor(gem, 0.68, 0.42, 1.0)
+    parts.push(gem)
+
+    const glowRing = new CylinderGeometry(0.20, 0.20, 0.025, 16)
+    glowRing.translate(0, 1.0, 0)
+    paintVertexColor(glowRing, 0.78, 0.52, 1.0)
+    parts.push(glowRing)
+
+    const archTop = new BoxGeometry(0.72, 0.08, 0.08)
+    archTop.translate(0, 0.82, -0.31)
+    paintVertexColor(archTop, 0.80, 0.63, 0.28)
+    parts.push(archTop)
+
+    for (const x of [-0.31, 0.31]) {
+        const archLeg = new BoxGeometry(0.08, 0.48, 0.08)
+        archLeg.translate(x, 0.58, -0.31)
+        paintVertexColor(archLeg, 0.72, 0.55, 0.24)
+        parts.push(archLeg)
+    }
+
+    for (const y of [0.44, 0.60, 0.76]) {
+        const rune = new BoxGeometry(0.035, 0.11, 0.028)
+        rune.rotateZ(0.62)
+        rune.translate(0.13, y, 0.13)
+        paintVertexColor(rune, 0.78, 0.52, 1.0)
         parts.push(rune)
     }
 

@@ -49,7 +49,9 @@ function placePiston(world: GameWorld, chunks: ChunkManager, state: EditorState)
     const to = addOffset(from, offset)
     const moveSoundId = state.pistonMoveSoundId || undefined
     const moveSoundVolume = state.pistonMoveSoundVolume
+    const id = nextEditorPistonId(state.pistons)
     registerPistonMechanism(world, chunks, {
+        id,
         from,
         to,
         block: state.activeBlock,
@@ -61,6 +63,7 @@ function placePiston(world: GameWorld, chunks: ChunkManager, state: EditorState)
         moveSoundVolume,
     })
     state.pistons.push({
+        id,
         from: { ...from },
         to: { ...to },
         block: state.activeBlock,
@@ -72,6 +75,21 @@ function placePiston(world: GameWorld, chunks: ChunkManager, state: EditorState)
         moveSoundVolume,
     })
     pushLog(world, `Piston placed (${state.pistonMotion}, ${state.pistonDirection} ×${state.pistonDistance}, ${state.pistonPolicy}).`)
+}
+
+/** Pick the next free `piston-N` id. Scans existing entries so the
+ *  counter survives mid-session deletions — placing after a delete fills
+ *  the gap rather than skipping forward. */
+export function nextEditorPistonId(existing: readonly { id?: string }[]): string {
+    let max = 0
+    for (const entry of existing) {
+        if (!entry.id) continue
+        const match = /^piston-(\d+)$/.exec(entry.id)
+        if (!match) continue
+        const n = Number(match[1])
+        if (Number.isFinite(n) && n > max) max = n
+    }
+    return `piston-${max + 1}`
 }
 
 function removeLastPiston(world: GameWorld, chunks: ChunkManager, state: EditorState): void {
@@ -102,6 +120,7 @@ export function removePistonAt(
     const removed = state.pistons.splice(index, 1)[0]!
     const live = world.pistons.splice(index, 1)[0]
     if (live) {
+        if (live.id) world.pistonsById.delete(live.id)
         if (live.motion === 'physical') {
             world.obstacles.remove(live.eid)
             if (live.eid >= 0) despawnEntity(world, live.eid)

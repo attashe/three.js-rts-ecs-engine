@@ -6,6 +6,7 @@ import type {
     ChunksFacade,
     LogFacade,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     ScriptEntry,
     ZoneFacade,
@@ -45,6 +46,12 @@ function makeDeps(scripts: ScriptEntry[]) {
         despawn() { return false },
         exists() { return false },
     }
+    const pistons: PistonsFacade = {
+        setEnabled() { return false },
+        isEnabled() { return false },
+        flip() { return false },
+        list() { return [] },
+    }
     const zone: ZoneFacade = {
         contains: () => false,
         exists: () => false,
@@ -56,7 +63,7 @@ function makeDeps(scripts: ScriptEntry[]) {
     }
     const errors: { entryId: string; where: string; err: unknown }[] = []
     const sys = createScriptEngineSystem({
-        audio, chunks, player, pickups, zone, log: logFacade,
+        audio, chunks, player, pickups, pistons, zone, log: logFacade,
         getScripts: () => scripts,
         onScriptError: (entry, where, err) => errors.push({ entryId: entry.id, where, err }),
     })

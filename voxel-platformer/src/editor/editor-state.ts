@@ -27,8 +27,9 @@ export type EditorMode =
     | 'scatter-props'
     | 'place-npc'
 
-/** Camera view used by the editor. `top-down` enables the working-plane cut. */
-export type EditorViewMode = 'iso' | 'top-down'
+/** Camera view used by the editor. `top-down` enables the working-plane cut;
+ *  `orbit` enables free OrbitControls-style scene inspection. */
+export type EditorViewMode = 'iso' | 'top-down' | 'orbit'
 export type EditorPistonMotion = 'teleport' | 'physical'
 export type EditorZoneTriggerMode = ZoneTriggerSource | 'both'
 export type PropScatterShape = 'square' | 'circle'
@@ -69,6 +70,11 @@ export interface EditorZone {
 }
 
 export interface EditorPiston {
+    /** Stable script id (`'piston.elevator'`, `'piston-3'`, ...). Auto-
+     *  generated on editor placement so every editor-placed piston is
+     *  script-targetable by default; absent on pistons loaded from
+     *  legacy saves that pre-date the id field. */
+    id?: string
     from: VoxelCoord
     to: VoxelCoord
     block: number
@@ -161,6 +167,8 @@ export interface EditorWeatherZone {
     presetId: string
     position: { x: number; y: number; z: number }
     size: { x: number; y: number; z: number }
+    /** Starts live by default. Scripts can toggle authored zones. */
+    enabled?: boolean
     /** "Add sound" checkbox — default on. */
     addSound: boolean
     /** Override paired sound id. Empty / undefined ⇒ use preset default. */
@@ -418,7 +426,8 @@ export interface EditorState {
     planeLock: boolean
 
     /** Camera view. In `top-down` mode the camera looks straight down and
-     *  the near plane clips everything above `workingPlaneY`. */
+     *  the near plane clips everything above `workingPlaneY`; in `orbit`
+     *  mode mouse navigation is handled by OrbitControls. */
     viewMode: EditorViewMode
 }
 
@@ -614,6 +623,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             amount: p.amount,
         })),
         pistons: state.pistons.map((p) => ({
+            id: p.id,
             from: { ...p.from },
             to: { ...p.to },
             block: p.block,
@@ -673,6 +683,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             presetId: z.presetId,
             position: { ...z.position },
             size: { ...z.size },
+            ...(z.enabled === false ? { enabled: false } : {}),
             addSound: z.addSound,
             soundId: z.soundId,
             soundVolume: z.soundVolume,

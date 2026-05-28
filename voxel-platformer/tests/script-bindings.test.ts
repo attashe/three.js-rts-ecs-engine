@@ -8,6 +8,7 @@ import type {
     FlagValue,
     LogFacade,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     TravelFacade,
     UiFacade,
@@ -33,11 +34,15 @@ function stubs() {
         playerTeleport: [], playerKill: [],
         playerSettings: [], playerAbility: [], playerGold: [], playerArrows: [],
         pickupSpawn: [], pickupDespawn: [], pickupExists: [],
+        pistonSetEnabled: [], pistonIsEnabled: [], pistonFlip: [], pistonList: [],
         uiSay: [],
         uiDialogue: [],
         log: [],
         zoneContains: [],
     }
+    const enabledPistons = new Map<string, boolean>()
+    let pistonRoster: string[] = []
+    let pistonFlipBlocks = false
     const livePickups = new Set<string>()
     let playerPos: VoxelCoord | null = { x: 1, y: 2, z: 3 }
     let gold = 7
@@ -92,6 +97,29 @@ function stubs() {
             return livePickups.has(id)
         },
     }
+    const pistons: PistonsFacade = {
+        setEnabled(id, enabled) {
+            calls.pistonSetEnabled.push({ id, enabled })
+            if (!enabledPistons.has(id) && !pistonRoster.includes(id)) return false
+            enabledPistons.set(id, enabled)
+            return true
+        },
+        isEnabled(id) {
+            calls.pistonIsEnabled.push({ id })
+            if (enabledPistons.has(id)) return enabledPistons.get(id) ?? false
+            return pistonRoster.includes(id)
+        },
+        flip(id) {
+            calls.pistonFlip.push({ id })
+            if (!pistonRoster.includes(id) && !enabledPistons.has(id)) return false
+            if (pistonFlipBlocks) return false
+            return true
+        },
+        list() {
+            calls.pistonList.push({})
+            return [...pistonRoster]
+        },
+    }
     const ui: UiFacade = {
         say(targetId, message, opts) { calls.uiSay.push({ targetId, message, opts }) },
         async dialogue(request) {
@@ -110,10 +138,12 @@ function stubs() {
     }
     return {
         calls,
-        deps: { audio, chunks, player, pickups, ui, zone, log },
+        deps: { audio, chunks, player, pickups, pistons, ui, zone, log },
         setPlayerPos(p: VoxelCoord | null) { playerPos = p },
         setGold(g: number) { gold = g },
         setArrows(a: number) { arrows = a },
+        setPistonRoster(ids: string[]) { pistonRoster = [...ids] },
+        setPistonFlipBlocks(blocked: boolean) { pistonFlipBlocks = blocked },
     }
 }
 
@@ -402,6 +432,26 @@ test('time + random expose the underlying runtime', () => {
     assert.equal(ctx.time.tick, 1)
     const v = ctx.random(10, 20)
     assert.ok(v >= 10 && v < 20)
+})
+
+test('pistons bindings forward to the facade', () => {
+    const s = stubs()
+    s.setPistonRoster(['piston.elevator', 'piston.trap'])
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+
+    assert.deepEqual(ctx.pistons.list(), ['piston.elevator', 'piston.trap'])
+    assert.equal(ctx.pistons.isEnabled('piston.elevator'), true)
+    assert.equal(ctx.pistons.setEnabled('piston.elevator', false), true)
+    assert.equal(ctx.pistons.isEnabled('piston.elevator'), false)
+    assert.equal(ctx.pistons.flip('piston.elevator'), true)
+
+    // Unknown id returns false on every read/write path.
+    assert.equal(ctx.pistons.setEnabled('piston.ghost', true), false)
+    assert.equal(ctx.pistons.isEnabled('piston.ghost'), false)
+    assert.equal(ctx.pistons.flip('piston.ghost'), false)
+
+    s.setPistonFlipBlocks(true)
+    assert.equal(ctx.pistons.flip('piston.trap'), false)
 })
 
 test('on(...) handles both filter-and-handler and handler-only forms', async () => {

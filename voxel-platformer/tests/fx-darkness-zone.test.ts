@@ -21,6 +21,7 @@ function makeRuntime(params: WeatherZoneParams): WeatherZoneRuntime {
         events: [],
         seed: 1,
         visible: true,
+        active: true,
         dirty: false,
         findExtra: () => undefined,
     } as WeatherZoneRuntime

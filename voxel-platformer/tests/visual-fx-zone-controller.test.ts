@@ -4,21 +4,32 @@ import { createVisualFxZoneController, type FxZoneRegistry } from '../src/game/v
 import type { WeatherZoneRuntimeConfig } from '../src/game/weather-config'
 
 function fakeRegistry() {
+    const created = new Map<string, { id: string; presetType: string }>()
     const live = new Map<string, { id: string; presetType: string }>()
-    const calls: { method: 'addZone' | 'removeZone'; id: string; type?: string }[] = []
+    const calls: { method: 'addZone' | 'removeZone' | 'setZoneActive'; id: string; type?: string; active?: boolean }[] = []
     const registry: FxZoneRegistry = {
         addZone(params) {
             const id = params.id ?? '<anon>'
+            created.set(id, { id, presetType: params.type })
             live.set(id, { id, presetType: params.type })
             calls.push({ method: 'addZone', id, type: params.type })
             return params
         },
         removeZone(id) {
+            created.delete(id)
             live.delete(id)
             calls.push({ method: 'removeZone', id })
         },
+        setZoneActive(id, active) {
+            const zone = created.get(id)
+            if (!zone) return false
+            if (active) live.set(id, zone)
+            else live.delete(id)
+            calls.push({ method: 'setZoneActive', id, active })
+            return true
+        },
     }
-    return { registry, live, calls }
+    return { registry, created, live, calls }
 }
 
 function authoredZone(id: string, presetId: string): WeatherZoneRuntimeConfig {
@@ -43,7 +54,23 @@ test('controller spawns enabled zones via spawnEnabled and reports them as live'
     assert.equal(ctl.isZoneEnabled('zone.rain'), true)
 })
 
-test('setZoneEnabled(id, false) removes the zone from the registry and reports disabled', () => {
+test('controller leaves authored disabled zones dormant until scripts enable them', () => {
+    const { registry, created, live, calls } = fakeRegistry()
+    const zone = { ...authoredZone('zone.magic', 'magic'), enabled: false }
+    const ctl = createVisualFxZoneController(registry, [zone])
+
+    ctl.spawnEnabled()
+    assert.equal(created.size, 1, 'disabled zones are warm-allocated to avoid activation hitches')
+    assert.equal(live.size, 0)
+    assert.equal(ctl.isZoneEnabled('zone.magic'), false)
+
+    calls.length = 0
+    assert.equal(ctl.setZoneEnabled('zone.magic', true), true)
+    assert.equal(live.has('zone.magic'), true)
+    assert.deepEqual(calls, [{ method: 'setZoneActive', id: 'zone.magic', active: true }])
+})
+
+test('setZoneEnabled(id, false) hides the warm zone and reports disabled', () => {
     const { registry, live, calls } = fakeRegistry()
     const ctl = createVisualFxZoneController(registry, [authoredZone('zone.fire', 'fire')])
     ctl.spawnEnabled()
@@ -51,10 +78,10 @@ test('setZoneEnabled(id, false) removes the zone from the registry and reports d
     assert.equal(ctl.setZoneEnabled('zone.fire', false), true)
     assert.equal(live.size, 0)
     assert.equal(ctl.isZoneEnabled('zone.fire'), false)
-    assert.deepEqual(calls, [{ method: 'removeZone', id: 'zone.fire' }])
+    assert.deepEqual(calls, [{ method: 'setZoneActive', id: 'zone.fire', active: false }])
 })
 
-test('setZoneEnabled(id, true) re-spawns a previously-disabled zone', () => {
+test('setZoneEnabled(id, true) reactivates a previously-disabled warm zone', () => {
     const { registry, live } = fakeRegistry()
     const ctl = createVisualFxZoneController(registry, [authoredZone('zone.fire', 'fire')])
     ctl.spawnEnabled()
@@ -63,6 +90,23 @@ test('setZoneEnabled(id, true) re-spawns a previously-disabled zone', () => {
     assert.equal(ctl.setZoneEnabled('zone.fire', true), true)
     assert.equal(live.has('zone.fire'), true)
     assert.equal(ctl.isZoneEnabled('zone.fire'), true)
+})
+
+test('script-driven enable/disable uses the lifecycle hooks registered at init', () => {
+    const { registry } = fakeRegistry()
+    const zone = { ...authoredZone('zone.magic', 'magic'), enabled: false }
+    const ctl = createVisualFxZoneController(registry, [zone])
+    const events: string[] = []
+
+    ctl.spawnEnabled({
+        onSpawned: (config) => events.push(`spawn:${config.id}`),
+        onDespawned: (config) => events.push(`despawn:${config.id}`),
+    })
+
+    ctl.setZoneEnabled('zone.magic', true)
+    ctl.setZoneEnabled('zone.magic', false)
+
+    assert.deepEqual(events, ['spawn:zone.magic', 'despawn:zone.magic'])
 })
 
 test('setZoneEnabled is idempotent — repeated true/false calls do not double-spawn or double-remove', () => {
@@ -75,7 +119,7 @@ test('setZoneEnabled is idempotent — repeated true/false calls do not double-s
     assert.deepEqual(calls, [], 'enabling an already-enabled zone is a no-op at the registry level')
     ctl.setZoneEnabled('zone.fire', false)
     ctl.setZoneEnabled('zone.fire', false)
-    assert.deepEqual(calls, [{ method: 'removeZone', id: 'zone.fire' }],
+    assert.deepEqual(calls, [{ method: 'setZoneActive', id: 'zone.fire', active: false }],
         'disabling an already-disabled zone is a no-op at the registry level')
 })
 
@@ -96,8 +140,8 @@ test('setZonePreset on a live zone swaps the preset via remove+add and remembers
     calls.length = 0
     assert.equal(ctl.setZonePreset('zone.weather', 'storm'), true)
     assert.equal(live.get('zone.weather')?.presetType, 'rain', 'storm preset still uses the rain emitter type')
-    // The visible change is: zone was removed then re-added.
-    assert.deepEqual(calls.map((c) => c.method), ['removeZone', 'addZone'])
+    // Preset swaps still rebuild topology, then reactivate the warm zone.
+    assert.deepEqual(calls.map((c) => c.method), ['removeZone', 'addZone', 'setZoneActive'])
 
     // Disable + re-enable picks up the new preset, proving the swap was
     // persisted on the controller's config map.
@@ -105,7 +149,8 @@ test('setZonePreset on a live zone swaps the preset via remove+add and remembers
     calls.length = 0
     ctl.setZoneEnabled('zone.weather', true)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0]!.method, 'addZone')
+    assert.equal(calls[0]!.method, 'setZoneActive')
+    assert.equal(calls[0]!.active, true)
 })
 
 test('setZonePreset on an unknown preset id returns false and leaves state untouched', () => {
@@ -117,7 +162,7 @@ test('setZonePreset on an unknown preset id returns false and leaves state untou
     assert.deepEqual(calls, [], 'no remove/add side effect on a failed preset swap')
 })
 
-test('despawnAll removes every live zone; isZoneEnabled goes false; spawnEnabled re-creates them', () => {
+test('despawnAll removes every allocated zone; isZoneEnabled goes false; spawnEnabled re-creates them', () => {
     const { registry, live } = fakeRegistry()
     const ctl = createVisualFxZoneController(registry, [
         authoredZone('zone.a', 'fire'),

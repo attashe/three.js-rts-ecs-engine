@@ -9,6 +9,9 @@ import type { WeatherZoneRuntimeConfig } from './weather-config'
 export interface FxZoneRegistry {
     addZone(params: WeatherZoneParams): unknown
     removeZone(id: string): void
+    /** Optional fast path: keep a zone allocated and toggle simulation,
+     *  rendering, and light contribution without disposing its meshes. */
+    setZoneActive?(id: string, active: boolean): boolean
 }
 
 /** Per-zone lifecycle hooks the system layer pairs with audio. */
@@ -30,7 +33,7 @@ export interface VisualFxZoneController {
      *  already live. Used by the system factory after the audio gate
      *  resolves. */
     spawnEnabled(hooks?: ZoneLifecycleHooks): void
-    /** Drop every live zone from the registry. Used at dispose. */
+    /** Drop every allocated zone from the registry. Used at dispose. */
     despawnAll(hooks?: ZoneLifecycleHooks): void
 }
 
@@ -42,11 +45,13 @@ export function createVisualFxZoneController(
     // mutate the level metadata.
     const configs = new Map<string, WeatherZoneRuntimeConfig>()
     const enabled = new Set<string>()
+    const spawned = new Set<string>()
     const live = new Set<string>()
+    let lifecycleHooks: ZoneLifecycleHooks | undefined
 
     for (const c of initialConfigs) {
         configs.set(c.id, { ...c, position: { ...c.position }, size: { ...c.size } })
-        enabled.add(c.id)
+        if (c.enabled !== false) enabled.add(c.id)
     }
 
     function paramsFor(config: WeatherZoneRuntimeConfig): WeatherZoneParams {
@@ -58,23 +63,43 @@ export function createVisualFxZoneController(
         })
     }
 
+    function ensureSpawned(config: WeatherZoneRuntimeConfig, active: boolean): boolean {
+        if (!active && !registry.setZoneActive) return false
+        if (!spawned.has(config.id)) {
+            registry.addZone(paramsFor(config))
+            spawned.add(config.id)
+        }
+        registry.setZoneActive?.(config.id, active)
+        return true
+    }
+
+    function activate(config: WeatherZoneRuntimeConfig): void {
+        enabled.add(config.id)
+        if (live.has(config.id)) return
+        ensureSpawned(config, true)
+        live.add(config.id)
+        lifecycleHooks?.onSpawned?.(config)
+    }
+
+    function deactivate(config: WeatherZoneRuntimeConfig): void {
+        enabled.delete(config.id)
+        if (!spawned.has(config.id)) return
+        if (!live.delete(config.id)) return
+        lifecycleHooks?.onDespawned?.(config)
+        if (registry.setZoneActive) {
+            registry.setZoneActive(config.id, false)
+        } else {
+            registry.removeZone(config.id)
+            spawned.delete(config.id)
+        }
+    }
+
     return {
         setZoneEnabled(zoneId, on) {
             const config = configs.get(zoneId)
             if (!config) return false
-            if (on) {
-                enabled.add(zoneId)
-                if (!live.has(zoneId)) {
-                    registry.addZone(paramsFor(config))
-                    live.add(zoneId)
-                }
-            } else {
-                enabled.delete(zoneId)
-                if (live.has(zoneId)) {
-                    registry.removeZone(zoneId)
-                    live.delete(zoneId)
-                }
-            }
+            if (on) activate(config)
+            else deactivate(config)
             return true
         },
         isZoneEnabled(zoneId) {
@@ -89,36 +114,51 @@ export function createVisualFxZoneController(
             const config = configs.get(zoneId)
             if (!config) return false
             if (!(presetId in ZONE_PRESETS)) return false
-            config.presetId = presetId
-            if (live.has(zoneId)) {
+            const wasSpawned = spawned.has(zoneId)
+            const wasLive = live.has(zoneId)
+            if (wasSpawned) {
+                if (wasLive) lifecycleHooks?.onDespawned?.(config)
                 registry.removeZone(zoneId)
+                spawned.delete(zoneId)
                 live.delete(zoneId)
-                registry.addZone(paramsFor(config))
+            }
+            config.presetId = presetId
+            if (wasSpawned) {
+                ensureSpawned(config, wasLive)
+            }
+            if (wasLive) {
                 live.add(zoneId)
+                lifecycleHooks?.onSpawned?.(config)
             }
             return true
         },
         spawnEnabled(hooks) {
-            for (const id of enabled) {
-                if (live.has(id)) continue
-                const config = configs.get(id)
-                if (!config) continue
-                registry.addZone(paramsFor(config))
-                live.add(id)
-                hooks?.onSpawned?.(config)
+            lifecycleHooks = hooks ?? lifecycleHooks
+            for (const config of configs.values()) {
+                const shouldBeLive = enabled.has(config.id)
+                if (!shouldBeLive) {
+                    ensureSpawned(config, false)
+                    continue
+                }
+                if (live.has(config.id)) continue
+                ensureSpawned(config, true)
+                live.add(config.id)
+                lifecycleHooks?.onSpawned?.(config)
             }
         },
         despawnAll(hooks) {
+            const activeHooks = hooks ?? lifecycleHooks
             // Visual first, audio second: removeZone tears down the
             // emitter, then onDespawned fades the paired sound. The
             // reverse order would let the sound bed outlive its visual
             // — perceptible as "rain audio kept playing after the
             // particles disappeared."
-            for (const id of live) {
+            for (const id of spawned) {
                 const config = configs.get(id)
                 registry.removeZone(id)
-                if (config) hooks?.onDespawned?.(config)
+                if (config && live.has(id)) activeHooks?.onDespawned?.(config)
             }
+            spawned.clear()
             live.clear()
         },
     }

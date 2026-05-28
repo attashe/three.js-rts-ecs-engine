@@ -70,8 +70,49 @@ export class WeatherSystem {
         this.zones.delete(id)
     }
 
+    setZoneActive(id: string, active: boolean): boolean {
+        const zone = this.zones.get(id)
+        if (!zone) return false
+        zone.setActive(active)
+        return true
+    }
+
     getZone(id: string): WeatherZone | undefined {
         return this.zones.get(id)
+    }
+
+    /**
+     * Pre-compile shaders + GPU pipelines for every spawned zone, including
+     * ones currently hidden (`active === false`). Without this, the first
+     * `setZoneActive(true)` of a level-authored-but-disabled zone stalls
+     * the main thread for 100–500 ms on WebGPU while shaders compile —
+     * the player perceives it as a half-second freeze the first time a
+     * magic zone or rain volume comes online.
+     *
+     * `compileAsync(scene, camera)` walks the visible scene graph at call
+     * time, so we briefly reveal hidden groups, hand off the work, and
+     * restore visibility once the promise settles. Pre-spawning + warming
+     * is cheap because compileAsync is asynchronous on WebGPU and runs
+     * mostly off the main thread.
+     */
+    warmShaders(
+        compileAsync: (scene: Scene, camera: Camera) => Promise<unknown>,
+        camera: Camera,
+    ): Promise<void> {
+        const restored: WeatherZone[] = []
+        for (const zone of this.zones.values()) {
+            if (!zone.group.visible) {
+                zone.group.visible = true
+                restored.push(zone)
+            }
+        }
+        const restore = () => {
+            for (const z of restored) z.group.visible = false
+        }
+        return compileAsync(this.scene, camera).then(restore, (err) => {
+            restore()
+            throw err
+        })
     }
 
     updateZone(id: string, patch: Partial<WeatherZoneParams>): void {
@@ -121,21 +162,27 @@ export class WeatherSystem {
     update(dt: number, camera: Camera): void {
         this.elapsed += dt
         this.ambient.update(dt, this.elapsed, camera, this.dummy)
-        // Visibility / LOD pass.
-        if (this.cullDistance > 0) {
-            const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z
-            const d2 = this.cullDistance * this.cullDistance
-            for (const zone of this.zones.values()) {
+        // Visibility / LOD pass. Script-disabled zones remain allocated but
+        // inactive so toggling them does not allocate/dispose particle meshes.
+        const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z
+        const d2 = this.cullDistance * this.cullDistance
+        for (const zone of this.zones.values()) {
+            let visible = zone.runtime.active
+            if (visible && this.cullDistance > 0) {
                 const dx = zone.runtime.params.position.x - cx
                 const dy = zone.runtime.params.position.y - cy
                 const dz = zone.runtime.params.position.z - cz
-                zone.runtime.visible = (dx * dx + dy * dy + dz * dz) <= d2
+                visible = (dx * dx + dy * dy + dz * dz) <= d2
             }
+            zone.runtime.visible = visible
+            zone.group.visible = visible
         }
         for (const zone of this.zones.values()) zone.update(dt, this.elapsed, camera, this.dummy)
         // Light budget runs after emitters have written their wanted
         // intensities to `light.userData.wanted`.
-        const lights = [...this.zones.values()].map((z) => z.runtime.light)
+        const lights = [...this.zones.values()]
+            .filter((z) => z.runtime.active)
+            .map((z) => z.runtime.light)
         this.lightBudget.apply(lights, camera)
 
         // Expire one-shots.

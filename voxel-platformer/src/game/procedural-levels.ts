@@ -50,6 +50,11 @@ export const PROCEDURAL_LEVEL_SCRIPT_FILES = [
         name: 'haste-shrine.js',
         sourcePath: 'examples/scripts/haste-shrine.js',
     },
+    {
+        id: 'paid-portal-shrine',
+        name: 'paid-portal-shrine.js',
+        sourcePath: 'examples/scripts/paid-portal-shrine.js',
+    },
 ] as const satisfies readonly ProceduralLevelScriptFile[]
 
 export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] = [

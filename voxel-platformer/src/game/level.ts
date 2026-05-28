@@ -213,6 +213,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     //    push behaviour on the horizontal axis.
     const pistons: PistonMechanismConfig[] = [
         {
+            id: 'piston.elevator',
             from: { x: 8, y: groundY + 1, z: 21 },
             to: { x: 8, y: groundY + 3, z: 21 },
             block: BLOCK.plank,
@@ -220,6 +221,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             characterPolicy: 'push',
         },
         {
+            id: 'piston.trap',
             from: { x: 12, y: groundY + 1, z: 12 },
             to: { x: 13, y: groundY + 1, z: 12 },
             block: BLOCK.brick,
@@ -305,6 +307,20 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             },
         },
         {
+            // Paid portal shrine: spends one coin to temporarily open
+            // the Teleport Garden gate and its magic FX volume.
+            id: 'zone.demo.portal-shrine',
+            kind: 'interact',
+            label: 'Portal Shrine',
+            min: { x: 3.35, y: groundY + 1, z: 18.85 },
+            max: { x: 5.25, y: groundY + 3, z: 20.75 },
+            interaction: {
+                prompt: 'Pay 1 Coin',
+                anchor: { x: 4.3, y: groundY + 2.35, z: 19.8 },
+                radius: 2.35,
+            },
+        },
+        {
             // Hidden vault beneath the plaza. The trial activates this
             // when the player collects the fourth hour stone; entering
             // closes the trial out. Inactive by default so it doesn't
@@ -327,6 +343,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
                 targetLevelId: TELEPORT_GARDEN_LEVEL_ID,
                 targetArrivalId: TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
             },
+            active: false,
         },
         {
             id: DEMO_FROM_GARDEN_ARRIVAL_ID,
@@ -367,7 +384,18 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
                 lightningOn: false,
             },
         },
-        weatherZones: [],
+        weatherZones: [
+            {
+                id: 'fx.demo.portal.magic',
+                label: 'Portal Magic',
+                presetId: 'magic',
+                position: { x: 6, y: groundY + 2.2, z: 18 },
+                size: { x: 4.2, y: 4.8, z: 4.2 },
+                enabled: false,
+                addSound: true,
+                soundVolume: 0.45,
+            },
+        ],
         props: [
             {
                 id: 'demo:npc:keeper',
@@ -396,6 +424,16 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
                 position: { x: 14.5, y: groundY + 1, z: 9.5 },
                 yaw: Math.PI * 0.08,
                 scale: 1.35,
+                gridAligned: false,
+            },
+            {
+                // Beside the inactive travel gate; the paid-portal
+                // shrine script opens the gate for a short test window.
+                id: 'demo:portal-shrine',
+                kind: 'portal-shrine',
+                position: { x: 4.3, y: groundY + 1, z: 19.8 },
+                yaw: -Math.PI * 0.22,
+                scale: 1.25,
                 gridAligned: false,
             },
         ],

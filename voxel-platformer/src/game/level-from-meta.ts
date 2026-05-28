@@ -22,6 +22,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
     }))
 
     const pistons: PistonMechanismConfig[] = meta.pistons.map((p) => ({
+        id: p.id,
         from: { x: p.from.x, y: p.from.y, z: p.from.z },
         to: { x: p.to.x, y: p.to.y, z: p.to.z },
         block: p.block,
@@ -86,6 +87,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         presetId: z.presetId,
         position: { ...z.position },
         size: { ...z.size },
+        enabled: z.enabled !== false,
         addSound: z.addSound ?? true,
         soundId: z.soundId,
         soundVolume: clamp(z.soundVolume, 0, 1, 0.5),

@@ -10,6 +10,7 @@ import type {
     LogFacade,
     PickupSpawnOptions,
     PickupsFacade,
+    PistonsFacade,
     PlayerFacade,
     ScriptEntry,
     VoxelCoord,
@@ -123,6 +124,12 @@ function makeHarness(): Harness {
         despawn(id) { return livePickupIds.delete(id) },
         exists(id) { return livePickupIds.has(id) },
     }
+    const pistons: PistonsFacade = {
+        setEnabled() { return false },
+        isEnabled() { return false },
+        flip() { return false },
+        list() { return [] },
+    }
     const zone: ZoneFacade = {
         contains: () => false,
         exists: (id) => zoneActiveMap.has(id),
@@ -158,7 +165,7 @@ function makeHarness(): Harness {
     }
 
     const sys = createScriptEngineSystem({
-        audio, chunks, player, pickups, zone, log: logFacade,
+        audio, chunks, player, pickups, pistons, zone, log: logFacade,
         ui: {
             say(targetId, message, opts) {
                 popupMessages.push({ targetId, message, seconds: opts?.seconds })

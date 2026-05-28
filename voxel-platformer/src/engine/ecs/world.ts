@@ -45,6 +45,20 @@ export interface PopupMessage {
  * individual flips run a tick or two late because they were blocked.
  */
 export interface PistonMechanism {
+    /** Stable author id (`'piston.elevator'`, `'piston-3'`, ...). Optional —
+     *  pistons without an id are still simulated but are invisible to
+     *  scripts (no entry in `pistonsById`, `pistons.list()` skips them). */
+    id?: string
+    /** Runtime gate honoured by piston-system. `false` freezes the piston
+     *  in place: teleport pistons skip the next flip attempt; physical
+     *  pistons stop their motion update. Voxel + obstacle state stays
+     *  consistent because teleport writes are atomic via `applyBulk` and
+     *  physical pistons keep their AABB in the obstacle registry.
+     *  Session-only — not persisted in the level binary. */
+    enabled: boolean
+    /** Script-driven "fire on the next tick" request. Set by
+     *  `pistons.flip(id)`; the piston-system consumes it next update. */
+    pendingFlip: boolean
     from: VoxelCoord
     to: VoxelCoord
     /** Palette index placed at the currently-occupied cell. */
@@ -112,6 +126,10 @@ export interface GameContext {
     pickupEntityByScriptId: Map<string, number>
     /** Active piston mechanisms — voxel-toggling moving platforms. */
     pistons: PistonMechanism[]
+    /** Stable script id -> live piston. Populated by `registerPistonMechanism`
+     *  when the config carries `id`. Used by the `pistons.*` script bindings
+     *  for O(1) lookup. Pistons without an id never appear here. */
+    pistonsById: Map<string, PistonMechanism>
     /** Named AABB regions placed by the editor (or seeded by `level.ts`).
      *  Gameplay can query these via `isPointInZone` / `findZoneAtPoint`. */
     zones: Map<string, Zone>
@@ -197,6 +215,7 @@ export function createGameWorld(): GameWorld {
         pickupMetaByEid: new Map<number, PickupScriptMeta>(),
         pickupEntityByScriptId: new Map<string, number>(),
         pistons: [],
+        pistonsById: new Map<string, PistonMechanism>(),
         zones: new Map<string, Zone>(),
         zoneEvents: [],
         log: [],

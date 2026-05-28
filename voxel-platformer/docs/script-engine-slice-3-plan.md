@@ -529,11 +529,98 @@ Slice 3 is "done" when, in this order:
 
 ---
 
-## 5. Closeout (to be filled in after implementation)
+## 5. Closeout
 
-_This section is empty by design. Once Slice 3 ships, append:_
+The seven Slice 3 implementation steps from §4.2 all landed except the
+Lighthouse Vigil validation quest, which was deliberately deferred at
+the end of the slice — the binding surfaces had stabilised against the
+demo level and a third authored quest would have been overhead without
+a use case driving it. The closeout below tracks what shipped, what
+the bindings revealed, and what's deferred to Slice 4.
 
-- _Final binding shapes (link to commit)._
-- _What the Lighthouse Vigil exposed about the bindings._
-- _Anything the plan got wrong + why._
-- _What's deferred to Slice 4._
+### What landed
+
+1. **`//# sourceURL=` pragma** in `compile.ts` — devtools attach the
+   script name to runtime stack frames.
+2. **`level.spawn / size / name`** read-only getters
+   (`game/script-level-facade.ts`).
+3. **`pickups.despawn(id)` / `pickups.exists(id)`** — closes the
+   stable-id lifecycle started in Slice 1.5.
+4. **`player.setCheckpoint / clearCheckpoint` + restart-system hook**
+   — `world.lastCheckpoint` is persisted across the death-triggered
+   reload via a per-location session checkpoint store.
+5. **`weather.setZoneEnabled / setZonePreset / isZoneEnabled`** —
+   `VisualFxZoneController` keeps per-zone runtime configs, populates
+   the FX registry eagerly (using `setZoneActive` for cheap
+   on/off), and the system pre-compiles WebGPU pipelines at init via
+   `WeatherSystem.warmShaders(renderer.webgpu.compileAsync, camera)`
+   to avoid a half-second freeze on first activation.
+6. **Pistons with stable ids** — `PistonMechanism.id?`, `enabled`, and
+   `pendingFlip` fields wire `pistons.setEnabled / isEnabled / flip /
+   list`. Editor placement auto-generates `piston-N` ids;
+   `level.ts` names the demo elevator + trap (`piston.elevator`,
+   `piston.trap`). The id round-trips through every load path
+   (procedural ↔ editor ↔ `.vplevel` binary ↔ playtest).
+7. **Per-row parse-error banner in the Logic tab** — each script row
+   runs the same `parseCheck` the runtime uses and shows a red banner
+   when the source doesn't parse. Clears on edit. The runtime half
+   of the §3.6 status drawer (surfacing playtest runtime errors back
+   in the editor) is deferred — see "Deferred" below.
+
+### What the plan got right
+
+- **Bundling the small bindings** (Slice 3 §4.2 step ordering). The
+  cumulative diff was ≈ 800 LOC of production code + tests; trying
+  to split it into per-binding PRs would have been pointless friction.
+- **Eager pre-allocation of FX zones with `setZoneActive`** instead
+  of lazy add/remove. The user landed this ahead of the slice plan;
+  it made `weather.setZoneEnabled` work without any cost on the
+  toggle path. The follow-on `warmShaders` fix closed the
+  shader-compile freeze that the lazy path would have hidden.
+- **Treating the demo level as the validation suite for everything
+  except piston id round-trip.** The procedural demo exercises
+  `pickups.spawn/despawn`, `setCheckpoint`, FX zone toggling
+  (paid portal shrine), and now the named pistons. The Lighthouse
+  Vigil quest would have repeated coverage rather than adding it.
+
+### What the plan got wrong
+
+- **Underestimated the WebGPU shader-compile cost on first
+  activation.** Slice 3's design treated FX zone toggling as a pure
+  show/hide. In practice the first `setZoneActive(true)` on a
+  pre-allocated zone stalls the main thread for 100–500 ms while
+  WebGPU compiles the pipeline. Fixed by `warmShaders` in
+  `WeatherSystem` (called at FX system init), but worth flagging
+  for future scripted-FX features.
+- **Conflated the Logic-tab error reporter into a single
+  deliverable.** It's actually two surfaces: parse-time (editor-only,
+  immediate) and runtime (needs a playtest↔editor bridge). Only the
+  parse half shipped — see "Deferred" below.
+- **Assumed pistons had a string-id surface.** They didn't — pistons
+  were identified by `from` cell. The new `id?: string` lift required
+  threading the field through five files (world → mechanisms →
+  editor-state → save-load → level-from-meta + procedural-export);
+  see `script-engine-slice-3-pistons.md` for the round-trip notes.
+
+### Deferred (to Slice 4 or follow-up cleanup)
+
+- **Lighthouse Vigil validation quest.** Drafted in §4.1; never
+  authored. The next quest design should exercise the new bindings
+  end-to-end before the surfaces calcify.
+- **Per-row runtime-error display in the Logic tab.** Parse errors
+  show today; runtime errors during playtest still surface only in
+  the in-game debug overlay log + console. Bridging requires writing
+  `sys.broken` (or a slimmer error log) to sessionStorage from the
+  playtest tab and reading it from the editor tab on render.
+- **`ZoneScriptAction` legacy migration.** Still inert in production
+  levels; deprecation sweep when a future change makes it
+  load-bearing.
+- **Multi-bubble `ui.say` + `ui.clear`.** Still flagged from
+  Slice 1.5; still not hit by any authored quest.
+
+### Status table delta
+
+`docs/script-engine.md` §11 was updated in this commit to mark the
+six binding surfaces above as shipped, add the new sourceURL pragma +
+parse-banner rows, and move the Lighthouse Vigil + runtime-error
+bridge into the "what's still on the roadmap" list.

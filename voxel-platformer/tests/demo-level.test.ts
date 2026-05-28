@@ -40,7 +40,36 @@ test('demo level has a portal and safe return arrival for travel tests', () => {
         targetArrivalId: TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     })
     assert.equal(portal?.triggerSources?.includes('player'), true)
+    assert.equal(portal?.active, false, 'paid shrine script should open this gate temporarily')
     assert.equal(arrival?.kind, 'arrival')
+})
+
+test('demo pistons carry stable ids for script targeting', () => {
+    const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
+    const ids = meta.pistons.map((p) => p.id)
+    assert.deepEqual(ids.sort(), ['piston.elevator', 'piston.trap'])
+})
+
+test('demo level: id-bearing pistons round-trip through the editor → buffer → editor mapping', () => {
+    // Procedural level → editor meta → binary buffer → editor meta → runtime meta.
+    // The slice the dynamic location system exercises (and the playtest path
+    // in the editor) must preserve piston ids end-to-end so scripts can
+    // address them from any load path.
+    const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
+    const ids = meta.pistons.map((p) => p.id).filter(Boolean)
+    assert.ok(ids.length === 2, 'baseline: two id-bearing pistons in the demo')
+})
+
+test('demo level has a paid portal shrine and dormant magic gate FX', () => {
+    const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
+    const shrine = meta.zones.find((zone) => zone.id === 'zone.demo.portal-shrine')
+    const fx = meta.weatherZones.find((zone) => zone.id === 'fx.demo.portal.magic')
+
+    assert.equal(shrine?.kind, 'interact')
+    assert.equal(shrine?.interaction?.prompt, 'Pay 1 Coin')
+    assert.ok(meta.props.some((prop) => prop.id === 'demo:portal-shrine' && prop.kind === 'portal-shrine'))
+    assert.equal(fx?.presetId, 'magic')
+    assert.equal(fx?.enabled, false)
 })
 
 test('teleport garden returns to the demo arrival instead of the default spawn', () => {

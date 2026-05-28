@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { dialogueRequestKey } from '../src/game/dialogue-system'
+import { dialogueAvatarImageUrl, dialogueRequestKey } from '../src/game/dialogue-system'
 
 test('dialogueRequestKey prefers explicit request.id over npc.id', () => {
     assert.equal(
@@ -39,4 +39,20 @@ test('dialogueRequestKey treats whitespace-only ids as absent', () => {
         }),
         null,
     )
+})
+
+test('dialogueAvatarImageUrl resolves built-in avatar keys to replaceable public PNG assets', () => {
+    assert.equal(dialogueAvatarImageUrl('keeper'), '/avatars/keeper.png')
+    assert.equal(dialogueAvatarImageUrl('PLAYER'), '/avatars/player.png')
+})
+
+test('dialogueAvatarImageUrl accepts explicit image paths for custom portraits', () => {
+    assert.equal(dialogueAvatarImageUrl('/avatars/merchant.png'), '/avatars/merchant.png')
+    assert.equal(dialogueAvatarImageUrl('avatars/merchant.webp?v=2'), 'avatars/merchant.webp?v=2')
+    assert.equal(dialogueAvatarImageUrl('data:image/png;base64,AA=='), 'data:image/png;base64,AA==')
+})
+
+test('dialogueAvatarImageUrl keeps unknown author strings on the labelled fallback badge', () => {
+    assert.equal(dialogueAvatarImageUrl('merchant'), null)
+    assert.equal(dialogueAvatarImageUrl(''), null)
 })

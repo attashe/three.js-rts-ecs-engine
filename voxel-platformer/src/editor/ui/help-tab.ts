@@ -12,6 +12,7 @@ const HELP_GROUPS: readonly HelpGroup[] = [
             'WASD / arrows — pan',
             'Q / R — rotate 90°',
             'Wheel — zoom',
+            'Orbit view — LMB rotate, RMB pan, wheel zoom',
         ],
     },
     {
@@ -19,7 +20,7 @@ const HELP_GROUPS: readonly HelpGroup[] = [
         lines: [
             'Z / X — down / up by 1',
             'Shift + Z/X — down / up by 4',
-            'V — toggle iso / top-down view',
+            'V — cycle iso / top-down / orbit view',
             'L — toggle cursor-locks-to-plane',
         ],
     },

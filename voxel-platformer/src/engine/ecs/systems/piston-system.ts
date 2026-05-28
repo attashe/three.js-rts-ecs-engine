@@ -56,7 +56,8 @@ export function createPistonSystem(chunks: ChunkManager, opts: PistonSystemOptio
             const vacating = new Set<string>()
             for (const piston of world.pistons) {
                 if (piston.motion === 'physical') continue
-                if (simTime < piston.nextFlipAt) continue
+                if (!piston.enabled) continue
+                if (!piston.pendingFlip && simTime < piston.nextFlipAt) continue
                 const src = piston.occupied === 'from' ? piston.from : piston.to
                 vacating.add(cellKey(src.x, src.y, src.z))
             }
@@ -70,16 +71,43 @@ export function createPistonSystem(chunks: ChunkManager, opts: PistonSystemOptio
             const pushedThisTick = new Set<number>()
             for (const piston of world.pistons) {
                 if (piston.motion === 'physical') {
-                    const arrived = updatePhysicalPiston(chunks, world, piston, simTime, dt, pushedThisTick)
+                    // Disabled physical pistons freeze in place. Their
+                    // obstacle AABB stays in the registry from the last
+                    // update, so a rider standing on top keeps standing.
+                    if (!piston.enabled) {
+                        piston.pendingFlip = false
+                        continue
+                    }
+                    // pendingFlip is only consumed by an idle physical
+                    // piston. flip(id) on a moving piston is rejected at
+                    // the script-binding layer, so reaching this branch
+                    // with moving === 1 means the caller bypassed the
+                    // facade — drop the request rather than corrupt the
+                    // active interpolation.
+                    const forced = piston.pendingFlip && piston.moving === 0
+                    piston.pendingFlip = false
+                    const arrived = updatePhysicalPiston(chunks, world, piston, simTime, dt, pushedThisTick, forced)
                     if (arrived && onFlip) onFlip(piston, occupiedCellCentre(piston))
                     continue
                 }
-                if (simTime < piston.nextFlipAt) continue
+                if (!piston.enabled) {
+                    piston.pendingFlip = false
+                    continue
+                }
+                // Script-driven `pistons.flip(id)` short-circuits the
+                // timer for one tick. Consume the request whether the
+                // flip succeeds or not so a perpetually-blocked target
+                // doesn't latch a flip queued ages ago.
+                const forced = piston.pendingFlip
+                piston.pendingFlip = false
+                if (!forced && simTime < piston.nextFlipAt) continue
                 if (tryFlipPiston(chunks, world, piston, vacating)) {
                     // Monotonic schedule. += delay (not simTime+delay)
                     // is what keeps multiple pistons synced when one of
-                    // them flipped a tick or two late.
-                    piston.nextFlipAt += piston.delay
+                    // them flipped a tick or two late. Forced flips
+                    // reset the schedule relative to simTime so the
+                    // forced flip doesn't desync the next one.
+                    piston.nextFlipAt = forced ? simTime + piston.delay : piston.nextFlipAt + piston.delay
                     if (onFlip) onFlip(piston, occupiedCellCentre(piston))
                 }
                 // On blocked, leave nextFlipAt in the past — we'll retry
@@ -102,11 +130,12 @@ function updatePhysicalPiston(
     simTime: number,
     dt: number,
     pushedThisTick: Set<number>,
+    forcedFlip: boolean,
 ): boolean {
     if (piston.eid < 0) return false
     if (piston.moving === 0) {
         updatePhysicalPistonObstacle(world, chunks, piston)
-        if (simTime < piston.nextFlipAt) return false
+        if (!forcedFlip && simTime < piston.nextFlipAt) return false
         if (!tryStartPhysicalMove(chunks, world, piston, simTime)) return false
     }
 
@@ -296,6 +325,7 @@ function coMovingPhysicalPistonEids(
     for (const piston of world.pistons) {
         if (piston === active) continue
         if (piston.motion !== 'physical' || piston.eid < 0) continue
+        if (!piston.enabled) continue
         if (!isCollidable(chunks.palette, piston.block)) continue
         const otherDelta = physicalPistonDeltaForTick(chunks, world, piston, simTime, dt)
         if (!otherDelta) continue

@@ -14,7 +14,7 @@ const LOCKED_COLOUR = 0xffd166
 /**
  * Renders the working-plane grid and processes the editing hotkeys:
  *   - X / Z — raise / lower the working plane (Shift = ×4).
- *   - V — toggle iso ↔ top-down view.
+ *   - V — cycle iso → top-down → orbit camera view.
  *   - L — toggle the cursor-locks-to-plane flag.
  *
  * Mutates `editorState.workingPlaneY` / `viewMode` / `planeLock` and
@@ -40,7 +40,7 @@ export function createWorkingPlaneSystem(scene: Scene, input: Input, iso: Isomet
                 pushLog(world as GameWorld, `Working plane Y → ${editorState.workingPlaneY}`)
             }
             if (input.consumeKeyPressed('KeyV')) {
-                editorState.viewMode = editorState.viewMode === 'iso' ? 'top-down' : 'iso'
+                editorState.viewMode = nextViewMode(editorState.viewMode)
                 pushLog(world as GameWorld, `View → ${editorState.viewMode}`)
             }
             if (input.consumeKeyPressed('KeyL')) {
@@ -66,6 +66,14 @@ export function createWorkingPlaneSystem(scene: Scene, input: Input, iso: Isomet
             if (Array.isArray(mat)) for (const m of mat) m.dispose()
             else mat.dispose()
         },
+    }
+}
+
+function nextViewMode(mode: EditorState['viewMode']): EditorState['viewMode'] {
+    switch (mode) {
+        case 'iso': return 'top-down'
+        case 'top-down': return 'orbit'
+        case 'orbit': return 'iso'
     }
 }
 

@@ -8,6 +8,11 @@ import type { GameWorld, PistonMechanism, VoxelCoord } from '../engine/ecs/world
 import { sharedBoxGeometry, sharedMaterial } from './assets'
 
 export interface PistonMechanismConfig {
+    /** Stable author id (`'piston.elevator'`, `'piston-3'`, ...). Optional —
+     *  pistons without an id are simulated normally but cannot be addressed
+     *  from the `pistons.*` script bindings. `enabled` is a runtime/session
+     *  flag, not an authored field, so it has no entry here. */
+    id?: string
     from: VoxelCoord
     to: VoxelCoord
     /** Palette index of the moving block. */
@@ -50,6 +55,9 @@ export function registerPistonMechanism(
     const motion = config.motion ?? 'teleport'
     const travelTime = Math.max(0.05, config.travelTime ?? Math.min(delay * 0.6, delay))
     const piston: PistonMechanism = {
+        id: config.id,
+        enabled: true,
+        pendingFlip: false,
         from: { ...config.from },
         to: { ...config.to },
         block: config.block,
@@ -80,6 +88,7 @@ export function registerPistonMechanism(
         chunks.setVoxel(initialCell.x, initialCell.y, initialCell.z, piston.block)
     }
     world.pistons.push(piston)
+    if (piston.id) world.pistonsById.set(piston.id, piston)
     return piston
 }
 

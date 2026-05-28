@@ -70,6 +70,18 @@ export function createCameraControlSystem(
     return {
         order: RenderOrder.cameraControl,
         update(_world, dt) {
+            if (iso.getViewMode() === 'orbit') {
+                // OrbitControls owns camera mouse wheel / drag in this mode.
+                // Discard buffered step-rotate keys so Q/R pressed while
+                // orbiting do not fire later when returning to fixed views.
+                if (stepRotate) {
+                    actions.consumePressed(actionIds.rotateLeft)
+                    actions.consumePressed(actionIds.rotateRight)
+                }
+                input.consumeWheel()
+                return
+            }
+
             if (stepRotate) {
                 if (actions.consumePressed(actionIds.rotateLeft)) iso.rotateYaw(-Math.PI * 0.5)
                 if (actions.consumePressed(actionIds.rotateRight)) iso.rotateYaw(Math.PI * 0.5)

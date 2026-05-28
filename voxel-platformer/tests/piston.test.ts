@@ -609,6 +609,143 @@ test('PistonSystem: teleport cloud piston flips even when the player stands in t
     assert.equal(chunks.getVoxel(5, 1, 0), 0, 'source cell cleared')
 })
 
+test('registerPistonMechanism: stable id registers the piston into pistonsById', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const named = registerPistonMechanism(world, chunks, {
+        id: 'piston.example',
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 1,
+    })
+    const anon = registerPistonMechanism(world, chunks, {
+        from: { x: 10, y: 1, z: 0 },
+        to: { x: 10, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 1,
+    })
+    assert.strictEqual(world.pistonsById.get('piston.example'), named, 'id-bearing piston is indexed')
+    assert.equal(world.pistonsById.size, 1, 'pistons without an id stay out of the index')
+    assert.equal(anon.id, undefined)
+    assert.equal(named.enabled, true, 'pistons default to enabled')
+    assert.equal(named.pendingFlip, false)
+})
+
+test('PistonSystem: disabling a teleport piston freezes its cycle in place', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const piston = registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 6, y: 1, z: 0 },
+        block: BLOCK.brick,
+        delay: 1,
+        characterPolicy: 'block',
+    })
+
+    const system = createPistonSystem(chunks)
+    piston.enabled = false
+    system.update(world, 3)
+    assert.equal(chunks.getVoxel(6, 1, 0), BLOCK.air, 'disabled piston never extended')
+    assert.equal(chunks.getVoxel(5, 1, 0), BLOCK.brick, 'source cell still seeded')
+
+    piston.enabled = true
+    system.update(world, 1)
+    assert.equal(chunks.getVoxel(6, 1, 0), BLOCK.brick, 're-enabling resumes the cycle on the next tick')
+})
+
+test('PistonSystem: disabling a physical piston freezes the entity (rider keeps standing on it)', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const piston = registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 0,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const player = placePlayer(world, 5.5, 2, 0.5)
+    const system = createPistonSystem(chunks)
+
+    system.update(world, 0.25)
+    const frozenY = Position.y[piston.eid]
+    const playerY = Position.y[player]
+    assert.ok(frozenY > 1.2 && frozenY < 1.8, `piston should be mid-travel, got y=${frozenY}`)
+
+    piston.enabled = false
+    system.update(world, 0.5)
+    assert.equal(Position.y[piston.eid], frozenY, 'disabled physical piston entity does not advance')
+    // Player is the active rider — they sit on the obstacle AABB, which the
+    // last enabled tick already registered. Their feet stay at the same
+    // height since no other gravity-applying system ran this micro-test.
+    assert.equal(Position.y[player], playerY, 'rider position is not yanked by the disabled piston')
+})
+
+test('PistonsFacade.flip(id) on an idle teleport piston triggers a flip on the next tick', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const piston = registerPistonMechanism(world, chunks, {
+        id: 'piston.elevator',
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 5,
+    })
+    const system = createPistonSystem(chunks)
+    // Even though the authored delay is 5 s, a forced flip fires the next
+    // tick. Mark the request directly — script-system.ts is the layer
+    // that translates `pistons.flip(id)` into this mutation.
+    piston.pendingFlip = true
+    system.update(world, 0.05)
+    assert.equal(chunks.getVoxel(5, 3, 0), BLOCK.plank, 'forced flip happened despite the delay')
+    assert.equal(piston.pendingFlip, false, 'request consumed by the system')
+    // After a forced flip the schedule is reset relative to simTime, not
+    // its old +delay grid — verify a second flip still respects `delay`.
+    system.update(world, 1)
+    assert.equal(chunks.getVoxel(5, 3, 0), BLOCK.plank, 'second flip waits the authored delay')
+})
+
+test('PistonsFacade.flip(id) on an idle physical piston starts a motion on the next tick', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const piston = registerPistonMechanism(world, chunks, {
+        id: 'piston.elevator',
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 5,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+    })
+    const system = createPistonSystem(chunks)
+    piston.pendingFlip = true
+    system.update(world, 0.25)
+    assert.equal(piston.moving, 1, 'forced flip kicked off a physical motion')
+    assert.equal(piston.pendingFlip, false)
+})
+
+test('PistonSystem: a disabled piston with a queued flip drops the request when it stays disabled', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const piston = registerPistonMechanism(world, chunks, {
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 6, y: 1, z: 0 },
+        block: BLOCK.brick,
+        delay: 1,
+        characterPolicy: 'block',
+    })
+    piston.enabled = false
+    // Set the request directly (the script-system facade rejects this
+    // earlier — this test guards the system-level fallback).
+    piston.pendingFlip = true
+    createPistonSystem(chunks).update(world, 5)
+    assert.equal(piston.pendingFlip, false, 'queued flip is discarded while disabled')
+    assert.equal(chunks.getVoxel(6, 1, 0), BLOCK.air, 'no flip fired')
+})
+
 test('PistonSystem: physical piston with zero delay reverses continuously', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const world = createGameWorld()

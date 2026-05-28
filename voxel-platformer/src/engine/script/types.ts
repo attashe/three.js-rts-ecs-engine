@@ -108,6 +108,20 @@ export interface PickupsFacade {
     exists(id: string): boolean
 }
 
+export interface PistonsFacade {
+    /** Toggle the piston's runtime gate. Returns true on a successful
+     *  change, false when the id is unknown. No-op (still true) when the
+     *  current state already matches. */
+    setEnabled(id: string, enabled: boolean): boolean
+    isEnabled(id: string): boolean
+    /** Trigger a flip on the next fixed tick. Returns false for unknown
+     *  ids, disabled pistons, and physical pistons that are currently
+     *  mid-travel; true otherwise. */
+    flip(id: string): boolean
+    /** Enumerate every id-bearing piston. Order matches registration. */
+    list(): string[]
+}
+
 export interface ZoneFacade {
     contains(zoneId: string, who: 'player' | VoxelCoord): boolean
     exists(zoneId: string): boolean
@@ -214,6 +228,7 @@ export interface ScriptContext {
     chunks: ChunksApi
     audio: AudioApi
     pickups: PickupsApi
+    pistons: PistonsApi
     flags: FlagsApi
     time: TimeApi
     zone: ZoneApi
@@ -324,6 +339,20 @@ export interface PickupsApi {
     exists(id: string): boolean
 }
 
+export interface PistonsApi {
+    /** Toggle a level-authored piston's runtime gate. Returns true on a
+     *  successful change, false when the id is unknown to scripts. */
+    setEnabled(id: string, enabled: boolean): boolean
+    isEnabled(id: string): boolean
+    /** Request a flip on the next fixed tick. Returns false for unknown
+     *  ids, disabled pistons, and physical pistons mid-travel — the
+     *  authored cycle stays untouched in those cases. */
+    flip(id: string): boolean
+    /** Snapshot of every script-targetable piston id in the current
+     *  level. Pistons without an `id` are intentionally excluded. */
+    list(): string[]
+}
+
 export interface PickupSpawnOptions {
     amount?: number
     /** Stable author id. Re-spawning with the same id returns the existing
@@ -377,8 +406,9 @@ export interface DialogueSpeaker {
     /** Stable speaker id used by lines, e.g. `keeper`, `player`. */
     id?: string
     name: string
-    /** Built-in avatar key (`keeper`, `player`, `sundial`, `book`) or any
-     *  author string. Unknown strings render as a labelled portrait badge. */
+    /** Built-in PNG avatar key (`keeper`, `player`, `sundial`, `book`, `npc`),
+     *  an image path, or any author string. Unknown strings render as a
+     *  labelled portrait badge. */
     avatar?: string
     /** Visual side in the dialogue panel. Defaults to NPC left, player right. */
     side?: 'left' | 'right'

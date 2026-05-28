@@ -16,6 +16,9 @@ import type { EditorState } from '../editor-state'
  *     shipped to the material; active-layer cells in those XZ columns render
  *     faded so the editor still signals that upper geometry exists there.
  *
+ * Orbit mode leaves layer clipping disabled and lets the orbit-camera system
+ * drive the camera transform.
+ *
  * Rebuilds the cover mask whenever the working plane Y or any chunk's
  * version changes, so adding/removing hidden upper voxels updates the
  * faded-column signal immediately.

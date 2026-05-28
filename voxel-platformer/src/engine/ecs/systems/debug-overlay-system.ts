@@ -4,6 +4,8 @@ import {
     Group,
     LineBasicMaterial,
     LineSegments,
+    Vector3,
+    type Camera,
     type Scene,
 } from 'three'
 import { query } from 'bitecs'
@@ -12,6 +14,7 @@ import type { System } from './system'
 import { RenderOrder } from './orders'
 import type { Input } from '../../input/input'
 import { getDebugInfoEnabled, setDebugInfoEnabled, subscribeDebugInfo } from '../../render/render-settings'
+import { isTriggerZone, isZoneActive, type Zone } from '../zones'
 
 /** CSS positioning hints for the floating panels. Each accepts any subset of
  *  the standard offset properties (top / bottom / left / right) so callers
@@ -31,6 +34,12 @@ export interface DebugOverlayOptions {
     metricsPosition?: PanelPosition
     /** Where the always-on log panel docks. Default top-right. */
     logPosition?: PanelPosition
+    /** Camera used to project world-space debug labels to screen space. */
+    cameraProvider?: () => Camera
+    /** Viewport element for label projection. Defaults to the full window. */
+    renderElement?: HTMLElement
+    /** Show DOM labels at zone top centres when a camera is provided. */
+    zoneLabels?: boolean
 }
 
 interface BoxBatchState {
@@ -38,6 +47,8 @@ interface BoxBatchState {
     capacity: number
     count: number
 }
+
+interface ColoredBoxBatchState extends BoxBatchState {}
 
 /**
  * Minimal debug overlay for the platformer foundation:
@@ -56,7 +67,17 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     const root = new Group()
     root.name = 'DebugOverlay'
     const boxMaterial = new LineBasicMaterial({ color: 0x9cff57 })
+    const zoneMaterial = new LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+    })
     const boxBatch = createBoxBatch(boxMaterial)
+    const zoneBatch = createColoredBoxBatch(zoneMaterial)
+    const zoneLabels = new Map<string, HTMLDivElement>()
+    const labelWorldPos = new Vector3()
     let metricsPanel: HTMLDivElement | null = null
     let logPanel: HTMLDivElement | null = null
     let accumulator = 0
@@ -67,6 +88,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         root.visible = enabled
         if (metricsPanel) metricsPanel.style.display = enabled ? 'block' : 'none'
         if (logPanel) logPanel.style.display = enabled ? 'block' : 'none'
+        for (const label of zoneLabels.values()) label.style.display = enabled ? 'block' : 'none'
     }
 
     return {
@@ -74,6 +96,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         init() {
             scene.add(root)
             root.add(boxBatch.lines)
+            root.add(zoneBatch.lines)
 
             metricsPanel = makePanel('voxel-platformer-debug', opts.metricsPosition ?? { top: '8px', left: '8px' })
             document.body.appendChild(metricsPanel)
@@ -94,6 +117,8 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             if (enabled) {
                 const eids = query(world, [Position, BoxCollider])
                 updateBoxes(boxBatch, eids)
+                updateZoneBoxes(zoneBatch, world.zones.values())
+                updateZoneLabels(zoneLabels, world.zones.values(), opts, labelWorldPos)
             }
 
             accumulator += dt
@@ -118,7 +143,11 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         dispose() {
             scene.remove(root)
             boxBatch.lines.geometry.dispose()
+            zoneBatch.lines.geometry.dispose()
             boxMaterial.dispose()
+            zoneMaterial.dispose()
+            for (const label of zoneLabels.values()) label.remove()
+            zoneLabels.clear()
             metricsPanel?.remove()
             logPanel?.remove()
             unsubscribeDebug?.()
@@ -152,12 +181,97 @@ function renderLog(panel: HTMLDivElement | null, log: readonly string[]): void {
     panel.textContent = log.slice(-8).join('\n')
 }
 
+function updateZoneLabels(
+    labels: Map<string, HTMLDivElement>,
+    zonesIterable: Iterable<Zone>,
+    opts: DebugOverlayOptions,
+    tmp: Vector3,
+): void {
+    if (opts.zoneLabels === false || !opts.cameraProvider) {
+        for (const label of labels.values()) label.style.display = 'none'
+        return
+    }
+
+    const zones = Array.from(zonesIterable)
+    const liveIds = new Set(zones.map((zone) => zone.id))
+    for (const [id, label] of labels) {
+        if (liveIds.has(id)) continue
+        label.remove()
+        labels.delete(id)
+    }
+
+    const camera = opts.cameraProvider()
+    const rect = opts.renderElement?.getBoundingClientRect() ?? {
+        left: 0,
+        top: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+    }
+
+    for (const zone of zones) {
+        const label = labels.get(zone.id) ?? createZoneLabel(zone)
+        if (!labels.has(zone.id)) {
+            labels.set(zone.id, label)
+            document.body.appendChild(label)
+        }
+        const text = zone.label || zone.id
+        if (label.textContent !== text) label.textContent = text
+        const [r, g, b] = zoneDebugColor(zone)
+        label.style.borderColor = `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, 0.72)`
+        label.style.color = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`
+
+        tmp.set(
+            (zone.min.x + zone.max.x) * 0.5,
+            zone.max.y + 0.12,
+            (zone.min.z + zone.max.z) * 0.5,
+        )
+        tmp.project(camera)
+        const visible = tmp.z >= -1 && tmp.z <= 1
+        label.style.display = visible ? 'block' : 'none'
+        if (!visible) continue
+        label.style.left = `${rect.left + (tmp.x * 0.5 + 0.5) * rect.width}px`
+        label.style.top = `${rect.top + (-tmp.y * 0.5 + 0.5) * rect.height}px`
+    }
+}
+
+function createZoneLabel(zone: Zone): HTMLDivElement {
+    const label = document.createElement('div')
+    label.className = 'voxel-platformer-zone-label'
+    label.textContent = zone.label || zone.id
+    Object.assign(label.style, {
+        position: 'fixed',
+        transform: 'translate(-50%, -100%)',
+        zIndex: '1001',
+        padding: '2px 5px',
+        border: '1px solid rgba(255,255,255,0.65)',
+        borderRadius: '3px',
+        background: 'rgba(8, 12, 16, 0.72)',
+        font: '10px ui-monospace, monospace',
+        lineHeight: '1.2',
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        textShadow: '0 1px 2px rgba(0,0,0,0.85)',
+    } as Partial<CSSStyleDeclaration>)
+    return label
+}
+
 function createBoxBatch(material: LineBasicMaterial): BoxBatchState {
     const geometry = new BufferGeometry()
     geometry.setAttribute('position', new Float32BufferAttribute(0, 3))
     const lines = new LineSegments(geometry, material)
     lines.name = 'DebugBoxBatch'
     lines.frustumCulled = false
+    return { lines, capacity: 0, count: 0 }
+}
+
+function createColoredBoxBatch(material: LineBasicMaterial): ColoredBoxBatchState {
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(0, 3))
+    geometry.setAttribute('color', new Float32BufferAttribute(0, 3))
+    const lines = new LineSegments(geometry, material)
+    lines.name = 'DebugZoneBatch'
+    lines.frustumCulled = false
+    lines.renderOrder = 1000
     return { lines, capacity: 0, count: 0 }
 }
 
@@ -170,9 +284,36 @@ function updateBoxes(batch: BoxBatchState, eids: ArrayLike<number>): void {
     if (!attribute) return
     const coords = attribute.array as Float32Array
     for (let i = 0; i < count; i++) {
-        writeBox(coords, i * 72, eids[i]!)
+        writeEntityBox(coords, i * 72, eids[i]!)
     }
     attribute.needsUpdate = true
+}
+
+function updateZoneBoxes(batch: ColoredBoxBatchState, zonesIterable: Iterable<Zone>): void {
+    const zones = Array.from(zonesIterable)
+    const count = zones.length
+    ensureColoredBoxCapacity(batch, count)
+    batch.count = count
+    batch.lines.geometry.setDrawRange(0, count * 24)
+    const position = batch.lines.geometry.getAttribute('position') as Float32BufferAttribute | undefined
+    const color = batch.lines.geometry.getAttribute('color') as Float32BufferAttribute | undefined
+    if (!position || !color) return
+    const coords = position.array as Float32Array
+    const colors = color.array as Float32Array
+    for (let i = 0; i < count; i++) {
+        const zone = zones[i]!
+        const offset = i * 72
+        writeBoxEdges(
+            coords,
+            offset,
+            zone.min.x, zone.min.y, zone.min.z,
+            zone.max.x, zone.max.y, zone.max.z,
+        )
+        const [r, g, b] = zoneDebugColor(zone)
+        writeBoxColor(colors, offset, r, g, b)
+    }
+    position.needsUpdate = true
+    color.needsUpdate = true
 }
 
 function ensureBoxCapacity(batch: BoxBatchState, count: number): void {
@@ -185,7 +326,18 @@ function ensureBoxCapacity(batch: BoxBatchState, count: number): void {
     batch.capacity = capacity
 }
 
-function writeBox(coords: Float32Array, offset: number, eid: number): void {
+function ensureColoredBoxCapacity(batch: ColoredBoxBatchState, count: number): void {
+    if (count <= batch.capacity) return
+    let capacity = Math.max(8, batch.capacity)
+    while (capacity < count) capacity *= 2
+    batch.lines.geometry.dispose()
+    batch.lines.geometry = new BufferGeometry()
+    batch.lines.geometry.setAttribute('position', new Float32BufferAttribute(capacity * 72, 3))
+    batch.lines.geometry.setAttribute('color', new Float32BufferAttribute(capacity * 72, 3))
+    batch.capacity = capacity
+}
+
+function writeEntityBox(coords: Float32Array, offset: number, eid: number): void {
     const minX = Position.x[eid] - BoxCollider.x[eid]
     const minY = Position.y[eid]
     const minZ = Position.z[eid] - BoxCollider.z[eid]
@@ -193,6 +345,15 @@ function writeBox(coords: Float32Array, offset: number, eid: number): void {
     const maxY = Position.y[eid] + BoxCollider.y[eid] * 2
     const maxZ = Position.z[eid] + BoxCollider.z[eid]
 
+    writeBoxEdges(coords, offset, minX, minY, minZ, maxX, maxY, maxZ)
+}
+
+function writeBoxEdges(
+    coords: Float32Array,
+    offset: number,
+    minX: number, minY: number, minZ: number,
+    maxX: number, maxY: number, maxZ: number,
+): void {
     writeEdge(coords, offset + 0,  minX, minY, minZ,  maxX, minY, minZ)
     writeEdge(coords, offset + 6,  maxX, minY, minZ,  maxX, minY, maxZ)
     writeEdge(coords, offset + 12, maxX, minY, maxZ,  minX, minY, maxZ)
@@ -205,6 +366,25 @@ function writeBox(coords: Float32Array, offset: number, eid: number): void {
     writeEdge(coords, offset + 54, maxX, minY, minZ,  maxX, maxY, minZ)
     writeEdge(coords, offset + 60, maxX, minY, maxZ,  maxX, maxY, maxZ)
     writeEdge(coords, offset + 66, minX, minY, maxZ,  minX, maxY, maxZ)
+}
+
+function writeBoxColor(colors: Float32Array, offset: number, r: number, g: number, b: number): void {
+    for (let i = 0; i < 24; i++) {
+        const j = offset + i * 3
+        colors[j + 0] = r
+        colors[j + 1] = g
+        colors[j + 2] = b
+    }
+}
+
+function zoneDebugColor(zone: Zone): readonly [number, number, number] {
+    if (!isZoneActive(zone)) return [0.44, 0.44, 0.48]
+    if (zone.kind === 'arrival') return [0.35, 1.0, 0.62]
+    if (zone.kind === 'interact' || zone.interaction) return [1.0, 0.82, 0.28]
+    if (zone.kind === 'killzone') return [1.0, 0.24, 0.24]
+    if (zone.kind === 'portal' || zone.portal) return [0.55, 0.62, 1.0]
+    if (isTriggerZone(zone)) return [0.0, 0.88, 1.0]
+    return [1.0, 0.4, 0.8]
 }
 
 function writeEdge(
