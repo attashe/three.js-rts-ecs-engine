@@ -1,9 +1,11 @@
-import { copyScriptEntry, copyZoneScriptAction, type EditorLevelMeta } from '../editor/editor-state'
+import { copyScriptEntry, copyStoneSpawner, copyZoneScriptAction, type EditorLevelMeta } from '../editor/editor-state'
 import type { Zone } from '../engine/ecs/zones'
 import type { LevelMeta, CoinPileSpawn } from './level'
 import type { PistonMechanismConfig } from './mechanisms'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
+import { normalizeNpcConfig } from './npcs/npc-types'
+import { normalizePlayerSettings } from './player-settings'
 
 /**
  * Translate an editor-authored level (`EditorLevelMeta` + already-deserialized
@@ -41,6 +43,16 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         script: z.script ? {
             actions: z.script.actions.map(copyZoneScriptAction),
         } : undefined,
+        portal: z.portal ? {
+            targetLevelId: z.portal.targetLevelId,
+            targetArrivalId: z.portal.targetArrivalId,
+        } : undefined,
+        interaction: z.interaction ? {
+            prompt: z.interaction.prompt,
+            anchor: z.interaction.anchor ? { ...z.interaction.anchor } : undefined,
+            radius: z.interaction.radius,
+        } : undefined,
+        active: z.active,
     }))
 
     const soundSources: SoundSourceConfig[] = (meta.soundSources ?? []).map((s) => ({
@@ -95,9 +107,16 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         gridAligned: p.gridAligned,
     }))
 
+    const npcs = (meta.npcs ?? []).map((npc) => normalizeNpcConfig({
+        ...npc,
+        position: { ...npc.position },
+    }))
+
     return {
+        name: meta.name?.trim() || 'untitled',
         spawn: { x: meta.spawn.x, y: meta.spawn.y, z: meta.spawn.z },
-        stoneSpawners: [],
+        player: normalizePlayerSettings(meta.player),
+        stoneSpawners: (meta.stoneSpawners ?? []).map(copyStoneSpawner),
         coinPiles,
         pistons,
         zones,
@@ -106,6 +125,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         environment,
         weatherZones,
         props,
+        npcs,
         scripts: (meta.scripts ?? []).map(copyScriptEntry),
         ambientWeather,
         size: fallbackSize,

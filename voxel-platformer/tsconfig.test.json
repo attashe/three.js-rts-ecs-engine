@@ -1,4 +1,17 @@
 {
+  // Curated test-compilation config. `npm test` emits CommonJS into
+  // `.tmp/test-build` and runs it under `node --test`. Most `src/**`
+  // files cannot be compiled here because they pull in `three/webgpu`
+  // / `three/tsl` (need bundler-style moduleResolution) or assume DOM
+  // globals.
+  //
+  // Adding a new test file: if its imports stay inside this list (or
+  // are reachable from it), it just works. If `npm test` fails with
+  // `Cannot find module 'three/webgpu' / 'three/tsl'`, the new test
+  // is reaching a file that isn't safe to compile under node-resolve;
+  // extract the logic into a leaner module (see
+  // `src/game/script-level-facade.ts` for the pattern) or, if a real
+  // src/** file is needed, add it explicitly to the include list below.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "CommonJS",

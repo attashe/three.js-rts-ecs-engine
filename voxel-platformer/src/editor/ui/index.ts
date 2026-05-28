@@ -7,9 +7,11 @@ import { createTabBar } from './tabs'
 import { buildEditTab } from './edit-tab'
 import { buildLevelTab } from './level-tab'
 import { buildHelpTab } from './help-tab'
+import { buildPlayerTab } from './player-tab'
 import { buildSoundTab } from './sound-tab'
 import { buildWeatherTab } from './weather-tab'
 import { buildPropsTab } from './props-tab'
+import { buildNpcTab } from './npc-tab'
 import { buildLogicTab } from './logic-tab'
 
 export interface MountEditorPanelOptions {
@@ -45,9 +47,11 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
 
     const bar = createTabBar([
         { id: 'edit', label: 'Edit', build: () => buildEditTab(opts) },
+        { id: 'player', label: 'Player', build: () => buildPlayerTab(opts) },
         { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
         { id: 'weather', label: 'Visual FX', build: () => buildWeatherTab(opts) },
         { id: 'props', label: 'Props', build: () => buildPropsTab(opts) },
+        { id: 'npcs', label: 'NPCs', build: () => buildNpcTab(opts) },
         { id: 'logic', label: 'Logic', build: () => buildLogicTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
         { id: 'help', label: 'Help', build: () => buildHelpTab() },

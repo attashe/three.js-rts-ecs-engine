@@ -60,26 +60,65 @@ on('level-start', () => {
 
 // Talking to the Sundial. Different lines per quest state — the
 // state machine is the dialogue tree.
-on('input', { action: 'interact', targetId: SUNDIAL_ZONE }, () => {
+on('input', { action: 'interact', targetId: SUNDIAL_ZONE }, () => handleSundialInteraction())
+
+async function handleSundialInteraction() {
     const s = state()
     if (s === 'unknown') {
-        flags.set(STATE, 'active')
-        ensureStonesSpawned()
-        sundialSays('I have lost the four hours. Find the stones and bring them back to me.')
-        audio.play('sfx.quest.chime')
+        const intro = await sundialDialogue([
+            { speaker: 'sundial', text: 'I am the Floating Sundial. My trial shows how scripts can reshape this level while you play.' },
+            {
+                speaker: 'sundial',
+                text: 'Four Hour Stones will appear around the plaza. Each one changes the sun, weather, and trial state.',
+                choices: [
+                    { id: 'start', text: 'Start the Lantern Trial.' },
+                    { id: 'explain', text: 'What happens after that?' },
+                ],
+            },
+        ])
+        if (intro.choiceId === 'explain') {
+            await sundialDialogue([
+                { speaker: 'sundial', text: 'When all four stones return, I open the Plaza Vault near the west wall.' },
+                {
+                    speaker: 'sundial',
+                    text: 'Step into the vault to claim the reward. The script will then clear the storm and resume the day cycle.',
+                    choices: [{ id: 'start', text: 'Start the trial.' }],
+                },
+            ])
+        }
+        startTrial()
         return
     }
     if (s === 'active') {
         const missing = remainingStones()
-        sundialSays(`${missing.length} stone(s) still hidden: ${missing.map((m) => m.name).join(', ')}.`)
+        await sundialDialogue([{
+            speaker: 'sundial',
+            text: `${missing.length} Hour Stone(s) still hidden: ${missing.map((m) => m.name).join(', ')}. Watch the sky when each one is collected.`,
+            choices: [{ id: 'leave', text: 'I will keep looking.' }],
+        }])
         return
     }
     if (s === 'ready') {
-        sundialSays('The vault opened beneath the plaza. Walk in and take your due.')
+        await sundialDialogue([{
+            speaker: 'sundial',
+            text: 'The Plaza Vault is open near the west wall, between the old bricks and the lantern plaza. Walk into it to finish the trial.',
+            choices: [{ id: 'leave', text: 'I will enter the vault.' }],
+        }])
         return
     }
-    sundialSays('The hours stay true. Walk gently.')
-})
+    await sundialDialogue([{
+        speaker: 'sundial',
+        text: 'The hours stay true. The day cycle is moving again.',
+        choices: [{ id: 'leave', text: 'Good.' }],
+    }])
+}
+
+function startTrial() {
+    flags.set(STATE, 'active')
+    ensureStonesSpawned()
+    sundialSays('Lantern Trial started: collect the four Hour Stones at the plaza corners.', 5)
+    audio.play('sfx.quest.chime')
+}
 
 // Each stone pickup shifts the sky to its hour and applies its weather
 // preset. The day cycle is paused so the player can look at the
@@ -113,8 +152,8 @@ on('pickup-taken', { kind: 'hour-stone' }, (event) => {
         weather.applyPreset('storm')
         weather.setRain(true)
         weather.setLightning(true)
-        sundialSays('The vault opens.', 5)
-        log('Beneath the plaza, stone parts. A vault stands open.')
+        sundialSays('The Plaza Vault opens near the west wall.', 5)
+        log('Beneath the west plaza, stone parts. The Plaza Vault stands open.')
         zone.setActive(VAULT_ZONE, true)
     }
 })
@@ -156,6 +195,19 @@ on('flag.changed', { name: STATE }, (e) => {
 function sundialSays(message, seconds = 4.0) {
     ui.say(SUNDIAL_ZONE, message, { seconds })
     log(`Sundial: ${message}`)
+}
+
+async function sundialDialogue(lines) {
+    for (const line of lines) {
+        if ((line.speaker ?? 'sundial') === 'player') continue
+        log(`Sundial: ${line.text}`)
+    }
+    return ui.dialogue({
+        title: 'The Lantern Trial',
+        npc: { id: 'sundial', name: 'Floating Sundial', avatar: 'sundial', side: 'left' },
+        player: { id: 'player', name: 'You', avatar: 'player', side: 'right' },
+        lines,
+    })
 }
 
 function ensureStonesSpawned() {

@@ -52,7 +52,9 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
             now += dt
             consumePopupMessages(world)
             const player = playerInfo(world)
-            const active = player ? nearestInteractionTarget(world, player) : null
+            const active = player && world.playerSettings.abilities.interact
+                ? nearestInteractionTarget(world, player)
+                : null
             if (player && active && opts.actions.consumePressed(GameAction.Interact, active.zone.id)) {
                 pushScriptTriggerEvent(world, {
                     kind: 'input',

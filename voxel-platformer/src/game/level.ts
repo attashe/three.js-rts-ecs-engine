@@ -4,8 +4,10 @@ import type { Zone } from '../engine/ecs/zones'
 import type { PistonMechanismConfig } from './mechanisms'
 import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
-import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
+import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL, type AmbientWeatherRuntimeConfig, type WeatherZoneRuntimeConfig } from './weather-config'
 import type { EditorProp } from './props/prop-types'
+import type { NpcConfig } from './npcs/npc-types'
+import { DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from './player-settings'
 import type { ScriptEntry } from '../engine/script/types'
 
 export interface CoinPileSpawn {
@@ -14,8 +16,14 @@ export interface CoinPileSpawn {
 }
 
 export interface LevelMeta {
+    /** Editor-authored level name, or `'demo'` for the procedural fallback.
+     *  Surfaced to scripts via the `level.name` binding. */
+    name: string
     /** World-space spawn position (X, Y, Z). Y is standing height (one above topmost solid). */
     spawn: { x: number; y: number; z: number }
+    /** Player defaults applied when this location starts. Scripts may mutate
+     *  the live copy during play. */
+    player: PlayerSettings
     /** Falling-stone emitter configs. */
     stoneSpawners: StoneFallSpawnerConfig[]
     /** Coin pile placements — pickup-system grants gold on contact. */
@@ -37,6 +45,9 @@ export interface LevelMeta {
      *  bushes, tables, ...). Rendered via `createPropRenderSystem`
      *  in `client.ts`. */
     props: EditorProp[]
+    /** Static NPCs authored in the editor. Runtime registers their
+     *  visuals, interaction zones, collisions, and per-NPC scripts. */
+    npcs: NpcConfig[]
     /** Plain JavaScript scripts run by the script engine. */
     scripts: ScriptEntry[]
     /** Level-wide visual environment snapshot (sky/fog/sun/drifting
@@ -246,9 +257,25 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             min: { x: 7.6, y: groundY + 4, z: 20.6 },
             max: { x: 9.2, y: groundY + 6, z: 22.0 },
             interaction: {
-                prompt: 'Examine',
+                prompt: 'Read Sundial',
                 anchor: { x: 8.5, y: groundY + 4.8, z: 21.3 },
                 radius: 2.4,
+            },
+        },
+        {
+            // Standalone script-system test object. Interacting with
+            // the shrine temporarily patches `player.moveSpeed` via
+            // examples/scripts/haste-shrine.js, then restores it after
+            // ten seconds.
+            id: 'zone.demo.haste-shrine',
+            kind: 'interact',
+            label: 'Shrine of Haste',
+            min: { x: 13.25, y: groundY + 1, z: 8.25 },
+            max: { x: 15.75, y: groundY + 3, z: 10.75 },
+            interaction: {
+                prompt: 'Invoke Haste',
+                anchor: { x: 14.5, y: groundY + 2.35, z: 9.5 },
+                radius: 2.55,
             },
         },
         {
@@ -266,7 +293,9 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     ]
 
     return {
+        name: 'demo',
         spawn: { x: size / 2, y: groundY + 1, z: size / 2 },
+        player: DEFAULT_PLAYER_SETTINGS,
         stoneSpawners,
         coinPiles,
         pistons,
@@ -277,6 +306,22 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         // authored levels start with `environment: undefined` and the
         // user picks (or clears) the track from the Sound tab.
         environment: { soundId: 'music.background', volume: 0.36 },
+        ambientWeather: {
+            presetId: 'clear',
+            state: {
+                mode: 'outdoor',
+                timeOfDay: 8.0,
+                cycleEnabled: true,
+                cycleSeconds: 420,
+                skyTint: [1, 1, 1],
+                sunIntensityMul: 1,
+                fogDensityMul: DEFAULT_OUTDOOR_FOG_DENSITY_MUL,
+                cloudCoverage: 0.12,
+                rainOn: false,
+                snowOn: false,
+                lightningOn: false,
+            },
+        },
         weatherZones: [],
         props: [
             {
@@ -298,7 +343,18 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
                 scale: 1.4,
                 gridAligned: false,
             },
+            {
+                // Near the spawn plaza so the player can immediately
+                // test script-driven player parameter changes.
+                id: 'demo:haste-shrine',
+                kind: 'haste-shrine',
+                position: { x: 14.5, y: groundY + 1, z: 9.5 },
+                yaw: Math.PI * 0.08,
+                scale: 1.35,
+                gridAligned: false,
+            },
         ],
+        npcs: [],
         scripts: [],
         size,
     }

@@ -21,6 +21,7 @@ import {
     pushScriptTriggerEvent,
     type GameWorld,
 } from '../src/engine/ecs/world'
+import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from '../src/game/player-settings'
 
 /**
  * End-to-end test for the Lantern Trial side quest, loaded verbatim
@@ -60,6 +61,7 @@ interface Harness {
     audioPlays: string[]
     pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[]
     popupMessages: { targetId: string; message: string; seconds?: number }[]
+    dialogueRequests: unknown[]
     dayCycleCalls: DayCycleCall[]
     weatherCalls: WeatherCall[]
     zoneToggleCalls: ZoneToggleCall[]
@@ -75,6 +77,7 @@ function makeHarness(): Harness {
     const audioPlays: string[] = []
     const pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[] = []
     const popupMessages: { targetId: string; message: string; seconds?: number }[] = []
+    const dialogueRequests: unknown[] = []
     const dayCycleCalls: DayCycleCall[] = []
     const weatherCalls: WeatherCall[] = []
     const zoneToggleCalls: ZoneToggleCall[] = []
@@ -96,8 +99,17 @@ function makeHarness(): Harness {
     const player: PlayerFacade = {
         getPosition: () => ({ x: 12, y: 5, z: 12 }),
         getGold: () => 0,
+        getArrows: () => 0,
+        getSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setAbility() {},
+        setGold() {},
+        setArrows() {},
         teleport() {},
         kill() {},
+        getCheckpoint: () => null,
+        setCheckpoint() {},
+        clearCheckpoint() {},
     }
     const pickups: PickupsFacade = {
         spawn(kind, pos, opts) {
@@ -108,6 +120,8 @@ function makeHarness(): Harness {
             if (opts?.id) livePickupIds.add(opts.id)
             return opts?.id ?? `id-${kind}-${pickupSpawns.length}`
         },
+        despawn(id) { return livePickupIds.delete(id) },
+        exists(id) { return livePickupIds.has(id) },
     }
     const zone: ZoneFacade = {
         contains: () => false,
@@ -140,6 +154,7 @@ function makeHarness(): Harness {
         },
         setZoneEnabled() { return false },
         isZoneEnabled() { return false },
+        setZonePreset() { return false },
     }
 
     const sys = createScriptEngineSystem({
@@ -147,6 +162,16 @@ function makeHarness(): Harness {
         ui: {
             say(targetId, message, opts) {
                 popupMessages.push({ targetId, message, seconds: opts?.seconds })
+            },
+            async dialogue(request) {
+                dialogueRequests.push(request)
+                const choices = request.lines.find((line) => line.choices && line.choices.length > 0)?.choices ?? []
+                const firstEnabled = choices.findIndex((choice) => !choice.disabled)
+                const index = firstEnabled >= 0 ? firstEnabled : 0
+                const choice = choices[index]
+                return choice
+                    ? { choiceId: choice.id, choiceIndex: index, text: choice.text }
+                    : {}
             },
         },
         dayCycle,
@@ -168,6 +193,7 @@ function makeHarness(): Harness {
         audioPlays,
         pickupSpawns,
         popupMessages,
+        dialogueRequests,
         dayCycleCalls,
         weatherCalls,
         zoneToggleCalls,
@@ -248,7 +274,10 @@ test('lantern trial: interacting with the Sundial starts the trial + spawns four
     assert.deepEqual(h.pickupSpawns.map((p) => p.opts?.id), [...STONE_IDS])
     assert.ok(h.pickupSpawns.every((p) => p.kind === 'hour-stone'))
     assert.ok(h.audioPlays.includes('sfx.quest.chime'))
-    assert.ok(h.popupMessages.some((m) => m.targetId === SUNDIAL_ZONE && m.message.includes('four hours')))
+    assert.ok(h.popupMessages.some((m) => m.targetId === SUNDIAL_ZONE && m.message.includes('four Hour Stones')))
+    assert.ok(h.dialogueRequests.some((request) =>
+        JSON.stringify(request).includes('scripts can reshape this level'),
+    ))
 })
 
 test('lantern trial: picking up a stone shifts dayCycle + weather and pauses the cycle', async () => {

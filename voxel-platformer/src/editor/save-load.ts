@@ -1,7 +1,9 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { deserializeLevel, serializeLevel } from '../engine/voxel/level-serializer'
-import { copyScriptEntry, copyZoneScriptAction, DEFAULT_AMBIENT_WEATHER, type EditorState, type EditorLevelMeta } from './editor-state'
+import { copyScriptEntry, copyStoneSpawner, copyZoneScriptAction, DEFAULT_AMBIENT_WEATHER, type EditorState, type EditorLevelMeta } from './editor-state'
+import { normalizeNpcConfig } from '../game/npcs/npc-types'
+import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../game/player-settings'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
 import { toLevelMeta } from './editor-state'
 import { despawnEntity } from '../engine/ecs/entity'
@@ -45,6 +47,7 @@ export function newLevel(
     }
 
     editorState.spawn = { x: w / 2, y: padY + 1, z: d / 2 }
+    editorState.player = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
     editorState.workingPlaneY = padY
     editorState.activeBlock = BLOCK.grass
 }
@@ -84,7 +87,10 @@ function clearWorldAndEditorState(
     editorState.selectedWeatherZoneId = null
     editorState.props = []
     editorState.selectedPropId = null
+    editorState.npcs = []
+    editorState.selectedNpcId = null
     editorState.scripts = []
+    editorState.stoneSpawners = []
     // Leave ambientWeather alone — it's level-wide state the user
     // explicitly authored. A fresh "new level" call will overwrite it
     // via createEditorState anyway.
@@ -183,6 +189,8 @@ export function loadLevelFromBuffer(
 
     if (loaded.metadata) {
         editorState.spawn = { ...loaded.metadata.spawn }
+        editorState.player = normalizePlayerSettings(loaded.metadata.player)
+        editorState.stoneSpawners = (loaded.metadata.stoneSpawners ?? []).map(copyStoneSpawner)
         for (const p of loaded.metadata.pickups ?? []) {
             const eid = spawnPickupPreview(world, p.kind, p.position)
             editorState.pickups.push({ ...p, position: { ...p.position }, eid })
@@ -218,6 +226,16 @@ export function loadLevelFromBuffer(
                 script: z.script ? {
                     actions: z.script.actions.map(copyZoneScriptAction),
                 } : undefined,
+                portal: z.portal ? {
+                    targetLevelId: z.portal.targetLevelId,
+                    targetArrivalId: z.portal.targetArrivalId,
+                } : undefined,
+                interaction: z.interaction ? {
+                    prompt: z.interaction.prompt,
+                    anchor: z.interaction.anchor ? { ...z.interaction.anchor } : undefined,
+                    radius: z.interaction.radius,
+                } : undefined,
+                active: z.active,
             })
         }
         for (const s of loaded.metadata.soundSources ?? []) {
@@ -252,6 +270,12 @@ export function loadLevelFromBuffer(
                 scale: Number.isFinite(p.scale) && p.scale > 0 ? p.scale : 1,
                 gridAligned: p.gridAligned ?? true,
             })
+        }
+        for (const npc of loaded.metadata.npcs ?? []) {
+            editorState.npcs.push(normalizeNpcConfig({
+                ...npc,
+                position: { ...npc.position },
+            }))
         }
         editorState.scripts = (loaded.metadata.scripts ?? []).map(copyScriptEntry)
         // Restore the level-wide music selection. Without this branch

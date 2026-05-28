@@ -1,12 +1,16 @@
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import type { VoxelCoord } from '../engine/ecs/world'
-import type { ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
+import type { ZonePortal, ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
 import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
 import type { PistonDirection } from './piston-direction'
 import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
+import { DEFAULT_NPC, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
+import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../game/player-settings'
+import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from '../game/weather-config'
+import type { StoneFallSpawnerConfig } from '../game/moving-objects'
 
 export type EditorMode =
     | 'select'
@@ -21,6 +25,7 @@ export type EditorMode =
     | 'place-weather'
     | 'place-prop'
     | 'scatter-props'
+    | 'place-npc'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut. */
 export type EditorViewMode = 'iso' | 'top-down'
@@ -54,6 +59,13 @@ export interface EditorZone {
     script?: {
         actions: ZoneScriptAction[]
     }
+    portal?: ZonePortal
+    interaction?: {
+        prompt?: string
+        anchor?: VoxelCoord
+        radius?: number
+    }
+    active?: boolean
 }
 
 export interface EditorPiston {
@@ -239,6 +251,8 @@ export interface EditorState {
     cursor: VoxelCoord | null
     /** Spawn position the saved level reports back to the game loader. */
     spawn: { x: number; y: number; z: number }
+    /** Player defaults applied at this level's spawn. */
+    player: PlayerSettings
 
     /** Pickups placed in the editor — serialised into the level metadata. */
     pickups: EditorPickup[]
@@ -286,6 +300,11 @@ export interface EditorState {
     zoneScriptMessage: string
     /** Draft block offset from zone min used by spawn/erase script actions. */
     zoneScriptOffset: VoxelCoord
+    /** Portal destination applied when the next placed zone has
+     *  `kind === "portal"`. */
+    portalTargetLevelId: string
+    /** Optional destination-zone id inside `portalTargetLevelId`. */
+    portalArrivalId: string
 
     /** Sound sources placed in the editor — serialised into the level metadata. */
     soundSources: EditorSoundSource[]
@@ -363,8 +382,29 @@ export interface EditorState {
      *  ordinary `props`, so this list does not need runtime persistence. */
     propScatterItems: EditorPropScatterItem[]
 
+    /** Static NPCs placed in the editor. Unlike decorative props, NPCs
+     *  own interaction/collision/script metadata. */
+    npcs: NpcConfig[]
+    selectedNpcId: string | null
+    npcName: string
+    npcModel: NpcModelKind
+    npcGridAlign: boolean
+    npcYaw: number
+    npcScale: number
+    npcCollisionEnabled: boolean
+    npcColliderRadius: number
+    npcColliderHeight: number
+    npcInteractionEnabled: boolean
+    npcInteractionRadius: number
+    npcInteractionPrompt: string
+    npcScriptEnabled: boolean
+    npcScriptSource: string
+
     /** Plain JavaScript scripts persisted with the level and run in playtest. */
     scripts: ScriptEntry[]
+    /** Runtime-only hazard spawners. No editor placement UI yet, but
+     *  built-in/imported levels must preserve them across save/load. */
+    stoneSpawners: StoneFallSpawnerConfig[]
 
     /** Level-wide visual environment (sky / fog / sun / drifting rain
      *  & snow / lightning). Disabled by default. */
@@ -393,7 +433,7 @@ export const DEFAULT_AMBIENT_WEATHER: AmbientWeatherStateSnapshot = {
     cycleSeconds: 600,
     skyTint: [1, 1, 1],
     sunIntensityMul: 1,
-    fogDensityMul: 1,
+    fogDensityMul: DEFAULT_OUTDOOR_FOG_DENSITY_MUL,
     skyTop: '#7aa9d4',
     skyBottom: '#c9d9e8',
     fogColor: '#b5c6d6',
@@ -435,6 +475,7 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         mode: 'paint',
         cursor: null,
         spawn,
+        player: copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
         pickups: [],
         pickupKind: PickupKind.Gold,
         pickupAmount: 12,
@@ -454,6 +495,8 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         zoneScriptActions: [],
         zoneScriptMessage: '',
         zoneScriptOffset: { x: 0, y: 0, z: 0 },
+        portalTargetLevelId: '',
+        portalArrivalId: '',
         soundSources: [],
         selectedSoundSourceId: null,
         soundSourceSoundId: GameAudio.AmbFire,
@@ -489,7 +532,23 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         propScatterShape: 'circle',
         propScatterSize: 5,
         propScatterItems: [],
+        npcs: [],
+        selectedNpcId: null,
+        npcName: DEFAULT_NPC.name,
+        npcModel: DEFAULT_NPC.model,
+        npcGridAlign: DEFAULT_NPC.gridAligned,
+        npcYaw: DEFAULT_NPC.yaw,
+        npcScale: DEFAULT_NPC.scale,
+        npcCollisionEnabled: DEFAULT_NPC.collisionEnabled,
+        npcColliderRadius: DEFAULT_NPC.colliderRadius,
+        npcColliderHeight: DEFAULT_NPC.colliderHeight,
+        npcInteractionEnabled: DEFAULT_NPC.interactionEnabled,
+        npcInteractionRadius: DEFAULT_NPC.interactionRadius,
+        npcInteractionPrompt: DEFAULT_NPC.interactionPrompt,
+        npcScriptEnabled: DEFAULT_NPC.scriptEnabled,
+        npcScriptSource: DEFAULT_NPC.scriptSource,
         scripts: [],
+        stoneSpawners: [],
         ambientWeather: {
             // Default to enabled now that an Outdoor mode "just works"
             // without the author hand-picking sky/fog/sun colours — the
@@ -514,6 +573,8 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
 export interface EditorLevelMeta {
     name: string
     spawn: { x: number; y: number; z: number }
+    player?: PlayerSettings
+    stoneSpawners?: StoneFallSpawnerConfig[]
     pickups: Array<{
         position: { x: number; y: number; z: number }
         kind: number
@@ -532,6 +593,8 @@ export interface EditorLevelMeta {
     /** Decorative misc objects (flowers, tables, books, ...). Absent
      *  / empty ⇒ no props in the level. */
     props?: EditorProp[]
+    /** Static NPCs with interaction/collision/script metadata. */
+    npcs?: NpcConfig[]
     /** Level-wide visual environment snapshot. Absent / `enabled: false`
      *  ⇒ playtest uses the engine's default lighting + sky. */
     ambientWeather?: EditorAmbientWeather
@@ -543,6 +606,8 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
     return {
         name,
         spawn: { ...state.spawn },
+        player: copyPlayerSettings(state.player),
+        stoneSpawners: state.stoneSpawners.map(copyStoneSpawner),
         pickups: state.pickups.map((p) => ({
             position: { ...p.position },
             kind: p.kind,
@@ -569,6 +634,16 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             script: z.script ? {
                 actions: z.script.actions.map(copyZoneScriptAction),
             } : undefined,
+            portal: z.portal ? {
+                targetLevelId: z.portal.targetLevelId,
+                targetArrivalId: z.portal.targetArrivalId,
+            } : undefined,
+            interaction: z.interaction ? {
+                prompt: z.interaction.prompt,
+                anchor: z.interaction.anchor ? { ...z.interaction.anchor } : undefined,
+                radius: z.interaction.radius,
+            } : undefined,
+            active: z.active,
         })),
         soundSources: state.soundSources.map((s) => ({
             id: s.id,
@@ -610,6 +685,10 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             scale: p.scale,
             gridAligned: p.gridAligned,
         })),
+        npcs: state.npcs.length === 0 ? undefined : state.npcs.map((npc) => ({
+            ...npc,
+            position: { ...npc.position },
+        })),
         scripts: state.scripts.length === 0 ? undefined : state.scripts.map(copyScriptEntry),
         ambientWeather: state.ambientWeather.enabled
             ? {
@@ -618,6 +697,16 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
                 state: { ...state.ambientWeather.state },
             }
             : undefined,
+    }
+}
+
+export function copyStoneSpawner(spawner: StoneFallSpawnerConfig): StoneFallSpawnerConfig {
+    return {
+        position: { ...spawner.position },
+        velocity: { ...spawner.velocity },
+        interval: spawner.interval,
+        jitter: spawner.jitter,
+        options: spawner.options ? { ...spawner.options } : undefined,
     }
 }
 

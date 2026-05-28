@@ -58,11 +58,33 @@ on('level-start', () => {
     }
 })
 
-on('input', { action: 'interact', targetId: KEEPER_ZONE }, () => {
+on('input', { action: 'interact', targetId: KEEPER_ZONE }, () => handleKeeperInteraction())
+
+async function handleKeeperInteraction() {
     const questState = state()
     if (questState === 'unknown') {
+        const intro = await keeperDialogue([
+            { speaker: 'keeper', text: 'The plaza lantern is dying. Its last light broke into three Sun Shards.' },
+            {
+                speaker: 'keeper',
+                text: 'Find them and bring their light back to me.',
+                choices: [
+                    { id: 'accept', text: 'I will find the shards.' },
+                    { id: 'ask', text: 'What are Sun Shards?' },
+                ],
+            },
+        ])
+        if (intro.choiceId === 'ask') {
+            await keeperDialogue([
+                { speaker: 'keeper', text: 'Small pieces of a kinder sun. They hide where the plaza taught its first lessons.' },
+                {
+                    speaker: 'keeper',
+                    text: 'Stairs, walls, and high places remember them best.',
+                    choices: [{ id: 'accept', text: 'Then I will find them.' }],
+                },
+            ])
+        }
         flags.set(STATE, 'active')
-        sayKeeper('The plaza lantern is dying. Find the three Sun Shards and bring their light back to me.')
         ensureShardsSpawned()
         audio.play('sfx.quest.chime')
         return
@@ -71,17 +93,33 @@ on('input', { action: 'interact', targetId: KEEPER_ZONE }, () => {
     if (questState === 'active') {
         ensureShardsSpawned()
         const missing = remainingShards()
-        sayKeeper(`${missing.length} shard(s) still wait: ${missing.map((s) => s.hint).join(', ')}.`)
+        await keeperDialogue([{
+            speaker: 'keeper',
+            text: `${missing.length} shard(s) still wait: ${missing.map((s) => s.hint).join(', ')}.`,
+            choices: [{ id: 'leave', text: 'I will keep looking.' }],
+        }])
         return
     }
 
     if (questState === 'ready') {
-        completeQuest()
+        const turnIn = await keeperDialogue([{
+            speaker: 'keeper',
+            text: 'The shards are singing in your pack. Will you return them to the lantern?',
+            choices: [
+                { id: 'give', text: 'Here are the Sun Shards.' },
+                { id: 'wait', text: 'Not yet.' },
+            ],
+        }])
+        if (turnIn.choiceId === 'give') await completeQuest()
         return
     }
 
-    sayKeeper('The lantern holds. Walk carefully, friend.')
-})
+    await keeperDialogue([{
+        speaker: 'keeper',
+        text: 'The lantern holds. Walk carefully, friend.',
+        choices: [{ id: 'leave', text: 'I will.' }],
+    }])
+}
 
 on('pickup-taken', { kind: ITEM_KIND }, (event) => {
     if (state() !== 'active') return
@@ -116,10 +154,17 @@ on('player.died', () => {
     }
 })
 
-function completeQuest() {
+async function completeQuest() {
     flags.set(STATE, 'done')
     lightLantern()
-    sayKeeper('You brought the sun back in pieces. Take this for the road.')
+    await keeperDialogue([
+        { speaker: 'keeper', text: 'You brought the sun back in pieces.' },
+        {
+            speaker: 'keeper',
+            text: 'Take this for the road.',
+            choices: [{ id: 'thanks', text: 'Thank you, Keeper.' }],
+        },
+    ])
     audio.play('sfx.quest.fanfare')
     pickups.spawn('coin', REWARD, {
         id: 'demo.quest.reward.gold',
@@ -134,9 +179,17 @@ function completeQuest() {
     emit('quest.demo.complete')
 }
 
-function sayKeeper(message) {
-    ui.say(KEEPER_ZONE, message, { seconds: 4.5 })
-    log(`Keeper Arlen: '${message}'`)
+async function keeperDialogue(lines) {
+    for (const line of lines) {
+        if ((line.speaker ?? 'keeper') === 'player') continue
+        log(`Keeper Arlen: '${line.text}'`)
+    }
+    return ui.dialogue({
+        title: 'Keeper Arlen',
+        npc: { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper', side: 'left' },
+        player: { id: 'player', name: 'You', avatar: 'player', side: 'right' },
+        lines,
+    })
 }
 
 function lightLantern() {

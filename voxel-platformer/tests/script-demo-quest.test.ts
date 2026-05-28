@@ -19,6 +19,7 @@ import {
     pushScriptTriggerEvent,
     type GameWorld,
 } from '../src/engine/ecs/world'
+import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from '../src/game/player-settings'
 
 const QUEST_SOURCE_PATH = resolve(process.cwd(), 'examples', 'scripts', 'demo-quest.js')
 const QUEST_SOURCE = readFileSync(QUEST_SOURCE_PATH, 'utf8')
@@ -30,6 +31,7 @@ interface Harness {
     audioPlays: string[]
     pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[]
     popupMessages: { targetId: string; message: string; seconds?: number }[]
+    dialogueRequests: unknown[]
     chunkSets: { x: number; y: number; z: number; block: number }[]
     interact: (targetId: string) => void
     takePickup: (kind: string, pickupId?: string, amount?: number, position?: VoxelCoord) => void
@@ -43,6 +45,7 @@ function makeHarness(): Harness {
     const audioPlays: string[] = []
     const pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[] = []
     const popupMessages: { targetId: string; message: string; seconds?: number }[] = []
+    const dialogueRequests: unknown[] = []
     const chunkSets: { x: number; y: number; z: number; block: number }[] = []
     const livePickupIds = new Set<string>()
 
@@ -58,8 +61,17 @@ function makeHarness(): Harness {
     const player: PlayerFacade = {
         getPosition: () => ({ x: 12, y: 5, z: 12 }),
         getGold: () => 0,
+        getArrows: () => 0,
+        getSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setAbility() {},
+        setGold() {},
+        setArrows() {},
         teleport() {},
         kill() {},
+        getCheckpoint: () => null,
+        setCheckpoint() {},
+        clearCheckpoint() {},
     }
     const pickups: PickupsFacade = {
         spawn(kind, pos, opts) {
@@ -68,6 +80,8 @@ function makeHarness(): Harness {
             if (opts?.id) livePickupIds.add(opts.id)
             return opts?.id ?? `id-${kind}-${pickupSpawns.length}`
         },
+        despawn(id) { return livePickupIds.delete(id) },
+        exists(id) { return livePickupIds.has(id) },
     }
     const zone: ZoneFacade = {
         contains: () => false,
@@ -89,6 +103,16 @@ function makeHarness(): Harness {
         ui: {
             say(targetId, message, opts) {
                 popupMessages.push({ targetId, message, seconds: opts?.seconds })
+            },
+            async dialogue(request) {
+                dialogueRequests.push(request)
+                const choices = request.lines.find((line) => line.choices && line.choices.length > 0)?.choices ?? []
+                const firstEnabled = choices.findIndex((choice) => !choice.disabled)
+                const index = firstEnabled >= 0 ? firstEnabled : 0
+                const choice = choices[index]
+                return choice
+                    ? { choiceId: choice.id, choiceIndex: index, text: choice.text }
+                    : {}
             },
         },
         dayCycle: {
@@ -116,6 +140,7 @@ function makeHarness(): Harness {
         audioPlays,
         pickupSpawns,
         popupMessages,
+        dialogueRequests,
         chunkSets,
         interact(targetId) {
             pushScriptTriggerEvent(world, {
@@ -184,8 +209,8 @@ test('demo quest: talking to the keeper starts the quest and spawns three shards
     assert.ok(h.pickupSpawns.every((p) => p.kind === 'sun-shard'))
     assert.deepEqual(h.pickupSpawns.find((p) => p.opts?.id === SHARDS[1])?.pos, { x: 4, y: 5, z: 7 })
     assert.ok(h.audioPlays.includes('sfx.quest.chime'))
-    assert.ok(h.popupMessages.some((m) =>
-        m.targetId === KEEPER_ZONE && m.message.includes('plaza lantern'),
+    assert.ok(h.dialogueRequests.some((request) =>
+        JSON.stringify(request).includes('plaza lantern'),
     ))
 })
 
@@ -258,7 +283,9 @@ test('demo quest: interacting after completion gives the finished dialogue', asy
     h.interact(KEEPER_ZONE)
     await h.tick(0.1)
     assert.ok(h.log.some((l) => l.includes('lantern holds')))
-    assert.ok(h.popupMessages.some((m) => m.message.includes('lantern holds')))
+    assert.ok(h.dialogueRequests.some((request) =>
+        JSON.stringify(request).includes('lantern holds'),
+    ))
 })
 
 test('demo quest: player.died during active quest shows remaining-shard hint', async () => {
