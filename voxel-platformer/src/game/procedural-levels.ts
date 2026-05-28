@@ -2,9 +2,8 @@ import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK } from '../engine/voxel/palette'
 import type { Zone } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
-import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from './weather-config'
 import { generatePlatformerLevel, type LevelMeta } from './level'
-import { DEFAULT_PLAYER_SETTINGS } from './player-settings'
+import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
 import {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
@@ -112,80 +111,58 @@ export function createDemoScripts(scriptSources: ProceduralScriptSources): Scrip
 export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
     const size = 20
     const groundY = 4
+    const pondWaterY = groundY
+    const t = terrain(chunks, { size, groundY })
 
-    for (let z = 0; z < size; z++) {
-        for (let x = 0; x < size; x++) {
-            for (let y = 0; y < groundY; y++) {
-                chunks.setVoxel(x, y, z, y === groundY - 1 ? BLOCK.dirt : BLOCK.stone)
-            }
-            chunks.setVoxel(x, groundY, z, gardenTopBlock(x, z))
-        }
-    }
+    t.ground({ top: gardenTopBlock })
+        .path({ points: [{ x: 3, z: 10 }, { x: 17, z: 10 }], width: 3, block: BLOCK.sand })
+        .path({ points: [{ x: 10, z: 5 }, { x: 10, z: 15 }], width: 3, block: BLOCK.sand })
+        .path({ points: [{ x: 4.5, z: 4 }, { x: 4.5, z: 15 }], width: 2.2, block: BLOCK.sand })
+        .path({ points: [{ x: 15.5, z: 4 }, { x: 15.5, z: 15 }], width: 2.2, block: BLOCK.sand })
+        .pond({
+            center: { x: 10, z: 10 },
+            radiusX: 3.7,
+            radiusZ: 3.2,
+            waterY: pondWaterY,
+            shoreWidth: 1.5,
+            shoreBlock: BLOCK.sand,
+            bedBlock: BLOCK.sand,
+        })
 
-    // A simple path between the incoming arrival pad and the return portal.
-    for (let x = 3; x <= 17; x++) {
-        for (let z = 9; z <= 11; z++) {
-            chunks.setVoxel(x, groundY, z, BLOCK.sand)
-        }
-    }
-    for (let z = 6; z <= 14; z++) {
-        for (let x = 9; x <= 11; x++) {
-            chunks.setVoxel(x, groundY, z, BLOCK.sand)
-        }
-    }
+    t
+        // Arrival pad from the demo - outside the return portal so the player
+        // doesn't bounce straight back.
+        .fill([3, 6], [groundY, groundY], [9, 12], BLOCK.plank)
+        .fill([4, 5], [groundY, groundY], [10, 10], BLOCK.door)
+        .fill([8, 12], [groundY, groundY], [10, 10], BLOCK.plank)
+        .fill([9, 11], [groundY, groundY], [8, 8], BLOCK.plank)
+        .fill([9, 11], [groundY, groundY], [12, 12], BLOCK.plank)
+        // Return portal pad + two non-lighting marker posts.
+        .fill([14, 17], [groundY, groundY], [8, 11], BLOCK.stone)
+        .fill([15, 16], [groundY, groundY], [9, 10], BLOCK.door)
+        .fill([14, 14], [groundY + 1, groundY + 3], [8, 8], BLOCK.door)
+        .fill([17, 17], [groundY + 1, groundY + 3], [11, 11], BLOCK.door)
+        // Low wooden rails frame the park without blocking the portal path.
+        .fill([2, 2], [groundY + 1, groundY + 1], [5, 14], BLOCK.wood)
+        .fill([17, 17], [groundY + 1, groundY + 1], [5, 7], BLOCK.wood)
+        .fill([17, 17], [groundY + 1, groundY + 1], [12, 14], BLOCK.wood)
 
-    // Shallow water garden to make the destination visually distinct and to
-    // exercise non-blocking water movement when the level is opened directly.
-    for (let z = 6; z <= 14; z++) {
-        for (let x = 7; x <= 13; x++) {
-            const dx = x - 10
-            const dz = z - 10
-            if (dx * dx + dz * dz <= 12.25) {
-                chunks.setVoxel(x, groundY + 1, z, BLOCK.water)
-            }
-        }
-    }
-
-    // Arrival pad from the demo. It is intentionally outside the return
-    // portal volume so the player does not bounce back immediately.
-    for (let x = 3; x <= 6; x++) {
-        for (let z = 9; z <= 12; z++) {
-            chunks.setVoxel(x, groundY, z, BLOCK.plank)
-        }
-    }
-    chunks.setVoxel(4, groundY, 10, BLOCK.door)
-    chunks.setVoxel(5, groundY, 10, BLOCK.door)
-
-    // Return portal pad and two glowing posts.
-    for (let x = 14; x <= 17; x++) {
-        for (let z = 8; z <= 11; z++) {
-            chunks.setVoxel(x, groundY, z, BLOCK.stone)
-        }
-    }
-    for (let x = 15; x <= 16; x++) {
-        for (let z = 9; z <= 10; z++) {
-            chunks.setVoxel(x, groundY, z, BLOCK.door)
-        }
-    }
-    for (let y = groundY + 1; y <= groundY + 3; y++) {
-        chunks.setVoxel(14, y, 8, BLOCK.door)
-        chunks.setVoxel(17, y, 11, BLOCK.door)
-    }
+    t.fill([8, 12], [pondWaterY, pondWaterY], [10, 10], BLOCK.plank)
+        .fill([9, 11], [pondWaterY, pondWaterY], [8, 8], BLOCK.plank)
+        .fill([9, 11], [pondWaterY, pondWaterY], [12, 12], BLOCK.plank)
 
     const zones: Zone[] = [
         {
             id: TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
             kind: 'arrival',
             label: 'Arrival from Demo',
-            min: { x: 4.25, y: groundY + 1, z: 10.25 },
-            max: { x: 5.75, y: groundY + 2.8, z: 11.75 },
+            ...zoneBox({ x: 5, z: 11 }, { x: 0.75, z: 0.75 }, groundY + 1, groundY + 2.8),
         },
         {
             id: 'zone.teleport-garden.portal.demo',
             kind: 'portal',
             label: 'Gate back to Demo',
-            min: { x: 15, y: groundY + 1, z: 9 },
-            max: { x: 17, y: groundY + 3, z: 11 },
+            ...zoneBox({ x: 16, z: 10 }, { x: 1, z: 1 }, groundY + 1, groundY + 3),
             triggerSources: ['player'],
             portal: {
                 targetLevelId: DEMO_LEVEL_ID,
@@ -194,89 +171,68 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
         },
     ]
 
-    return {
+    return defineLevel({
         name: 'Teleport Garden',
-        spawn: { x: 4.9, y: groundY + 1, z: 11 },
-        player: DEFAULT_PLAYER_SETTINGS,
-        stoneSpawners: [],
-        stones: [],
-        coinPiles: [
-            { position: { x: 10, y: groundY + 2, z: 10 }, amount: 5 },
-        ],
-        pistons: [],
-        zones,
-        soundSources: [],
-        soundZones: [],
-        environment: { soundId: 'music.background', volume: 0.24 },
-        ambientWeather: {
-            presetId: 'clear',
-            state: {
-                mode: 'outdoor',
-                timeOfDay: 16.0,
-                cycleEnabled: true,
-                cycleSeconds: 420,
-                skyTint: [1, 0.96, 0.9],
-                sunIntensityMul: 0.95,
-                fogDensityMul: DEFAULT_OUTDOOR_FOG_DENSITY_MUL,
-                cloudCoverage: 0.2,
-                rainOn: false,
-                snowOn: false,
-                lightningOn: false,
-            },
-        },
-        weatherZones: [],
-        props: [
-            {
-                id: 'teleport-garden:bush:west',
-                kind: 'bush',
-                position: { x: 6.5, y: groundY + 1, z: 6.5 },
-                yaw: 0.4,
-                scale: 1.25,
-                gridAligned: false,
-            },
-            {
-                id: 'teleport-garden:bush:east',
-                kind: 'bush-2',
-                position: { x: 13.3, y: groundY + 1, z: 13.2 },
-                yaw: -0.6,
-                scale: 1.1,
-                gridAligned: false,
-            },
-            {
-                id: 'teleport-garden:flower:ring-a',
-                kind: 'flower',
-                position: { x: 8.2, y: groundY + 1, z: 13.5 },
-                yaw: 0.1,
-                scale: 1,
-                gridAligned: false,
-            },
-            {
-                id: 'teleport-garden:flower:ring-b',
-                kind: 'flower-2',
-                position: { x: 12.4, y: groundY + 1, z: 6.5 },
-                yaw: 0.9,
-                scale: 1,
-                gridAligned: false,
-            },
-            {
-                id: 'teleport-garden:mushroom:path',
-                kind: 'mushroom-3',
-                position: { x: 7.6, y: groundY + 1, z: 9.4 },
-                yaw: -0.35,
-                scale: 0.9,
-                gridAligned: false,
-            },
-        ],
-        npcs: [],
-        scripts: [],
         size,
-    }
+        spawn: t.stand(4.9, 11),
+        coinPiles: [
+            { position: { x: 10, y: groundY + 2, z: 10 }, amount: 3 },
+            { position: { x: 13.8, y: groundY + 1, z: 6.3 }, amount: 1 },
+            { position: { x: 6.2, y: groundY + 1, z: 14.8 }, amount: 1 },
+        ],
+        zones,
+        environment: { soundId: 'music.background', volume: 0.24 },
+        ambient: outdoorDay({
+            timeOfDay: 16.0,
+            skyTint: [1, 0.96, 0.9],
+            sunIntensityMul: 0.95,
+            cloudCoverage: 0.2,
+        }),
+        weatherZones: [
+            {
+                id: 'fx.teleport-garden.pond-water',
+                label: 'Garden Pond Surface',
+                presetId: 'water',
+                position: { x: 10, y: groundY + 0.35, z: 10 },
+                size: { x: 8, y: 1.4, z: 7 },
+                enabled: true,
+                addSound: true,
+                soundVolume: 0.22,
+            },
+            {
+                id: 'fx.teleport-garden.falling-leaves',
+                label: 'Falling Leaves',
+                presetId: 'leaves',
+                position: { x: 10, y: groundY + 5.2, z: 10 },
+                size: { x: 15, y: 5, z: 13 },
+                enabled: true,
+                addSound: false,
+                soundVolume: 0,
+            },
+        ],
+        props: [
+            { id: 'teleport-garden:flower:west-a', kind: 'flower', position: t.stand(7.3, 6.4), yaw: 0.2, scale: 1, gridAligned: false },
+            { id: 'teleport-garden:flower:east-a', kind: 'flower-2', position: t.stand(12.7, 6.8), yaw: 0.6, scale: 1, gridAligned: false },
+            { id: 'teleport-garden:flower:west-b', kind: 'flower-3', position: t.stand(7.5, 14.2), yaw: 1.1, scale: 0.95, gridAligned: false },
+            { id: 'teleport-garden:flower:east-b', kind: 'flower-2', position: t.stand(12.8, 14.1), yaw: 2.4, scale: 1.05, gridAligned: false },
+            { id: 'teleport-garden:bush:north-west', kind: 'bush', position: t.stand(3.3, 5.2), yaw: 0.4, scale: 1.25, gridAligned: false },
+            { id: 'teleport-garden:bush:north-east', kind: 'bush-2', position: t.stand(16.5, 5.4), yaw: 1.4, scale: 1.15, gridAligned: false },
+            { id: 'teleport-garden:bush:south-west', kind: 'bush-3', position: t.stand(3.5, 14.4), yaw: 2.1, scale: 1.2, gridAligned: false },
+            { id: 'teleport-garden:mushroom:west', kind: 'mushroom', position: t.stand(13.3, 13.6), yaw: 0.1, scale: 0.95, gridAligned: false },
+            { id: 'teleport-garden:mushroom:south', kind: 'mushroom-2', position: t.stand(6.9, 13.3), yaw: 0.8, scale: 0.85, gridAligned: false },
+            { id: 'teleport-garden:picnic-table', kind: 'table-2', position: t.stand(5.7, 14.8), yaw: Math.PI * 0.5, scale: 1.05, gridAligned: false },
+            { id: 'teleport-garden:chair:picnic-a', kind: 'chair-2', position: t.stand(5.6, 13.6), yaw: Math.PI * 0.85, scale: 1, gridAligned: false },
+            { id: 'teleport-garden:chair:picnic-b', kind: 'chair', position: t.stand(5.8, 16), yaw: Math.PI * 0.1, scale: 1, gridAligned: false },
+            { id: 'teleport-garden:sundial', kind: 'sundial', position: t.stand(15.2, 14.2), yaw: Math.PI * 0.2, scale: 0.9, gridAligned: false },
+            { id: 'teleport-garden:book', kind: 'book-2', position: t.stand(5.2, 14.4), yaw: Math.PI * 0.2, scale: 0.9, gridAligned: false },
+        ],
+    })
 }
 
 function gardenTopBlock(x: number, z: number): number {
     const edge = x <= 1 || z <= 1 || x >= 18 || z >= 18
     if (edge) return BLOCK.stone
-    if ((x + z) % 7 === 0) return BLOCK.sand
+    if ((x * 13 + z * 7) % 29 === 0) return BLOCK.sand
     return BLOCK.grass
 }
 

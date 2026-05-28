@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
-import { DEFAULT_PALETTE, voxelLightSpec } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, voxelLightSpec } from '../src/engine/voxel/palette'
 import { generatePlatformerLevel } from '../src/game/level'
 import {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
@@ -50,8 +50,8 @@ test('demo pistons carry stable ids for script targeting', () => {
     assert.deepEqual(ids.sort(), ['piston.elevator', 'piston.trap'])
 })
 
-test('demo level: id-bearing pistons round-trip through the editor → buffer → editor mapping', () => {
-    // Procedural level → editor meta → binary buffer → editor meta → runtime meta.
+test('demo level: id-bearing pistons round-trip through the editor -> buffer -> editor mapping', () => {
+    // Procedural level -> editor meta -> binary buffer -> editor meta -> runtime meta.
     // The slice the dynamic location system exercises (and the playtest path
     // in the editor) must preserve piston ids end-to-end so scripts can
     // address them from any load path.
@@ -85,6 +85,23 @@ test('teleport garden returns to the demo arrival instead of the default spawn',
         targetArrivalId: DEMO_FROM_GARDEN_ARRIVAL_ID,
     })
     assert.equal(portal?.triggerSources?.includes('player'), true)
+})
+
+test('teleport garden is authored as a small park destination', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const meta = generateTeleportGardenLevel(chunks)
+
+    const pondFx = meta.weatherZones.find((zone) => zone.id === 'fx.teleport-garden.pond-water')
+    assert.equal(pondFx?.presetId, 'water')
+    assert.equal(pondFx?.position.y, 4.35)
+    assert.ok(meta.weatherZones.some((zone) => zone.id === 'fx.teleport-garden.falling-leaves' && zone.presetId === 'leaves'))
+    assert.ok(meta.props.some((prop) => prop.id === 'teleport-garden:picnic-table' && prop.kind === 'table-2'))
+    assert.ok(meta.props.some((prop) => prop.id === 'teleport-garden:sundial' && prop.kind === 'sundial'))
+    assert.ok(meta.props.length >= 12)
+    assert.equal(meta.coinPiles.length, 3)
+    assert.equal(chunks.getVoxel(8, 4, 9), BLOCK.water, 'pond water should sit in the carved ground layer')
+    assert.equal(chunks.getVoxel(8, 5, 9), BLOCK.air, 'pond should not float one layer above the terrain')
+    assert.equal(chunks.getVoxel(10, 4, 10), BLOCK.plank, 'boardwalk should remain dry after carving the pond')
 })
 
 test('procedural travel markers do not create per-voxel point lights', () => {
