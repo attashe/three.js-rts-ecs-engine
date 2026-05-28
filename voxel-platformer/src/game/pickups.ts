@@ -8,7 +8,7 @@ import {
     Rotation,
     StaticRenderable,
 } from '../engine/ecs/components'
-import { createEntity } from '../engine/ecs/entity'
+import { createEntity, despawnEntity } from '../engine/ecs/entity'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import { createCoinPile, createQuestShard, mergeGroupByMaterial } from './assets'
 
@@ -76,6 +76,35 @@ export function spawnScriptPickup(world: GameWorld, opts: ScriptPickupOptions): 
     })
     world.pickupEntityByScriptId.set(scriptId, eid)
     return scriptId
+}
+
+/** Remove a live script-spawned pickup by its stable id. Returns `true` if
+ *  an entity was found and removed, `false` if no live pickup carries this
+ *  id (already collected, never spawned, or a stale id). No `pickup-taken`
+ *  event fires — despawn is a clean removal, distinct from player collection. */
+export function despawnScriptPickup(world: GameWorld, scriptId: string): boolean {
+    const eid = world.pickupEntityByScriptId.get(scriptId)
+    if (eid === undefined) return false
+    world.pickupEntityByScriptId.delete(scriptId)
+    if (!hasComponent(world, eid, Pickup)) {
+        // Map entry outlived the entity (e.g. pickup-system collected it
+        // mid-frame). Treat as "nothing to remove" so authors get the
+        // false signal a follow-up despawn deserves.
+        world.pickupMetaByEid.delete(eid)
+        return false
+    }
+    world.pickupMetaByEid.delete(eid)
+    despawnEntity(world, eid)
+    return true
+}
+
+/** True iff a script-spawned pickup with this id is currently live. Stale
+ *  map entries (post-collection but pre-cleanup) are filtered out so the
+ *  return value matches what `pickups.spawn(..., { id })` would re-spawn. */
+export function scriptPickupExists(world: GameWorld, scriptId: string): boolean {
+    const eid = world.pickupEntityByScriptId.get(scriptId)
+    if (eid === undefined) return false
+    return hasComponent(world, eid, Pickup)
 }
 
 function spawnQuestItem(world: GameWorld, position: { x: number; y: number; z: number }): number {

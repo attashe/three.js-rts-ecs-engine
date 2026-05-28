@@ -14,10 +14,26 @@ import type {
     PickupsFacade,
     PlayerFacade,
     ScriptEntry,
+    TravelFacade,
+    FlagValue,
+    UiFacade,
     WeatherFacade,
     ZoneFacade,
 } from '../engine/script/types'
-import { spawnScriptPickup } from './pickups'
+import { buildLevelFacade, type LevelInfo } from './script-level-facade'
+import type { CheckpointStore } from './checkpoint-store'
+import type { VisualFxZoneController } from './visual-fx-zone-controller'
+import { despawnScriptPickup, scriptPickupExists, spawnScriptPickup } from './pickups'
+import {
+    applyPlayerSettingsPatch,
+    clampBoolean,
+    copyPlayerSettings,
+    PLAYER_ABILITY_KEYS,
+    PLAYER_INVENTORY_LIMITS,
+    type PlayerAbilityKey,
+    type PlayerSettingsPatch,
+} from './player-settings'
+import { syncPlayerVisuals } from './player'
 
 export interface GameScriptSystemOptions {
     world: GameWorld
@@ -28,6 +44,23 @@ export interface GameScriptSystemOptions {
      *  the `weather.*` and `dayCycle.*` bindings; pass `null` if the
      *  level has no ambient weather and scripts shouldn't touch it. */
     weatherSystem?: WeatherSystem | null
+    /** Controller for level-authored FX zones — backs `weather.setZoneEnabled`
+     *  / `setZonePreset` / `isZoneEnabled`. Pass `null` (the default) on
+     *  levels with no FX zones; scripts then see the no-op fallback that
+     *  returns false. */
+    visualFxZones?: VisualFxZoneController | null
+    dialogue?: Pick<UiFacade, 'dialogue'>
+    travel?: TravelFacade
+    /** Source for the `level.spawn / size / name` getters. Narrowed to
+     *  the three fields the script API exposes so widening the script
+     *  surface requires an explicit type change here, not just a new
+     *  field read inside the facade. */
+    level: LevelInfo
+    /** Persistence layer for `player.setCheckpoint`. Survives the
+     *  death-triggered `location.reload()` so the player respawns at
+     *  the checkpoint instead of `level.spawn`. */
+    checkpointStore: CheckpointStore
+    initialFlags?: ReadonlyMap<string, FlagValue>
     getScripts: () => readonly ScriptEntry[]
 }
 
@@ -94,6 +127,27 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
     const player: PlayerFacade = {
         getPosition: () => playerPosition(opts.world),
         getGold: () => opts.world.inventory.gold,
+        getArrows: () => opts.world.inventory.arrows,
+        getSettings: () => copyPlayerSettings(opts.world.playerSettings),
+        setSettings(patch) {
+            opts.world.playerSettings = applyPlayerPatch(opts.world, patch)
+            syncPlayerVisuals(opts.world)
+            return copyPlayerSettings(opts.world.playerSettings)
+        },
+        setAbility(ability, enabled) {
+            if (!isPlayerAbilityKey(ability)) return
+            opts.world.playerSettings.abilities[ability] = clampBoolean(enabled, opts.world.playerSettings.abilities[ability])
+        },
+        setGold(amount) {
+            const gold = safeInventoryAmount(amount, opts.world.inventory.gold, PLAYER_INVENTORY_LIMITS.gold)
+            opts.world.inventory.gold = gold
+            opts.world.playerSettings.inventory.gold = gold
+        },
+        setArrows(amount) {
+            const arrows = safeInventoryAmount(amount, opts.world.inventory.arrows, PLAYER_INVENTORY_LIMITS.arrows)
+            opts.world.inventory.arrows = arrows
+            opts.world.playerSettings.inventory.arrows = arrows
+        },
         teleport(x, y, z) {
             const eid = playerEid(opts.world)
             if (eid === null) return
@@ -111,6 +165,19 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                 ? 'manual-restart'
                 : 'killed-by-zone-script'
         },
+        getCheckpoint() {
+            const live = opts.world.lastCheckpoint
+            return live ? { x: live.x, y: live.y, z: live.z } : null
+        },
+        setCheckpoint(pos) {
+            const snapshot = { x: pos.x, y: pos.y, z: pos.z }
+            opts.world.lastCheckpoint = snapshot
+            opts.checkpointStore.set(snapshot)
+        },
+        clearCheckpoint() {
+            opts.world.lastCheckpoint = null
+            opts.checkpointStore.clear()
+        },
     }
 
     const pickups: PickupsFacade = {
@@ -123,6 +190,8 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                 label: spawnOpts?.label,
             })
         },
+        despawn(id) { return despawnScriptPickup(opts.world, id) },
+        exists(id) { return scriptPickupExists(opts.world, id) },
     }
 
     const zone: ZoneFacade = {
@@ -157,8 +226,11 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
     // weather system exists for the level. Scripts that try to call
     // `weather.setRain(...)` on a level with no ambient see the
     // no-op fallback in bindings.ts.
-    const weather = opts.weatherSystem ? buildWeatherFacade(opts.weatherSystem) : undefined
+    const weather = opts.weatherSystem
+        ? buildWeatherFacade(opts.weatherSystem, opts.visualFxZones ?? null)
+        : undefined
     const dayCycle = opts.weatherSystem ? buildDayCycleFacade(opts.weatherSystem) : undefined
+    const level = buildLevelFacade(opts.level)
 
     return createScriptEngineSystem({
         audio,
@@ -175,16 +247,37 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                     seconds: sayOpts?.seconds,
                 })
             },
+            dialogue(request) {
+                return opts.dialogue?.dialogue?.(request) ?? Promise.resolve({})
+            },
         },
         dayCycle,
         weather,
+        travel: opts.travel,
+        level,
         getScripts: opts.getScripts,
+        initialFlags: opts.initialFlags,
         onScriptError: (entry, where, err) => {
             const msg = err instanceof Error ? err.message : String(err)
             pushLog(opts.world, `[script:${entry.name}] ${msg}`)
             console.error(`[script ${entry.name} @ ${where}]`, err)
         },
     })
+}
+
+function applyPlayerPatch(world: GameWorld, patch: PlayerSettingsPatch) {
+    const next = applyPlayerSettingsPatch(world.playerSettings, patch)
+    world.inventory.gold = next.inventory.gold
+    world.inventory.arrows = next.inventory.arrows
+    return next
+}
+
+function safeInventoryAmount(value: number, fallback: number, max: number): number {
+    return Number.isFinite(value) ? Math.max(0, Math.min(max, Math.floor(value))) : fallback
+}
+
+function isPlayerAbilityKey(value: string): value is PlayerAbilityKey {
+    return (PLAYER_ABILITY_KEYS as readonly string[]).includes(value)
 }
 
 function buildDayCycleFacade(weather: WeatherSystem): DayCycleFacade {
@@ -209,7 +302,7 @@ function buildDayCycleFacade(weather: WeatherSystem): DayCycleFacade {
     }
 }
 
-function buildWeatherFacade(weather: WeatherSystem): WeatherFacade {
+function buildWeatherFacade(weather: WeatherSystem, zones: VisualFxZoneController | null): WeatherFacade {
     return {
         setRain(on) { weather.ambient.setState({ rainOn: on }) },
         setSnow(on) { weather.ambient.setState({ snowOn: on }) },
@@ -220,13 +313,9 @@ function buildWeatherFacade(weather: WeatherSystem): WeatherFacade {
             weather.ambient.setState(preset.apply)
             return true
         },
-        // Toggling FX zones (rain volumes, fire pits, etc.) by id is
-        // out of v1.6 — the FX-zone system caches params at spawn and
-        // doesn't expose a re-spawn-by-id surface yet. Return false
-        // so authors get an obvious "wasn't wired" signal instead of
-        // silent success.
-        setZoneEnabled() { return false },
-        isZoneEnabled() { return false },
+        setZoneEnabled(zoneId, on) { return zones?.setZoneEnabled(zoneId, on) ?? false },
+        isZoneEnabled(zoneId) { return zones?.isZoneEnabled(zoneId) ?? false },
+        setZonePreset(zoneId, presetId) { return zones?.setZonePreset(zoneId, presetId) ?? false },
     }
 }
 

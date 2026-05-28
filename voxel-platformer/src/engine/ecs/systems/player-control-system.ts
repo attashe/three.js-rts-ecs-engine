@@ -53,8 +53,8 @@ export function createPlayerControlSystem(
     iso: IsometricCamera,
     opts: PlayerControlOptions = {},
 ): System {
-    const moveSpeed = opts.moveSpeed ?? 5
-    const jumpVelocity = opts.jumpVelocity ?? 8
+    const moveSpeedOverride = opts.moveSpeed
+    const jumpVelocityOverride = opts.jumpVelocity
     const accel = opts.accel ?? 18
     const jumpBufferMs = opts.jumpBufferMs ?? 200
     const coyoteMs = opts.coyoteMs ?? 100
@@ -86,13 +86,17 @@ export function createPlayerControlSystem(
             iso.getPanForward(forward).negate()
             iso.getPanRight(right)
 
+            const playerSettings = world.playerSettings
+
             // Read input direction.
             let inFwd = 0
             let inRight = 0
-            if (actions.isHeld(actionIds.forward)) inFwd += 1
-            if (actions.isHeld(actionIds.backward)) inFwd -= 1
-            if (actions.isHeld(actionIds.right)) inRight += 1
-            if (actions.isHeld(actionIds.left)) inRight -= 1
+            if (playerSettings.abilities.movement) {
+                if (actions.isHeld(actionIds.forward)) inFwd += 1
+                if (actions.isHeld(actionIds.backward)) inFwd -= 1
+                if (actions.isHeld(actionIds.right)) inRight += 1
+                if (actions.isHeld(actionIds.left)) inRight -= 1
+            }
 
             // Compose into a world-space horizontal direction; normalise so diagonals aren't faster.
             let dirX = forward.x * inFwd + right.x * inRight
@@ -105,6 +109,7 @@ export function createPlayerControlSystem(
             // Plain walk speed. Original engine modulated this by armor
             // weight via world.playerStats; the platformer foundation drops
             // that hook with the inventory layer.
+            const moveSpeed = moveSpeedOverride ?? playerSettings.moveSpeed
             const baseTargetVx = dirX * moveSpeed
             const baseTargetVz = dirZ * moveSpeed
 
@@ -132,7 +137,8 @@ export function createPlayerControlSystem(
                 Velocity.z[eid] += (targetVz - Velocity.z[eid]) * alpha
 
                 const canJump = grounded || now - (lastGroundedAt.get(eid) ?? -Infinity) <= coyoteMs
-                if (jumpBuffered && movement.jumpDisabled) {
+                const jumpVelocity = jumpVelocityOverride ?? playerSettings.jumpVelocity
+                if (jumpBuffered && (!playerSettings.abilities.jump || movement.jumpDisabled)) {
                     actions.consumePressed(actionIds.jump, eid)
                     jumpBuffered = false
                 } else if (jumpBuffered && canJump) {

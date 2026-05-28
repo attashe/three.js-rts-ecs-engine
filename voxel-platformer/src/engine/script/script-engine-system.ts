@@ -32,11 +32,13 @@ import type {
     ChunksFacade,
     DayCycleFacade,
     FlagValue,
+    LevelMetaFacade,
     LogFacade,
     PickupsFacade,
     PlayerFacade,
     ScriptContext,
     ScriptEntry,
+    TravelFacade,
     UiFacade,
     WeatherFacade,
     ZoneFacade,
@@ -55,6 +57,11 @@ export interface ScriptEngineSystemOptions {
     dayCycle?: DayCycleFacade
     /** Optional. When omitted, `weather.*` is a noop returning false. */
     weather?: WeatherFacade
+    /** Optional. When omitted, `travel.*` is a noop. */
+    travel?: TravelFacade
+    /** Optional. When omitted, `level.*` returns sentinel values
+     *  (spawn at origin, size 0, name 'untitled'). */
+    level?: LevelMetaFacade
     /** Pulled fresh on every `apply()` / `init()` so the editor can mutate
      *  the script list without re-creating the system. */
     getScripts: () => readonly ScriptEntry[]
@@ -62,6 +69,8 @@ export interface ScriptEngineSystemOptions {
      *  number so two runs of the same level emit the same `random()`
      *  sequence. */
     rngSeed?: number
+    /** Flags restored from a previous in-session visit to this location. */
+    initialFlags?: ReadonlyMap<string, FlagValue>
     /** Where to bubble script errors. Defaults to `console.error`. The
      *  editor's Logic tab (Slice 2) will plug in a richer reporter. */
     onScriptError?: (entry: ScriptEntry, where: string, err: unknown) => void
@@ -92,7 +101,7 @@ export interface BrokenScriptInfo {
 
 export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): ScriptEngineSystem {
     const runtime = createRuntime(opts.rngSeed ?? 0xdeadbeef)
-    const flags = new Map<string, FlagValue>()
+    const flags = new Map<string, FlagValue>(opts.initialFlags ? [...opts.initialFlags] : [])
     const broken = new Map<string, BrokenScriptInfo>()
     const onScriptError = opts.onScriptError ?? defaultScriptError
     runtime.onError((where, err) => onScriptError(syntheticEntry(where), where, err))
@@ -111,6 +120,8 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         ui: opts.ui,
         dayCycle: opts.dayCycle,
         weather: opts.weather,
+        travel: opts.travel,
+        level: opts.level,
         flags,
     })
 

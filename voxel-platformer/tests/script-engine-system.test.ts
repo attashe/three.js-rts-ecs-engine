@@ -11,6 +11,7 @@ import type {
     ZoneFacade,
 } from '../src/engine/script/types'
 import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
+import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from '../src/game/player-settings'
 
 function makeDeps(scripts: ScriptEntry[]) {
     const log: string[] = []
@@ -27,11 +28,22 @@ function makeDeps(scripts: ScriptEntry[]) {
     const player: PlayerFacade = {
         getPosition: () => ({ x: 0, y: 0, z: 0 }),
         getGold: () => 0,
+        getArrows: () => 0,
+        getSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setAbility() {},
+        setGold() {},
+        setArrows() {},
         teleport() {},
         kill() {},
+        getCheckpoint: () => null,
+        setCheckpoint() {},
+        clearCheckpoint() {},
     }
     const pickups: PickupsFacade = {
         spawn() { return 'pickup-stub' },
+        despawn() { return false },
+        exists() { return false },
     }
     const zone: ZoneFacade = {
         contains: () => false,

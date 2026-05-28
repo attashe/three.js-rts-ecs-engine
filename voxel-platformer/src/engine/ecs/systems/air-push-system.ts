@@ -50,13 +50,12 @@ export interface AirPushOptions {
  */
 export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {}): System {
     const halfAngle = opts.halfAngle ?? Math.PI * 0.32
-    const range = opts.range ?? 5.5
-    const baseSpeed = opts.baseSpeed ?? 18
+    const rangeOverride = opts.range
+    const baseSpeedOverride = opts.baseSpeed
     const minSpeedFactor = opts.minSpeedFactor ?? 0.4
-    const verticalLift = opts.verticalLift ?? 5.5
+    const verticalLiftOverride = opts.verticalLift
     const actionId = opts.actionId ?? 'spell.airPush'
     const cosHalfAngle = Math.cos(halfAngle)
-    const rangeSq = range * range
 
     return {
         fixed: true,
@@ -66,6 +65,15 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             if (players.length === 0) return
             const player = players[0]
             if (!actions.consumePressed(actionId, player)) return
+            if (!world.playerSettings.abilities.airPush) {
+                pushLog(world, 'Air Push is disabled.')
+                return
+            }
+
+            const range = rangeOverride ?? world.playerSettings.airPushRange
+            const baseSpeed = baseSpeedOverride ?? world.playerSettings.airPushPower
+            const verticalLift = verticalLiftOverride ?? world.playerSettings.airPushLift
+            const rangeSq = range * range
 
             const px = Position.x[player]
             // Anchor the cone at chest height so a stone at the player's feet

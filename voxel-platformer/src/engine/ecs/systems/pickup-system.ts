@@ -91,8 +91,13 @@ export function createPickupSystem(opts: PickupSystemOptions = {}): System {
 
 function applyPickup(world: Parameters<System['update']>[0], kind: number, amount: number): void {
     const safeAmount = Math.max(1, amount)
-    if (kind === PickupKind.Gold) world.inventory.gold += safeAmount
-    else if (kind === PickupKind.Arrow) world.inventory.arrows += safeAmount
+    if (kind === PickupKind.Gold) {
+        world.inventory.gold += safeAmount
+        world.playerSettings.inventory.gold = world.inventory.gold
+    } else if (kind === PickupKind.Arrow) {
+        world.inventory.arrows += safeAmount
+        world.playerSettings.inventory.arrows = world.inventory.arrows
+    }
 }
 
 /** Translate the numeric `PickupKind` code into the string form

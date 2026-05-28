@@ -21,10 +21,12 @@ import type {
     FlagsApi,
     FlagValue,
     GeomApi,
+    LevelMetaFacade,
     LogFacade,
     PickupsFacade,
     PlayerFacade,
     ScriptContext,
+    TravelFacade,
     UiFacade,
     VoxelCoord,
     WeatherFacade,
@@ -50,6 +52,8 @@ export interface BindingsDeps {
     ui?: UiFacade
     dayCycle?: DayCycleFacade
     weather?: WeatherFacade
+    travel?: TravelFacade
+    level?: LevelMetaFacade
     /** Backing store for `flags.get / set`. Owned by the script engine
      *  system so it can persist into level metadata on save. */
     flags: Map<string, FlagValue>
@@ -60,6 +64,8 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const ui = deps.ui ?? NOOP_UI
     const dayCycle = deps.dayCycle ?? NOOP_DAY_CYCLE
     const weather = deps.weather ?? NOOP_WEATHER
+    const travel = deps.travel ?? NOOP_TRAVEL
+    const level = deps.level ?? NOOP_LEVEL
 
     // `on(...)` has two shapes: with filter object, or without (for
     // string-named custom events). Detect by checking arg 2's type —
@@ -110,10 +116,24 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             get inventory() {
                 return {
                     get gold() { return player.getGold() },
+                    get arrows() { return player.getArrows() },
                 }
             },
+            get settings() { return player.getSettings() },
+            get checkpoint() { return player.getCheckpoint() },
             teleport(x, y, z) { player.teleport(x, y, z) },
             kill(reason) { player.kill(reason) },
+            setCheckpoint(pos) {
+                const target = pos ?? player.getPosition()
+                if (!target) return
+                if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) return
+                player.setCheckpoint({ x: target.x, y: target.y, z: target.z })
+            },
+            clearCheckpoint() { player.clearCheckpoint() },
+            setSettings(patch) { return player.setSettings(patch) },
+            setAbility(ability, enabled) { player.setAbility(ability, enabled) },
+            setGold(amount) { player.setGold(amount) },
+            setArrows(amount) { player.setArrows(amount) },
         },
 
         chunks: {
@@ -129,6 +149,8 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
 
         pickups: {
             spawn: (kind, pos, opts) => pickups.spawn(kind, pos, opts),
+            despawn: (id) => pickups.despawn(id),
+            exists: (id) => pickups.exists(id),
         },
 
         flags: flagsApi,
@@ -152,6 +174,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
 
         ui: {
             say: (targetId, message, opts) => ui.say(targetId, message, opts),
+            dialogue: (request) => ui.dialogue?.(request) ?? Promise.resolve({}),
         },
 
         dayCycle: {
@@ -169,6 +192,18 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             applyPreset(id) { return weather.applyPreset(id) },
             setZoneEnabled(zoneId, on) { return weather.setZoneEnabled(zoneId, on) },
             isZoneEnabled(zoneId) { return weather.isZoneEnabled(zoneId) },
+            setZonePreset(zoneId, presetId) { return weather.setZonePreset(zoneId, presetId) },
+        },
+
+        travel: {
+            to(levelId, opts) { travel.to(levelId, opts) },
+            reload(opts) { travel.reload(opts) },
+        },
+
+        level: {
+            get spawn() { return level.getSpawn() },
+            get size() { return level.getSize() },
+            get name() { return level.getName() },
         },
 
         random: (min, max) => runtime.random(min, max),
@@ -196,6 +231,18 @@ const NOOP_WEATHER: WeatherFacade = {
     applyPreset() { return false },
     setZoneEnabled() { return false },
     isZoneEnabled() { return false },
+    setZonePreset() { return false },
+}
+
+const NOOP_TRAVEL: TravelFacade = {
+    to() {},
+    reload() {},
+}
+
+const NOOP_LEVEL: LevelMetaFacade = {
+    getSpawn() { return { x: 0, y: 0, z: 0 } },
+    getSize() { return 0 },
+    getName() { return 'untitled' },
 }
 
 function makeGeomApi(): GeomApi {

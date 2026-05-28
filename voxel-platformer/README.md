@@ -61,6 +61,38 @@ npm run typecheck
 npm run build
 ```
 
+### Manual browser verification (not covered by `npm test`)
+
+`npm test` runs `node:test` against a no-DOM build. Several systems can
+only be validated end-to-end in a real browser. Before merging changes
+that touch any of the following, do one playtest pass in the dev server
+(`npm run dev`, then `/index.html` and `/editor.html`):
+
+- **Rendering / visual feedback** — three.js mesh changes, materials,
+  lighting, particle FX, prop and NPC models.
+- **DOM-based UI** — the editor panels (Logic / NPCs / Weather / Sound
+  / Level tabs), the dialogue modal (`src/game/dialogue-system.ts`),
+  the in-game popup and log overlays, input lockout while a modal is
+  open.
+- **Piston / moving-platform feel** — collision separation, character
+  carry behaviour, audio cues during travel.
+- **Audio mix** — background music, spatial sound sources, fade-in /
+  fade-out behaviour when entering sound zones.
+- **Checkpoint persistence across reload** — script-set checkpoints
+  (`player.setCheckpoint`) must survive a death-triggered
+  `location.reload()` and respawn the player at the saved point.
+  `npm test` covers the store + key derivation; only a real browser
+  exercises the full reload boundary.
+- **Script-driven FX zone toggles** — `weather.setZoneEnabled` /
+  `setZonePreset` go through a controller that's unit-tested with a
+  stub registry. The full visual+audio re-spawn cycle (particle
+  death, paired-sound fade-out, fresh emitter from the swapped
+  preset) only happens in a real WeatherSystem.
+
+Pure-logic changes (script bindings, level metadata serialisation,
+pickup lifecycle helpers) are covered by `npm test` and do not require
+a browser pass on every commit.
+
 ## Layout
 
 ```

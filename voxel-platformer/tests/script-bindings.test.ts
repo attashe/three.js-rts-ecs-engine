@@ -9,10 +9,19 @@ import type {
     LogFacade,
     PickupsFacade,
     PlayerFacade,
+    TravelFacade,
     UiFacade,
     VoxelCoord,
     ZoneFacade,
 } from '../src/engine/script/types'
+import {
+    applyPlayerSettingsPatch,
+    copyPlayerSettings,
+    DEFAULT_PLAYER_SETTINGS,
+    type PlayerAbilityKey,
+    type PlayerSettings,
+    type PlayerSettingsPatch,
+} from '../src/game/player-settings'
 
 // VoxelCoord is re-exported from world.ts via types.ts; the test imports
 // it through that surface so the binding facade matches the real types.
@@ -22,13 +31,19 @@ function stubs() {
         audioPlay: [], audioStop: [],
         chunksSet: [], chunksFill: [], chunksGet: [],
         playerTeleport: [], playerKill: [],
-        pickupSpawn: [],
+        playerSettings: [], playerAbility: [], playerGold: [], playerArrows: [],
+        pickupSpawn: [], pickupDespawn: [], pickupExists: [],
         uiSay: [],
+        uiDialogue: [],
         log: [],
         zoneContains: [],
     }
+    const livePickups = new Set<string>()
     let playerPos: VoxelCoord | null = { x: 1, y: 2, z: 3 }
     let gold = 7
+    let arrows = 3
+    let playerSettings: PlayerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    let savedCheckpoint: VoxelCoord | null = null
 
     const audio: AudioFacade = {
         play(id, opts) { calls.audioPlay.push({ id, opts }); return { id } },
@@ -42,14 +57,47 @@ function stubs() {
     const player: PlayerFacade = {
         getPosition() { return playerPos },
         getGold() { return gold },
+        getArrows() { return arrows },
+        getSettings() { return copyPlayerSettings(playerSettings) },
+        setSettings(patch: PlayerSettingsPatch) {
+            playerSettings = applyPlayerSettingsPatch(playerSettings, patch)
+            calls.playerSettings.push(patch)
+            return copyPlayerSettings(playerSettings)
+        },
+        setAbility(ability: PlayerAbilityKey, enabled: boolean) {
+            playerSettings.abilities[ability] = enabled
+            calls.playerAbility.push({ ability, enabled })
+        },
+        setGold(amount: number) { gold = amount; calls.playerGold.push(amount) },
+        setArrows(amount: number) { arrows = amount; calls.playerArrows.push(amount) },
         teleport(x, y, z) { calls.playerTeleport.push({ x, y, z }) },
         kill(reason) { calls.playerKill.push({ reason }) },
+        getCheckpoint() { return savedCheckpoint ? { ...savedCheckpoint } : null },
+        setCheckpoint(pos) { savedCheckpoint = { x: pos.x, y: pos.y, z: pos.z } },
+        clearCheckpoint() { savedCheckpoint = null },
     }
     const pickups: PickupsFacade = {
-        spawn(kind, pos, opts) { calls.pickupSpawn.push({ kind, pos, opts }); return `id-${kind}` },
+        spawn(kind, pos, opts) {
+            calls.pickupSpawn.push({ kind, pos, opts })
+            const id = opts?.id ?? `id-${kind}`
+            livePickups.add(id)
+            return id
+        },
+        despawn(id) {
+            calls.pickupDespawn.push({ id })
+            return livePickups.delete(id)
+        },
+        exists(id) {
+            calls.pickupExists.push({ id })
+            return livePickups.has(id)
+        },
     }
     const ui: UiFacade = {
         say(targetId, message, opts) { calls.uiSay.push({ targetId, message, opts }) },
+        async dialogue(request) {
+            calls.uiDialogue.push(request)
+            return { choiceId: request.lines[0]?.choices?.[0]?.id, choiceIndex: 0, text: request.lines[0]?.choices?.[0]?.text }
+        },
     }
     const zone: ZoneFacade = {
         contains(zoneId, who) { calls.zoneContains.push({ zoneId, who }); return zoneId === 'inside' },
@@ -65,6 +113,7 @@ function stubs() {
         deps: { audio, chunks, player, pickups, ui, zone, log },
         setPlayerPos(p: VoxelCoord | null) { playerPos = p },
         setGold(g: number) { gold = g },
+        setArrows(a: number) { arrows = a },
     }
 }
 
@@ -96,6 +145,22 @@ test('audio bindings forward id and opts', () => {
     assert.equal(Array.isArray(s.calls.audioStop) && s.calls.audioStop.length, 1)
 })
 
+test('travel bindings forward location changes and reload requests', () => {
+    const s = stubs()
+    const calls: unknown[] = []
+    const travel: TravelFacade = {
+        to(levelId, opts) { calls.push({ type: 'to', levelId, opts }) },
+        reload(opts) { calls.push({ type: 'reload', opts }) },
+    }
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, travel, flags: new Map() })
+    ctx.travel.to('basement', { arrivalId: 'entry' })
+    ctx.travel.reload({ arrivalId: 'checkpoint' })
+    assert.deepEqual(calls, [
+        { type: 'to', levelId: 'basement', opts: { arrivalId: 'entry' } },
+        { type: 'reload', opts: { arrivalId: 'checkpoint' } },
+    ])
+})
+
 test('player bindings: position is live, teleport/kill forward', () => {
     const s = stubs()
     const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
@@ -111,12 +176,40 @@ test('player bindings: position is live, teleport/kill forward', () => {
     assert.ok(Number.isNaN(dead.x) && Number.isNaN(dead.y) && Number.isNaN(dead.z))
     assert.equal(ctx.player.alive, false)
     assert.equal(ctx.player.inventory.gold, 7)
+    assert.equal(ctx.player.inventory.arrows, 3)
     s.setGold(42)
+    s.setArrows(11)
     assert.equal(ctx.player.inventory.gold, 42)
+    assert.equal(ctx.player.inventory.arrows, 11)
     ctx.player.teleport(5, 5, 5)
     ctx.player.kill('test')
     assert.deepEqual(s.calls.playerTeleport, [{ x: 5, y: 5, z: 5 }])
     assert.deepEqual(s.calls.playerKill, [{ reason: 'test' }])
+})
+
+test('player settings bindings expose live ability and parameter mutation', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+
+    assert.equal(ctx.player.settings.abilities.bow, true)
+    ctx.player.setAbility('bow', false)
+    assert.deepEqual(s.calls.playerAbility, [{ ability: 'bow', enabled: false }])
+    assert.equal(ctx.player.settings.abilities.bow, false)
+
+    const next = ctx.player.setSettings({
+        inventory: { gold: 12, arrows: 6 },
+        moveSpeed: 7.5,
+        torch: { intensity: 3.25, castsShadow: false },
+    })
+    assert.equal(next.inventory.gold, 12)
+    assert.equal(next.inventory.arrows, 6)
+    assert.equal(next.moveSpeed, 7.5)
+    assert.equal(next.torch.intensity, 3.25)
+    assert.equal(next.torch.castsShadow, false)
+    ctx.player.setGold(99)
+    ctx.player.setArrows(4)
+    assert.deepEqual(s.calls.playerGold, [99])
+    assert.deepEqual(s.calls.playerArrows, [4])
 })
 
 test('player.position sentinel makes AABB checks fail naturally', () => {
@@ -171,6 +264,106 @@ test('ui.say forwards target, message, and display options', () => {
         message: 'hello there',
         opts: { seconds: 4 },
     }])
+})
+
+test('player.setCheckpoint with an explicit position writes through the facade', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    ctx.player.setCheckpoint({ x: 4, y: 5, z: 6 })
+    assert.deepEqual(ctx.player.checkpoint, { x: 4, y: 5, z: 6 })
+})
+
+test('player.setCheckpoint with no arg uses the current player position', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    s.setPlayerPos({ x: 9, y: 8, z: 7 })
+    ctx.player.setCheckpoint()
+    assert.deepEqual(ctx.player.checkpoint, { x: 9, y: 8, z: 7 })
+})
+
+test('player.setCheckpoint with no arg while dead is a no-op (no checkpoint, no throw)', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    s.setPlayerPos(null)
+    ctx.player.setCheckpoint()
+    assert.equal(ctx.player.checkpoint, null)
+})
+
+test('player.setCheckpoint rejects non-finite coordinates (NaN / Infinity)', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    ctx.player.setCheckpoint({ x: 1, y: 2, z: 3 })
+    ctx.player.setCheckpoint({ x: NaN, y: 0, z: 0 })
+    assert.deepEqual(ctx.player.checkpoint, { x: 1, y: 2, z: 3 }, 'invalid input must not corrupt the saved checkpoint')
+})
+
+test('player.clearCheckpoint resets checkpoint state', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    ctx.player.setCheckpoint({ x: 1, y: 2, z: 3 })
+    ctx.player.clearCheckpoint()
+    assert.equal(ctx.player.checkpoint, null)
+})
+
+test('pickups.despawn / pickups.exists forward to the facade and reflect live state', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    const id = ctx.pickups.spawn('coin', { x: 0, y: 0, z: 0 }, { id: 'gold.A' })
+    assert.equal(id, 'gold.A')
+    assert.equal(ctx.pickups.exists('gold.A'), true)
+    assert.equal(ctx.pickups.despawn('gold.A'), true)
+    assert.equal(ctx.pickups.exists('gold.A'), false)
+    assert.equal(ctx.pickups.despawn('gold.A'), false, 'second despawn of the same id is a no-op')
+    assert.equal(ctx.pickups.despawn('never.spawned'), false)
+    assert.deepEqual(s.calls.pickupDespawn, [
+        { id: 'gold.A' },
+        { id: 'gold.A' },
+        { id: 'never.spawned' },
+    ])
+})
+
+test('level.spawn returns a fresh copy on every read so scripts cannot mutate level state', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({
+        runtime: createRuntime(),
+        ...s.deps,
+        level: {
+            getSpawn: () => ({ x: 3, y: 5, z: 7 }),
+            getSize: () => 24,
+            getName: () => 'demo',
+        },
+        flags: new Map(),
+    })
+    assert.equal(ctx.level.name, 'demo')
+    assert.equal(ctx.level.size, 24)
+    const first = ctx.level.spawn
+    assert.deepEqual(first, { x: 3, y: 5, z: 7 })
+    first.x = 999
+    assert.equal(ctx.level.spawn.x, 3, 'mutating the returned object must not leak into the next read')
+})
+
+test('level binding falls back to sentinel values when no LevelMetaFacade is wired', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    assert.deepEqual(ctx.level.spawn, { x: 0, y: 0, z: 0 })
+    assert.equal(ctx.level.size, 0)
+    assert.equal(ctx.level.name, 'untitled')
+})
+
+test('ui.dialogue forwards modal dialogue requests and resolves the result', async () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    const result = await ctx.ui.dialogue({
+        npc: { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper' },
+        player: { id: 'player', name: 'You', avatar: 'player' },
+        lines: [{
+            speaker: 'keeper',
+            text: 'Will you help?',
+            choices: [{ id: 'yes', text: 'Yes.' }],
+        }],
+    })
+    assert.equal(s.calls.uiDialogue.length, 1)
+    assert.deepEqual(result, { choiceId: 'yes', choiceIndex: 0, text: 'Yes.' })
 })
 
 test('flags.get / set is backed by the injected Map and persists across reads', () => {

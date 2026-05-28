@@ -15,8 +15,8 @@ export interface ProjectileLaunchOptions {
 }
 
 export function createProjectileLaunchSystem(actions: ActionMap, opts: ProjectileLaunchOptions = {}): System {
-    const arrowSpeed = opts.arrowSpeed ?? 10.5
-    const arrowLift = opts.arrowLift ?? 3.2
+    const arrowSpeedOverride = opts.arrowSpeed
+    const arrowLiftOverride = opts.arrowLift
     const actionId = opts.actionId ?? 'weapon.bowShot'
 
     return {
@@ -29,9 +29,21 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
             const player = players[0]
             if (opts.canUse && !opts.canUse(world, player)) return
             if (!actions.consumePressed(actionId, player)) return
+            if (!world.playerSettings.abilities.bow) {
+                pushLog(world, 'Bow is disabled.')
+                return
+            }
+            if (world.inventory.arrows <= 0) {
+                pushLog(world, 'No arrows.')
+                return
+            }
+            world.inventory.arrows = Math.max(0, world.inventory.arrows - 1)
+            world.playerSettings.inventory.arrows = world.inventory.arrows
             const yaw = Rotation.y[player]
             const forwardX = Math.sin(yaw)
             const forwardZ = Math.cos(yaw)
+            const arrowSpeed = arrowSpeedOverride ?? world.playerSettings.arrowSpeed
+            const arrowLift = arrowLiftOverride ?? world.playerSettings.arrowLift
             spawnArrowProjectile(
                 world,
                 {

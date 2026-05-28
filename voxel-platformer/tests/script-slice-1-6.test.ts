@@ -27,6 +27,7 @@ import type {
     WeatherFacade,
     ZoneFacade,
 } from '../src/engine/script/types'
+import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from '../src/game/player-settings'
 
 /**
  * Slice 1.6 surface: zone.setActive / isActive / exists, flag.changed
@@ -126,8 +127,17 @@ function stubs() {
     const player: PlayerFacade = {
         getPosition: () => ({ x: 0, y: 0, z: 0 }),
         getGold: () => 0,
+        getArrows: () => 0,
+        getSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
+        setAbility() {},
+        setGold() {},
+        setArrows() {},
         teleport() {},
         kill() {},
+        getCheckpoint: () => null,
+        setCheckpoint() {},
+        clearCheckpoint() {},
     }
     const chunks: ChunksFacade = {
         getBlock: () => 0,
@@ -135,7 +145,7 @@ function stubs() {
         fillBlocks() {},
     }
     const audio: AudioFacade = { play() { return null }, stop() {} }
-    const pickups: PickupsFacade = { spawn() { return 'stub' } }
+    const pickups: PickupsFacade = { spawn() { return 'stub' }, despawn() { return false }, exists() { return false } }
     const zone: ZoneFacade = {
         contains: () => false,
         exists: () => false,
@@ -272,6 +282,7 @@ test('weather bindings forward to the facade', () => {
         },
         setZoneEnabled() { return false },
         isZoneEnabled() { return false },
+        setZonePreset() { return false },
     }
     const ctx = buildScriptContext({
         runtime,

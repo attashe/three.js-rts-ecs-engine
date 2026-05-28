@@ -3,6 +3,7 @@ import type { Object3D } from 'three'
 import { ObstacleRegistry } from './obstacle-registry'
 import { EngineMetrics } from '../metrics'
 import type { Zone, ZoneTriggerEvent, ZoneTriggerSource } from './zones'
+import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../../game/player-settings'
 
 export interface VoxelCoord {
     x: number
@@ -125,9 +126,17 @@ export interface GameContext {
     /** Short world-anchored UI messages, usually script-authored NPC lines. */
     popupMessages: PopupMessage[]
     nextPopupMessageId: number
+    /** Mutable runtime player defaults/current settings. Level metadata
+     *  seeds this before spawn; scripts may patch it while the level runs. */
+    playerSettings: PlayerSettings
     /** When non-null, the level should restart. `restart-system` reads
      *  this each render frame and triggers a page reload. */
     deathSignal: DeathReason | null
+    /** Last script-set respawn point. Used by the script API
+     *  `player.checkpoint` getter and read at client startup (after a
+     *  death-triggered reload) to override `meta.spawn`. Mirrored to
+     *  a session-scoped store so the value survives `location.reload()`. */
+    lastCheckpoint: VoxelCoord | null
     /** Queue of trigger events for the script engine to drain each
      *  fixed tick. Producer systems (zone trigger, pickup, death) push
      *  events here; `script-engine-system` consumes + emits via
@@ -193,7 +202,9 @@ export function createGameWorld(): GameWorld {
         log: [],
         popupMessages: [],
         nextPopupMessageId: 1,
+        playerSettings: copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
         deathSignal: null,
+        lastCheckpoint: null,
         scriptTriggerEvents: [],
     })
 }

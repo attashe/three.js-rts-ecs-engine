@@ -11,6 +11,7 @@
  */
 
 import type { VoxelCoord } from '../ecs/world'
+import type { PlayerAbilityKey, PlayerSettings, PlayerSettingsPatch } from '../../game/player-settings'
 
 export type { VoxelCoord }
 
@@ -81,12 +82,30 @@ export interface PlayerFacade {
      *  position so scripts don't have to null-check. */
     getPosition(): VoxelCoord | null
     getGold(): number
+    getArrows(): number
+    getSettings(): PlayerSettings
+    setSettings(patch: PlayerSettingsPatch): PlayerSettings
+    setAbility(ability: PlayerAbilityKey, enabled: boolean): void
+    setGold(amount: number): void
+    setArrows(amount: number): void
     teleport(x: number, y: number, z: number): void
     kill(reason?: string): void
+    /** Returns the current respawn point, or null when none is set this
+     *  session. The binding layer surfaces this as `player.checkpoint`. */
+    getCheckpoint(): VoxelCoord | null
+    /** Set the respawn point. Callers (the binding layer) are responsible
+     *  for choosing between an explicit `pos` and the player's current
+     *  position. */
+    setCheckpoint(pos: VoxelCoord): void
+    clearCheckpoint(): void
 }
 
 export interface PickupsFacade {
     spawn(kind: string, pos: VoxelCoord, opts?: PickupSpawnOptions): string
+    /** Remove a live script-spawned pickup by id. Returns true on success. */
+    despawn(id: string): boolean
+    /** True if a script-spawned pickup with this id is currently live. */
+    exists(id: string): boolean
 }
 
 export interface ZoneFacade {
@@ -104,6 +123,16 @@ export interface LogFacade {
 
 export interface UiFacade {
     say(targetId: string, message: string, opts?: { seconds?: number }): void
+    dialogue?(request: DialogueRequest): Promise<DialogueResult>
+}
+
+/** Read-only snapshot of the level the script engine was started against.
+ *  Implementations return fresh copies of mutable fields (e.g. spawn) so
+ *  scripts can't mutate level metadata by writing to the returned object. */
+export interface LevelMetaFacade {
+    getSpawn(): VoxelCoord
+    getSize(): number
+    getName(): string
 }
 
 /** Drives the sky clock. Hour is in [0, 24); the underlying
@@ -141,6 +170,15 @@ export interface WeatherFacade {
      *  false if the zone id isn't known. */
     setZoneEnabled(zoneId: string, enabled: boolean): boolean
     isZoneEnabled(zoneId: string): boolean
+    /** Re-spawn an authored weather zone with a different preset
+     *  overlay (e.g. swap a 'rain' zone to 'storm'). Returns false if
+     *  either id is unknown. */
+    setZonePreset(zoneId: string, presetId: string): boolean
+}
+
+export interface TravelFacade {
+    to(levelId: string, opts?: TravelOptions): void
+    reload(opts?: { arrivalId?: string }): void
 }
 
 // ─── ScriptContext ────────────────────────────────────────────────────
@@ -183,7 +221,24 @@ export interface ScriptContext {
     ui: UiApi
     dayCycle: DayCycleApi
     weather: WeatherApi
+    travel: TravelApi
+    level: LevelApi
     random(min: number, max: number): number
+}
+
+export interface TravelOptions {
+    /** Optional destination-zone id in the target level. */
+    arrivalId?: string
+}
+
+export interface LevelApi {
+    /** Author-named spawn coords for the current level. Returned as a fresh
+     *  object on every read; mutating it does not change level state. */
+    readonly spawn: VoxelCoord
+    /** XZ extent of the level (block units). */
+    readonly size: number
+    /** Editor-authored level name, or 'demo' for the procedural fallback. */
+    readonly name: string
 }
 
 export interface DayCycleApi {
@@ -204,6 +259,15 @@ export interface WeatherApi {
     applyPreset(presetId: string): boolean
     setZoneEnabled(zoneId: string, enabled: boolean): boolean
     isZoneEnabled(zoneId: string): boolean
+    setZonePreset(zoneId: string, presetId: string): boolean
+}
+
+export interface TravelApi {
+    /** Hot-swap to a project-library level. `arrivalId` is a zone id in
+     *  the destination level; when omitted, the destination spawn is used. */
+    to(levelId: string, opts?: TravelOptions): void
+    /** Restart the current location without a browser reload. */
+    reload(opts?: { arrivalId?: string }): void
 }
 
 export interface PlayerApi {
@@ -215,9 +279,26 @@ export interface PlayerApi {
     /** True iff there's a live player entity. Use for explicit
      *  "skip while dead" gates: `if (!player.alive) return`. */
     readonly alive: boolean
-    readonly inventory: { readonly gold: number }
+    readonly inventory: { readonly gold: number; readonly arrows: number }
+    readonly settings: PlayerSettings
+    /** Current respawn point set via `setCheckpoint`, or `null` when none
+     *  is set this session. Survives a death-triggered reload but not a
+     *  full browser restart. */
+    readonly checkpoint: VoxelCoord | null
     teleport(x: number, y: number, z: number): void
     kill(reason?: string): void
+    /** Save a respawn point. With no argument, uses the current player
+     *  position; called while dead, the call is a no-op. The next
+     *  `player.died` reload spawns the player here instead of
+     *  `level.spawn`. */
+    setCheckpoint(pos?: VoxelCoord): void
+    /** Forget the current checkpoint. Subsequent respawns use
+     *  `level.spawn`. */
+    clearCheckpoint(): void
+    setSettings(patch: PlayerSettingsPatch): PlayerSettings
+    setAbility(ability: PlayerAbilityKey, enabled: boolean): void
+    setGold(amount: number): void
+    setArrows(amount: number): void
 }
 
 export interface ChunksApi {
@@ -233,6 +314,14 @@ export interface AudioApi {
 
 export interface PickupsApi {
     spawn(kind: string, pos: VoxelCoord, opts?: PickupSpawnOptions): string
+    /** Remove a live script-spawned pickup by id. Returns `true` if a live
+     *  pickup with this id existed and was removed, `false` otherwise. Does
+     *  not fire `pickup-taken` — that event is reserved for player
+     *  collection. */
+    despawn(id: string): boolean
+    /** True iff `pickups.spawn(..., { id })` would currently return the
+     *  same id (rather than re-spawning a fresh entity). */
+    exists(id: string): boolean
 }
 
 export interface PickupSpawnOptions {
@@ -279,6 +368,54 @@ export interface UiApi {
     /** Show a short world-anchored popup near an NPC/item target. `targetId`
      *  usually matches an interact zone id. */
     say(targetId: string, message: string, opts?: { seconds?: number }): void
+    /** Show a centered modal conversation. Resolves after the final line,
+     *  or after the player chooses a reply and advances past it. */
+    dialogue(request: DialogueRequest): Promise<DialogueResult>
+}
+
+export interface DialogueSpeaker {
+    /** Stable speaker id used by lines, e.g. `keeper`, `player`. */
+    id?: string
+    name: string
+    /** Built-in avatar key (`keeper`, `player`, `sundial`, `book`) or any
+     *  author string. Unknown strings render as a labelled portrait badge. */
+    avatar?: string
+    /** Visual side in the dialogue panel. Defaults to NPC left, player right. */
+    side?: 'left' | 'right'
+}
+
+export interface DialogueChoice {
+    id: string
+    text: string
+    disabled?: boolean
+}
+
+export interface DialogueLine {
+    /** Speaker id, `npc`, or `player`. Defaults to `npc`. */
+    speaker?: string
+    /** Per-line override when no speaker registry entry is convenient. */
+    name?: string
+    avatar?: string
+    text: string
+    /** When present, the line waits for a player reply instead of advancing
+     *  by click. The selected choice is shown as a player line before resolve. */
+    choices?: DialogueChoice[]
+}
+
+export interface DialogueRequest {
+    id?: string
+    title?: string
+    npc?: DialogueSpeaker
+    player?: DialogueSpeaker
+    /** Extra named speakers for books/items/secondary NPCs. */
+    speakers?: DialogueSpeaker[]
+    lines: DialogueLine[]
+}
+
+export interface DialogueResult {
+    choiceId?: string
+    choiceIndex?: number
+    text?: string
 }
 
 export interface GeomApi {

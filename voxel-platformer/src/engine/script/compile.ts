@@ -21,12 +21,15 @@ import type { ScriptContext, ScriptEntry } from './types'
 const AsyncFunctionCtor: new (...args: string[]) => (ctx: ScriptContext) => Promise<unknown> =
     Object.getPrototypeOf(async function () {}).constructor
 
-/** Destructure list, kept in sync with `ScriptContext` in types.ts. */
-const PRELUDE_LOCALS = [
+/** Destructure list, kept in sync with `ScriptContext` in types.ts.
+ *  Exported so the editor's parse-check helpers (Logic tab, NPC tab) use
+ *  the same prelude as the runtime — adding a binding here automatically
+ *  shows up wherever scripts are parse-checked. */
+export const PRELUDE_LOCALS = [
     'on', 'once', 'emit', 'wait', 'log',
     'player', 'chunks', 'pickups', 'audio',
     'flags', 'time', 'zone', 'geom', 'ui',
-    'dayCycle', 'weather', 'random',
+    'dayCycle', 'weather', 'travel', 'level', 'random',
 ].join(', ')
 
 export interface CompileSuccess {
@@ -59,11 +62,13 @@ export function compileScript(
     onRuntimeError: (entry: ScriptEntry, err: unknown) => void,
 ): CompileSuccess | CompileFailure {
     let fn: (ctx: ScriptContext) => Promise<unknown>
+    const sourceUrl = sanitizeSourceUrl(entry.name) || entry.id || 'script.js'
     try {
         fn = new AsyncFunctionCtor('ctx', `
             "use strict";
             const { ${PRELUDE_LOCALS} } = ctx;
             ${entry.source}
+            //# sourceURL=${sourceUrl}
         `)
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err : new Error(String(err)) }
@@ -79,4 +84,10 @@ export function compileScript(
     }
     pending.catch((err) => onRuntimeError(entry, err))
     return { ok: true, pending }
+}
+
+/** Strip newlines so a malformed name can't terminate the `//# sourceURL=`
+ *  pragma early. Returns the trimmed result (possibly empty). */
+function sanitizeSourceUrl(name: string): string {
+    return name.replace(/[\r\n]+/g, ' ').trim()
 }

@@ -42,6 +42,10 @@ wait(seconds: number): Promise<void>
 // Host bindings (the only ways to touch the world)
 player.position                 // { x, y, z } — getter
 player.inventory.gold           // number — getter
+player.inventory.arrows         // number — getter
+player.settings                 // PlayerSettings snapshot
+player.setSettings({ moveSpeed: 7, torch: { intensity: 4 } })
+player.setAbility('bow', false)
 player.teleport(x, y, z)
 player.kill(reason?: string)
 
@@ -53,11 +57,30 @@ audio.play(soundId, opts?: { loop?, volume?, fade? })
 audio.stop(soundId)
 
 pickups.spawn(kind, pos, opts?: { amount?, id?, label? })
+pickups.despawn(id): boolean         // true if a live pickup was removed
+pickups.exists(id): boolean          // true if the id is currently live
 
 ui.say(targetId, message, opts?: { seconds? })
+ui.dialogue({
+  npc?: { id?, name, avatar? },
+  player?: { id?, name, avatar? },
+  lines: [{ speaker?, text, choices?: [{ id, text }] }]
+}): Promise<{ choiceId?, choiceIndex?, text? }>
 
 flags.get(name)
 flags.set(name, value)
+
+level.spawn                     // VoxelCoord (fresh copy per read)
+level.size                      // number (XZ extent)
+level.name                      // string
+
+player.checkpoint               // VoxelCoord | null
+player.setCheckpoint(pos?)      // pos omitted ⇒ player.position
+player.clearCheckpoint()
+
+weather.setZoneEnabled(id, on): boolean   // toggle level-authored FX zone
+weather.isZoneEnabled(id): boolean
+weather.setZonePreset(id, presetId): boolean   // swap preset on the same zone
 
 zone.contains(zoneId, who?: 'player' | VoxelCoord): boolean
 time.now                        // sim-seconds since level start

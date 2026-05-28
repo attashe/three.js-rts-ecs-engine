@@ -30,7 +30,7 @@ export interface HighJumpOptions {
  */
 export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions = {}): System {
     const actionId = opts.actionId ?? 'spell.highJump'
-    const jumpVelocity = opts.jumpVelocity ?? 14.5
+    const jumpVelocityOverride = opts.jumpVelocity
     const chunks = opts.chunks
     const onHighJump = opts.onHighJump
     const playerAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
@@ -44,6 +44,10 @@ export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions =
 
             const player = players[0]!
             if (!actions.consumePressed(actionId, player)) return
+            if (!world.playerSettings.abilities.highJump) {
+                pushLog(world, 'High Jump is disabled.')
+                return
+            }
 
             if (chunks) {
                 aabbFromFoot(
@@ -62,6 +66,7 @@ export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions =
                 return
             }
 
+            const jumpVelocity = jumpVelocityOverride ?? world.playerSettings.highJumpVelocity
             Velocity.y[player] = Math.max(Velocity.y[player], jumpVelocity)
             removeComponent(world, player, Grounded)
             pushLog(world, 'High Jump!')

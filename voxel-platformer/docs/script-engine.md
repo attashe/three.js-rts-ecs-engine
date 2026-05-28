@@ -275,8 +275,16 @@ player.alive                // boolean — explicit "is there a player"
                             //   flag for handlers that need it.
 player.teleport(x, y, z)
 player.kill(reason?: string)
-player.setCheckpoint(pos?: VoxelCoord)  // Slice 3
+player.checkpoint           // VoxelCoord | null — last setCheckpoint, or null
+player.setCheckpoint(pos?: VoxelCoord)  // pos omitted ⇒ current player position
+player.clearCheckpoint()    // forget the saved checkpoint
 player.inventory.gold       // number — getter
+player.inventory.arrows     // number — getter
+player.settings             // PlayerSettings snapshot — mutate via setters below
+player.setSettings(patch)   // patch movement, inventory, torch, model, abilities
+player.setAbility(name, on) // e.g. player.setAbility('bow', false)
+player.setGold(amount)
+player.setArrows(amount)
 
 // Voxel grid
 chunks.getBlock(x, y, z): number
@@ -286,7 +294,8 @@ chunks.fillBlocks(min: VoxelCoord, max: VoxelCoord, block: number)
 // Pickups — spawn returns a stable id you can pass to despawn.
 pickups.spawn(kind: string, pos: VoxelCoord,
               opts?: { amount?: number; id?: string; label?: string }): PickupId
-pickups.despawn(id: PickupId): void
+pickups.despawn(id: PickupId): boolean  // true on success, false if not live
+pickups.exists(id: PickupId): boolean
 
 // Pistons
 pistons.setEnabled(id: string, enabled: boolean)
@@ -336,6 +345,16 @@ weather.setRain(on: boolean): void
 weather.setSnow(on: boolean): void
 weather.setLightning(on: boolean): void
 weather.applyPreset(presetId: string): boolean
+weather.setZoneEnabled(zoneId: string, enabled: boolean): boolean
+weather.isZoneEnabled(zoneId: string): boolean
+weather.setZonePreset(zoneId: string, presetId: string): boolean
+
+// Level metadata — read-only snapshot of the level the engine started
+// against. `spawn` returns a fresh object on every read so mutating it
+// can't change world state.
+level.spawn                       // VoxelCoord getter — author-named spawn
+level.size                        // number — XZ extent (block units)
+level.name                        // string — editor-authored name, or 'demo'
 
 // Geometry helpers — pure, no world state. Use when you need an AABB
 // test in a place that doesn't justify authoring a real zone (e.g. a
@@ -351,6 +370,19 @@ log(message: string, kind?: 'info' | 'warn' | 'error'): void
 
 // UI
 ui.say(targetId: string, message: string, opts?: { seconds?: number }): void
+ui.dialogue({
+  title?: string,
+  npc?: { id?, name, avatar?, side? },
+  player?: { id?, name, avatar?, side? },
+  speakers?: [{ id?, name, avatar?, side? }],
+  lines: [{
+    speaker?: string,
+    name?: string,
+    avatar?: string,
+    text: string,
+    choices?: [{ id: string, text: string, disabled?: boolean }]
+  }]
+}): Promise<{ choiceId?, choiceIndex?, text? }>
 ```
 
 Cross-script messaging uses the unified `on / emit / once` from §3.1
@@ -648,7 +680,7 @@ on('level-start', async () => {
 | `flags`, `time.now/tick`, `random`            | ✅ | — | — |
 | `audio.play/stop`                             | ✅ | — | `fade` opt landed Slice 1 |
 | `chunks.getBlock/setBlock/fillBlocks`         | ✅ | — | — |
-| `pickups.spawn`                               | ✅ | — | `despawn` deferred |
+| `pickups.spawn` / `despawn` / `exists`        | ✅ | ✅ | Stable-id lifecycle complete in Slice 3 |
 | `player.position/teleport/kill/inventory`    | ✅ | ✅ | sentinel pos + `alive` flag in 1.5 |
 | `zone.contains`                               | ✅ | — | — |
 | `geom.box`, `geom.distSq`                     | — | ✅ | new |
@@ -658,6 +690,7 @@ on('level-start', async () => {
 | `player.died` event                           | — | ✅ | watchdog inside script-engine-system |
 | `input` event                                 | — | ✅ | Interaction key emits `action: "interact"` |
 | `ui.say` floating bubbles                     | — | ✅ | wired via `interaction-system` |
+| `ui.dialogue` modal conversations             | — | ✅ | centered UI with avatars + choices |
 | Stable pickup ids + idempotent spawn          | — | ✅ | `pickups.spawn(..., { id, label })` |
 | `Zone.active` + `zone.setActive/isActive/exists` | — | — / 1.6 | inactive zones synthesise zone-exit |
 | `flag.changed` event                          | — | — / 1.6 | cross-script observation w/o polling |
@@ -667,7 +700,8 @@ on('level-start', async () => {
 | `player.setCheckpoint`                        | — | — | Slice 3 — needs checkpoint system |
 | `pickups.despawn`                             | — | — | Slice 3 |
 | `pistons.setEnabled/flip`                     | — | — | Slice 3 — needs piston id surface |
-| `weather.setZoneEnabled` (toggle FX zones)    | — | — | Slice 3 — needs respawn-by-id surface |
+| `weather.setZoneEnabled` (toggle FX zones)    | — | ✅ | Slice 3 — controller tracks configs / live / enabled |
+| `weather.setZonePreset` (re-spawn with new preset) | — | ✅ | Slice 3 — pairs with setZoneEnabled |
 | `ZoneScriptAction` migration                  | — | — | Slice 3 |
 
 ### What's still on the roadmap
