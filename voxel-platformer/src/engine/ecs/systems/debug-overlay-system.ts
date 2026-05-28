@@ -145,7 +145,9 @@ function renderLog(panel: HTMLDivElement | null, log: readonly string[]): void {
 }
 
 function createBoxBatch(material: LineBasicMaterial): BoxBatchState {
-    const lines = new LineSegments(new BufferGeometry(), material)
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(0, 3))
+    const lines = new LineSegments(geometry, material)
     lines.name = 'DebugBoxBatch'
     lines.frustumCulled = false
     return { lines, capacity: 0, count: 0 }
@@ -206,4 +208,3 @@ function writeEdge(
     coords[offset + 0] = ax; coords[offset + 1] = ay; coords[offset + 2] = az
     coords[offset + 3] = bx; coords[offset + 4] = by; coords[offset + 5] = bz
 }
-

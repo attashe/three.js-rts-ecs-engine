@@ -3,11 +3,12 @@ import { query } from 'bitecs'
 import {
     WeatherSystem,
     WEATHER_PRESETS,
-    applyZonePreset,
     type EffectType,
-    type WeatherZone,
-    type WeatherZoneParams,
 } from '../engine/fx'
+import {
+    createVisualFxZoneController,
+    type VisualFxZoneController,
+} from './visual-fx-zone-controller'
 import type { AudioEngine, SoundHandle } from '../engine/audio'
 import { PlayerControlled, Position } from '../engine/ecs/components'
 import type { System } from '../engine/ecs/systems/system'
@@ -37,7 +38,6 @@ export interface WeatherZoneSystemOptions {
 
 interface ZoneEntry {
     config: WeatherZoneRuntimeConfig
-    fxZone: WeatherZone
     soundHandle: SoundHandle | null
     soundGain: number
 }
@@ -104,67 +104,91 @@ export function createEnvironmentFxSystem(
  * This deliberately disables `WeatherSystem`'s ambient pass so placing a
  * fire/rain/lava volume does not overwrite the level-wide sky/fog/lights.
  */
+/** System + side-channel handle exposing per-zone toggles for scripts. */
+export interface VisualFxZoneSystem extends System {
+    readonly controller: VisualFxZoneController | null
+}
+
 export function createVisualFxZoneSystem(
     scene: Scene,
     audio: AudioEngine,
     zones: readonly WeatherZoneRuntimeConfig[],
     cameraProvider: () => Camera,
     opts: WeatherZoneSystemOptions = {},
-): System {
-    if (zones.length === 0) return { name: 'visualFxZones', update: () => {} }
+): VisualFxZoneSystem {
+    if (zones.length === 0) {
+        return Object.assign(
+            { name: 'visualFxZones', update: () => {} } as System,
+            { controller: null as VisualFxZoneController | null },
+        )
+    }
 
     const fx = new WeatherSystem(scene, { ambient: false, maxLights: 8, cullDistance: 120 })
-    const entries: ZoneEntry[] = []
+    const controller = createVisualFxZoneController(fx, zones)
+    const entries = new Map<string, ZoneEntry>()
     const pendingThunder: PendingThunder[] = []
     const tmpThunderPos = new Vector3()
+    const fadeOut = Math.max(0, opts.fadeOut ?? 0.2)
     let disposed = false
     let elapsed = 0
+    let audioReady = !opts.audioReady
 
-    function spawn(): void {
-        for (const config of zones) {
-            const params = paramsForConfig(config)
-            const fxZone = fx.addZone(params)
-            const handle = config.addSound ? armPairedSound(audio, config) : null
-            entries.push({ config, fxZone, soundHandle: handle, soundGain: 0 })
+    const hooks = {
+        onSpawned(config: WeatherZoneRuntimeConfig) {
+            if (entries.has(config.id)) return
+            const handle = audioReady && config.addSound ? armPairedSound(audio, config) : null
+            entries.set(config.id, { config, soundHandle: handle, soundGain: 0 })
+        },
+        onDespawned(config: WeatherZoneRuntimeConfig) {
+            const entry = entries.get(config.id)
+            if (!entry) return
+            entry.soundHandle?.stop(fadeOut)
+            entries.delete(config.id)
+        },
+    }
+
+    function armEntriesAudio(): void {
+        // Once the audio gate resolves, retroactively arm sounds for
+        // already-spawned entries. Zones spawned after this point pick
+        // up audio in onSpawned directly.
+        for (const entry of entries.values()) {
+            if (entry.soundHandle || !entry.config.addSound) continue
+            entry.soundHandle = armPairedSound(audio, entry.config)
         }
     }
 
-    return {
+    const system: System = {
         name: 'visualFxZones',
         order: RenderOrder.cameraFollow + 3,
         init() {
+            controller.spawnEnabled(hooks)
             if (opts.audioReady) {
-                void opts.audioReady.then(spawn).catch((err) => {
+                void opts.audioReady.then(() => {
+                    audioReady = true
+                    armEntriesAudio()
+                }).catch((err) => {
                     console.warn('Visual FX zones starting without paired audio:', err)
-                    // Build FX anyway — particles don't need the audio
-                    // engine; only the paired sounds will be missing.
-                    for (const config of zones) {
-                        const fxZone = fx.addZone(paramsForConfig(config))
-                        entries.push({ config, fxZone, soundHandle: null, soundGain: 0 })
-                    }
+                    audioReady = true
                 })
-            } else {
-                spawn()
             }
         },
         update(world, dt) {
             if (disposed) return
             elapsed += dt
             fx.update(dt, cameraProvider())
-            queueThunderEvents(world, entries, pendingThunder, elapsed, tmpThunderPos)
+            queueThunderEvents(world, fx, entries, pendingThunder, elapsed, tmpThunderPos)
             playDueThunder(audio, pendingThunder, elapsed)
             updatePairedSoundGains(world, entries, dt)
         },
         dispose() {
             if (disposed) return
             disposed = true
-            const fade = Math.max(0, opts.fadeOut ?? 0.2)
-            for (const entry of entries) entry.soundHandle?.stop(fade)
-            entries.length = 0
+            controller.despawnAll(hooks)
             pendingThunder.length = 0
             fx.dispose()
         },
     }
+    return Object.assign(system, { controller })
 }
 
 /** Backward-compatible wrapper for old callers. Prefer the explicit
@@ -200,15 +224,6 @@ export function createWeatherZoneSystem(
     }
 }
 
-function paramsForConfig(config: WeatherZoneRuntimeConfig): WeatherZoneParams {
-    return applyZonePreset(config.presetId, {
-        id: config.id,
-        name: config.label ?? config.presetId,
-        position: { ...config.position },
-        size: { ...config.size },
-    })
-}
-
 function armPairedSound(audio: AudioEngine, config: WeatherZoneRuntimeConfig): SoundHandle | null {
     const id = config.soundId || defaultSoundForPreset(config.presetId)
     if (!id) return null
@@ -236,10 +251,10 @@ function armPairedSound(audio: AudioEngine, config: WeatherZoneRuntimeConfig): S
 
 function updatePairedSoundGains(
     world: Parameters<NonNullable<System['update']>>[0],
-    entries: ZoneEntry[],
+    entries: Map<string, ZoneEntry>,
     dt: number,
 ): void {
-    if (entries.length === 0) return
+    if (entries.size === 0) return
 
     const players = query(world, [Position, PlayerControlled])
     const pid = players[0]
@@ -249,7 +264,7 @@ function updatePairedSoundGains(
     const pz = hasPlayer ? Position.z[pid]! : 0
     const alpha = 1 - Math.exp(-Math.max(0, dt) * 8)
 
-    for (const entry of entries) {
+    for (const entry of entries.values()) {
         const handle = entry.soundHandle
         if (!handle) continue
         const target = hasPlayer
@@ -263,14 +278,17 @@ function updatePairedSoundGains(
 
 function queueThunderEvents(
     world: Parameters<NonNullable<System['update']>>[0],
-    entries: ZoneEntry[],
+    fx: WeatherSystem,
+    entries: Map<string, ZoneEntry>,
     pending: PendingThunder[],
     now: number,
     tmp: Vector3,
 ): void {
     const player = playerPosition(world)
-    for (const entry of entries) {
-        const events = entry.fxZone.runtime.events
+    for (const entry of entries.values()) {
+        const fxZone = fx.getZone(entry.config.id)
+        if (!fxZone) continue
+        const events = fxZone.runtime.events
         if (events.length === 0) continue
         const drained = events.splice(0)
         if (!entry.config.addSound) continue
@@ -278,7 +296,7 @@ function queueThunderEvents(
         for (const event of drained) {
             if (event.type !== 'lightning-strike') continue
             tmp.set(event.localPosition.x, event.localPosition.y, event.localPosition.z)
-            entry.fxZone.group.localToWorld(tmp)
+            fxZone.group.localToWorld(tmp)
             const pos = { x: tmp.x, y: tmp.y, z: tmp.z }
             const distance = player ? Math.hypot(pos.x - player.x, pos.y - player.y, pos.z - player.z) : 24
             pending.push({

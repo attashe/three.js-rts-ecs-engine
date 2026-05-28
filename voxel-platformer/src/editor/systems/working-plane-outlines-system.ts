@@ -39,6 +39,7 @@ export function createWorkingPlaneOutlinesSystem(
         depthWrite: false,
     })
     const lineGeometry = new BufferGeometry()
+    lineGeometry.setAttribute('position', new Float32BufferAttribute(0, 3))
     const lines = new LineSegments(lineGeometry, lineMaterial)
     lines.name = 'EditorWorkingPlaneOutlines'
     lines.frustumCulled = false

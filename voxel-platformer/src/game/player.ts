@@ -1,5 +1,5 @@
 import { Group, PointLight } from 'three'
-import { addComponents } from 'bitecs'
+import { addComponents, query } from 'bitecs'
 import type { GameWorld } from '../engine/ecs/world'
 import {
     BoxCollider,
@@ -20,12 +20,16 @@ import {
     MAIN_CHARACTER_COLLIDER_RADIUS,
 } from './assets'
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
+import { DEFAULT_PLAYER_SETTINGS, type PlayerModelKind, type PlayerSettings } from './player-settings'
 
 export interface PlayerOptions {
     spawn: { x: number; y: number; z: number }
     bodyColor?: number
     rimColor?: number
+    settings?: PlayerSettings
 }
+
+export const PLAYER_MODEL_KIND_USER_DATA = 'playerModelKind'
 
 /**
  * Spawn the player entity. Returns its EID.
@@ -46,6 +50,7 @@ export interface PlayerOptions {
  * The `Grounded` tag is added/removed by the physics system as it sweeps.
  */
 export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
+    const settings = opts.settings ?? DEFAULT_PLAYER_SETTINGS
     const eid = createEntity(world)
     addComponents(world, eid, [
         Position,
@@ -66,13 +71,10 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
 
     const root = new Group()
     root.name = 'PlayerRoot'
-    root.add(createMainCharacter({
-        tunicColor: opts.bodyColor ?? 0x2f5e8f,
-        cloakColor: opts.rimColor ?? 0x7a2430,
-    }))
+    root.add(createPlayerModel(settings.model, opts))
     root.add(createBackBow())
     root.add(createBackQuiver())
-    root.add(createHeldTorch())
+    root.add(createHeldTorch(settings))
 
     // Move the entire player rig to the PLAYER layer. Cameras + lights
     // that should still see/illuminate the player must opt into this
@@ -97,8 +99,64 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     return eid
 }
 
-function createHeldTorch(): Group {
-    const torch = createPlayerTorch()
+interface PlayerVisualOptions {
+    bodyColor?: number
+    rimColor?: number
+}
+
+function createPlayerModel(modelKind: PlayerModelKind, opts: PlayerVisualOptions): Group {
+    let model: Group
+    if (modelKind === 'keeper') {
+        model = createMainCharacter({
+            tunicColor: opts.bodyColor ?? 0x1f2c3f,
+            cloakColor: opts.rimColor ?? 0x3f2818,
+            skinColor: 0xc89461,
+            metalColor: 0xffc462,
+            bootColor: 0x17120d,
+        })
+    } else {
+        model = createMainCharacter({
+            tunicColor: opts.bodyColor ?? 0x2f5e8f,
+            cloakColor: opts.rimColor ?? 0x7a2430,
+        })
+    }
+    model.name = 'PlayerModel'
+    model.userData[PLAYER_MODEL_KIND_USER_DATA] = modelKind
+    return model
+}
+
+export function syncPlayerVisuals(world: GameWorld): void {
+    const players = query(world, [PlayerControlled, Renderable])
+    for (let i = 0; i < players.length; i++) {
+        const root = world.object3DByEid.get(players[i]!)
+        if (!(root instanceof Group)) continue
+        syncPlayerModel(root, world.playerSettings.model)
+    }
+}
+
+function syncPlayerModel(root: Group, modelKind: PlayerModelKind): void {
+    const current = root.children.find((child) => child.userData[PLAYER_MODEL_KIND_USER_DATA] !== undefined)
+    if (current?.userData[PLAYER_MODEL_KIND_USER_DATA] === modelKind) return
+
+    const next = createPlayerModel(modelKind, {})
+    setLayerRecursive(next, RENDER_LAYER.PLAYER)
+    if (!current) {
+        root.add(next)
+        return
+    }
+
+    const index = root.children.indexOf(current)
+    root.remove(current)
+    root.add(next)
+    const appendedIndex = root.children.indexOf(next)
+    if (index >= 0 && appendedIndex >= 0 && index < appendedIndex) {
+        root.children.splice(appendedIndex, 1)
+        root.children.splice(index, 0, next)
+    }
+}
+
+function createHeldTorch(settings: PlayerSettings): Group {
+    const torch = createPlayerTorch(settings.torch)
     torch.position.set(0.35, 0.68, 0.18)
     torch.rotation.set(0.16, -0.04, -0.14)
     torch.scale.setScalar(0.94)

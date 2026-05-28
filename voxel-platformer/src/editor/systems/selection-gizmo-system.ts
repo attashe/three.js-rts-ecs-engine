@@ -26,11 +26,13 @@ import type {
     EditorZone,
 } from '../editor-state'
 import type { EditorProp } from '../../game/props/prop-types'
+import type { NpcConfig } from '../../game/npcs/npc-types'
 
 type SelectionRef =
     | { kind: 'spawn' }
     | { kind: 'pickup'; pickup: EditorPickup }
     | { kind: 'prop'; prop: EditorProp }
+    | { kind: 'npc'; npc: NpcConfig }
     | { kind: 'zone'; zone: EditorZone }
     | { kind: 'sound-source'; source: EditorSoundSource }
     | { kind: 'sound-zone'; zone: EditorSoundZone }
@@ -44,6 +46,8 @@ interface SelectionBaseline {
     pickupPosition?: { x: number; y: number; z: number }
     prop?: EditorProp
     propPosition?: { x: number; y: number; z: number }
+    npc?: NpcConfig
+    npcPosition?: { x: number; y: number; z: number }
     zone?: EditorZone
     zoneMin?: VoxelCoord
     zoneMax?: VoxelCoord
@@ -143,6 +147,7 @@ export function createSelectionGizmoSystem(
         editorState.selectedSoundSourceId = ref?.kind === 'sound-source' ? ref.source.id : null
         editorState.selectedSoundZoneId = ref?.kind === 'sound-zone' ? ref.zone.id : null
         editorState.selectedPropId = ref?.kind === 'prop' ? ref.prop.id : null
+        editorState.selectedNpcId = ref?.kind === 'npc' ? ref.npc.id : null
         baseline = ref ? createBaseline(ref) : null
         if (baseline) {
             target.position.copy(baseline.anchor)
@@ -190,6 +195,9 @@ export function createSelectionGizmoSystem(
         }
         for (const prop of editorState.props) {
             addPropProxy(proxyGroup, proxyMeshes, prop, sameSelection(selected, { kind: 'prop', prop }))
+        }
+        for (const npc of editorState.npcs) {
+            addNpcProxy(proxyGroup, proxyMeshes, npc, sameSelection(selected, { kind: 'npc', npc }))
         }
         for (const zone of editorState.zones) {
             addBoxProxy(proxyGroup, proxyMeshes, {
@@ -283,6 +291,14 @@ export function createSelectionGizmoSystem(
                     z: current.propPosition.z + dz,
                 }
                 break
+            case 'npc':
+                if (!current.npc || !current.npcPosition || !editorState.npcs.includes(current.npc)) return
+                current.npc.position = {
+                    x: current.npcPosition.x + dx,
+                    y: current.npcPosition.y + dy,
+                    z: current.npcPosition.z + dz,
+                }
+                break
             case 'zone':
                 if (!current.zone || !current.zoneMin || !current.zoneMax || !editorState.zones.includes(current.zone)) return
                 current.zone.min = addDeltaToVoxel(current.zoneMin, dx, dy, dz)
@@ -322,6 +338,8 @@ export function createSelectionGizmoSystem(
                 return { ref, anchor, pickup: ref.pickup, pickupPosition: { ...ref.pickup.position } }
             case 'prop':
                 return { ref, anchor, prop: ref.prop, propPosition: { ...ref.prop.position } }
+            case 'npc':
+                return { ref, anchor, npc: ref.npc, npcPosition: { ...ref.npc.position } }
             case 'zone':
                 return { ref, anchor, zone: ref.zone, zoneMin: { ...ref.zone.min }, zoneMax: { ...ref.zone.max } }
             case 'sound-source':
@@ -334,6 +352,17 @@ export function createSelectionGizmoSystem(
     }
 
     function syncExternalPropSelection(): void {
+        const npcId = editorState.selectedNpcId
+        if (npcId) {
+            if (selected?.kind === 'npc' && selected.npc.id === npcId && editorState.npcs.includes(selected.npc)) return
+            const npc = editorState.npcs.find((n) => n.id === npcId)
+            if (npc) {
+                select({ kind: 'npc', npc })
+                return
+            }
+            editorState.selectedNpcId = null
+            if (selected?.kind === 'npc') select(null)
+        }
         const propId = editorState.selectedPropId
         if (!propId) {
             if (selected?.kind === 'prop') select(null)
@@ -378,6 +407,18 @@ function addPropProxy(group: Group, out: Mesh[], prop: EditorProp, selected: boo
         center: new Vector3(prop.position.x, prop.position.y + height * 0.5, prop.position.z),
         size: new Vector3(0.9 * s, height, 0.9 * s),
         color: 0xb3e5b3,
+        selected,
+    })
+}
+
+function addNpcProxy(group: Group, out: Mesh[], npc: NpcConfig, selected: boolean): void {
+    const radius = Math.max(0.15, npc.colliderRadius || 0.35)
+    const height = Math.max(0.6, npc.colliderHeight || 1.6)
+    addBoxProxy(group, out, {
+        ref: { kind: 'npc', npc },
+        center: new Vector3(npc.position.x, npc.position.y + height * 0.5, npc.position.z),
+        size: new Vector3(radius * 2, height, radius * 2),
+        color: 0xffd166,
         selected,
     })
 }
@@ -463,6 +504,7 @@ function selectionPriority(ref: SelectionRef): number {
         case 'pickup': return 1
         case 'sound-source': return 1
         case 'prop': return 2
+        case 'npc': return 2
         case 'zone': return 4
         case 'sound-zone': return 4
         case 'effect-zone': return 4
@@ -476,6 +518,7 @@ function sameSelection(a: SelectionRef | null, b: SelectionRef | null): boolean 
         case 'spawn': return true
         case 'pickup': return b.kind === 'pickup' && a.pickup === b.pickup
         case 'prop': return b.kind === 'prop' && a.prop === b.prop
+        case 'npc': return b.kind === 'npc' && a.npc === b.npc
         case 'zone': return b.kind === 'zone' && a.zone === b.zone
         case 'sound-source': return b.kind === 'sound-source' && a.source === b.source
         case 'sound-zone': return b.kind === 'sound-zone' && a.zone === b.zone
@@ -493,6 +536,9 @@ function anchorFor(ref: SelectionRef, state: EditorState): Vector3 | null {
         case 'prop':
             if (!state.props.includes(ref.prop)) return null
             return new Vector3(ref.prop.position.x, ref.prop.position.y, ref.prop.position.z)
+        case 'npc':
+            if (!state.npcs.includes(ref.npc)) return null
+            return new Vector3(ref.npc.position.x, ref.npc.position.y, ref.npc.position.z)
         case 'zone':
             if (!state.zones.includes(ref.zone)) return null
             return aabbCenter(ref.zone.min, ref.zone.max)
@@ -533,9 +579,11 @@ function snappedDelta(position: Vector3, anchor: Vector3): Vector3 {
 }
 
 function selectionDelta(position: Vector3, baseline: SelectionBaseline, state: EditorState): Vector3 {
-    if (baseline.ref.kind === 'prop') {
-        const snapProp = baseline.prop?.gridAligned !== false && state.propGridAlign
-        if (!snapProp) {
+    if (baseline.ref.kind === 'prop' || baseline.ref.kind === 'npc') {
+        const snap = baseline.ref.kind === 'prop'
+            ? baseline.prop?.gridAligned !== false && state.propGridAlign
+            : baseline.npc?.gridAligned !== false && state.npcGridAlign
+        if (!snap) {
             return new Vector3(
                 position.x - baseline.anchor.x,
                 position.y - baseline.anchor.y,
@@ -571,6 +619,7 @@ function selectionLabel(ref: SelectionRef): string {
         case 'spawn': return 'spawn point'
         case 'pickup': return `pickup @ ${formatPoint(ref.pickup.position)}`
         case 'prop': return `prop "${ref.prop.kind}" @ ${formatPoint(ref.prop.position)}`
+        case 'npc': return `NPC "${ref.npc.name}" @ ${formatPoint(ref.npc.position)}`
         case 'zone': return `zone "${ref.zone.label ?? ref.zone.id}"`
         case 'sound-source': return `sound source "${ref.source.label ?? ref.source.id}"`
         case 'sound-zone': return `sound zone "${ref.zone.label ?? ref.zone.id}"`
@@ -588,6 +637,7 @@ function selectionFingerprint(state: EditorState, selected: SelectionRef | null)
         `spawn:${state.spawn.x},${state.spawn.y},${state.spawn.z}`,
         `pickups:${state.pickups.map((p) => `${p.amount}@${p.position.x},${p.position.y},${p.position.z}`).join(';')}`,
         `props:${state.props.map((p) => `${p.id}:${p.kind}:${p.position.x},${p.position.y},${p.position.z}:${p.scale}`).join(';')}`,
+        `npcs:${state.npcs.map((n) => `${n.id}:${n.model}:${n.position.x},${n.position.y},${n.position.z}:${n.scale}:${n.colliderRadius}:${n.colliderHeight}`).join(';')}`,
         `zones:${state.zones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
         `sources:${state.soundSources.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.radius}`).join(';')}`,
         `soundZones:${state.soundZones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
@@ -600,6 +650,7 @@ function selectionKey(ref: SelectionRef, state: EditorState): string {
         case 'spawn': return 'spawn'
         case 'pickup': return `pickup:${state.pickups.indexOf(ref.pickup)}`
         case 'prop': return `prop:${ref.prop.id}`
+        case 'npc': return `npc:${ref.npc.id}`
         case 'zone': return `zone:${ref.zone.id}`
         case 'sound-source': return `sound-source:${ref.source.id}`
         case 'sound-zone': return `sound-zone:${ref.zone.id}`

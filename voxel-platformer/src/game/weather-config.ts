@@ -1,6 +1,8 @@
 import type { AmbientWeatherState } from '../engine/fx/core/types'
 import { GameAudio } from './audio'
 
+export const DEFAULT_OUTDOOR_FOG_DENSITY_MUL = 0.45
+
 /**
  * Plain-data side of the visual FX/environment integration. Splitting it out from
  * `weather.ts` (which owns the `WeatherSystem` runtime) keeps the

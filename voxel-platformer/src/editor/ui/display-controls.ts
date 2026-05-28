@@ -1,11 +1,8 @@
 import {
-    getPlayerTorchShadow,
     getRenderTextures,
     getTorchSystem,
-    setPlayerTorchShadow,
     setRenderTextures,
     setTorchSystem,
-    subscribePlayerTorchShadow,
     subscribeRenderTextures,
     type TorchSystemKind,
 } from '../../engine/render/render-settings'
@@ -87,32 +84,11 @@ export function buildDisplayControlsSection(): RefreshableElement {
     torchNote.textContent = ''
     section.appendChild(torchNote)
 
-    // ── Player-torch shadow toggle. Unlike the system selector
-    //    above, this one takes effect immediately — the player-torch
-    //    system subscribes and flips `castShadow` on the live light.
-    const shadowRow = document.createElement('label')
-    shadowRow.className = 'vpe-field'
-    shadowRow.style.cursor = 'pointer'
-    const shadowInput = document.createElement('input')
-    shadowInput.type = 'checkbox'
-    shadowInput.checked = getPlayerTorchShadow()
-    shadowInput.onchange = () => setPlayerTorchShadow(shadowInput.checked)
-    const shadowSpan = document.createElement('span')
-    shadowSpan.textContent = 'Player torch casts shadows'
-    shadowSpan.title = 'The held torch projects shadows from nearby blocks onto the lit pool. Single 256² cube shadow map; toggle if too costly on this machine.'
-    shadowRow.append(shadowSpan, shadowInput)
-    section.appendChild(shadowRow)
-
-    subscribePlayerTorchShadow((enabled) => {
-        if (shadowInput.checked !== enabled) shadowInput.checked = enabled
-    })
-
     return {
         element: section,
         refresh() {
             input.checked = getRenderTextures()
             torchSelect.value = getTorchSystem()
-            shadowInput.checked = getPlayerTorchShadow()
         },
     }
 }

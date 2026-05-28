@@ -111,3 +111,59 @@ test('scripts survive a save -> load round-trip through metadata', () => {
 
     assert.deepEqual(restoreState.scripts, state.scripts)
 })
+
+test('NPCs survive a save -> load round-trip through metadata', () => {
+    const state = createEditorState({ x: 0, y: 0, z: 0 })
+    state.npcs.push({
+        id: 'npc-arlen',
+        name: 'Keeper Arlen',
+        model: 'player',
+        position: { x: 4.5, y: 2, z: 6.5 },
+        yaw: 0.8,
+        scale: 1.15,
+        gridAligned: false,
+        collisionEnabled: true,
+        colliderRadius: 0.42,
+        colliderHeight: 1.8,
+        interactionEnabled: true,
+        interactionRadius: 2.6,
+        interactionPrompt: 'Interaction',
+        scriptEnabled: true,
+        scriptSource: `on('input', { action: 'interact', targetId: NPC_INTERACTION }, () => log(NPC_NAME))`,
+    })
+
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const meta = toLevelMeta(state, 'npc-test')
+    assert.equal(meta.npcs?.length, 1)
+
+    const buffer = serializeLevel(chunks, meta)
+    const restoreState = createEditorState({ x: 0, y: 0, z: 0 })
+    loadLevelFromBuffer(buffer, createGameWorld(), new ChunkManager(DEFAULT_PALETTE), restoreState)
+
+    assert.deepEqual(restoreState.npcs, state.npcs)
+})
+
+test('player defaults survive a save -> load round-trip through metadata', () => {
+    const state = createEditorState({ x: 0, y: 0, z: 0 })
+    state.player.model = 'keeper'
+    state.player.abilities.bow = false
+    state.player.abilities.highJump = false
+    state.player.inventory.gold = 77
+    state.player.inventory.arrows = 5
+    state.player.moveSpeed = 6.5
+    state.player.jumpVelocity = 9.25
+    state.player.torch.intensity = 4.5
+    state.player.torch.distance = 18
+    state.player.torch.castsShadow = false
+
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const meta = toLevelMeta(state, 'player-test')
+    assert.equal(meta.player?.model, 'keeper')
+    assert.equal(meta.player?.abilities.bow, false)
+
+    const buffer = serializeLevel(chunks, meta)
+    const restoreState = createEditorState({ x: 0, y: 0, z: 0 })
+    loadLevelFromBuffer(buffer, createGameWorld(), new ChunkManager(DEFAULT_PALETTE), restoreState)
+
+    assert.deepEqual(restoreState.player, state.player)
+})

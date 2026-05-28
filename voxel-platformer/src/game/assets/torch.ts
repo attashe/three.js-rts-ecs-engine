@@ -22,16 +22,24 @@ export interface PlayerTorchLightUserData {
     phase: number
 }
 
+export interface PlayerTorchOptions {
+    intensity?: number
+    distance?: number
+    castsShadow?: boolean
+}
+
 /** Hand-held player torch — keeps its own dedicated PointLight because
  *  there is exactly one of them. Block torches use a shared light pool
  *  (see `torch-block-system.ts`) to avoid the per-instance shader
  *  recompile that adding/removing lights on the fly would trigger. */
-export function createPlayerTorch(): Group {
+export function createPlayerTorch(opts: PlayerTorchOptions = {}): Group {
     const root = createTorchVisualRoot('PlayerTorch')
 
     const flickerPhase = Math.random() * Math.PI * 2
 
-    const light = new PointLight(new Color(0xffb05f), 7.6, 14, 1.25)
+    const intensity = safePositive(opts.intensity, 7.6)
+    const distance = safePositive(opts.distance, 14)
+    const light = new PointLight(new Color(0xffb05f), intensity, distance, 1.25)
     light.name = 'PlayerTorchLight'
     light.position.set(0, 0.71, 0.04)
     // Shadow casting from the player-held torch. Historical context:
@@ -43,18 +51,17 @@ export function createPlayerTorch(): Group {
     // default WORLD-only) skips the player entirely. The world
     // geometry around the player still casts shadows from the torch.
     //
-    // The user can disable shadow casting at runtime via the
-    // `vp:render:player-torch-shadow` setting; we configure the
-    // shadow camera unconditionally so toggling it later is a
-    // cheap `light.castShadow = ...` (no re-init).
+    // The game controls shadow casting at runtime from level player
+    // settings. Configure the shadow camera unconditionally so toggling
+    // it later is a cheap `light.castShadow = ...` (no re-init).
     //
     // Shadow map size 256² is the smallest that keeps the soft pool
     // edge readable; the far-plane tracks the light's distance so the
     // cube render only touches blocks within the lit radius.
-    light.castShadow = getPlayerTorchShadow()
+    light.castShadow = opts.castsShadow ?? getPlayerTorchShadow()
     light.shadow.mapSize.set(256, 256)
     light.shadow.camera.near = 0.2
-    light.shadow.camera.far = light.distance
+    light.shadow.camera.far = Math.max(light.shadow.camera.near + 0.1, light.distance)
     light.shadow.bias = -0.0008
     light.shadow.normalBias = 0.04
     light.shadow.camera.updateProjectionMatrix()
@@ -66,6 +73,11 @@ export function createPlayerTorch(): Group {
     root.add(light)
 
     return root
+}
+
+function safePositive(value: unknown, fallback: number): number {
+    const n = Number(value)
+    return Number.isFinite(n) && n >= 0 ? n : fallback
 }
 
 export interface BlockTorchLightSpec {

@@ -30,6 +30,7 @@ export function createTabBar(tabs: readonly TabDef[], initial: string): TabBar {
 
     const bar = document.createElement('div')
     bar.className = 'vpe-tabs'
+    bar.addEventListener('wheel', onTabWheel, { passive: false })
     root.appendChild(bar)
 
     const body = document.createElement('div')
@@ -56,9 +57,22 @@ export function createTabBar(tabs: readonly TabDef[], initial: string): TabBar {
             body.appendChild(entry.element)
         }
         entry.element.style.display = ''
-        buttons.get(id)?.classList.add('active')
+        const activeButton = buttons.get(id)
+        activeButton?.classList.add('active')
+        activeButton?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
         active = id
         entry.refresh()
+    }
+
+    function onTabWheel(ev: WheelEvent): void {
+        if (bar.scrollWidth <= bar.clientWidth) return
+        const delta = Math.abs(ev.deltaX) > Math.abs(ev.deltaY)
+            ? wheelDeltaToPixels(ev.deltaX, ev.deltaMode, bar.clientWidth)
+            : wheelDeltaToPixels(ev.deltaY, ev.deltaMode, bar.clientWidth)
+        if (delta === 0) return
+        bar.scrollLeft += delta
+        ev.preventDefault()
+        ev.stopPropagation()
     }
 
     for (const tab of tabs) {
@@ -80,4 +94,10 @@ export function createTabBar(tabs: readonly TabDef[], initial: string): TabBar {
         },
         activate,
     }
+}
+
+function wheelDeltaToPixels(delta: number, mode: number, pageSize: number): number {
+    if (mode === WheelEvent.DOM_DELTA_LINE) return delta * 16
+    if (mode === WheelEvent.DOM_DELTA_PAGE) return delta * pageSize
+    return delta
 }

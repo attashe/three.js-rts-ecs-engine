@@ -1,4 +1,4 @@
-import { Mesh, MeshBasicMaterial, PointLight, type Object3D } from 'three'
+import { Mesh, PointLight, type Object3D } from 'three'
 import type { System } from '../engine/ecs/systems/system'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import {
@@ -6,15 +6,12 @@ import {
     PLAYER_TORCH_LIGHT,
     type PlayerTorchLightUserData,
 } from './assets'
-import {
-    getPlayerTorchShadow,
-    subscribePlayerTorchShadow,
-} from '../engine/render/render-settings'
 
 interface TorchRuntime {
     light: PointLight
     flame: TorchFlameRuntime[]
     data: PlayerTorchLightUserData
+    shadowFar: number
 }
 
 interface TorchFlameRuntime {
@@ -26,27 +23,12 @@ export function createPlayerTorchSystem(): System {
     const torches: TorchRuntime[] = []
     let elapsed = 0
     let rescanTimer = 0
-    let shadowEnabled = getPlayerTorchShadow()
-
-    function applyShadowToAll(): void {
-        for (const torch of torches) {
-            if (torch.light.castShadow !== shadowEnabled) {
-                torch.light.castShadow = shadowEnabled
-            }
-        }
-    }
-
-    subscribePlayerTorchShadow((enabled) => {
-        shadowEnabled = enabled
-        applyShadowToAll()
-    })
 
     return {
         name: 'playerTorch',
         order: RenderOrder.renderSync + 5,
         init(world) {
             collectTorches(world.object3DByEid.values(), torches)
-            applyShadowToAll()
         },
         update(world, dt) {
             elapsed += dt
@@ -55,10 +37,7 @@ export function createPlayerTorchSystem(): System {
                 rescanTimer = 1
                 const before = torches.length
                 collectTorches(world.object3DByEid.values(), torches)
-                // Newly-discovered torches inherit whatever castShadow
-                // their factory set, but the user may have toggled the
-                // setting since createPlayerTorch ran. Re-apply.
-                if (torches.length !== before) applyShadowToAll()
+                if (torches.length !== before) rescanTimer = 1
             }
 
             for (let i = torches.length - 1; i >= 0; i--) {
@@ -68,9 +47,24 @@ export function createPlayerTorchSystem(): System {
                     continue
                 }
 
+                const enabled = world.playerSettings.abilities.torch
+                const root = torch.light.parent
+                root.visible = enabled
+                torch.light.visible = enabled
+                torch.light.castShadow = enabled && world.playerSettings.torch.castsShadow
+                if (!enabled) continue
+
                 const pulse = flicker(elapsed, torch.data.phase)
-                torch.light.intensity = torch.data.baseIntensity * (0.88 + pulse * 0.38)
-                torch.light.distance = torch.data.baseDistance * (0.96 + pulse * 0.12)
+                const baseDistance = world.playerSettings.torch.distance
+                torch.light.intensity = world.playerSettings.torch.intensity * (0.88 + pulse * 0.38)
+                torch.light.distance = baseDistance * (0.96 + pulse * 0.12)
+                const shadowFar = Math.max(torch.light.shadow.camera.near + 0.1, baseDistance * 1.12)
+                if (Math.abs(torch.shadowFar - shadowFar) > 0.05) {
+                    torch.shadowFar = shadowFar
+                    torch.light.shadow.camera.far = shadowFar
+                    torch.light.shadow.camera.updateProjectionMatrix()
+                    torch.light.shadow.needsUpdate = true
+                }
                 torch.light.color.setHSL(0.078 + pulse * 0.014, 1, 0.6 + pulse * 0.12)
 
                 const flameY = 0.92 + pulse * 0.24
@@ -81,9 +75,6 @@ export function createPlayerTorchSystem(): System {
                         flame.baseScale.y * flameY,
                         flame.baseScale.z * flameXZ,
                     )
-                    if (flame.mesh.material instanceof MeshBasicMaterial) {
-                        flame.mesh.material.opacity = 0.76 + pulse * 0.2
-                    }
                 }
             }
         },
@@ -106,7 +97,7 @@ function collectTorches(objects: Iterable<Object3D>, out: TorchRuntime[]): void 
             if (!(obj instanceof PointLight)) return
             const data = obj.userData[PLAYER_TORCH_LIGHT] as PlayerTorchLightUserData | undefined
             if (!data || known.has(obj)) return
-            lights.push({ light: obj, flame: flames, data })
+            lights.push({ light: obj, flame: flames, data, shadowFar: obj.shadow.camera.far })
             known.add(obj)
         })
         out.push(...lights)

@@ -37,7 +37,6 @@ const MODES: readonly ModeDef[] = [
     { mode: 'erase', label: 'Erase', hint: 'LMB erases. (Same as RMB in Paint.)' },
     { mode: 'spawn-pickup', label: 'Pickup', hint: 'Drop gold piles on the working plane.' },
     { mode: 'place-piston', label: 'Piston', hint: 'Place a moving block — teleport or physical motion.' },
-    { mode: 'place-spawn', label: 'Spawn', hint: 'Set the player start point.' },
     { mode: 'place-zone', label: 'Zone', hint: 'Region you can attach triggers / scripts to.' },
     { mode: 'place-sound', label: 'Sound', hint: 'Place the sound source configured in the Sound tab.' },
 ]
@@ -224,6 +223,8 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
         case 'place-prop':
         case 'scatter-props':
             return buildPropModePanel()
+        case 'place-npc':
+            return buildNpcModePanel()
     }
 }
 
@@ -232,6 +233,15 @@ function buildPropModePanel(): RefreshableElement {
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
     hint.textContent = 'Switch to the Props tab to pick single placement or scatter brush settings.'
+    section.appendChild(hint)
+    return { element: section, refresh() {} }
+}
+
+function buildNpcModePanel(): RefreshableElement {
+    const section = sectionEl('NPCs')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.textContent = 'Switch to the NPCs tab to configure model, collision, interaction, and script settings.'
     section.appendChild(hint)
     return { element: section, refresh() {} }
 }
@@ -761,6 +771,25 @@ function buildZonePanel(ctx: EditTabContext): RefreshableElement {
     const settings = sectionEl('Zone settings')
 
     settings.appendChild(textField('Kind:', state.zoneKind, 'generic', (v) => { state.zoneKind = v || 'generic' }))
+    const kindRow = document.createElement('div')
+    kindRow.className = 'vpe-row'
+    const quickKinds: { kind: string; label: string }[] = [
+        { kind: 'generic', label: 'Generic' },
+        { kind: 'trigger', label: 'Trigger' },
+        { kind: 'portal', label: 'Portal' },
+    ]
+    for (const quick of quickKinds) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.style.flex = '1'
+        btn.textContent = quick.label
+        btn.onclick = () => {
+            state.zoneKind = quick.kind
+            refresh()
+        }
+        kindRow.appendChild(btn)
+    }
+    settings.appendChild(kindRow)
     settings.appendChild(textField('Label:', state.zoneLabel, '(optional)', (v) => { state.zoneLabel = v }))
     settings.appendChild(numberField('XZ size:', state.zoneSize, 1, 32, 1, (v) => { state.zoneSize = v }))
     settings.appendChild(numberField('Y height:', state.zoneHeight, 1, 32, 1, (v) => { state.zoneHeight = v }))
@@ -788,6 +817,12 @@ function buildZonePanel(ctx: EditTabContext): RefreshableElement {
         triggerRow.appendChild(btn)
     }
     settings.appendChild(triggerRow)
+    settings.appendChild(textField('Target:', state.portalTargetLevelId, 'level id for portal zones', (v) => {
+        state.portalTargetLevelId = v.trim()
+    }))
+    settings.appendChild(textField('Arrival:', state.portalArrivalId, '(optional destination zone id)', (v) => {
+        state.portalArrivalId = v.trim()
+    }))
     root.appendChild(settings)
 
     // Script builder.
@@ -950,7 +985,10 @@ function buildZonePanel(ctx: EditTabContext): RefreshableElement {
                     const title = zone.label ?? zone.id
                     const sources = (zone.triggerSources ?? ['player']).join('+')
                     const scripts = zone.script?.actions.length ?? 0
-                    span.textContent = `${title} [${zone.kind}] ${sources} ${w}×${h}×${d} · ${scripts} script`
+                    const portal = zone.portal
+                        ? ` → ${zone.portal.targetLevelId}${zone.portal.targetArrivalId ? ` @ ${zone.portal.targetArrivalId}` : ''}`
+                        : ''
+                    span.textContent = `${title} [${zone.kind}] ${sources}${portal} ${w}×${h}×${d} · ${scripts} script`
                     const removeBtn = document.createElement('button')
                     removeBtn.textContent = 'remove'
                     removeBtn.onclick = () => {

@@ -75,6 +75,7 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'book-2':    return buildBook(2)
         case 'npc-keeper': return buildKeeperNpc()
         case 'sundial':   return buildSundial()
+        case 'haste-shrine': return buildHasteShrine()
     }
 }
 
@@ -368,54 +369,146 @@ function buildBook(variant: 1 | 2): BufferGeometry {
 function buildKeeperNpc(): BufferGeometry {
     const parts: BufferGeometry[] = []
 
-    const robe = new CylinderGeometry(0.23, 0.31, 0.76, 8)
-    robe.translate(0, 0.38, 0)
-    paintVertexColor(robe, 0.18, 0.23, 0.32)
+    const robe = new CylinderGeometry(0.24, 0.34, 0.78, 8)
+    robe.translate(0, 0.39, 0)
+    paintVertexColor(robe, 0.15, 0.20, 0.30)
     parts.push(robe)
+
+    const hem = new CylinderGeometry(0.35, 0.36, 0.055, 8)
+    hem.translate(0, 0.075, 0)
+    paintVertexColor(hem, 0.09, 0.12, 0.18)
+    parts.push(hem)
+
+    const frontPanel = new BoxGeometry(0.032, 0.57, 0.18)
+    frontPanel.translate(0.245, 0.39, 0)
+    paintVertexColor(frontPanel, 0.20, 0.28, 0.40)
+    parts.push(frontPanel)
+
+    const trimA = new BoxGeometry(0.038, 0.58, 0.024)
+    trimA.translate(0.266, 0.39, -0.105)
+    paintVertexColor(trimA, 0.72, 0.50, 0.20)
+    const trimB = trimA.clone()
+    trimB.translate(0, 0, 0.21)
+    paintVertexColor(trimB, 0.72, 0.50, 0.20)
+    parts.push(trimA, trimB)
 
     const shoulderWrap = new CylinderGeometry(0.25, 0.23, 0.12, 8)
     shoulderWrap.translate(0, 0.74, 0)
-    paintVertexColor(shoulderWrap, 0.33, 0.20, 0.12)
+    paintVertexColor(shoulderWrap, 0.36, 0.22, 0.13)
     parts.push(shoulderWrap)
 
-    const hood = new SphereGeometry(0.22, 10, 8)
-    hood.scale(1.0, 1.08, 0.94)
-    hood.translate(0, 0.93, 0)
-    paintVertexColor(hood, 0.16, 0.18, 0.25)
+    const leftSleeve = new CylinderGeometry(0.054, 0.066, 0.36, 6)
+    leftSleeve.rotateZ(-0.46)
+    leftSleeve.translate(0.16, 0.56, -0.245)
+    paintVertexColor(leftSleeve, 0.13, 0.17, 0.25)
+    const rightSleeve = new CylinderGeometry(0.052, 0.064, 0.32, 6)
+    rightSleeve.rotateZ(-0.28)
+    rightSleeve.translate(0.19, 0.56, 0.235)
+    paintVertexColor(rightSleeve, 0.13, 0.17, 0.25)
+    parts.push(leftSleeve, rightSleeve)
+
+    const handA = new BoxGeometry(0.052, 0.052, 0.06)
+    handA.translate(0.30, 0.47, -0.245)
+    paintVertexColor(handA, 0.76, 0.56, 0.38)
+    const handB = handA.clone()
+    handB.translate(0.02, 0.08, 0.475)
+    paintVertexColor(handB, 0.76, 0.56, 0.38)
+    parts.push(handA, handB)
+
+    const hood = new SphereGeometry(0.235, 8, 5)
+    hood.scale(1.06, 1.12, 0.98)
+    hood.translate(0, 0.94, 0)
+    paintVertexColor(hood, 0.11, 0.14, 0.21)
     parts.push(hood)
 
-    const face = new BoxGeometry(0.13, 0.12, 0.045)
-    face.translate(0.18, 0.90, 0)
+    const hoodBrow = new BoxGeometry(0.048, 0.05, 0.19)
+    hoodBrow.translate(0.218, 1.005, 0)
+    paintVertexColor(hoodBrow, 0.07, 0.09, 0.14)
+    const hoodSideA = new BoxGeometry(0.044, 0.20, 0.036)
+    hoodSideA.translate(0.225, 0.905, -0.095)
+    paintVertexColor(hoodSideA, 0.07, 0.09, 0.14)
+    const hoodSideB = hoodSideA.clone()
+    hoodSideB.translate(0, 0, 0.19)
+    paintVertexColor(hoodSideB, 0.07, 0.09, 0.14)
+    parts.push(hoodBrow, hoodSideA, hoodSideB)
+
+    const face = new BoxGeometry(0.034, 0.15, 0.142)
+    face.translate(0.247, 0.925, 0)
     paintVertexColor(face, 0.78, 0.58, 0.40)
     parts.push(face)
 
-    const sash = new BoxGeometry(0.08, 0.56, 0.035)
+    const beard = new BoxGeometry(0.032, 0.15, 0.13)
+    beard.translate(0.266, 0.835, 0)
+    paintVertexColor(beard, 0.70, 0.69, 0.62)
+    parts.push(beard)
+
+    const moustache = new BoxGeometry(0.018, 0.028, 0.14)
+    moustache.translate(0.286, 0.885, 0)
+    paintVertexColor(moustache, 0.82, 0.78, 0.66)
+    parts.push(moustache)
+
+    for (const z of [-0.038, 0.038]) {
+        const eye = new BoxGeometry(0.012, 0.016, 0.018)
+        eye.translate(0.291, 0.947, z)
+        paintVertexColor(eye, 0.05, 0.06, 0.07)
+        parts.push(eye)
+    }
+
+    const sash = new BoxGeometry(0.08, 0.56, 0.04)
     sash.rotateZ(-0.38)
-    sash.translate(0.02, 0.47, -0.24)
-    paintVertexColor(sash, 0.70, 0.46, 0.18)
+    sash.translate(0.07, 0.47, -0.235)
+    paintVertexColor(sash, 0.76, 0.52, 0.20)
     parts.push(sash)
 
-    const staff = new CylinderGeometry(0.018, 0.023, 0.92, 6)
-    staff.translate(0.33, 0.46, 0.18)
+    const brooch = new SphereGeometry(0.055, 6, 4)
+    brooch.scale(1, 0.72, 1)
+    brooch.translate(0.292, 0.69, -0.035)
+    paintVertexColor(brooch, 1.0, 0.72, 0.24)
+    parts.push(brooch)
+
+    const staff = new CylinderGeometry(0.017, 0.024, 1.08, 7)
+    staff.translate(0.36, 0.54, 0.23)
     paintVertexColor(staff, 0.30, 0.18, 0.08)
     parts.push(staff)
 
-    const lanternFrame = new BoxGeometry(0.13, 0.17, 0.13)
-    lanternFrame.translate(0.33, 0.36, 0.18)
-    paintVertexColor(lanternFrame, 0.12, 0.10, 0.07)
-    parts.push(lanternFrame)
+    const staffCap = new SphereGeometry(0.045, 6, 4)
+    staffCap.scale(1, 0.82, 1)
+    staffCap.translate(0.36, 1.105, 0.23)
+    paintVertexColor(staffCap, 0.86, 0.58, 0.18)
+    parts.push(staffCap)
 
-    const lanternGlow = new SphereGeometry(0.075, 8, 6)
+    const lanternGlow = new SphereGeometry(0.075, 6, 4)
     lanternGlow.scale(0.78, 0.92, 0.78)
-    lanternGlow.translate(0.33, 0.36, 0.18)
+    lanternGlow.translate(0.36, 0.34, 0.23)
     paintVertexColor(lanternGlow, 1.0, 0.70, 0.28)
     parts.push(lanternGlow)
 
+    const lanternTop = new BoxGeometry(0.15, 0.018, 0.15)
+    lanternTop.translate(0.36, 0.43, 0.23)
+    paintVertexColor(lanternTop, 0.10, 0.08, 0.06)
+    const lanternBottom = lanternTop.clone()
+    lanternBottom.translate(0, -0.18, 0)
+    paintVertexColor(lanternBottom, 0.10, 0.08, 0.06)
+    parts.push(lanternTop, lanternBottom)
+
+    for (const [x, z] of [[0.30, 0.17], [0.30, 0.29], [0.42, 0.17], [0.42, 0.29]] as const) {
+        const bar = new BoxGeometry(0.018, 0.16, 0.018)
+        bar.translate(x, 0.34, z)
+        paintVertexColor(bar, 0.10, 0.08, 0.06)
+        parts.push(bar)
+    }
+
+    const lanternHook = new BoxGeometry(0.018, 0.11, 0.018)
+    lanternHook.rotateZ(-0.38)
+    lanternHook.translate(0.36, 0.49, 0.23)
+    paintVertexColor(lanternHook, 0.10, 0.08, 0.06)
+    parts.push(lanternHook)
+
     const footA = new BoxGeometry(0.12, 0.06, 0.16)
-    footA.translate(0.08, 0.03, 0.10)
+    footA.translate(0.11, 0.03, 0.11)
     paintVertexColor(footA, 0.10, 0.08, 0.06)
     const footB = footA.clone()
-    footB.translate(-0.16, 0, -0.20)
+    footB.translate(-0.20, 0, -0.22)
     paintVertexColor(footB, 0.10, 0.08, 0.06)
     parts.push(footA, footB)
 
@@ -509,6 +602,68 @@ function buildSundial(): BufferGeometry {
     gnomon.rotateX(-0.42) // ~24° tilt north — visible from iso view
     paintVertexColor(gnomon, 0.95, 0.84, 0.46)
     parts.push(gnomon)
+
+    return mergeAndCleanup(parts)
+}
+
+function buildHasteShrine(): BufferGeometry {
+    // Small interactable shrine used by the demo to exercise live
+    // player-settings mutation. The cyan rune + tilted side fins make
+    // it read as "speed / movement" without adding a new material path.
+    const parts: BufferGeometry[] = []
+
+    const base = new CylinderGeometry(0.32, 0.40, 0.18, 12)
+    base.translate(0, 0.09, 0)
+    paintVertexColor(base, 0.30, 0.34, 0.36)
+    parts.push(base)
+
+    const step = new CylinderGeometry(0.25, 0.29, 0.10, 12)
+    step.translate(0, 0.23, 0)
+    paintVertexColor(step, 0.42, 0.45, 0.44)
+    parts.push(step)
+
+    const pillar = new BoxGeometry(0.24, 0.62, 0.24)
+    pillar.translate(0, 0.58, 0)
+    paintVertexColor(pillar, 0.58, 0.62, 0.60)
+    parts.push(pillar)
+
+    const cap = new CylinderGeometry(0.20, 0.24, 0.10, 8)
+    cap.translate(0, 0.94, 0)
+    paintVertexColor(cap, 0.78, 0.66, 0.30)
+    parts.push(cap)
+
+    const gem = new SphereGeometry(0.135, 10, 6)
+    gem.scale(1, 1.24, 1)
+    gem.translate(0, 1.10, 0)
+    paintVertexColor(gem, 0.18, 0.88, 0.96)
+    parts.push(gem)
+
+    const glowRing = new CylinderGeometry(0.19, 0.19, 0.025, 16)
+    glowRing.translate(0, 1.0, 0)
+    paintVertexColor(glowRing, 0.30, 0.90, 0.88)
+    parts.push(glowRing)
+
+    for (const [x, z, yaw] of [
+        [0.30, 0, -0.48],
+        [-0.30, 0, 0.48],
+        [0, 0.30, 0.48],
+        [0, -0.30, -0.48],
+    ] as const) {
+        const fin = new BoxGeometry(0.09, 0.44, 0.045)
+        fin.rotateY(yaw)
+        fin.rotateZ(x === 0 ? 0 : x > 0 ? -0.22 : 0.22)
+        fin.translate(x, 0.53, z)
+        paintVertexColor(fin, 0.24, 0.58, 0.62)
+        parts.push(fin)
+    }
+
+    for (const y of [0.44, 0.60, 0.76]) {
+        const rune = new BoxGeometry(0.035, 0.11, 0.028)
+        rune.rotateZ(-0.62)
+        rune.translate(0.13, y, 0.13)
+        paintVertexColor(rune, 0.20, 0.92, 0.90)
+        parts.push(rune)
+    }
 
     return mergeAndCleanup(parts)
 }

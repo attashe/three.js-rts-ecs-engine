@@ -1,5 +1,6 @@
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
+import { PRELUDE_LOCALS } from '../../engine/script/compile'
 import type { ScriptEntry } from '../../engine/script/types'
 import type { EditorState } from '../editor-state'
 import type { CommandStack } from '../history'
@@ -377,7 +378,7 @@ function parseCheck(source: string): ParseSuccess | ParseFailure {
         const AsyncFunctionCtor = Object.getPrototypeOf(async function () {}).constructor as new (...args: string[]) => unknown
         // Wrap in the same destructure shape the runtime uses so
         // shadowed names (`on`, `wait`, etc.) parse the same way.
-        new AsyncFunctionCtor('ctx', `"use strict"; const { on, once, emit, wait, log, player, chunks, pickups, audio, flags, time, zone, geom, ui, dayCycle, weather, random } = ctx; ${source}`)
+        new AsyncFunctionCtor('ctx', `"use strict"; const { ${PRELUDE_LOCALS} } = ctx; ${source}`)
         return { ok: true }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

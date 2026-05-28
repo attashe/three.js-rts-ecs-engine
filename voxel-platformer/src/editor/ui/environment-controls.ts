@@ -636,7 +636,7 @@ function normalizeAmbientSnapshot(snapshot: AmbientWeatherStateSnapshot): void {
     if (typeof snapshot.cycleEnabled !== 'boolean') snapshot.cycleEnabled = false
     if (!Number.isFinite(snapshot.cycleSeconds) || snapshot.cycleSeconds <= 0) snapshot.cycleSeconds = 600
     if (!Number.isFinite(snapshot.sunIntensityMul)) snapshot.sunIntensityMul = 1
-    if (!Number.isFinite(snapshot.fogDensityMul)) snapshot.fogDensityMul = 1
+    if (!Number.isFinite(snapshot.fogDensityMul)) snapshot.fogDensityMul = DEFAULT_AMBIENT_WEATHER.fogDensityMul
     snapshot.skyTint = sanitizeTriplet(snapshot.skyTint)
     // Older saves can also miss the legacy fields. Fall back to the
     // canonical defaults so the custom-mode panel doesn't blow up.

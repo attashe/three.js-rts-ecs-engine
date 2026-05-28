@@ -93,6 +93,12 @@ export class ObstacleRegistry {
         return this.entries.size
     }
 
+    clear(): void {
+        this.entries.clear()
+        this.cells.clear()
+        this.seen.clear()
+    }
+
     private removeIfPresent(eid: number): void {
         const existing = this.entries.get(eid)
         if (!existing) return

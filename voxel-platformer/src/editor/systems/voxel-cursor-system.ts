@@ -62,7 +62,9 @@ export function createVoxelCursorSystem(
         transparent: true,
         opacity: 0.95,
     })
-    const lines = new LineSegments(new BufferGeometry(), outlineMaterial)
+    const lineGeometry = new BufferGeometry()
+    lineGeometry.setAttribute('position', new Float32BufferAttribute(0, 3))
+    const lines = new LineSegments(lineGeometry, outlineMaterial)
     lines.frustumCulled = false
     lines.renderOrder = 999
     root.add(lines)
@@ -159,6 +161,7 @@ function resolveCursorCell(
             editorState.mode === 'place-spawn' ||
             editorState.mode === 'place-sound' ||
             editorState.mode === 'place-prop' ||
+            editorState.mode === 'place-npc' ||
             editorState.mode === 'scatter-props'
         ) {
             return {
@@ -179,7 +182,13 @@ function resolveCursorCell(
  *  the full XZ footprint at the working plane; paint / erase show the brush
  *  footprint. */
 function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; z: number }): { x: number; y: number; z: number }[] {
-    if (state.mode === 'spawn-pickup' || state.mode === 'place-spawn' || state.mode === 'place-sound' || state.mode === 'place-prop') return [cursor]
+    if (
+        state.mode === 'spawn-pickup' ||
+        state.mode === 'place-spawn' ||
+        state.mode === 'place-sound' ||
+        state.mode === 'place-prop' ||
+        state.mode === 'place-npc'
+    ) return [cursor]
     if (state.mode === 'scatter-props') return scatterBrushCells(state, cursor)
     if (state.mode === 'place-piston') {
         const target = addOffset(cursor, pistonOffset(state.pistonDirection, state.pistonDistance))
@@ -236,6 +245,7 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'place-weather': return 0xffd6f0
         case 'place-prop': return 0xb3e5b3
         case 'scatter-props': return 0x9be66f
+        case 'place-npc': return 0xffd166
     }
 }
 
@@ -250,6 +260,7 @@ function ghostColour(chunks: ChunkManager, state: EditorState): [number, number,
     if (state.mode === 'place-sound-zone') return [0.29, 0.96, 0.78]
     if (state.mode === 'place-weather') return [1, 0.84, 0.94]
     if (state.mode === 'scatter-props') return [0.6, 0.9, 0.44]
+    if (state.mode === 'place-npc') return [1, 0.82, 0.4]
     const entry = chunks.palette.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]

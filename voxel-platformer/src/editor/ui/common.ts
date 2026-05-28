@@ -22,11 +22,24 @@ export const PANEL_CSS = `
     display: flex;
     border-bottom: 1px solid rgba(217, 247, 255, 0.12);
     background: rgba(0, 0, 0, 0.2);
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(217, 247, 255, 0.24) transparent;
+}
+.vpe-tabs::-webkit-scrollbar { height: 6px; }
+.vpe-tabs::-webkit-scrollbar-track { background: transparent; }
+.vpe-tabs::-webkit-scrollbar-thumb {
+    background: rgba(217, 247, 255, 0.2);
+    border-radius: 999px;
 }
 .vpe-tab {
-    flex: 1;
+    flex: 0 0 auto;
+    min-width: 58px;
     padding: 8px 6px;
     text-align: center;
+    white-space: nowrap;
     cursor: pointer;
     font: inherit;
     background: none;
