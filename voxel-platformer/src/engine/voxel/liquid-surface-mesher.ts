@@ -22,7 +22,8 @@ export interface LiquidSurfaceMeshOptions {
     baseY?: number
     baseZ?: number
     /** Grid subdivisions per voxel cell. Higher values improve vertex
-     *  displacement but increase geometry. Default 3. */
+     *  displacement but increase geometry. `0` emits one quad per merged
+     *  rectangle. Default 3. */
     subdivisionsPerCell?: number
     /** Small upward offset to prevent z-fighting with the translucent
      *  voxel top face. Default 0.018. */
@@ -53,7 +54,7 @@ export function liquidTopSurfaceMesh(
     const baseX = opts.baseX ?? 0
     const baseY = opts.baseY ?? 0
     const baseZ = opts.baseZ ?? 0
-    const subdivisionsPerCell = Math.max(1, Math.min(8, Math.floor(opts.subdivisionsPerCell ?? 3)))
+    const subdivisionsPerCell = Math.max(0, Math.min(8, Math.floor(opts.subdivisionsPerCell ?? 3)))
     const surfaceOffset = opts.surfaceOffset ?? 0.018
     let vertexBase = 0
 
@@ -99,8 +100,8 @@ export function liquidTopSurfaceMesh(
                     y: baseY + y + 1 + surfaceOffset,
                     z0: baseZ + z,
                     z1: baseZ + z + h,
-                    segX: w * subdivisionsPerCell,
-                    segZ: h * subdivisionsPerCell,
+                    segX: Math.max(1, w * subdivisionsPerCell),
+                    segZ: Math.max(1, h * subdivisionsPerCell),
                 })
                 vertexBase += added
 

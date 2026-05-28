@@ -178,6 +178,15 @@ test('liquid top surface mesh follows exposed water and lava top faces', () => {
     assert.equal(water.triangleCount, 4)
     assert.deepEqual([...new Set([...water.positions].filter((_, i) => i % 3 === 1))], [1])
 
+    const coarse = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'water', { subdivisionsPerCell: 0, surfaceOffset: 0.045 })
+    assert.equal(coarse.vertexCount, 4, 'zero subdivisions emits one quad per merged rectangle')
+    assert.equal(coarse.triangleCount, 2)
+    assert.ok(Math.abs(coarse.positions[1]! - 1.045) < 1e-5)
+
+    const baseMeshWithoutTop = greedyMesh(sample, 3, DEFAULT_PALETTE, { skipLiquidTopFaces: true })
+    assert.equal(baseMeshWithoutTop.triangleCount, 10, 'chunk mesh skips the liquid top face when a surface mesh owns it')
+    assert.equal(hasUpwardFace(baseMeshWithoutTop.normals), false)
+
     cells.set('0,1,0', BLOCK.stone)
     cells.set('1,1,0', BLOCK.stone)
     const hidden = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'water', { subdivisionsPerCell: 1, surfaceOffset: 0 })
@@ -196,6 +205,13 @@ test('liquid top surface mesh follows exposed water and lava top faces', () => {
     const noWater = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'water', { subdivisionsPerCell: 1, surfaceOffset: 0 })
     assert.equal(noWater.vertexCount, 0)
 })
+
+function hasUpwardFace(normals: Float32Array): boolean {
+    for (let i = 0; i < normals.length; i += 3) {
+        if (normals[i] === 0 && normals[i + 1] === 1 && normals[i + 2] === 0) return true
+    }
+    return false
+}
 
 test('movementEnvironmentForAABB applies water movement and lava contact hazards', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)

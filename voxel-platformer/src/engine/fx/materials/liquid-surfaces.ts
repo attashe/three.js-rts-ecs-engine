@@ -1,4 +1,4 @@
-import { Color, DoubleSide, Mesh, PlaneGeometry, Vector3, type BufferGeometry } from 'three'
+import { Color, DoubleSide, FrontSide, Mesh, PlaneGeometry, Vector3, type BufferGeometry } from 'three'
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
 import {
     Fn,
@@ -59,6 +59,8 @@ export interface WaterSurfaceOpts {
     size: { x: number; z: number }
     /** Optional custom geometry. When omitted a scaled plane is built. */
     geometry?: BufferGeometry
+    /** `block` is a cheaper flat-on-top shader for voxel-bound liquid cells. */
+    profile?: 'zone' | 'block'
     /** Bottom-of-wave tint — dominates troughs. */
     deepColor?: string
     /** Top-of-wave tint — dominates crests and grazing-angle highlights. */
@@ -75,6 +77,18 @@ export interface WaterSurfaceOpts {
      *  liquid surfaces pass true so terrain can occlude them normally. */
     depthTest?: boolean
     renderOrder?: number
+}
+
+export type WaterBlockSurfaceMaterialOpts = Pick<
+    WaterSurfaceOpts,
+    'deepColor' | 'shallowColor' | 'foamColor' | 'waveSpeed' | 'opacity' | 'depthTest'
+>
+
+export interface WaterBlockSurfaceMaterial {
+    material: MeshBasicNodeMaterial
+    setColors(opts: { deep?: string; shallow?: string; foam?: string }): void
+    setOpacity(o: number): void
+    dispose(): void
 }
 
 /**
@@ -103,6 +117,8 @@ export interface WaterSurfaceOpts {
  * surrounding lighting rig.
  */
 export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
+    if (opts.profile === 'block') return buildBlockWaterSurface(opts)
+
     const deepColor = uniform(new Color(opts.deepColor ?? '#08283f'))
     const shallowColor = uniform(new Color(opts.shallowColor ?? '#7ddbf2'))
     const foamColor = uniform(new Color(opts.foamColor ?? '#f4faff'))
@@ -132,7 +148,7 @@ export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
     const localXZ = vec2(positionLocal.x, positionLocal.z)
     const waveRaw = wavefn(localXZ, tScaled)
     const h = waveRaw.mul(amplitude)
-    const newPos = vec3(positionLocal.x, h, positionLocal.z)
+    const newPos = vec3(positionLocal.x, positionLocal.y.add(h), positionLocal.z)
 
     // Analytic-style normal via central difference on the wave field.
     // We use a small eps relative to the wave wavelengths so the
@@ -227,10 +243,76 @@ export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
     }
 }
 
+function buildBlockWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
+    const controller = createBlockWaterSurfaceMaterial(opts)
+    const mat = controller.material
+    const ownsGeneratedPlane = !opts.geometry
+    const geo = opts.geometry ?? new PlaneGeometry(1, 1, 8, 8)
+    if (ownsGeneratedPlane) geo.rotateX(-Math.PI / 2)
+    const mesh = new Mesh(geo, mat)
+    if (ownsGeneratedPlane) mesh.scale.set(opts.size.x, 1, opts.size.z)
+    mesh.renderOrder = opts.renderOrder ?? LOCAL_FX_SURFACE_RENDER_ORDER
+
+    return {
+        mesh,
+        setColors(c) { controller.setColors(c) },
+        setOpacity(o) { controller.setOpacity(o) },
+        setSize(x, z) {
+            if (ownsGeneratedPlane) mesh.scale.set(x, 1, z)
+        },
+        dispose() {
+            geo.dispose()
+            controller.dispose()
+        },
+    }
+}
+
+export function createBlockWaterSurfaceMaterial(opts: WaterBlockSurfaceMaterialOpts = {}): WaterBlockSurfaceMaterial {
+    const deepColor = uniform(new Color(opts.deepColor ?? '#0b3556'))
+    const shallowColor = uniform(new Color(opts.shallowColor ?? '#7ddbf2'))
+    const foamColor = uniform(new Color(opts.foamColor ?? '#e8fbff'))
+    const opacityUniform = uniform(opts.opacity ?? 0.72)
+    const speed = uniform(opts.waveSpeed ?? 0.55)
+    const localXZ = vec2(positionLocal.x, positionLocal.z)
+    const t = time.mul(speed)
+
+    const rippleA = localXZ.dot(vec2(0.82, 0.57)).mul(2.4).add(t.mul(1.25)).sin()
+    const rippleB = localXZ.dot(vec2(-0.43, 0.90)).mul(3.7).add(t.mul(-0.85)).sin()
+    const ripple = rippleA.mul(0.62).add(rippleB.mul(0.38)).add(1).mul(0.5)
+    const highlight = smoothstep(float(0.68), float(0.96), ripple).mul(0.35)
+    const base = mix(deepColor, shallowColor, ripple.mul(0.65).add(0.2))
+    const finalColor = mix(base, foamColor, highlight)
+    const finalOpacity = saturate(opacityUniform.add(highlight.mul(0.16)))
+
+    const mat = new MeshBasicNodeMaterial({
+        transparent: true,
+        side: FrontSide,
+        depthTest: opts.depthTest ?? false,
+        depthWrite: false,
+    })
+    mat.colorNode = finalColor
+    mat.opacityNode = finalOpacity
+
+    return {
+        material: mat,
+        setColors(c) {
+            if (c.deep)    deepColor.value.set(c.deep)
+            if (c.shallow) shallowColor.value.set(c.shallow)
+            if (c.foam)    foamColor.value.set(c.foam)
+        },
+        setOpacity(o) { opacityUniform.value = o },
+        dispose() {
+            mat.dispose()
+        },
+    }
+}
+
 export interface LavaSurfaceOpts {
     size: { x: number; z: number }
     /** Optional custom geometry. When omitted a scaled plane is built. */
     geometry?: BufferGeometry
+    /** `block` is a cheaper flat-on-top shader for voxel-bound liquid cells. */
+    profile?: 'zone' | 'block'
     hotColor?: string
     crustColor?: string
     glowColor?: string
@@ -240,10 +322,23 @@ export interface LavaSurfaceOpts {
     /** HDR emissive multiplier. Default 4.5 — high enough that the
      *  surface noticeably glows through fog under ACES tonemapping. */
     emissiveStrength?: number
+    opacity?: number
     /** FX zones default to false so iso overlays stay readable; voxel-bound
      *  liquid surfaces pass true so terrain can occlude them normally. */
     depthTest?: boolean
     renderOrder?: number
+}
+
+export type LavaBlockSurfaceMaterialOpts = Pick<
+    LavaSurfaceOpts,
+    'hotColor' | 'crustColor' | 'glowColor' | 'flowSpeed' | 'crustAmount' | 'emissiveStrength' | 'opacity' | 'depthTest'
+>
+
+export interface LavaBlockSurfaceMaterial {
+    material: MeshBasicNodeMaterial
+    setColors(opts: { crust?: string; hot?: string; glow?: string }): void
+    setOpacity(o: number): void
+    dispose(): void
 }
 
 /**
@@ -266,6 +361,8 @@ export interface LavaSurfaceOpts {
  *     the emissive would look wrong (and *was* the user's complaint).
  */
 export function buildLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
+    if (opts.profile === 'block') return buildBlockLavaSurface(opts)
+
     const hotColor = uniform(new Color(opts.hotColor ?? '#ffb35a'))
     const crustColor = uniform(new Color(opts.crustColor ?? '#1c0904'))
     const glowColor = uniform(new Color(opts.glowColor ?? '#ff5a16'))
@@ -282,7 +379,7 @@ export function buildLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
 
     const dispNoise = mx_fractal_noise_float(vec3(flow1.x, flow1.y, tFlow.mul(0.3)), 3, 2.0, 0.5, 1.0)
     const h = dispNoise.mul(amplitude)
-    const newPos = vec3(positionLocal.x, h, positionLocal.z)
+    const newPos = vec3(positionLocal.x, positionLocal.y.add(h), positionLocal.z)
 
     const eps = float(0.05)
     const sampleDisp = Fn(([uv]: [any]) =>
@@ -375,6 +472,82 @@ export function buildLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
         },
         dispose() {
             geo.dispose()
+            mat.dispose()
+        },
+    }
+}
+
+function buildBlockLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
+    const controller = createBlockLavaSurfaceMaterial(opts)
+    const mat = controller.material
+    const ownsGeneratedPlane = !opts.geometry
+    const geo = opts.geometry ?? new PlaneGeometry(1, 1, 8, 8)
+    if (ownsGeneratedPlane) geo.rotateX(-Math.PI / 2)
+    const mesh = new Mesh(geo, mat)
+    if (ownsGeneratedPlane) mesh.scale.set(opts.size.x, 1, opts.size.z)
+    mesh.renderOrder = opts.renderOrder ?? LOCAL_FX_SURFACE_RENDER_ORDER
+
+    return {
+        mesh,
+        setColors(c) { controller.setColors(c) },
+        setOpacity(o) { controller.setOpacity(o) },
+        setSize(x, z) {
+            if (ownsGeneratedPlane) mesh.scale.set(x, 1, z)
+        },
+        dispose() {
+            geo.dispose()
+            controller.dispose()
+        },
+    }
+}
+
+export function createBlockLavaSurfaceMaterial(opts: LavaBlockSurfaceMaterialOpts = {}): LavaBlockSurfaceMaterial {
+    const hotColor = uniform(new Color(opts.hotColor ?? '#ff9a32'))
+    const crustColor = uniform(new Color(opts.crustColor ?? '#220803'))
+    const glowColor = uniform(new Color(opts.glowColor ?? '#ff4a12'))
+    const opacityUniform = uniform(opts.opacity ?? 1.0)
+    const flowSpeed = uniform(opts.flowSpeed ?? 0.24)
+    const crustAmount = uniform(opts.crustAmount ?? 0.50)
+    const emissiveStrength = uniform(opts.emissiveStrength ?? 1.55)
+    const localXZ = vec2(positionLocal.x, positionLocal.z)
+    const tFlow = time.mul(flowSpeed)
+
+    // Voxel-bound lava needs to be cheap: no procedural noise, no vertex
+    // displacement, no PBR. Crossed sine bands still read as moving molten
+    // veins but compile to a much smaller shader than the full FX-zone lava.
+    const bandA = localXZ.dot(vec2(0.92, 0.39)).mul(2.2).add(tFlow.mul(1.6)).sin()
+    const bandB = localXZ.dot(vec2(-0.34, 0.94)).mul(3.1).add(tFlow.mul(-1.15)).sin()
+    const bandC = localXZ.x.mul(4.8).add(localXZ.y.mul(1.9)).add(tFlow.mul(2.4)).sin()
+    const field = bandA.mul(0.42).add(bandB.mul(0.36)).add(bandC.mul(0.22)).add(1).mul(0.5)
+    const heat = smoothstep(crustAmount.sub(0.20), crustAmount.add(0.24), field)
+    const vein = smoothstep(float(0.74), float(0.96), bandC.add(1).mul(0.5)).mul(heat)
+    const pulse = sin(time.mul(2.1)).mul(0.14).add(1.0)
+
+    const molten = mix(hotColor, glowColor, vein.mul(0.5))
+    const base = mix(crustColor, molten, heat)
+    const finalColor = base
+        .add(glowColor.mul(heat.mul(emissiveStrength).mul(0.22).mul(pulse)))
+        .add(glowColor.mul(vein.mul(0.55)))
+
+    const mat = new MeshBasicNodeMaterial({
+        transparent: true,
+        side: FrontSide,
+        depthTest: opts.depthTest ?? false,
+        depthWrite: false,
+    })
+    mat.colorNode = finalColor
+    mat.opacityNode = opacityUniform
+    mat.fog = true
+
+    return {
+        material: mat,
+        setColors(c) {
+            if (c.crust) crustColor.value.set(c.crust)
+            if (c.hot)   hotColor.value.set(c.hot)
+            if (c.glow)  glowColor.value.set(c.glow)
+        },
+        setOpacity(o) { opacityUniform.value = o },
+        dispose() {
             mat.dispose()
         },
     }

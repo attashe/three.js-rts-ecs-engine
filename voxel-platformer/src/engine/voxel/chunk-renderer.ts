@@ -7,12 +7,17 @@ import { greedyMesh, type VoxelSampler } from './greedy-mesher'
 import { liquidTopSurfaceMesh, type LiquidSurfaceMeshData } from './liquid-surface-mesher'
 import { createAtlasTexture, createVoxelVertexColor, type VoxelMaterial } from '../render/materials/voxel-vertex-color'
 import { getDebugInfoEnabled, getRenderTextures, subscribeDebugInfo, subscribeRenderTextures } from '../render/render-settings'
-import { buildLavaSurface, buildWaterSurface, type LavaSurface, type WaterSurface } from '../fx/materials/liquid-surfaces'
+import {
+    createBlockLavaSurfaceMaterial,
+    createBlockWaterSurfaceMaterial,
+    type LavaBlockSurfaceMaterial,
+    type WaterBlockSurfaceMaterial,
+} from '../fx/materials/liquid-surfaces'
 import { BLOCK, paletteEntry, type LiquidBlockKind, type Palette } from './palette'
 
 const LIQUID_BLOCK_SURFACE_RENDER_ORDER = 32
 
-type ChunkLiquidSurfaces = Partial<Record<LiquidBlockKind, WaterSurface | LavaSurface>>
+type ChunkLiquidSurfaces = Partial<Record<LiquidBlockKind, Mesh>>
 
 /**
  * Owns the THREE.Mesh per chunk. Each frame, drains `manager.drainDirty()`
@@ -29,6 +34,8 @@ export class ChunkRenderer {
     private readonly material: MeshStandardNodeMaterial
     private readonly voxelMaterial: VoxelMaterial
     private readonly atlasTexture: DataTexture
+    private readonly waterSurfaceMaterial: WaterBlockSurfaceMaterial
+    private readonly lavaSurfaceMaterial: LavaBlockSurfaceMaterial
     private readonly meshByKey: Map<ChunkKey, Mesh> = new Map()
     private readonly liquidSurfaceByKey: Map<ChunkKey, ChunkLiquidSurfaces> = new Map()
     private readonly meshedVersion: Map<ChunkKey, number> = new Map()
@@ -52,6 +59,15 @@ export class ChunkRenderer {
             texturesEnabled: getRenderTextures(),
         })
         this.material = this.voxelMaterial.material
+        this.waterSurfaceMaterial = createBlockWaterSurfaceMaterial({
+            depthTest: true,
+            opacity: 0.70,
+            shallowColor: paletteColorHex(this.manager.palette, 'water'),
+        })
+        this.lavaSurfaceMaterial = createBlockLavaSurfaceMaterial({
+            depthTest: true,
+            hotColor: paletteColorHex(this.manager.palette, 'lava'),
+        })
         // Live toggle: when the user flips the Display setting we just
         // update the uniform. No remesh — geometry is unaffected, only
         // the per-fragment multiplier changes.
@@ -142,6 +158,7 @@ export class ChunkRenderer {
         this.remeshLiquidSurfaces(key, sample, baseX, baseY, baseZ)
         const data = greedyMesh(sample, CHUNK_DIM, this.manager.palette, {
             debugVisibleBlocks: this.debugInfoEnabled,
+            skipLiquidTopFaces: true,
         })
         if (data.vertexCount === 0) {
             const old = this.meshByKey.get(key)
@@ -179,7 +196,9 @@ export class ChunkRenderer {
     }
 
     private remeshLiquidSurfaces(key: ChunkKey, sample: VoxelSampler, baseX: number, baseY: number, baseZ: number): void {
-        const common = { baseX, baseY, baseZ, subdivisionsPerCell: 3 }
+        const common = { baseX, baseY, baseZ, subdivisionsPerCell: 0, surfaceOffset: 0.045 }
+        this.waterSurfaceMaterial.setColors({ shallow: paletteColorHex(this.manager.palette, 'water') })
+        this.lavaSurfaceMaterial.setColors({ hot: paletteColorHex(this.manager.palette, 'lava') })
         this.remeshLiquidSurface(key, 'water', liquidTopSurfaceMesh(sample, CHUNK_DIM, this.manager.palette, 'water', common))
 
         if (this.manager.palette.entries.some((entry) => entry.liquid === 'lava')) {
@@ -201,47 +220,30 @@ export class ChunkRenderer {
             this.liquidSurfaceByKey.set(key, bucket)
         }
 
-        let surface = bucket[kind]
-        if (!surface) {
+        let mesh = bucket[kind]
+        if (!mesh) {
             const geometry = new BufferGeometry()
             writeLiquidGeometry(geometry, data)
-            surface = kind === 'water'
-                ? buildWaterSurface({
-                    size: { x: 1, z: 1 },
-                    geometry,
-                    depthTest: true,
-                    renderOrder: LIQUID_BLOCK_SURFACE_RENDER_ORDER,
-                    opacity: 0.74,
-                    shallowColor: paletteColorHex(this.manager.palette, kind),
-                })
-                : buildLavaSurface({
-                    size: { x: 1, z: 1 },
-                    geometry,
-                    depthTest: true,
-                    renderOrder: LIQUID_BLOCK_SURFACE_RENDER_ORDER,
-                    hotColor: paletteColorHex(this.manager.palette, kind),
-                })
-            surface.mesh.name = `LiquidBlockSurface:${key}:${kind}`
-            surface.mesh.castShadow = false
-            surface.mesh.receiveShadow = false
-            this.scene.add(surface.mesh)
-            bucket[kind] = surface
+            mesh = new Mesh(geometry, kind === 'water'
+                ? this.waterSurfaceMaterial.material
+                : this.lavaSurfaceMaterial.material)
+            mesh.name = `LiquidBlockSurface:${key}:${kind}`
+            mesh.castShadow = false
+            mesh.receiveShadow = false
+            mesh.renderOrder = LIQUID_BLOCK_SURFACE_RENDER_ORDER
+            this.scene.add(mesh)
+            bucket[kind] = mesh
         } else {
-            writeLiquidGeometry(surface.mesh.geometry as BufferGeometry, data)
-            if (kind === 'water') {
-                ;(surface as WaterSurface).setColors({ shallow: paletteColorHex(this.manager.palette, kind) })
-            } else {
-                ;(surface as LavaSurface).setColors({ hot: paletteColorHex(this.manager.palette, kind) })
-            }
+            writeLiquidGeometry(mesh.geometry as BufferGeometry, data)
         }
     }
 
     private removeLiquidSurface(key: ChunkKey, kind: LiquidBlockKind): void {
         const bucket = this.liquidSurfaceByKey.get(key)
-        const surface = bucket?.[kind]
-        if (!surface) return
-        this.scene.remove(surface.mesh)
-        surface.dispose()
+        const mesh = bucket?.[kind]
+        if (!mesh) return
+        this.scene.remove(mesh)
+        mesh.geometry.dispose()
         delete bucket![kind]
         if (!bucket!.water && !bucket!.lava) this.liquidSurfaceByKey.delete(key)
     }
@@ -264,6 +266,8 @@ export class ChunkRenderer {
         this.meshByKey.clear()
         this.meshedVersion.clear()
         this.material.dispose()
+        this.waterSurfaceMaterial.dispose()
+        this.lavaSurfaceMaterial.dispose()
         this.atlasTexture.dispose()
     }
 }

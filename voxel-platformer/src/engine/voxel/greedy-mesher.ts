@@ -1,5 +1,6 @@
 import {
     isRenderableVoxel,
+    liquidBlockKind,
     occludesFaces,
     paletteTileIndex,
     voxelEmissive,
@@ -54,6 +55,9 @@ export interface GreedyMeshOptions {
     /** Render palette entries marked `debugVisible`, even when their normal
      *  opacity is zero. Used for invisible border/debug-only authoring blocks. */
     debugVisibleBlocks?: boolean
+    /** When a separate animated liquid surface is rendered, skip the base
+     *  cube's exposed +Y liquid face to avoid overdraw/z-order artefacts. */
+    skipLiquidTopFaces?: boolean
 }
 
 const EMPTY: MeshData = {
@@ -127,6 +131,14 @@ export function greedyMesh(
                     } else if (s < dim && !negOccludes && posRenderable && cellNeg !== cellPos) {
                         // -d face — visible voxel sits in front, transparent/non-occluding space behind.
                         m = -cellPos
+                    }
+                    if (
+                        opts.skipLiquidTopFaces === true
+                        && d === 1
+                        && m > 0
+                        && liquidBlockKind(palette, m)
+                    ) {
+                        m = 0
                     }
                     mask[i + j * dim] = m
                 }
