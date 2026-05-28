@@ -53,6 +53,7 @@
     "src/engine/fx/presets/weather-presets.ts",
     "src/engine/fx/lights/light-budget.ts",
     "src/game/weather-config.ts",
+    "scripts/export-procedural-levels.ts",
     "tests/**/*.ts"
   ]
 }

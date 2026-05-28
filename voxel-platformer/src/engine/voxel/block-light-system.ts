@@ -1,7 +1,6 @@
 import { Color, PointLight, type Camera, type Scene } from 'three'
 import type { System } from '../ecs/systems/system'
 import { RenderOrder } from '../ecs/systems/orders'
-import { LightBudget } from '../fx/lights/light-budget'
 import type { ChunkManager } from './chunk-manager'
 import { CHUNK_DIM, chunkKey, type ChunkKey } from './chunk'
 import { voxelLightSpec, type BlockLightSpec } from './palette'
@@ -9,7 +8,7 @@ import { RENDER_LAYER } from '../render/render-layers'
 
 export interface BlockLightSystemOptions {
     scene: Scene
-    /** Camera provider — used by the LightBudget to rank lights by distance.
+    /** Camera provider — used to rank candidate light sources by distance.
      *  Match the renderer's camera so culling reflects what the player sees. */
     camera: () => Camera
     /** Max simultaneous lit block lights. Default 12 (above the FX budget of
@@ -20,19 +19,23 @@ export interface BlockLightSystemOptions {
     intensityScale?: number
 }
 
-interface BlockLightRecord {
+export interface BlockLightSource {
     key: string
-    light: PointLight
     chunkKey: ChunkKey
+    x: number
+    y: number
+    z: number
+    spec: BlockLightSpec
 }
 
 const SHADOW_NEAR = 0.1
 
 /**
  * Per-voxel point lights driven by the palette's `lightIntensity` field.
- * Scans dirty chunks each frame, syncs a pool of `PointLight`s to match
- * the current voxel state, then runs them through a `LightBudget` so the
- * scene's simultaneous-light count stays predictable.
+ * Scans dirty chunks each frame, records every light-emitting voxel, then
+ * maps the nearest sources onto a small fixed `PointLight` pool. The scene's
+ * simultaneous-light count stays capped even if an author paints a large
+ * cluster of emissive blocks.
  *
  * Lights are positioned at the voxel centre (cell + 0.5). castShadow is
  * off by default — block lights are a fill, not a shadow source — but
@@ -45,10 +48,11 @@ const SHADOW_NEAR = 0.1
  */
 export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSystemOptions): System {
     const { scene, camera } = opts
-    const records = new Map<string, BlockLightRecord>()
+    const sources = new Map<string, BlockLightSource>()
     const scannedVersion = new Map<ChunkKey, number>()
-    const budget = new LightBudget(opts.maxLights ?? 12)
+    const maxLights = opts.maxLights ?? 12
     const intensityScale = Math.max(0, opts.intensityScale ?? 1)
+    const pool: PointLight[] = []
     let paletteFingerprint = ''
 
     function applySpec(light: PointLight, spec: BlockLightSpec): void {
@@ -68,29 +72,29 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
         ;(light.userData as Record<string, unknown>).wanted = wanted
     }
 
-    function spawnRecord(spec: BlockLightSpec, wx: number, wy: number, wz: number, ck: ChunkKey): BlockLightRecord {
+    function spawnPoolLight(): PointLight {
         const light = new PointLight(new Color(), 0, 1, 1.6)
-        light.position.set(wx + 0.5, wy + 0.5, wz + 0.5)
         // Glow-block lights should also illuminate the player (who
         // lives on a non-default render layer — see render-layers.ts).
         // Without this, walking past a glow block leaves the player
         // unlit.
         light.layers.enable(RENDER_LAYER.PLAYER)
-        applySpec(light, spec)
         scene.add(light)
-        return { key: `${wx},${wy},${wz}`, light, chunkKey: ck }
+        return light
     }
 
-    function disposeRecord(record: BlockLightRecord): void {
-        record.light.removeFromParent()
-        record.light.dispose()
+    function disposePool(): void {
+        for (const light of pool) {
+            light.removeFromParent()
+            light.dispose()
+        }
+        pool.length = 0
     }
 
     function dropChunk(ck: ChunkKey): void {
-        for (const [key, record] of records) {
-            if (record.chunkKey !== ck) continue
-            disposeRecord(record)
-            records.delete(key)
+        for (const [key, source] of sources) {
+            if (source.chunkKey !== ck) continue
+            sources.delete(key)
         }
     }
 
@@ -109,18 +113,34 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
             const spec = voxelLightSpec(chunks.palette, value)
             if (!spec) return
             const wx = baseX + lx, wy = baseY + ly, wz = baseZ + lz
-            const record = spawnRecord(spec, wx, wy, wz, ck)
-            records.set(record.key, record)
+            const key = `${wx},${wy},${wz}`
+            sources.set(key, { key, chunkKey: ck, x: wx + 0.5, y: wy + 0.5, z: wz + 0.5, spec })
         })
         scannedVersion.set(ck, chunk.version)
     }
 
     function fullRescan(): void {
-        for (const record of records.values()) disposeRecord(record)
-        records.clear()
+        sources.clear()
         scannedVersion.clear()
         for (const chunk of chunks.allChunks()) {
             scanChunk(chunk.cx, chunk.cy, chunk.cz)
+        }
+    }
+
+    function syncPool(cam: Camera): void {
+        const selected = selectNearestSources(sources.values(), cam, maxLights)
+        for (let i = 0; i < selected.length; i++) {
+            const source = selected[i]!
+            const light = pool[i] ?? (pool[i] = spawnPoolLight())
+            light.position.set(source.x, source.y, source.z)
+            applySpec(light, source.spec)
+            light.visible = true
+        }
+        for (let i = selected.length; i < pool.length; i++) {
+            const light = pool[i]!
+            light.intensity = 0
+            light.visible = false
+            ;(light.userData as Record<string, unknown>).wanted = 0
         }
     }
 
@@ -160,20 +180,31 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
                     scanChunk(chunk.cx, chunk.cy, chunk.cz)
                 }
             }
-            if (records.size === 0) return
-            budget.apply(collectLights(records), camera())
+            syncPool(camera())
         },
         dispose() {
-            for (const record of records.values()) disposeRecord(record)
-            records.clear()
+            disposePool()
+            sources.clear()
             scannedVersion.clear()
         },
     }
 }
 
-function collectLights(records: Map<string, BlockLightRecord>): PointLight[] {
-    const out: PointLight[] = new Array(records.size)
-    let i = 0
-    for (const record of records.values()) out[i++] = record.light
-    return out
+export function selectNearestSources(
+    sources: Iterable<BlockLightSource>,
+    camera: Camera,
+    maxLights: number,
+): BlockLightSource[] {
+    const arr: { source: BlockLightSource; d2: number }[] = []
+    for (const source of sources) {
+        const dx = source.x - camera.position.x
+        const dy = source.y - camera.position.y
+        const dz = source.z - camera.position.z
+        arr.push({ source, d2: dx * dx + dy * dy + dz * dz })
+    }
+    arr.sort((a, b) => a.d2 - b.d2)
+    const cap = Number.isFinite(maxLights)
+        ? Math.max(0, Math.floor(maxLights))
+        : arr.length
+    return arr.slice(0, cap).map((entry) => entry.source)
 }

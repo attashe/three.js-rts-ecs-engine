@@ -26,6 +26,12 @@ export interface PaletteEntry {
     pathSurface?: boolean
     /** Render opacity for visible voxels. Defaults to 1. */
     opacity?: number
+    /** Render this normally-invisible voxel when debug info is enabled. */
+    debugVisible?: boolean
+    /** Optional debug-only colour override. Defaults to `color`. */
+    debugColor?: [number, number, number]
+    /** Optional debug-only opacity. Defaults to 0.35. */
+    debugOpacity?: number
     /** Movement effects applied while a character overlaps this voxel. */
     movement?: BlockMovementTraits
     /** Linear-space emissive RGB self-glow (added on top of lit colour by
@@ -119,7 +125,17 @@ export const DEFAULT_PALETTE: Palette = {
             lightIntensity: 6.0,
             lightDistance: 10,
         },
-        { name: 'no-walk ward', color: [0.58, 0.18, 0.70], solid: true, pathSurface: false },
+        {
+            name: 'invisible border',
+            color: [0.58, 0.18, 0.70],
+            solid: true,
+            occludesFaces: false,
+            pathSurface: false,
+            opacity: 0,
+            debugVisible: true,
+            debugColor: [0.85, 0.18, 0.95],
+            debugOpacity: 0.42,
+        },
         // `door` is a hand-authored prop colour; left flat for now.
         { name: 'door',  color: [0.50, 0.30, 0.16], solid: true },
         {
@@ -297,6 +313,7 @@ export function clonePalette(palette: Palette): Palette {
         entries: palette.entries.map((entry) => ({
             ...entry,
             color: [...entry.color] as [number, number, number],
+            debugColor: entry.debugColor ? [...entry.debugColor] as [number, number, number] : undefined,
             movement: entry.movement ? { ...entry.movement } : undefined,
             emissive: entry.emissive ? [...entry.emissive] as [number, number, number] : undefined,
             lightColor: entry.lightColor ? [...entry.lightColor] as [number, number, number] : undefined,
@@ -305,8 +322,21 @@ export function clonePalette(palette: Palette): Palette {
 }
 
 export function appendMissingDefaultPaletteEntries(palette: Palette): void {
+    normalizeNoWalkBlock(palette)
     appendMissingSpecialBlock(palette, BLOCK.torch)
     appendMissingSpecialBlock(palette, BLOCK.unlitLantern)
+}
+
+function normalizeNoWalkBlock(palette: Palette): void {
+    const entry = palette.entries[BLOCK.noWalk]
+    const defaultEntry = DEFAULT_PALETTE.entries[BLOCK.noWalk]
+    if (!entry || !defaultEntry) return
+
+    const isLegacyNoWalkWard = entry.name === 'no-walk ward'
+    const isIncompleteInvisibleBorder = entry.name === defaultEntry.name && entry.debugVisible !== true
+    if (!isLegacyNoWalkWard && !isIncompleteInvisibleBorder) return
+
+    palette.entries[BLOCK.noWalk] = clonePalette({ entries: [defaultEntry] }).entries[0]!
 }
 
 function appendMissingSpecialBlock(palette: Palette, defaultIndex: number): void {

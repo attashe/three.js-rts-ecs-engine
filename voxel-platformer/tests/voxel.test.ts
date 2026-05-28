@@ -6,7 +6,7 @@ import { deserializeLevel, serializeLevel } from '../src/engine/voxel/level-seri
 import { voxelAABBOverlap, sweepAxis } from '../src/engine/voxel/voxel-collide'
 import { greedyMesh } from '../src/engine/voxel/greedy-mesher'
 import { movementEnvironmentForAABB } from '../src/engine/voxel/movement-effects'
-import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, voxelOpacity } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, isRenderableVoxel, voxelOpacity } from '../src/engine/voxel/palette'
 import { voxelRaycast } from '../src/engine/voxel/voxel-raycast'
 import { Vector3 } from 'three'
 
@@ -99,6 +99,53 @@ test('water and cloud are non-physical visible blocks', () => {
         maxY: 1,
         maxZ: 1,
     }), false, 'non-physical blocks do not collide')
+})
+
+test('no-walk block is an invisible collidable border outside debug rendering', () => {
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.noWalk), true)
+    assert.equal(isRenderableVoxel(DEFAULT_PALETTE, BLOCK.noWalk), false)
+    assert.equal(voxelOpacity(DEFAULT_PALETTE, BLOCK.noWalk), 0)
+
+    const normalMesh = greedyMesh((x, y, z) => (
+        x === 0 && y === 0 && z === 0 ? BLOCK.noWalk : BLOCK.air
+    ), 1, DEFAULT_PALETTE)
+    assert.equal(normalMesh.vertexCount, 0, 'normal render should hide invisible borders')
+
+    const debugMesh = greedyMesh((x, y, z) => (
+        x === 0 && y === 0 && z === 0 ? BLOCK.noWalk : BLOCK.air
+    ), 1, DEFAULT_PALETTE, { debugVisibleBlocks: true })
+    assert.ok(debugMesh.vertexCount > 0, 'debug render should reveal invisible borders')
+    assert.ok(debugMesh.colors.some((_, i) => i % 4 === 3 && debugMesh.colors[i]! > 0 && debugMesh.colors[i]! < 1))
+
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.noWalk)
+    assert.equal(voxelAABBOverlap(chunks, {
+        minX: 0.1,
+        minY: 0,
+        minZ: 0.1,
+        maxX: 0.9,
+        maxY: 0.9,
+        maxZ: 0.9,
+    }), true)
+})
+
+test('legacy no-walk ward palettes migrate to invisible border semantics', () => {
+    const legacyPalette = clonePalette(DEFAULT_PALETTE)
+    legacyPalette.entries[BLOCK.noWalk] = {
+        name: 'no-walk ward',
+        color: [0.58, 0.18, 0.70],
+        solid: true,
+        pathSurface: false,
+    }
+
+    const chunks = new ChunkManager(legacyPalette)
+    const entry = chunks.palette.entries[BLOCK.noWalk]!
+
+    assert.equal(entry.name, 'invisible border')
+    assert.equal(entry.opacity, 0)
+    assert.equal(entry.debugVisible, true)
+    assert.equal(isCollidable(chunks.palette, BLOCK.noWalk), true)
+    assert.equal(isRenderableVoxel(chunks.palette, BLOCK.noWalk), false)
 })
 
 test('movementEnvironmentForAABB applies water movement effects only', () => {

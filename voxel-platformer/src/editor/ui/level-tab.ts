@@ -1,6 +1,4 @@
-import { ChunkManager } from '../../engine/voxel/chunk-manager'
-import { DEFAULT_PALETTE } from '../../engine/voxel/palette'
-import { PickupKind } from '../../engine/ecs/systems/pickup-system'
+import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { GameWorld } from '../../engine/ecs/world'
 import type { EditorState } from '../editor-state'
 import type { CommandStack } from '../history'
@@ -16,15 +14,22 @@ import {
 import { serializeLevel } from '../../engine/voxel/level-serializer'
 import { listLevelLibrary, saveLevelToLibrary, type LevelLibraryEntry } from '../../game/level-library'
 import { launchPlaytest } from '../playtest'
-import { copyScriptEntry, copyStoneSpawner, DEFAULT_AMBIENT_WEATHER, toLevelMeta, type EditorLevelMeta } from '../editor-state'
-import { generatePlatformerLevel, type LevelMeta } from '../../game/level'
-import { copyPlayerSettings } from '../../game/player-settings'
+import { toLevelMeta, type EditorLevelMeta } from '../editor-state'
+import { DEMO_LEVEL_ID } from '../../game/procedural-level-ids'
+import { type ProceduralScriptSources } from '../../game/procedural-levels'
+import { createProceduralEditorLevel } from '../procedural-level-export'
 import { sectionEl, type RefreshableElement } from './common'
 import { buildEnvironmentAudioSection, buildGlobalVisualEnvironmentSection } from './environment-controls'
 import { buildDisplayControlsSection } from './display-controls'
 import demoQuestSource from '../../../examples/scripts/demo-quest.js?raw'
 import lanternTrialSource from '../../../examples/scripts/lantern-trial.js?raw'
 import hasteShrineSource from '../../../examples/scripts/haste-shrine.js?raw'
+
+const BROWSER_PROCEDURAL_SCRIPT_SOURCES: ProceduralScriptSources = {
+    'examples/scripts/demo-quest.js': demoQuestSource,
+    'examples/scripts/lantern-trial.js': lanternTrialSource,
+    'examples/scripts/haste-shrine.js': hasteShrineSource,
+}
 
 export interface LevelTabOptions {
     world: GameWorld
@@ -221,148 +226,13 @@ export function buildLevelTab(opts: LevelTabOptions): RefreshableElement {
     }
 
     function loadBuiltInDemoLevel(): EditorLevelMeta {
-        const demoChunks = new ChunkManager(DEFAULT_PALETTE)
-        const demo = generatePlatformerLevel(demoChunks)
-        demo.scripts = [
-            {
-                id: 'demo-quest',
-                name: 'demo-quest.js',
-                source: demoQuestSource,
-                fromFile: true,
-                sourcePath: 'examples/scripts/demo-quest.js',
-            },
-            {
-                id: 'lantern-trial',
-                name: 'lantern-trial.js',
-                source: lanternTrialSource,
-                fromFile: true,
-                sourcePath: 'examples/scripts/lantern-trial.js',
-            },
-            {
-                id: 'haste-shrine',
-                name: 'haste-shrine.js',
-                source: hasteShrineSource,
-                fromFile: true,
-                sourcePath: 'examples/scripts/haste-shrine.js',
-            },
-        ]
+        const demo = createProceduralEditorLevel(DEMO_LEVEL_ID, BROWSER_PROCEDURAL_SCRIPT_SOURCES)
         return loadLevelFromBuffer(
-            serializeLevel(demoChunks, editorMetaFromRuntimeLevel(demo)),
+            demo.buffer,
             opts.world,
             opts.chunks,
             opts.editorState,
         )
-    }
-
-    /*
-     * The built-in demo is generated as runtime LevelMeta, not as an
-     * editor save. This adapter lets the Level tab expose it beside
-     * disk-backed `.vplevel` files without teaching save-load about
-     * procedural runtime-only hazards such as stone spawners.
-     */
-    function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
-        return {
-            name: meta.name,
-            spawn: { ...meta.spawn },
-            player: copyPlayerSettings(meta.player),
-            stoneSpawners: meta.stoneSpawners.map(copyStoneSpawner),
-            pickups: meta.coinPiles.map((pile) => ({
-                position: { ...pile.position },
-                kind: PickupKind.Gold,
-                amount: pile.amount ?? 1,
-            })),
-            pistons: meta.pistons.map((piston) => ({
-                from: { ...piston.from },
-                to: { ...piston.to },
-                block: piston.block,
-                delay: piston.delay ?? piston.interval ?? 2,
-                motion: piston.motion ?? 'teleport',
-                travelTime: piston.travelTime ?? 1,
-                characterPolicy: piston.characterPolicy ?? 'block',
-                moveSoundId: piston.moveSoundId,
-                moveSoundVolume: piston.moveSoundVolume,
-            })),
-            zones: meta.zones.map((zone) => ({
-                id: zone.id,
-                kind: zone.kind,
-                label: zone.label,
-                min: { ...zone.min },
-                max: { ...zone.max },
-                triggerSources: zone.triggerSources ? [...zone.triggerSources] : undefined,
-                script: zone.script ? { actions: [...zone.script.actions] } : undefined,
-                portal: zone.portal ? { ...zone.portal } : undefined,
-                interaction: zone.interaction ? {
-                    prompt: zone.interaction.prompt,
-                    anchor: zone.interaction.anchor ? { ...zone.interaction.anchor } : undefined,
-                    radius: zone.interaction.radius,
-                } : undefined,
-                active: zone.active,
-            })),
-            soundSources: meta.soundSources.map((source) => ({
-                id: source.id,
-                soundId: source.soundId,
-                label: source.label,
-                position: { ...source.position },
-                radius: source.radius,
-                volume: source.volume,
-                loop: source.loop,
-                autoplay: source.autoplay,
-            })),
-            environment: meta.environment ? { ...meta.environment } : undefined,
-            soundZones: meta.soundZones.map((zone) => ({
-                id: zone.id,
-                label: zone.label,
-                min: { ...zone.min },
-                max: { ...zone.max },
-                soundId: zone.soundId,
-                volume: zone.volume,
-                fadeTime: zone.fadeTime,
-            })),
-            weatherZones: meta.weatherZones.map((zone) => ({
-                id: zone.id,
-                label: zone.label,
-                presetId: zone.presetId,
-                position: { ...zone.position },
-                size: { ...zone.size },
-                addSound: zone.addSound,
-                soundId: zone.soundId,
-                soundVolume: zone.soundVolume,
-            })),
-            props: meta.props.map((prop) => ({
-                id: prop.id,
-                kind: prop.kind,
-                position: { ...prop.position },
-                yaw: prop.yaw,
-                scale: prop.scale,
-                gridAligned: prop.gridAligned,
-            })),
-            npcs: meta.npcs.map((npc) => ({
-                ...npc,
-                position: { ...npc.position },
-            })),
-            ambientWeather: meta.ambientWeather ? {
-                enabled: true,
-                presetId: meta.ambientWeather.presetId ?? 'clear',
-                state: {
-                    ...DEFAULT_AMBIENT_WEATHER,
-                    ...meta.ambientWeather.state,
-                    skyTint: cloneSkyTint(meta.ambientWeather.state.skyTint),
-                },
-            } : undefined,
-            scripts: meta.scripts.map(copyScriptEntry),
-        }
-    }
-
-    function cloneSkyTint(value: unknown): [number, number, number] {
-        if (!Array.isArray(value) || value.length < 3) return [...DEFAULT_AMBIENT_WEATHER.skyTint] as [number, number, number]
-        const r = Number(value[0])
-        const g = Number(value[1])
-        const b = Number(value[2])
-        return [
-            Number.isFinite(r) ? r : 1,
-            Number.isFinite(g) ? g : 1,
-            Number.isFinite(b) ? b : 1,
-        ]
     }
 
     librarySelect.onchange = () => {

@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "audio:samples": "node scripts/generate-audio-samples.mjs",
-    "test": "tsc -p tsconfig.test.json && cp tests/package.cjs.json .tmp/test-build/package.json && node --test .tmp/test-build/tests/*.test.js",
+    "levels:procedural": "tsc -p tsconfig.test.json && cp tests/package.cjs.json .tmp/test-build/package.json && node .tmp/test-build/scripts/export-procedural-levels.js",
+    "test": "tsc -p tsconfig.test.json && cp tests/package.cjs.json .tmp/test-build/package.json && node .tmp/test-build/scripts/export-procedural-levels.js && node --test .tmp/test-build/tests/*.test.js",
     "typecheck": "tsc --noEmit"
   },
   "license": "ISC",

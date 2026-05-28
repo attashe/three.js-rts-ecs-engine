@@ -5,6 +5,7 @@ import {
     voxelEmissive,
     voxelOpacity,
     type Palette,
+    type PaletteEntry,
 } from './palette'
 
 /**
@@ -49,6 +50,12 @@ export interface MeshData {
     triangleCount: number
 }
 
+export interface GreedyMeshOptions {
+    /** Render palette entries marked `debugVisible`, even when their normal
+     *  opacity is zero. Used for invisible border/debug-only authoring blocks. */
+    debugVisibleBlocks?: boolean
+}
+
 const EMPTY: MeshData = {
     positions: new Float32Array(0),
     normals: new Float32Array(0),
@@ -78,6 +85,7 @@ export function greedyMesh(
     sample: VoxelSampler,
     dim: number,
     palette: Palette,
+    opts: GreedyMeshOptions = {},
 ): MeshData {
     const positions: number[] = []
     const normals: number[] = []
@@ -107,8 +115,8 @@ export function greedyMesh(
                     x[d] = s
                     const cellPos = sample(x[0], x[1], x[2])
 
-                    const negRenderable = isRenderableVoxel(palette, cellNeg)
-                    const posRenderable = isRenderableVoxel(palette, cellPos)
+                    const negRenderable = isRenderable(palette, cellNeg, opts)
+                    const posRenderable = isRenderable(palette, cellPos, opts)
                     const negOccludes = occludesFaces(palette, cellNeg)
                     const posOccludes = occludesFaces(palette, cellPos)
 
@@ -150,8 +158,8 @@ export function greedyMesh(
                     const isPositive = m > 0
                     const paletteIdx = Math.abs(m)
                     const entry = palette.entries[paletteIdx]
-                    const [r, g, b] = entry?.color ?? [1, 0, 1]
-                    const a = voxelOpacity(palette, paletteIdx)
+                    const [r, g, b] = faceColor(entry, opts)
+                    const a = faceOpacity(entry, palette, paletteIdx, opts)
                     const [er, eg, eb] = voxelEmissive(palette, paletteIdx)
 
                     // Quad-local axes in world space.
@@ -227,4 +235,30 @@ export function greedyMesh(
         vertexCount: positions.length / 3,
         triangleCount: indices.length / 3,
     }
+}
+
+function isRenderable(palette: Palette, index: number, opts: GreedyMeshOptions): boolean {
+    if (isRenderableVoxel(palette, index)) return true
+    return opts.debugVisibleBlocks === true && palette.entries[index]?.debugVisible === true
+}
+
+function faceColor(entry: PaletteEntry | undefined, opts: GreedyMeshOptions): [number, number, number] {
+    if (!entry) return [1, 0, 1]
+    if (opts.debugVisibleBlocks === true && entry.debugVisible === true && entry.debugColor) {
+        return entry.debugColor
+    }
+    return entry.color
+}
+
+function faceOpacity(
+    entry: PaletteEntry | undefined,
+    palette: Palette,
+    index: number,
+    opts: GreedyMeshOptions,
+): number {
+    if (entry && opts.debugVisibleBlocks === true && entry.debugVisible === true && voxelOpacity(palette, index) <= 0) {
+        const opacity = entry.debugOpacity ?? 0.35
+        return Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 0.35
+    }
+    return voxelOpacity(palette, index)
 }

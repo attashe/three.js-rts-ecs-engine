@@ -4,6 +4,7 @@ import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { System } from '../engine/ecs/systems/system'
 import type { ActionMap } from '../engine/input/actions'
 import type { Input } from '../engine/input/input'
+import { getDebugInfoEnabled, setDebugInfoEnabled, subscribeDebugInfo } from '../engine/render/render-settings'
 
 export interface GameMenuSystemOptions {
     renderElement?: HTMLElement
@@ -37,6 +38,7 @@ export function createGameMenuSystem(
     let menuPanel: HTMLDivElement | null = null
     let settingsPanel: HTMLDivElement | null = null
     let returnButton: HTMLButtonElement | null = null
+    let unsubscribeDebugInfo: (() => void) | null = null
     let open = false
 
     const onKeyDown = (ev: KeyboardEvent) => {
@@ -100,6 +102,9 @@ export function createGameMenuSystem(
             menuPanel = built.menuPanel
             settingsPanel = built.settingsPanel
             returnButton = built.returnButton
+            unsubscribeDebugInfo = subscribeDebugInfo((enabled) => {
+                built.debugInfoInput.checked = enabled
+            })
             document.body.appendChild(root)
             setRootVisible(root, false)
             window.addEventListener('keydown', onKeyDown, { capture: true })
@@ -111,11 +116,13 @@ export function createGameMenuSystem(
             window.removeEventListener('keydown', onKeyDown, true)
             input.setEnabled(true)
             root?.remove()
+            unsubscribeDebugInfo?.()
             if (opts.renderElement) opts.renderElement.style.filter = ''
             root = null
             menuPanel = null
             settingsPanel = null
             returnButton = null
+            unsubscribeDebugInfo = null
         },
     }
 }
@@ -135,6 +142,7 @@ function buildMenu(opts: BuildMenuOptions): {
     menuPanel: HTMLDivElement
     settingsPanel: HTMLDivElement
     returnButton: HTMLButtonElement
+    debugInfoInput: HTMLInputElement
 } {
     const root = document.createElement('div')
     root.id = 'voxel-platformer-menu'
@@ -180,7 +188,11 @@ function buildMenu(opts: BuildMenuOptions): {
     settingsTitle.textContent = 'Settings'
     Object.assign(settingsTitle.style, titleStyle())
     settingsPanel.appendChild(settingsTitle)
+    const debugInfoRow = checkboxRow('Debug info', getDebugInfoEnabled(), (enabled) => {
+        setDebugInfoEnabled(enabled)
+    })
     settingsPanel.append(
+        debugInfoRow.row,
         sliderRow('Sound', opts.settings.masterVolume, 0, 1, 0.01, (value) => {
             opts.settings.masterVolume = value
             opts.onSettingsChanged()
@@ -202,7 +214,7 @@ function buildMenu(opts: BuildMenuOptions): {
     )
     setPanelVisible(settingsPanel, false)
 
-    return { root, menuPanel, settingsPanel, returnButton }
+    return { root, menuPanel, settingsPanel, returnButton, debugInfoInput: debugInfoRow.input }
 }
 
 function setRootVisible(root: HTMLElement, visible: boolean): void {
@@ -238,6 +250,34 @@ function menuButton(label: string, onClick: () => void): HTMLButtonElement {
     button.onmouseenter = () => { button.style.background = 'rgba(48, 64, 69, 0.96)' }
     button.onmouseleave = () => { button.style.background = 'rgba(33, 44, 48, 0.92)' }
     return button
+}
+
+function checkboxRow(
+    labelText: string,
+    checked: boolean,
+    onChange: (checked: boolean) => void,
+): { row: HTMLLabelElement; input: HTMLInputElement } {
+    const label = document.createElement('label')
+    Object.assign(label.style, {
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) auto',
+        alignItems: 'center',
+        gap: '10px',
+        margin: '12px 0',
+        color: 'rgba(238, 246, 242, 0.78)',
+        cursor: 'pointer',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const text = document.createElement('span')
+    text.textContent = labelText
+
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = checked
+    input.onchange = () => onChange(input.checked)
+
+    label.append(text, input)
+    return { row: label, input }
 }
 
 function sliderRow(

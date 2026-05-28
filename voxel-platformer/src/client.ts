@@ -30,7 +30,8 @@ import { createPlayerAudioListenerSystem } from './engine/ecs/systems/audio-list
 import { AudioEngine, type SoundHandle } from './engine/audio'
 import { Pickup as PickupComponent, PickupValue, Position } from './engine/ecs/components'
 import { despawnEntity } from './engine/ecs/entity'
-import { generatePlatformerLevel } from './game/level'
+import { DEMO_LEVEL_ID } from './game/procedural-level-ids'
+import { generateDemoProceduralLevel, type ProceduralScriptSources } from './game/procedural-levels'
 import { spawnPlayer } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
@@ -68,6 +69,12 @@ import type { FlagValue, ScriptEntry, TravelFacade } from './engine/script/types
 import demoQuestSource from '../examples/scripts/demo-quest.js?raw'
 import lanternTrialSource from '../examples/scripts/lantern-trial.js?raw'
 import hasteShrineSource from '../examples/scripts/haste-shrine.js?raw'
+
+const BROWSER_PROCEDURAL_SCRIPT_SOURCES: ProceduralScriptSources = {
+    'examples/scripts/demo-quest.js': demoQuestSource,
+    'examples/scripts/lantern-trial.js': lanternTrialSource,
+    'examples/scripts/haste-shrine.js': hasteShrineSource,
+}
 
 interface LoadedLocation {
     id: string
@@ -606,7 +613,7 @@ async function loadInitialLocation(): Promise<LoadedLocation> {
                 console.error('Playtest level failed to load — falling back to demo:', err)
             }
         }
-    } else if (requested && requested !== 'demo') {
+    } else if (requested) {
         try {
             return await loadProjectLocation(requested, new Map())
         } catch (err) {
@@ -621,7 +628,6 @@ async function loadProjectLocation(
     snapshots: ReadonlyMap<string, LocationSnapshot>,
 ): Promise<LoadedLocation> {
     const normalized = normalizeLevelId(id)
-    if (normalized === 'demo') return loadDemoLocation()
     const snapshot = snapshots.get(normalized)
     if (snapshot) {
         return {
@@ -629,7 +635,15 @@ async function loadProjectLocation(
             restoredFlags: new Map(snapshot.flags),
         }
     }
-    return loadedEditorLocationFromBuffer(normalized, await loadLevelBufferById(normalized))
+    try {
+        return loadedEditorLocationFromBuffer(normalized, await loadLevelBufferById(normalized))
+    } catch (err) {
+        if (normalized === DEMO_LEVEL_ID) {
+            console.warn('Disk-backed demo level failed to load — using procedural fallback:', err)
+            return loadDemoLocation()
+        }
+        throw err
+    }
 }
 
 async function loadLocationForRestart(active: ActiveLocation, chunks: ChunkManager): Promise<LoadedLocation> {
@@ -658,31 +672,8 @@ function loadedEditorLocationFromBuffer(id: string, buffer: ArrayBuffer): Loaded
 
 function loadDemoLocation(): LoadedLocation {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
-    const demo = generatePlatformerLevel(chunks)
-    demo.scripts = [
-        {
-            id: 'demo-quest',
-            name: 'demo-quest.js',
-            source: demoQuestSource,
-            fromFile: true,
-            sourcePath: 'examples/scripts/demo-quest.js',
-        },
-        {
-            id: 'lantern-trial',
-            name: 'lantern-trial.js',
-            source: lanternTrialSource,
-            fromFile: true,
-            sourcePath: 'examples/scripts/lantern-trial.js',
-        },
-        {
-            id: 'haste-shrine',
-            name: 'haste-shrine.js',
-            source: hasteShrineSource,
-            fromFile: true,
-            sourcePath: 'examples/scripts/haste-shrine.js',
-        },
-    ]
-    return { id: 'demo', meta: demo, chunks }
+    const demo = generateDemoProceduralLevel(chunks, BROWSER_PROCEDURAL_SCRIPT_SOURCES)
+    return { id: DEMO_LEVEL_ID, meta: demo, chunks }
 }
 
 function mountLocationTitle(): { show(name: string): void } {

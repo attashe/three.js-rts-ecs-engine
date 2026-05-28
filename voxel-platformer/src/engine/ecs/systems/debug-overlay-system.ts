@@ -11,6 +11,7 @@ import { BoxCollider, Position } from '../components'
 import type { System } from './system'
 import { RenderOrder } from './orders'
 import type { Input } from '../../input/input'
+import { getDebugInfoEnabled, setDebugInfoEnabled, subscribeDebugInfo } from '../../render/render-settings'
 
 /** CSS positioning hints for the floating panels. Each accepts any subset of
  *  the standard offset properties (top / bottom / left / right) so callers
@@ -50,7 +51,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     // Default to ON — this is a development-focused project, so we want the
     // player AABB and the metric/log panels visible right away. Backquote
     // toggles when you want a clean view.
-    let enabled = opts.enabled ?? true
+    let enabled = opts.enabled ?? getDebugInfoEnabled()
     const updateDt = 1 / (opts.updateHz ?? 6)
     const root = new Group()
     root.name = 'DebugOverlay'
@@ -60,29 +61,34 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     let logPanel: HTMLDivElement | null = null
     let accumulator = 0
     let lastLogLength = -1
+    let unsubscribeDebug: (() => void) | null = null
+
+    function applyVisibility(): void {
+        root.visible = enabled
+        if (metricsPanel) metricsPanel.style.display = enabled ? 'block' : 'none'
+        if (logPanel) logPanel.style.display = enabled ? 'block' : 'none'
+    }
 
     return {
         order: RenderOrder.debug,
         init() {
             scene.add(root)
             root.add(boxBatch.lines)
-            root.visible = enabled
 
             metricsPanel = makePanel('voxel-platformer-debug', opts.metricsPosition ?? { top: '8px', left: '8px' })
-            metricsPanel.style.display = enabled ? 'block' : 'none'
             document.body.appendChild(metricsPanel)
 
-            // The log panel stays always-visible — it's the primary
-            // feedback channel for pickups and spell casts, which players
-            // want regardless of whether they're inspecting metrics.
             logPanel = makePanel('voxel-platformer-log', opts.logPosition ?? { top: '8px', right: '8px', maxWidth: '320px' })
             document.body.appendChild(logPanel)
+            applyVisibility()
+            unsubscribeDebug = subscribeDebugInfo((next) => {
+                enabled = next
+                applyVisibility()
+            })
         },
         update(world, dt) {
             if (input.consumeKeyPressed('Backquote')) {
-                enabled = !enabled
-                root.visible = enabled
-                if (metricsPanel) metricsPanel.style.display = enabled ? 'block' : 'none'
+                setDebugInfoEnabled(!enabled)
             }
 
             if (enabled) {
@@ -115,8 +121,10 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             boxMaterial.dispose()
             metricsPanel?.remove()
             logPanel?.remove()
+            unsubscribeDebug?.()
             metricsPanel = null
             logPanel = null
+            unsubscribeDebug = null
         },
     }
 }

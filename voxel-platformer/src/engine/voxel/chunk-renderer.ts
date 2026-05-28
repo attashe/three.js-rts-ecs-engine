@@ -5,7 +5,7 @@ import { Chunk, CHUNK_DIM, chunkKey, type ChunkKey } from './chunk'
 import { buildVoxelAtlas } from './atlas-builder'
 import { greedyMesh } from './greedy-mesher'
 import { createAtlasTexture, createVoxelVertexColor, type VoxelMaterial } from '../render/materials/voxel-vertex-color'
-import { getRenderTextures, subscribeRenderTextures } from '../render/render-settings'
+import { getDebugInfoEnabled, getRenderTextures, subscribeDebugInfo, subscribeRenderTextures } from '../render/render-settings'
 
 /**
  * Owns the THREE.Mesh per chunk. Each frame, drains `manager.drainDirty()`
@@ -25,6 +25,8 @@ export class ChunkRenderer {
     private readonly meshByKey: Map<ChunkKey, Mesh> = new Map()
     private readonly meshedVersion: Map<ChunkKey, number> = new Map()
     private readonly unsubscribeTextures: () => void
+    private readonly unsubscribeDebugInfo: () => void
+    private debugInfoEnabled = getDebugInfoEnabled()
     private cutY: number | null = null
 
     constructor(scene: Scene, manager: ChunkManager) {
@@ -47,6 +49,14 @@ export class ChunkRenderer {
         // the per-fragment multiplier changes.
         this.unsubscribeTextures = subscribeRenderTextures((enabled) => {
             this.voxelMaterial.setTexturesEnabled(enabled)
+        })
+        this.unsubscribeDebugInfo = subscribeDebugInfo((enabled) => {
+            if (this.debugInfoEnabled === enabled) return
+            this.debugInfoEnabled = enabled
+            for (const c of this.manager.allChunks()) {
+                this.remesh(c)
+            }
+            this.manager.drainDirty()
         })
     }
 
@@ -120,7 +130,9 @@ export class ChunkRenderer {
             return this.manager.getVoxel(baseX + lx, baseY + ly, baseZ + lz)
         }
 
-        const data = greedyMesh(sample, CHUNK_DIM, this.manager.palette)
+        const data = greedyMesh(sample, CHUNK_DIM, this.manager.palette, {
+            debugVisibleBlocks: this.debugInfoEnabled,
+        })
         if (data.vertexCount === 0) {
             const old = this.meshByKey.get(key)
             if (old) {
@@ -158,6 +170,7 @@ export class ChunkRenderer {
 
     dispose(): void {
         this.unsubscribeTextures()
+        this.unsubscribeDebugInfo()
         for (const mesh of this.meshByKey.values()) {
             this.scene.remove(mesh)
             mesh.geometry.dispose()

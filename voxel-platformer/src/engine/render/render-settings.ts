@@ -1,10 +1,10 @@
 /**
  * Tiny localStorage-backed render settings store + subscriber API.
  *
- * Currently houses one flag — `renderTextures` — which toggles the
- * chunk material's atlas-sampling pass. The store survives across
- * page reloads but is intentionally separate from the level save
- * format: a render preference is per-user, not per-level.
+ * Houses per-user render/debug flags such as `renderTextures` and
+ * `debugInfo`. The store survives across page reloads but is
+ * intentionally separate from the level save format: a render
+ * preference is per-user, not per-level.
  *
  * Reads are synchronous and cheap (one localStorage hit on first
  * access, cached thereafter). The subscribe API is unconditional —
@@ -25,13 +25,18 @@ const DEFAULT_TORCH_SYSTEM: TorchSystemKind = 'classic'
 const PLAYER_TORCH_SHADOW_KEY = 'vp:render:player-torch-shadow'
 const DEFAULT_PLAYER_TORCH_SHADOW = true
 
+const DEBUG_INFO_KEY = 'vp:render:debug-info'
+const DEFAULT_DEBUG_INFO = true
+
 type Listener = (enabled: boolean) => void
 
 const listeners = new Set<Listener>()
 const playerTorchShadowListeners = new Set<Listener>()
+const debugInfoListeners = new Set<Listener>()
 let cached: boolean | null = null
 let cachedTorchSystem: TorchSystemKind | null = null
 let cachedPlayerTorchShadow: boolean | null = null
+let cachedDebugInfo: boolean | null = null
 
 /**
  * Which torch-block render system the client boots with.
@@ -221,4 +226,58 @@ export function subscribePlayerTorchShadow(listener: Listener): () => void {
 
 export function __resetPlayerTorchShadowCache(): void {
     cachedPlayerTorchShadow = null
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Shared debug-info toggle. This controls runtime debug overlays and
+// debug-only world visuals such as invisible border blocks.
+// ─────────────────────────────────────────────────────────────────────
+
+function loadDebugInfo(): boolean {
+    if (typeof localStorage === 'undefined') return DEFAULT_DEBUG_INFO
+    try {
+        const raw = localStorage.getItem(DEBUG_INFO_KEY)
+        if (raw === '0' || raw === 'false') return false
+        if (raw === '1' || raw === 'true') return true
+    } catch {
+        // Private-mode fallback — accept the default.
+    }
+    return DEFAULT_DEBUG_INFO
+}
+
+function persistDebugInfo(value: boolean): void {
+    if (typeof localStorage === 'undefined') return
+    try {
+        localStorage.setItem(DEBUG_INFO_KEY, value ? '1' : '0')
+    } catch {
+        // Same private-mode case.
+    }
+}
+
+export function getDebugInfoEnabled(): boolean {
+    if (cachedDebugInfo === null) cachedDebugInfo = loadDebugInfo()
+    return cachedDebugInfo
+}
+
+export function setDebugInfoEnabled(enabled: boolean): void {
+    if (cachedDebugInfo === null) cachedDebugInfo = loadDebugInfo()
+    if (cachedDebugInfo === enabled) return
+    cachedDebugInfo = enabled
+    persistDebugInfo(enabled)
+    for (const listener of debugInfoListeners) {
+        try {
+            listener(enabled)
+        } catch (err) {
+            console.warn('debugInfo listener threw:', err)
+        }
+    }
+}
+
+export function subscribeDebugInfo(listener: Listener): () => void {
+    debugInfoListeners.add(listener)
+    return () => { debugInfoListeners.delete(listener) }
+}
+
+export function __resetDebugInfoCache(): void {
+    cachedDebugInfo = null
 }

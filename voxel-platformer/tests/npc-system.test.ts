@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Group, Scene } from 'three'
+import { Group, LineSegments, Scene } from 'three'
 import { createGameWorld } from '../src/engine/ecs/world'
 import { createNpcModel } from '../src/game/npcs/npc-models'
 import { createNpcRenderSystem } from '../src/game/npcs/npc-render-system'
@@ -93,4 +93,23 @@ test('NPC renderer tracks add, move, and remove changes', () => {
 
     system.dispose?.()
     assert.equal(scene.children.includes(group!), false)
+})
+
+test('NPC renderer draws debug collider boxes for collidable NPCs only', () => {
+    const scene = new Scene()
+    const collidable = npc('solid')
+    const passable = { ...npc('passable'), id: 'passable', collisionEnabled: false }
+    const system = createNpcRenderSystem(scene, { getNpcs: () => [collidable, passable] })
+    const world = createGameWorld()
+
+    system.init?.(world)
+    system.update(world, 1 / 60)
+
+    const lines = scene.children.find((child) => child.name === 'NPCColliderDebug') as LineSegments | undefined
+    assert.ok(lines, 'renderer should add an NPC collider debug batch')
+    assert.equal(lines!.visible, true)
+    assert.equal(lines!.geometry.drawRange.count, 24, 'one collidable NPC emits one wire box')
+
+    system.dispose?.()
+    assert.equal(scene.children.includes(lines!), false)
 })

@@ -43,7 +43,7 @@ export const GameAudio = {
     //   - grass  (palette: grass, leaf)         — soft, muffled
     //   - dirt   (palette: dirt, sand)          — heavy thud
     //   - stone  (palette: stone, brick, glow,  — clean click
-    //             door, no-walk ward)
+    //             door, invisible border)
     //   - wood   (palette: wood, plank)         — hollow creak
     //   - water  (palette: water, partial-      — splash
     //             submerged)

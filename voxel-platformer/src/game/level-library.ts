@@ -1,3 +1,5 @@
+import { DEMO_LEVEL_ID } from './procedural-level-ids'
+
 export interface LevelLibraryEntry {
     id: string
     name: string
@@ -16,7 +18,7 @@ export interface LevelLibraryManifest {
 const DEV_ENDPOINT = '/__vpe/levels'
 const MANIFEST_URL = '/levels/manifest.json'
 const LEVELS_BASE_URL = '/levels'
-export const BUILTIN_DEMO_LEVEL_ID = 'demo'
+export const BUILTIN_DEMO_LEVEL_ID = DEMO_LEVEL_ID
 
 export async function listLevelLibrary(fetchImpl: typeof fetch = fetch): Promise<LevelLibraryEntry[]> {
     try {

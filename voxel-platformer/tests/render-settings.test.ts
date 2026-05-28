@@ -1,15 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+    __resetDebugInfoCache,
     __resetPlayerTorchShadowCache,
     __resetRenderTexturesCache,
     __resetTorchSystemCache,
+    getDebugInfoEnabled,
     getPlayerTorchShadow,
     getRenderTextures,
     getTorchSystem,
+    setDebugInfoEnabled,
     setPlayerTorchShadow,
     setRenderTextures,
     setTorchSystem,
+    subscribeDebugInfo,
     subscribePlayerTorchShadow,
     subscribeRenderTextures,
 } from '../src/engine/render/render-settings'
@@ -67,6 +71,22 @@ test('setPlayerTorchShadow round-trips + notifies live subscribers only on chang
     unsubscribe()
     setPlayerTorchShadow(false)
     assert.equal(seen.length, 2, 'unsubscribed listener should stop firing')
+})
+
+test('debug info defaults on and notifies subscribers when changed', () => {
+    __resetDebugInfoCache()
+    assert.equal(getDebugInfoEnabled(), true)
+
+    const seen: boolean[] = []
+    const unsubscribe = subscribeDebugInfo((enabled) => seen.push(enabled))
+    setDebugInfoEnabled(true)
+    setDebugInfoEnabled(false)
+    setDebugInfoEnabled(false)
+    setDebugInfoEnabled(true)
+
+    assert.deepEqual(seen, [false, true])
+    assert.equal(getDebugInfoEnabled(), true)
+    unsubscribe()
 })
 
 test('subscribers fire only when the value actually changes', () => {

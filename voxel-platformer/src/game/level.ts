@@ -9,6 +9,11 @@ import type { EditorProp } from './props/prop-types'
 import type { NpcConfig } from './npcs/npc-types'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from './player-settings'
 import type { ScriptEntry } from '../engine/script/types'
+import {
+    DEMO_FROM_GARDEN_ARRIVAL_ID,
+    TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
+    TELEPORT_GARDEN_LEVEL_ID,
+} from './procedural-level-ids'
 
 export interface CoinPileSpawn {
     position: { x: number; y: number; z: number }
@@ -121,6 +126,27 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     // swaps this special unlit prop-block to BLOCK.torch when the
     // player returns all three Sun Shards to Keeper Arlen.
     chunks.setVoxel(keeperLantern.x, keeperLantern.y, keeperLantern.z, BLOCK.unlitLantern)
+
+    // Travel-test gate. The pad is kept outside the main quest objects so
+    // exported editor files can validate level-to-level travel without
+    // interfering with the collection quest flow.
+    for (let x = 4; x <= 7; x++) {
+        for (let z = 16; z <= 19; z++) {
+            chunks.setVoxel(x, groundY, z, BLOCK.stone)
+        }
+    }
+    // Use non-light-emitting marker blocks here. BLOCK.glow spawns one
+    // PointLight per voxel, and BLOCK.noWalk is reserved for invisible
+    // border authoring.
+    for (let x = 5; x <= 6; x++) {
+        for (let z = 17; z <= 18; z++) {
+            chunks.setVoxel(x, groundY, z, BLOCK.door)
+        }
+    }
+    for (let y = groundY + 1; y <= groundY + 3; y++) {
+        chunks.setVoxel(4, y, 16, BLOCK.door)
+        chunks.setVoxel(7, y, 19, BLOCK.door)
+    }
 
     // Cliff with two stone spawners on the east side of the plaza.
     const cliffTop = groundY + 4
@@ -289,6 +315,25 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             min: { x: 4, y: groundY + 1, z: 4 },
             max: { x: 7, y: groundY + 3, z: 7 },
             active: false,
+        },
+        {
+            id: 'zone.demo.portal.teleport-garden',
+            kind: 'portal',
+            label: 'Gate to Teleport Garden',
+            min: { x: 5, y: groundY + 1, z: 17 },
+            max: { x: 7, y: groundY + 3, z: 19 },
+            triggerSources: ['player'],
+            portal: {
+                targetLevelId: TELEPORT_GARDEN_LEVEL_ID,
+                targetArrivalId: TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
+            },
+        },
+        {
+            id: DEMO_FROM_GARDEN_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Return from Teleport Garden',
+            min: { x: 8.25, y: groundY + 1, z: 16.75 },
+            max: { x: 9.75, y: groundY + 2.8, z: 18.25 },
         },
     ]
 

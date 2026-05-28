@@ -1,8 +1,11 @@
 import {
+    getDebugInfoEnabled,
     getRenderTextures,
     getTorchSystem,
+    setDebugInfoEnabled,
     setRenderTextures,
     setTorchSystem,
+    subscribeDebugInfo,
     subscribeRenderTextures,
     type TorchSystemKind,
 } from '../../engine/render/render-settings'
@@ -10,8 +13,8 @@ import { sectionEl, type RefreshableElement } from './common'
 
 /**
  * Editor → Level → Display panel. Houses per-user render toggles
- * (currently the chunk-texture pass) that don't belong in the level
- * save format: they're personal preferences, not authoring choices.
+ * that don't belong in the level save format: they're personal
+ * preferences, not authoring choices.
  *
  * Wiring out to runtime: the chunk renderer subscribes directly to
  * `render-settings`, so flipping the checkbox here propagates through
@@ -39,6 +42,19 @@ export function buildDisplayControlsSection(): RefreshableElement {
     row.append(span, input)
     section.appendChild(row)
 
+    const debugRow = document.createElement('label')
+    debugRow.className = 'vpe-field'
+    debugRow.style.cursor = 'pointer'
+    const debugInput = document.createElement('input')
+    debugInput.type = 'checkbox'
+    debugInput.checked = getDebugInfoEnabled()
+    debugInput.onchange = () => setDebugInfoEnabled(debugInput.checked)
+    const debugSpan = document.createElement('span')
+    debugSpan.textContent = 'Debug info'
+    debugSpan.title = 'Toggle debug overlays and debug-only world visuals such as invisible border blocks.'
+    debugRow.append(debugSpan, debugInput)
+    section.appendChild(debugRow)
+
     // Stay in sync if another part of the UI flips the setting. The
     // panel lives for the editor's lifetime, so we deliberately do not
     // unsubscribe — a leak here would matter only if a host repeatedly
@@ -46,6 +62,9 @@ export function buildDisplayControlsSection(): RefreshableElement {
     // which the codebase doesn't do anywhere.
     subscribeRenderTextures((enabled) => {
         if (input.checked !== enabled) input.checked = enabled
+    })
+    subscribeDebugInfo((enabled) => {
+        if (debugInput.checked !== enabled) debugInput.checked = enabled
     })
 
     // ── Torch system selector. Read once at gameplay startup, so
@@ -88,6 +107,7 @@ export function buildDisplayControlsSection(): RefreshableElement {
         element: section,
         refresh() {
             input.checked = getRenderTextures()
+            debugInput.checked = getDebugInfoEnabled()
             torchSelect.value = getTorchSystem()
         },
     }

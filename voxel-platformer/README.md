@@ -56,10 +56,14 @@ placement, binary save/load. See `docs/editor.md` for the full roadmap.
 ## Test + typecheck + build
 
 ```bash
+npm run levels:procedural
 npm test
 npm run typecheck
 npm run build
 ```
+
+`npm test` regenerates procedural demo `.vplevel` files before running the
+Node tests. See `docs/procedural-levels.md` for the generator/export pipeline.
 
 ### Manual browser verification (not covered by `npm test`)
 
