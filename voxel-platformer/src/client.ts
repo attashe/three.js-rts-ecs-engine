@@ -41,6 +41,7 @@ import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { createTorchBlockRenderSystemV2 } from './game/torch-block-system-v2'
 import { getTorchSystem } from './engine/render/render-settings'
 import { spawnCoinPile } from './game/pickups'
+import { spawnLevelStone } from './game/stones'
 import { registerPistonMechanism } from './game/mechanisms'
 import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from './game/sound-sources'
 import { createPlayerLocomotionAudioSystem } from './game/player-audio'
@@ -63,7 +64,7 @@ import { createProceduralEditorLevel } from './editor/procedural-level-export'
 import { levelMetaFromEditor } from './game/level-from-meta'
 import { loadLevelBufferById, normalizeLevelId } from './game/level-library'
 import type { EditorLevelMeta } from './editor/editor-state'
-import type { LevelMeta } from './game/level'
+import { levelMetaWithSpawn, type LevelMeta } from './game/level'
 import { pushLog, type GameWorld } from './engine/ecs/world'
 import type { ScriptEngineSystem } from './engine/script/script-engine-system'
 import type { FlagValue, ScriptEntry, TravelFacade } from './engine/script/types'
@@ -93,6 +94,8 @@ interface ActiveLocation {
     meta: LevelMeta
     editorMeta?: EditorLevelMeta
     sourceBuffer?: ArrayBuffer
+    entrySnapshot: LocationSnapshot
+    entrySpawn: { x: number; y: number; z: number }
     checkpointStore: CheckpointStore
     entryPlayerSettings: PlayerSettings
     levelScripts: readonly ScriptEntry[]
@@ -167,7 +170,10 @@ async function main(): Promise<void> {
             void travelTo(levelId, { arrivalId: opts?.arrivalId })
         },
         reload(opts) {
-            void restartCurrent(opts?.arrivalId)
+            void restartCurrent({
+                arrivalId: opts?.arrivalId,
+                useCheckpoint: !opts?.arrivalId,
+            })
         },
     }
 
@@ -194,17 +200,18 @@ async function main(): Promise<void> {
         }
     }
 
-    async function restartCurrent(arrivalId?: string): Promise<void> {
+    async function restartCurrent(opts: { arrivalId?: string; useCheckpoint?: boolean } = {}): Promise<void> {
         const current = active
         if (!current || travelInFlight) return
         travelInFlight = true
         try {
-            const loaded = await loadLocationForRestart(current, chunks)
+            const loaded = loadLocationForRestart(current)
             activateLocation(loaded, {
-                arrivalId,
+                arrivalId: opts.arrivalId,
+                entrySpawn: opts.arrivalId ? undefined : current.entrySpawn,
                 playerSettings: current.entryPlayerSettings,
                 saveCurrent: false,
-                useCheckpoint: true,
+                useCheckpoint: opts.useCheckpoint ?? !opts.arrivalId,
             })
         } finally {
             travelInFlight = false
@@ -215,6 +222,7 @@ async function main(): Promise<void> {
         loaded: LoadedLocation,
         opts: {
             arrivalId?: string
+            entrySpawn?: { x: number; y: number; z: number }
             playerSettings: PlayerSettings
             saveCurrent: boolean
             useCheckpoint: boolean
@@ -226,16 +234,22 @@ async function main(): Promise<void> {
         replaceChunks(chunks, loaded.chunks)
 
         const version = ++locationVersion
-        const meta = loaded.meta
+        const entrySpawn = opts.entrySpawn ?? resolveArrival(loaded.meta, opts.arrivalId) ?? loaded.meta.spawn
+        const meta = levelMetaWithSpawn(loaded.meta, entrySpawn)
         const checkpointStore = createSessionCheckpointStore(checkpointStorageKey(loaded.id))
-        const authoredSpawn = resolveArrival(meta, opts.arrivalId) ?? meta.spawn
-        const effectiveSpawn = opts.useCheckpoint ? resolveSpawn(authoredSpawn, checkpointStore) : authoredSpawn
-        world.lastCheckpoint = opts.useCheckpoint ? checkpointStore.get() : null
+        const effectiveSpawn = opts.useCheckpoint ? resolveSpawn(entrySpawn, checkpointStore) : entrySpawn
+        if (opts.useCheckpoint) {
+            world.lastCheckpoint = checkpointStore.get()
+        } else {
+            checkpointStore.clear()
+            world.lastCheckpoint = null
+        }
         world.playerSettings = copyPlayerSettings(opts.playerSettings)
         world.inventory.gold = world.playerSettings.inventory.gold
         world.inventory.arrows = world.playerSettings.inventory.arrows
 
         spawnPlayer(world, { spawn: effectiveSpawn, settings: world.playerSettings })
+        for (const stone of meta.stones) spawnLevelStone(world, stone)
         for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
         for (const piston of meta.pistons) registerPistonMechanism(world, chunks, piston)
         for (const zone of meta.zones) defineZone(world, zone)
@@ -247,6 +261,8 @@ async function main(): Promise<void> {
             meta,
             editorMeta: loaded.editorMeta,
             sourceBuffer: loaded.sourceBuffer,
+            entrySnapshot: entrySnapshotFromLoaded(loaded),
+            entrySpawn: { ...entrySpawn },
             checkpointStore,
             entryPlayerSettings: copyPlayerSettings(opts.playerSettings),
             levelScripts,
@@ -287,6 +303,9 @@ async function main(): Promise<void> {
             // thread on first activation while shaders compile.
             warmupShaders: (scene, camera) => renderer.webgpu.compileAsync(scene, camera),
         })
+        const stoneSpawnerSystem = createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 })
+        slots.stoneSpawner.set(stoneSpawnerSystem)
+
         const scriptEngine = createGameScriptSystem({
             world,
             chunks,
@@ -325,7 +344,7 @@ async function main(): Promise<void> {
                 }
             },
         }))
-        slots.zoneTrigger.set(createZoneTriggerSystem(chunks, {
+        slots.zoneTrigger.set(createZoneTriggerSystem({
             onTrigger: (event, zone) => {
                 if (event.source !== 'player') return
                 if (!zone.portal?.targetLevelId) return
@@ -333,7 +352,6 @@ async function main(): Promise<void> {
             },
         }))
         slots.scriptEngine.set(scriptEngine)
-        slots.stoneSpawner.set(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }))
         slots.blockLights.set(createBlockLightSystem(chunks, {
             scene: renderer.scene,
             camera: () => renderer.iso.camera,
@@ -482,7 +500,9 @@ async function main(): Promise<void> {
             camera: () => renderer.iso.camera,
             domElement: renderer.webgpu.domElement,
         }), 'interaction')
-        .addSystem(createRestartSystem({ onRestart: () => restartCurrent() }), 'restart')
+        .addSystem(createRestartSystem({
+            onRestart: (reason) => restartCurrent({ useCheckpoint: reason !== 'manual-restart' }),
+        }), 'restart')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,
             edgePan: false,
@@ -538,12 +558,16 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.obstacles.clear()
     world.pickupMetaByEid.clear()
     world.pickupEntityByScriptId.clear()
+    world.stoneEntityByScriptId.clear()
+    world.stoneSpawnersById.clear()
     world.pistons.length = 0
     world.pistonsById.clear()
     world.zones.clear()
     world.zoneEvents.length = 0
     world.popupMessages.length = 0
     world.nextPopupMessageId = 1
+    world.popupClears.length = 0
+    world.nextPopupClearId = 1
     world.scriptTriggerEvents.length = 0
     world.deathSignal = null
     world.lastCheckpoint = null
@@ -663,12 +687,27 @@ async function loadProjectLocation(
     }
 }
 
-async function loadLocationForRestart(active: ActiveLocation, chunks: ChunkManager): Promise<LoadedLocation> {
-    if (active.sourceBuffer) return loadedEditorLocationFromBuffer(active.id, active.sourceBuffer)
-    if (active.editorMeta) {
-        return loadedEditorLocationFromBuffer(active.id, serializeLevel(chunks, active.editorMeta))
+function loadLocationForRestart(active: ActiveLocation): LoadedLocation {
+    return {
+        ...loadedEditorLocationFromBuffer(active.id, active.entrySnapshot.buffer),
+        restoredFlags: new Map(active.entrySnapshot.flags),
     }
-    return loadBuiltinDemoLocation()
+}
+
+function entrySnapshotFromLoaded(loaded: LoadedLocation): LocationSnapshot {
+    if (loaded.sourceBuffer) {
+        return {
+            buffer: loaded.sourceBuffer.slice(0),
+            flags: new Map(loaded.restoredFlags ?? []),
+        }
+    }
+    if (loaded.editorMeta) {
+        return {
+            buffer: serializeLevel(loaded.chunks, loaded.editorMeta),
+            flags: new Map(loaded.restoredFlags ?? []),
+        }
+    }
+    throw new Error(`Location "${loaded.id}" has no serializable restart baseline`)
 }
 
 function loadedEditorLocationFromBuffer(id: string, buffer: ArrayBuffer): LoadedLocation {

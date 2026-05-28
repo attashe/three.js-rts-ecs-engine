@@ -1,7 +1,7 @@
 import { hasComponent, query } from 'bitecs'
 import type { AudioEngine, AudioManifest, SoundHandle } from '../engine/audio'
 import { PlayerControlled, Position, Velocity } from '../engine/ecs/components'
-import { pushLog, pushPopupMessage, type GameWorld, type VoxelCoord } from '../engine/ecs/world'
+import { pushLog, pushPopupClear, pushPopupMessage, type GameWorld, type VoxelCoord } from '../engine/ecs/world'
 import { isPointInZone, isZoneActive, setZoneActive } from '../engine/ecs/zones'
 import { WEATHER_PRESETS, type WeatherSystem } from '../engine/fx'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
@@ -15,6 +15,8 @@ import type {
     PistonsFacade,
     PlayerFacade,
     ScriptEntry,
+    StonesFacade,
+    StoneScriptSpawnOptions,
     TravelFacade,
     FlagValue,
     UiFacade,
@@ -25,6 +27,8 @@ import { buildLevelFacade, type LevelInfo } from './script-level-facade'
 import type { CheckpointStore } from './checkpoint-store'
 import type { VisualFxZoneController } from './visual-fx-zone-controller'
 import { despawnScriptPickup, scriptPickupExists, spawnScriptPickup } from './pickups'
+import { despawnScriptStone, scriptStoneExists, spawnScriptStone } from './stones'
+import { recordPlaytestScriptError } from '../editor/playtest-error-bridge'
 import {
     applyPlayerSettingsPatch,
     clampBoolean,
@@ -226,6 +230,34 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         },
     }
 
+    const stones: StonesFacade = {
+        spawn(pos, spawnOpts) {
+            return spawnScriptStone(opts.world, stoneConfigFromScript(pos, spawnOpts))
+        },
+        remove(id) {
+            return despawnScriptStone(opts.world, id)
+        },
+        exists(id) {
+            return scriptStoneExists(opts.world, id)
+        },
+        setSpawnerEnabled(id, enabled) {
+            const spawner = opts.world.stoneSpawnersById.get(id)
+            if (!spawner) return false
+            spawner.setEnabled(enabled)
+            return true
+        },
+        isSpawnerEnabled(id) {
+            const spawner = opts.world.stoneSpawnersById.get(id)
+            return spawner !== undefined && spawner.isEnabled()
+        },
+        triggerSpawner(id, count) {
+            return opts.world.stoneSpawnersById.get(id)?.trigger(count) ?? 0
+        },
+        listSpawners() {
+            return Array.from(opts.world.stoneSpawnersById.keys())
+        },
+    }
+
     const zone: ZoneFacade = {
         contains(zoneId, who) {
             const z = opts.world.zones.get(zoneId)
@@ -270,6 +302,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         player,
         pickups,
         pistons,
+        stones,
         zone,
         log,
         ui: {
@@ -279,6 +312,9 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                     message,
                     seconds: sayOpts?.seconds,
                 })
+            },
+            clear(targetId) {
+                pushPopupClear(opts.world, targetId ?? null)
             },
             dialogue(request) {
                 return opts.dialogue?.dialogue?.(request) ?? Promise.resolve({})
@@ -294,8 +330,30 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
             const msg = err instanceof Error ? err.message : String(err)
             pushLog(opts.world, `[script:${entry.name}] ${msg}`)
             console.error(`[script ${entry.name} @ ${where}]`, err)
+            // Stash for the editor's Logic tab. `where` starts with
+            // `compile.parse` only on syntax errors; everything else
+            // (compile.runtime, handler:*) is a runtime fault and
+            // should render with the runtime-error styling.
+            recordPlaytestScriptError(
+                entry,
+                where.startsWith('compile.parse') ? 'parse' : 'runtime',
+                where,
+                err,
+            )
         },
     })
+}
+
+function stoneConfigFromScript(pos: { x: number; y: number; z: number }, opts?: StoneScriptSpawnOptions) {
+    const { id, velocity, tier, size, ...stoneOptions } = opts ?? {}
+    return {
+        id,
+        position: { x: pos.x, y: pos.y, z: pos.z },
+        velocity: velocity ? { x: velocity.x, y: velocity.y, z: velocity.z } : undefined,
+        tier,
+        size,
+        options: Object.keys(stoneOptions).length > 0 ? stoneOptions : undefined,
+    }
 }
 
 function applyPlayerPatch(world: GameWorld, patch: PlayerSettingsPatch) {

@@ -39,6 +39,7 @@ import type {
     PlayerFacade,
     ScriptContext,
     ScriptEntry,
+    StonesFacade,
     TravelFacade,
     UiFacade,
     WeatherFacade,
@@ -51,6 +52,7 @@ export interface ScriptEngineSystemOptions {
     player: PlayerFacade
     pickups: PickupsFacade
     pistons: PistonsFacade
+    stones?: StonesFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -118,6 +120,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         player: opts.player,
         pickups: opts.pickups,
         pistons: opts.pistons,
+        stones: opts.stones,
         zone: opts.zone,
         log: opts.log,
         ui: opts.ui,

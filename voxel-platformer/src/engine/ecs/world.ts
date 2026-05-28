@@ -34,6 +34,12 @@ export interface PopupMessage {
     seconds: number
 }
 
+export interface PopupClearRequest {
+    id: number
+    /** When null, drain bubbles for every target. */
+    targetId: string | null
+}
+
 /**
  * A voxel-shaped block that teleports between two cells on a fixed timer.
  * Used for moving platforms / stepping stones. Driven by piston-system.
@@ -102,6 +108,15 @@ export interface PistonMechanism {
     moveSoundVolume?: number
 }
 
+export interface StoneSpawnerRuntime {
+    id: string
+    setEnabled(enabled: boolean): void
+    isEnabled(): boolean
+    /** Spawn immediately, bypassing the timer but still honoring enabled
+     *  state and live-count caps. Returns the number actually spawned. */
+    trigger(count?: number): number
+}
+
 /** Why the level should restart. Set by gameplay systems; consumed by
  *  `restart-system` which calls `location.reload()`. */
 export type DeathReason = 'fell-into-void' | 'crushed-by-piston' | 'manual-restart' | 'killed-by-zone-script'
@@ -130,6 +145,11 @@ export interface GameContext {
      *  when the config carries `id`. Used by the `pistons.*` script bindings
      *  for O(1) lookup. Pistons without an id never appear here. */
     pistonsById: Map<string, PistonMechanism>
+    /** Stable script id -> live physics stone entity. Used by `stones.spawn`
+     *  to make scripted/direct stones idempotent and removable. */
+    stoneEntityByScriptId: Map<string, number>
+    /** Stable editor/script id -> live falling-stone spawner controller. */
+    stoneSpawnersById: Map<string, StoneSpawnerRuntime>
     /** Named AABB regions placed by the editor (or seeded by `level.ts`).
      *  Gameplay can query these via `isPointInZone` / `findZoneAtPoint`. */
     zones: Map<string, Zone>
@@ -144,6 +164,12 @@ export interface GameContext {
     /** Short world-anchored UI messages, usually script-authored NPC lines. */
     popupMessages: PopupMessage[]
     nextPopupMessageId: number
+    /** Pending `ui.clear(targetId?)` requests. Consumers drain by id and
+     *  drop active bubbles whose `targetId` matches (or all bubbles when
+     *  `targetId === null`). Lets scripts dismiss popups early without
+     *  having to wait for the `seconds` timer to expire. */
+    popupClears: PopupClearRequest[]
+    nextPopupClearId: number
     /** Mutable runtime player defaults/current settings. Level metadata
      *  seeds this before spawn; scripts may patch it while the level runs. */
     playerSettings: PlayerSettings
@@ -216,11 +242,15 @@ export function createGameWorld(): GameWorld {
         pickupEntityByScriptId: new Map<string, number>(),
         pistons: [],
         pistonsById: new Map<string, PistonMechanism>(),
+        stoneEntityByScriptId: new Map<string, number>(),
+        stoneSpawnersById: new Map<string, StoneSpawnerRuntime>(),
         zones: new Map<string, Zone>(),
         zoneEvents: [],
         log: [],
         popupMessages: [],
         nextPopupMessageId: 1,
+        popupClears: [],
+        nextPopupClearId: 1,
         playerSettings: copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
         deathSignal: null,
         lastCheckpoint: null,
@@ -250,6 +280,24 @@ export function pushPopupMessage(
     })
     if (world.popupMessages.length > 24) {
         world.popupMessages.splice(0, world.popupMessages.length - 24)
+    }
+}
+
+/** Queue a clear request for the interaction-system to drain. `targetId
+ *  === null` clears every active bubble; a specific id clears only that
+ *  target's queue + current bubble. Same edge-triggered consumption
+ *  pattern as `popupMessages`: the renderer tracks a `lastClearId`
+ *  cursor and only acts on entries newer than that. */
+export function pushPopupClear(world: GameWorld, targetId: string | null): void {
+    world.popupClears.push({
+        id: world.nextPopupClearId++,
+        targetId,
+    })
+    // Bounded to avoid unbounded growth if no consumer is wired up
+    // (e.g. headless test runs). Same 24-cap as popupMessages so the
+    // ratio matches one clear per say.
+    if (world.popupClears.length > 24) {
+        world.popupClears.splice(0, world.popupClears.length - 24)
     }
 }
 

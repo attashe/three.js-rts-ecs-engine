@@ -40,17 +40,56 @@ export interface StoneSpawnOptions {
     chipColor?: number
 }
 
+export const STONE_TIER_IDS = ['pebble', 'cobble', 'stone', 'rock', 'boulder'] as const
+export type StoneTierId = typeof STONE_TIER_IDS[number]
+export const DEFAULT_STONE_TIER: StoneTierId = 'stone'
+export const DEFAULT_STONE_RADIUS = 0.28
+
+export interface StoneConfigBase {
+    /** Named gameplay/visual preset. Defaults to `stone`. */
+    tier?: StoneTierId
+    /** Radius override in world units. Stored as "size" in the editor UI. */
+    size?: number
+    /** Low-level physics/visual overrides. Applied after the tier, before size. */
+    options?: StoneSpawnOptions
+}
+
+export interface StonePlacementConfig extends StoneConfigBase {
+    /** Stable script/editor id. Direct stones without an id still spawn, but
+     *  scripts cannot address them individually. */
+    id?: string
+    /** Foot-anchored spawn position. Runtime stores stone Position.y at centre. */
+    position: { x: number; y: number; z: number }
+    /** Initial velocity. Defaults to still. */
+    velocity?: { x: number; y: number; z: number }
+    /** Starts live by default. Scripts can opt to spawn disabled stones later. */
+    enabled?: boolean
+}
+
 export interface StoneFallSpawnerConfig {
+    /** Stable script/editor id. Missing ids remain runtime-only for old saves. */
+    id?: string
+    /** Runtime gate. Default true. */
+    enabled?: boolean
     position: { x: number; y: number; z: number }
     velocity: { x: number; y: number; z: number }
+    /** Seconds between automatic emissions. */
     interval: number
+    /** Initial wait before the first automatic emission. Default 0. */
+    delay?: number
+    /** Per-spawner cap on active, non-sleeping stones spawned by this emitter. */
+    maxLive?: number
     jitter?: number
-    /** Per-spawner stone variant. Defaults to STONE_TIER.stone. */
+    /** Named gameplay/visual preset. Defaults to `stone`. */
+    tier?: StoneTierId
+    /** Radius override in world units. Stored as "size" in the editor UI. */
+    size?: number
+    /** Per-spawner stone variant. Defaults to `stone`. */
     options?: StoneSpawnOptions
 }
 
 const DEFAULT_STONE: Required<StoneSpawnOptions> = {
-    radius: 0.28,
+    radius: DEFAULT_STONE_RADIUS,
     mass: 8,
     restitution: 0.18,
     linearDamping: 1.25,
@@ -69,12 +108,33 @@ const DEFAULT_STONE: Required<StoneSpawnOptions> = {
  *  ```
  *
  *  Mass values are tuned for gameplay (radius² rather than radius³). */
-export const STONE_TIER: Record<string, StoneSpawnOptions> = {
+export const STONE_TIER: Record<StoneTierId, StoneSpawnOptions> = {
     pebble:  { radius: 0.14, mass: 2,  restitution: 0.32, linearDamping: 1.6, sleepDelay: 0.4,  color: 0x7a8088 },
     cobble:  { radius: 0.20, mass: 4,  restitution: 0.24, linearDamping: 1.4, sleepDelay: 0.5,  color: 0x707680 },
-    stone:   { radius: 0.28, mass: 8,  restitution: 0.18, linearDamping: 1.25, sleepDelay: 0.55, color: 0x6f7479 },
+    stone:   { radius: DEFAULT_STONE_RADIUS, mass: 8,  restitution: 0.18, linearDamping: 1.25, sleepDelay: 0.55, color: 0x6f7479 },
     rock:    { radius: 0.36, mass: 14, restitution: 0.13, linearDamping: 1.1, sleepDelay: 0.7,  color: 0x646970 },
     boulder: { radius: 0.48, mass: 24, restitution: 0.08, linearDamping: 0.9, sleepDelay: 0.9,  color: 0x55595e },
+}
+
+export function stoneOptionsForConfig(config: StoneConfigBase | undefined): StoneSpawnOptions {
+    const tier = config?.tier && isStoneTierId(config.tier) ? config.tier : DEFAULT_STONE_TIER
+    const options: StoneSpawnOptions = {
+        ...STONE_TIER[tier],
+        ...(config?.options ?? {}),
+    }
+    const size = config?.size
+    if (Number.isFinite(size) && (size ?? 0) > 0) {
+        options.radius = size
+    }
+    return options
+}
+
+export function stoneRadiusForConfig(config: StoneConfigBase | undefined): number {
+    return resolveStoneCfg(stoneOptionsForConfig(config)).radius
+}
+
+export function isStoneTierId(value: string): value is StoneTierId {
+    return (STONE_TIER_IDS as readonly string[]).includes(value)
 }
 
 function resolveStoneCfg(opts: StoneSpawnOptions = {}): Required<StoneSpawnOptions> {

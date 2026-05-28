@@ -6,7 +6,7 @@ import { createGameWorld, pushZoneEvent, type GameWorld } from '../src/engine/ec
 import { createZoneTriggerSystem } from '../src/engine/ecs/systems/zone-trigger-system'
 import { defineZone, findZoneAtPoint, isPointInZone, removeZone, sampleZonePoint, zoneAcceptsTrigger } from '../src/engine/ecs/zones'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
-import { BLOCK, DEFAULT_PALETTE } from '../src/engine/voxel/palette'
+import { DEFAULT_PALETTE } from '../src/engine/voxel/palette'
 import { MovingObjectKind } from '../src/game/moving-objects'
 
 function placePlayer(world: GameWorld, x: number, y: number, z: number): number {
@@ -120,7 +120,7 @@ test('ZoneTriggerSystem: player activates a trigger on enter, not every tick', (
     })
     const player = placePlayer(world, 1, 0, 1)
     const chunks = new ChunkManager(DEFAULT_PALETTE)
-    const system = createZoneTriggerSystem(chunks, { log: false })
+    const system = createZoneTriggerSystem({ log: false })
 
     system.update(world, 1 / 60)
     system.update(world, 1 / 60)
@@ -147,7 +147,7 @@ test('ZoneTriggerSystem: arrow-only trigger ignores player and fires on swept ar
     })
     placePlayer(world, 0.5, 0, 0.5)
     const chunks = new ChunkManager(DEFAULT_PALETTE)
-    const system = createZoneTriggerSystem(chunks, { log: false })
+    const system = createZoneTriggerSystem({ log: false })
 
     system.update(world, 0.1)
     assert.equal(world.zoneEvents.length, 0, 'player does not activate arrow-only trigger')
@@ -179,31 +179,10 @@ test('pushZoneEvent: caps world.zoneEvents to the most recent 64 entries', () =>
     assert.equal(world.zoneEvents[63]?.zoneId, 'z-99', 'newest entry preserved')
 })
 
-test('ZoneTriggerSystem: trigger scripts can show messages, kill the player, and edit blocks', () => {
-    const world = createGameWorld()
-    const chunks = new ChunkManager(DEFAULT_PALETTE)
-    defineZone(world, {
-        id: 'scripted',
-        kind: 'trigger',
-        min: { x: 4, y: 1, z: 4 },
-        max: { x: 6, y: 3, z: 6 },
-        triggerSources: ['player'],
-        script: {
-            actions: [
-                { type: 'message', message: 'A hidden switch clicks.' },
-                { type: 'set-block', position: { x: 0, y: 0, z: 0 }, relativeTo: 'zone-min', block: BLOCK.brick },
-                { type: 'set-block', position: { x: 1, y: 0, z: 0 }, relativeTo: 'zone-min', block: BLOCK.air },
-                { type: 'kill-player', message: 'The room collapses.' },
-            ],
-        },
-    })
-    chunks.setVoxel(5, 1, 4, BLOCK.stone)
-    placePlayer(world, 5, 1, 5)
-
-    createZoneTriggerSystem(chunks, { log: false }).update(world, 1 / 60)
-
-    assert.equal(chunks.getVoxel(4, 1, 4), BLOCK.brick, 'spawn action writes a block relative to zone min')
-    assert.equal(chunks.getVoxel(5, 1, 4), BLOCK.air, 'erase action writes air relative to zone min')
-    assert.equal(world.deathSignal, 'killed-by-zone-script')
-    assert.deepEqual(world.log, ['A hidden switch clicks.', 'The room collapses.'])
-})
+// The legacy `ZoneScriptAction` surface (message / kill-player /
+// set-block / fill-blocks executed inline by `executeZoneScript`) was
+// removed alongside the Slice 3 script-engine work. Authored quest
+// behaviour now lives in editor-loaded `.js` scripts that react to
+// `zone-enter` / `zone-exit` events via the script engine. The
+// previous "trigger scripts can show messages, kill the player, and
+// edit blocks" coverage moves to the script-engine test suite.

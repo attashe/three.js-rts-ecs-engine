@@ -1,4 +1,4 @@
-import { copyScriptEntry, copyStoneSpawner, copyZoneScriptAction, type EditorLevelMeta } from '../editor/editor-state'
+import { copyScriptEntry, copyStonePlacement, copyStoneSpawner, type EditorLevelMeta } from '../editor/editor-state'
 import type { Zone } from '../engine/ecs/zones'
 import type { LevelMeta, CoinPileSpawn } from './level'
 import type { PistonMechanismConfig } from './mechanisms'
@@ -41,9 +41,6 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         min: { ...z.min },
         max: { ...z.max },
         triggerSources: z.triggerSources ? [...z.triggerSources] : undefined,
-        script: z.script ? {
-            actions: z.script.actions.map(copyZoneScriptAction),
-        } : undefined,
         portal: z.portal ? {
             targetLevelId: z.portal.targetLevelId,
             targetArrivalId: z.portal.targetArrivalId,
@@ -118,6 +115,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         name: meta.name?.trim() || 'untitled',
         spawn: { x: meta.spawn.x, y: meta.spawn.y, z: meta.spawn.z },
         player: normalizePlayerSettings(meta.player),
+        stones: (meta.stones ?? []).map(copyStonePlacement),
         stoneSpawners: (meta.stoneSpawners ?? []).map(copyStoneSpawner),
         coinPiles,
         pistons,

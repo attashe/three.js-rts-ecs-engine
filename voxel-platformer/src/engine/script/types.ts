@@ -12,6 +12,7 @@
 
 import type { VoxelCoord } from '../ecs/world'
 import type { PlayerAbilityKey, PlayerSettings, PlayerSettingsPatch } from '../../game/player-settings'
+import type { StoneSpawnOptions, StoneTierId } from '../../game/moving-objects'
 
 export type { VoxelCoord }
 
@@ -122,6 +123,16 @@ export interface PistonsFacade {
     list(): string[]
 }
 
+export interface StonesFacade {
+    spawn(pos: VoxelCoord, opts?: StoneScriptSpawnOptions): string
+    remove(id: string): boolean
+    exists(id: string): boolean
+    setSpawnerEnabled(id: string, enabled: boolean): boolean
+    isSpawnerEnabled(id: string): boolean
+    triggerSpawner(id: string, count?: number): number
+    listSpawners(): string[]
+}
+
 export interface ZoneFacade {
     contains(zoneId: string, who: 'player' | VoxelCoord): boolean
     exists(zoneId: string): boolean
@@ -137,6 +148,10 @@ export interface LogFacade {
 
 export interface UiFacade {
     say(targetId: string, message: string, opts?: { seconds?: number }): void
+    /** Dismiss any active popup bubbles. `targetId` clears that target's
+     *  queue + current bubble; omitting it clears every bubble in flight.
+     *  No-op when nothing matches. */
+    clear?(targetId?: string): void
     dialogue?(request: DialogueRequest): Promise<DialogueResult>
 }
 
@@ -229,6 +244,7 @@ export interface ScriptContext {
     audio: AudioApi
     pickups: PickupsApi
     pistons: PistonsApi
+    stones: StonesApi
     flags: FlagsApi
     time: TimeApi
     zone: ZoneApi
@@ -353,6 +369,33 @@ export interface PistonsApi {
     list(): string[]
 }
 
+export interface StoneScriptSpawnOptions extends StoneSpawnOptions {
+    /** Stable author id. Re-spawning with the same id returns the existing
+     *  live stone instead of creating a duplicate. */
+    id?: string
+    /** Initial velocity. Defaults to still. */
+    velocity?: VoxelCoord
+    /** Named gameplay/visual preset. */
+    tier?: StoneTierId
+    /** Radius override in world units. */
+    size?: number
+}
+
+export interface StonesApi {
+    spawn(pos: VoxelCoord, opts?: StoneScriptSpawnOptions): string
+    /** Remove a live script/direct stone by id. Returns true on success. */
+    remove(id: string): boolean
+    /** True iff a script/direct stone with this id currently exists. */
+    exists(id: string): boolean
+    /** Toggle an editor-authored spawner. Unknown ids return false. */
+    setSpawnerEnabled(id: string, enabled: boolean): boolean
+    isSpawnerEnabled(id: string): boolean
+    /** Emit immediately from an editor-authored spawner. Returns spawned count. */
+    triggerSpawner(id: string, count?: number): number
+    /** Snapshot of every script-targetable stone spawner id in this level. */
+    listSpawners(): string[]
+}
+
 export interface PickupSpawnOptions {
     amount?: number
     /** Stable author id. Re-spawning with the same id returns the existing
@@ -395,8 +438,15 @@ export interface ZoneApi {
 
 export interface UiApi {
     /** Show a short world-anchored popup near an NPC/item target. `targetId`
-     *  usually matches an interact zone id. */
+     *  usually matches an interact zone id. Multiple targets render in
+     *  parallel; back-to-back calls to the same target queue and play
+     *  sequentially. */
     say(targetId: string, message: string, opts?: { seconds?: number }): void
+    /** Dismiss popup bubbles early. With a `targetId`, drops that
+     *  target's current bubble + queued messages. With no argument,
+     *  clears every active bubble. Use to interrupt a long-lived
+     *  message (e.g. when the player walks away from an NPC). */
+    clear(targetId?: string): void
     /** Show a centered modal conversation. Resolves after the final line,
      *  or after the player chooses a reply and advances past it. */
     dialogue(request: DialogueRequest): Promise<DialogueResult>

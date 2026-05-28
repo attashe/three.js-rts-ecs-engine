@@ -9,7 +9,6 @@ import { PISTON_DIRECTIONS, type PistonDirection } from '../piston-direction'
 import { removePistonAt } from '../systems/piston-place-system'
 import { appendMaterial, colorToHex, hexToColor, materialFingerprint } from '../palette-edit'
 import { refreshPhysicalPistonVisuals } from '../../game/mechanisms'
-import type { ZoneScriptAction } from '../../engine/ecs/zones'
 import type {
     EditorMode,
     EditorPiston,
@@ -226,6 +225,9 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
             return buildPropModePanel()
         case 'place-npc':
             return buildNpcModePanel()
+        case 'place-stone':
+        case 'place-stone-spawner':
+            return buildStoneModePanel()
     }
 }
 
@@ -243,6 +245,15 @@ function buildNpcModePanel(): RefreshableElement {
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
     hint.textContent = 'Switch to the NPCs tab to configure model, collision, interaction, and script settings.'
+    section.appendChild(hint)
+    return { element: section, refresh() {} }
+}
+
+function buildStoneModePanel(): RefreshableElement {
+    const section = sectionEl('Stones')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.textContent = 'Switch to the Stones tab to place physics stones or configure falling-stone spawners.'
     section.appendChild(hint)
     return { element: section, refresh() {} }
 }
@@ -514,7 +525,7 @@ function buildSelectPanel(): RefreshableElement {
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
     hint.style.color = 'rgba(217, 247, 255, 0.75)'
-    hint.textContent = 'LMB selects spawn, pickups, zones, sound zones, or sound sources. Drag the gizmo to move by whole grid cells.'
+    hint.textContent = 'LMB selects spawn, pickups, props, NPCs, stones, zones, sound objects, or effect zones. Drag the gizmo to move by grid cells.'
     section.appendChild(hint)
     return { element: section, refresh: () => {} }
 }
@@ -826,106 +837,6 @@ function buildZonePanel(ctx: EditTabContext): RefreshableElement {
     }))
     root.appendChild(settings)
 
-    // Script builder.
-    const scriptSection = sectionEl('Trigger script (next zone)')
-
-    const msgRow = document.createElement('div')
-    msgRow.className = 'vpe-row'
-    const msgInput = document.createElement('input')
-    msgInput.className = 'vpe-input'
-    msgInput.type = 'text'
-    msgInput.value = state.zoneScriptMessage
-    msgInput.placeholder = 'message'
-    msgInput.style.flex = '1'
-    msgInput.oninput = () => { state.zoneScriptMessage = msgInput.value }
-    const addMsgBtn = document.createElement('button')
-    addMsgBtn.className = 'vpe-button'
-    addMsgBtn.textContent = '+ Msg'
-    addMsgBtn.onclick = () => {
-        const message = state.zoneScriptMessage.trim()
-        if (!message) return
-        state.zoneScriptActions.push({ type: 'message', message })
-        scriptFingerprint = ''
-        refresh()
-    }
-    msgRow.append(msgInput, addMsgBtn)
-    scriptSection.appendChild(msgRow)
-
-    const offsetRow = document.createElement('div')
-    offsetRow.className = 'vpe-field'
-    const offsetLabel = document.createElement('span')
-    offsetLabel.className = 'vpe-field-label'
-    offsetLabel.textContent = 'Offset:'
-    offsetRow.appendChild(offsetLabel)
-    for (const axis of ['x', 'y', 'z'] as const) {
-        const input = document.createElement('input')
-        input.className = 'vpe-input'
-        input.type = 'number'
-        input.value = String(state.zoneScriptOffset[axis])
-        input.style.width = '42px'
-        input.title = `${axis.toUpperCase()} offset from zone min`
-        input.oninput = () => {
-            const v = parseInt(input.value, 10)
-            if (Number.isFinite(v)) state.zoneScriptOffset[axis] = v
-        }
-        offsetRow.appendChild(input)
-    }
-    scriptSection.appendChild(offsetRow)
-
-    const actionRow = document.createElement('div')
-    actionRow.className = 'vpe-row'
-    const killBtn = document.createElement('button')
-    killBtn.className = 'vpe-button'
-    killBtn.textContent = '+ Kill'
-    killBtn.onclick = () => {
-        const message = state.zoneScriptMessage.trim()
-        state.zoneScriptActions.push(message ? { type: 'kill-player', message } : { type: 'kill-player' })
-        scriptFingerprint = ''
-        refresh()
-    }
-    const spawnBtn = document.createElement('button')
-    spawnBtn.className = 'vpe-button'
-    spawnBtn.textContent = '+ Spawn'
-    spawnBtn.title = 'Add a set-block action using the active palette block, relative to zone min'
-    spawnBtn.onclick = () => {
-        state.zoneScriptActions.push({
-            type: 'set-block',
-            position: { ...state.zoneScriptOffset },
-            block: state.activeBlock,
-            relativeTo: 'zone-min',
-        })
-        scriptFingerprint = ''
-        refresh()
-    }
-    const eraseBtn = document.createElement('button')
-    eraseBtn.className = 'vpe-button'
-    eraseBtn.textContent = '+ Erase'
-    eraseBtn.onclick = () => {
-        state.zoneScriptActions.push({
-            type: 'set-block',
-            position: { ...state.zoneScriptOffset },
-            block: 0,
-            relativeTo: 'zone-min',
-        })
-        scriptFingerprint = ''
-        refresh()
-    }
-    const clearBtn = document.createElement('button')
-    clearBtn.className = 'vpe-button'
-    clearBtn.textContent = 'Clear'
-    clearBtn.onclick = () => {
-        state.zoneScriptActions.length = 0
-        scriptFingerprint = ''
-        refresh()
-    }
-    actionRow.append(killBtn, spawnBtn, eraseBtn, clearBtn)
-    scriptSection.appendChild(actionRow)
-
-    const scriptList = document.createElement('div')
-    scriptList.className = 'vpe-list'
-    scriptSection.appendChild(scriptList)
-    root.appendChild(scriptSection)
-
     // Placed zones.
     const listSection = sectionEl('Placed zones')
     const list = document.createElement('div')
@@ -933,39 +844,9 @@ function buildZonePanel(ctx: EditTabContext): RefreshableElement {
     listSection.appendChild(list)
     root.appendChild(listSection)
 
-    let scriptFingerprint = ''
     let zoneFingerprint = ''
 
     function refresh(): void {
-        const sfp = state.zoneScriptActions.map((a) => JSON.stringify(a)).join('|')
-        if (sfp !== scriptFingerprint) {
-            scriptFingerprint = sfp
-            scriptList.innerHTML = ''
-            if (state.zoneScriptActions.length === 0) {
-                const empty = document.createElement('span')
-                empty.className = 'vpe-list-empty'
-                empty.textContent = 'No script actions queued.'
-                scriptList.appendChild(empty)
-            } else {
-                for (const action of state.zoneScriptActions) {
-                    const row = document.createElement('div')
-                    row.className = 'vpe-list-item'
-                    const span = document.createElement('span')
-                    span.textContent = formatZoneScriptAction(action, chunks.palette)
-                    const removeBtn = document.createElement('button')
-                    removeBtn.textContent = 'remove'
-                    removeBtn.onclick = () => {
-                        const i = state.zoneScriptActions.indexOf(action)
-                        if (i >= 0) state.zoneScriptActions.splice(i, 1)
-                        scriptFingerprint = ''
-                        refresh()
-                    }
-                    row.append(span, removeBtn)
-                    scriptList.appendChild(row)
-                }
-            }
-        }
-
         const zfp = state.zones.map((z) => JSON.stringify(z)).join('|')
         if (zfp !== zoneFingerprint) {
             zoneFingerprint = zfp
@@ -985,11 +866,10 @@ function buildZonePanel(ctx: EditTabContext): RefreshableElement {
                     const d = zone.max.z - zone.min.z
                     const title = zone.label ?? zone.id
                     const sources = (zone.triggerSources ?? ['player']).join('+')
-                    const scripts = zone.script?.actions.length ?? 0
                     const portal = zone.portal
                         ? ` → ${zone.portal.targetLevelId}${zone.portal.targetArrivalId ? ` @ ${zone.portal.targetArrivalId}` : ''}`
                         : ''
-                    span.textContent = `${title} [${zone.kind}] ${sources}${portal} ${w}×${h}×${d} · ${scripts} script`
+                    span.textContent = `${title} [${zone.kind}] ${sources}${portal} ${w}×${h}×${d}`
                     const removeBtn = document.createElement('button')
                     removeBtn.textContent = 'remove'
                     removeBtn.onclick = () => {
@@ -1241,21 +1121,4 @@ function pistonSoundSelectField(initial: string | null, onChange: (id: string | 
     select.onchange = () => { onChange(select.value ? select.value : null) }
     row.append(label, select)
     return row
-}
-
-function formatZoneScriptAction(action: ZoneScriptAction, palette: Palette): string {
-    if (action.type === 'message') return `message "${trimForList(action.message)}"`
-    if (action.type === 'kill-player') {
-        return action.message ? `kill + "${trimForList(action.message)}"` : 'kill player'
-    }
-    if (action.type === 'set-block') {
-        const block = action.block === 0
-            ? 'air'
-            : (palette.entries[action.block]?.name ?? `block ${action.block}`)
-        return `${action.block === 0 ? 'erase' : 'spawn'} ${block} @ ${formatCoord(action.position)}`
-    }
-    const block = action.block === 0
-        ? 'air'
-        : (palette.entries[action.block]?.name ?? `block ${action.block}`)
-    return `fill ${block} ${formatCoord(action.min)}..${formatCoord(action.max)}`
 }

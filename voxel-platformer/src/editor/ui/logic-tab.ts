@@ -4,6 +4,12 @@ import { PRELUDE_LOCALS } from '../../engine/script/compile'
 import type { ScriptEntry } from '../../engine/script/types'
 import type { EditorState } from '../editor-state'
 import type { CommandStack } from '../history'
+import {
+    clearAllPlaytestScriptErrors,
+    clearPlaytestScriptError,
+    readPlaytestScriptErrors,
+    type RecordedScriptError,
+} from '../playtest-error-bridge'
 import { sectionEl, type RefreshableElement } from './common'
 
 export interface LogicTabOptions {
@@ -122,6 +128,11 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
         const name = requestedName || nextDefaultName(state)
         if (editingId !== null) {
             updateEntry(state, editingId, source, name)
+            // Editing a row that previously stashed a runtime error
+            // means the recorded source is no longer current. Drop
+            // the entry from the bridge so the banner doesn't linger.
+            clearPlaytestScriptError(editingId)
+            runtimeErrors.delete(editingId)
             editingId = null
             saveBtn.textContent = 'Save snippet'
             cancelBtn.style.display = 'none'
@@ -176,6 +187,28 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
 
     // ── Section 3: placed list ────────────────────────────────────────
     const listSection = sectionEl('Scripts in this level')
+
+    // Header row hosts a "Clear playtest errors" affordance so authors
+    // can sweep stale runtime errors from the last playtest without
+    // re-running anything. Hidden when no errors are recorded so it
+    // doesn't add visual noise to a clean level.
+    const listHeader = document.createElement('div')
+    listHeader.className = 'vpe-row'
+    listHeader.style.justifyContent = 'flex-end'
+    listHeader.style.marginTop = '-4px'
+    const clearErrorsBtn = document.createElement('button')
+    clearErrorsBtn.className = 'vpe-button'
+    clearErrorsBtn.textContent = 'Clear playtest errors'
+    clearErrorsBtn.title = 'Forget every runtime error stashed from the last playtest. New errors appear on the next playtest.'
+    clearErrorsBtn.style.display = 'none'
+    clearErrorsBtn.onclick = () => {
+        clearAllPlaytestScriptErrors()
+        runtimeErrors.clear()
+        refresh()
+    }
+    listHeader.appendChild(clearErrorsBtn)
+    listSection.appendChild(listHeader)
+
     const listEl = document.createElement('div')
     listEl.style.display = 'flex'
     listEl.style.flexDirection = 'column'
@@ -185,14 +218,22 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
 
     let editingId: string | null = null
     let lastListFingerprint = ''
+    let runtimeErrors: Map<string, RecordedScriptError> = new Map()
 
     function rebuildList(): void {
-        // Fingerprint also folds in source length so an edit re-renders
-        // the row (its parse-error banner needs to refresh on every
-        // content change).
-        const fp = state.scripts.map((e) => `${e.id}:${e.name}:${e.enabled ?? true}:${e.source.length}:${hashShort(e.source)}`).join('|')
+        runtimeErrors = readPlaytestScriptErrors()
+        // Fingerprint folds in source content + recorded runtime errors
+        // so an edit OR a fresh playtest error invalidates the cached
+        // row list. Errors are keyed by scriptId so a per-row banner
+        // refresh fires when the stored set changes.
+        const errorFp = [...runtimeErrors.values()]
+            .map((e) => `${e.scriptId}:${e.phase}:${e.occurredAt}`)
+            .sort()
+            .join('|')
+        const fp = state.scripts.map((e) => `${e.id}:${e.name}:${e.enabled ?? true}:${e.source.length}:${hashShort(e.source)}`).join('|') + '#' + errorFp
         if (fp === lastListFingerprint && editingId === null) return
         lastListFingerprint = fp
+        clearErrorsBtn.style.display = runtimeErrors.size > 0 ? 'inline-block' : 'none'
         listEl.innerHTML = ''
         if (state.scripts.length === 0) {
             const empty = document.createElement('div')
@@ -255,6 +296,11 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
             saveBtn.textContent = 'Save changes'
             cancelBtn.style.display = 'inline-block'
             statusEl.textContent = ''
+            // Clear-on-edit: the recorded error refers to the
+            // already-superseded source. Drop it now so the banner
+            // disappears as soon as the author starts iterating.
+            clearPlaytestScriptError(entry.id)
+            runtimeErrors.delete(entry.id)
             textarea.focus()
             refresh()
         }
@@ -278,6 +324,8 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
                 saveBtn.textContent = 'Save snippet'
                 cancelBtn.style.display = 'none'
             }
+            clearPlaytestScriptError(entry.id)
+            runtimeErrors.delete(entry.id)
             refresh()
         }
 
@@ -297,24 +345,35 @@ export function buildLogicTab(opts: LogicTabOptions): RefreshableElement {
         // Per-entry parse-error banner. Runs the same AsyncFunction parse
         // the runtime uses, so a syntax error caught here exactly matches
         // the playtest "broken at compile" error a Slice 1 reviewer would
-        // have hit silently. Runtime errors during playtest land in the
-        // in-game debug overlay (via pushLog) and the browser console;
-        // the editor doesn't run the script engine so it can't surface
-        // those without an editor↔playtest bridge — out of scope here.
+        // have hit silently.
         const parseResult = parseCheck(entry.source)
         if (!parseResult.ok) {
-            const banner = document.createElement('div')
-            banner.className = 'vpe-hint'
-            banner.style.fontFamily = 'ui-monospace, monospace'
-            banner.style.color = '#ff7e7e'
-            banner.style.background = 'rgba(220, 60, 60, 0.10)'
-            banner.style.border = '1px solid rgba(255, 126, 126, 0.40)'
-            banner.style.borderRadius = '3px'
-            banner.style.padding = '4px 6px'
-            banner.style.whiteSpace = 'pre-wrap'
-            banner.style.fontSize = '11px'
-            banner.textContent = `Parse error: ${parseResult.error}`
-            banner.title = 'Editing this script will re-run the parse check on save.'
+            card.appendChild(errorBanner('parse', `Parse error: ${parseResult.error}`,
+                'Editing this script will re-run the parse check on save.'))
+        }
+
+        // Per-entry runtime-error banner — populated by the playtest
+        // tab via `recordPlaytestScriptError`. We surface the most
+        // recent recorded error and let the user clear it inline; the
+        // banner also auto-clears when the user starts an edit on
+        // this row (see editBtn above).
+        const runtimeErr = runtimeErrors.get(entry.id)
+        if (runtimeErr) {
+            const banner = errorBanner('runtime',
+                `Playtest ${runtimeErr.phase} error (${runtimeErr.where}): ${runtimeErr.message}`,
+                `Recorded ${formatRelativeTime(runtimeErr.occurredAt)} during playtest. Editing this row clears it.`)
+            const dismiss = document.createElement('button')
+            dismiss.className = 'vpe-button'
+            dismiss.textContent = 'Dismiss'
+            dismiss.style.padding = '2px 8px'
+            dismiss.style.marginLeft = '6px'
+            dismiss.style.float = 'right'
+            dismiss.onclick = () => {
+                clearPlaytestScriptError(entry.id)
+                runtimeErrors.delete(entry.id)
+                refresh()
+            }
+            banner.appendChild(dismiss)
             card.appendChild(banner)
         }
         return card
@@ -391,9 +450,44 @@ function makeReloadButton(entry: ScriptEntry, refresh: () => void): HTMLButtonEl
         // entries might reference indirectly via flags / emit,
         // though that's loose.
         if (entry.name !== name && entry.name.endsWith('.js')) entry.name = name
+        // Reloaded source is fresh; the previously-stashed runtime
+        // error refers to an old build of this row.
+        clearPlaytestScriptError(entry.id)
         refresh()
     })
     return btn
+}
+
+/** Build a consistent red-bordered banner DOM for parse + runtime errors.
+ *  Both phases use the same visual treatment so the user reads "this row
+ *  has a problem" first and the phase tag second. */
+function errorBanner(phase: 'parse' | 'runtime', message: string, title?: string): HTMLDivElement {
+    const banner = document.createElement('div')
+    banner.className = 'vpe-hint'
+    banner.style.fontFamily = 'ui-monospace, monospace'
+    banner.style.color = phase === 'parse' ? '#ff7e7e' : '#ffa06b'
+    banner.style.background = phase === 'parse'
+        ? 'rgba(220, 60, 60, 0.10)'
+        : 'rgba(220, 130, 60, 0.10)'
+    banner.style.border = `1px solid ${phase === 'parse' ? 'rgba(255, 126, 126, 0.40)' : 'rgba(255, 160, 107, 0.40)'}`
+    banner.style.borderRadius = '3px'
+    banner.style.padding = '4px 6px'
+    banner.style.whiteSpace = 'pre-wrap'
+    banner.style.fontSize = '11px'
+    banner.textContent = message
+    if (title) banner.title = title
+    return banner
+}
+
+/** Human-readable "5 m ago" / "2 h ago" string. Used in runtime-error
+ *  banner titles so the user can spot stale errors at a glance. */
+function formatRelativeTime(ts: number): string {
+    if (!Number.isFinite(ts) || ts <= 0) return 'just now'
+    const elapsedSec = Math.max(0, (Date.now() - ts) / 1000)
+    if (elapsedSec < 60) return 'just now'
+    if (elapsedSec < 3600) return `${Math.round(elapsedSec / 60)} min ago`
+    if (elapsedSec < 86400) return `${Math.round(elapsedSec / 3600)} h ago`
+    return `${Math.round(elapsedSec / 86400)} d ago`
 }
 
 /** Cheap content fingerprint so the row-list cache invalidates when a

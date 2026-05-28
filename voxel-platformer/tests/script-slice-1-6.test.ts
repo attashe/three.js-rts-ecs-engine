@@ -94,7 +94,7 @@ test('an inactive zone does not fire zone-enter when the player overlaps', () =>
     })
     spawnPlayer(world, { x: 2, y: 1, z: 2 })
 
-    const sys = createZoneTriggerSystem(chunks, { log: false })
+    const sys = createZoneTriggerSystem({ log: false })
     sys.update(world, 1 / 60)
 
     const events = consumeScriptTriggerEvents(world)
@@ -110,7 +110,7 @@ test('deactivating a zone mid-overlap synthesises a zone-exit on the next tick',
     })
     spawnPlayer(world, { x: 2, y: 1, z: 2 })
 
-    const sys = createZoneTriggerSystem(chunks, { log: false })
+    const sys = createZoneTriggerSystem({ log: false })
     sys.update(world, 1 / 60)
     consumeScriptTriggerEvents(world)  // drop enter
 

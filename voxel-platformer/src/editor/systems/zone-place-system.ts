@@ -2,7 +2,7 @@ import type { Input } from '../../engine/input/input'
 import type { System } from '../../engine/ecs/systems/system'
 import { FixedOrder } from '../../engine/ecs/systems/orders'
 import { pushLog, type GameWorld, type VoxelCoord } from '../../engine/ecs/world'
-import { copyZoneScriptAction, type EditorState, type EditorZone } from '../editor-state'
+import type { EditorState, EditorZone } from '../editor-state'
 
 /**
  * Click-to-place editor zones. Active only when
@@ -72,9 +72,6 @@ function placeZone(world: GameWorld, state: EditorState, cursor: VoxelCoord, id:
         min,
         max,
         triggerSources: kind === 'portal' ? ['player'] : triggerSourcesForMode(state.zoneTriggerMode),
-        script: state.zoneScriptActions.length > 0
-            ? { actions: state.zoneScriptActions.map(copyZoneScriptAction) }
-            : undefined,
         portal: kind === 'portal' && portalTarget
             ? {
                 targetLevelId: portalTarget,

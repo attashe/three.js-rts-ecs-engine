@@ -2,7 +2,7 @@ import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK } from '../engine/voxel/palette'
 import type { Zone } from '../engine/ecs/zones'
 import type { PistonMechanismConfig } from './mechanisms'
-import { STONE_TIER, type StoneFallSpawnerConfig } from './moving-objects'
+import { STONE_TIER, type StoneFallSpawnerConfig, type StonePlacementConfig } from './moving-objects'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL, type AmbientWeatherRuntimeConfig, type WeatherZoneRuntimeConfig } from './weather-config'
 import type { EditorProp } from './props/prop-types'
@@ -31,6 +31,8 @@ export interface LevelMeta {
     player: PlayerSettings
     /** Falling-stone emitter configs. */
     stoneSpawners: StoneFallSpawnerConfig[]
+    /** Direct physics stones spawned when the location starts. */
+    stones: StonePlacementConfig[]
     /** Coin pile placements — pickup-system grants gold on contact. */
     coinPiles: CoinPileSpawn[]
     /** Piston / moving-platform configs registered by client.ts. */
@@ -60,6 +62,13 @@ export interface LevelMeta {
     ambientWeather?: AmbientWeatherRuntimeConfig
     /** XZ extent of the generated level, used by the demo to centre the camera. */
     size: number
+}
+
+export function levelMetaWithSpawn(meta: LevelMeta, spawn: { x: number; y: number; z: number }): LevelMeta {
+    return {
+        ...meta,
+        spawn: { x: spawn.x, y: spawn.y, z: spawn.z },
+    }
 }
 
 /**
@@ -359,6 +368,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         spawn: { x: size / 2, y: groundY + 1, z: size / 2 },
         player: DEFAULT_PLAYER_SETTINGS,
         stoneSpawners,
+        stones: [],
         coinPiles,
         pistons,
         zones,

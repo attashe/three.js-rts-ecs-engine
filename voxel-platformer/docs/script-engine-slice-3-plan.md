@@ -602,25 +602,53 @@ the bindings revealed, and what's deferred to Slice 4.
   editor-state → save-load → level-from-meta + procedural-export);
   see `script-engine-slice-3-pistons.md` for the round-trip notes.
 
-### Deferred (to Slice 4 or follow-up cleanup)
+### Follow-ups landed after the initial closeout
 
-- **Lighthouse Vigil validation quest.** Drafted in §4.1; never
+A second commit closed three of the four items the original closeout
+deferred:
+
+- **Per-row runtime-error display in the Logic tab.** A new
+  `src/editor/playtest-error-bridge.ts` module owns a
+  `vp:playtest-script-errors` sessionStorage journal. The playtest's
+  `script-system.onScriptError` writes the most recent error per
+  script id (`{ phase, where, message, occurredAt }`); the editor's
+  Logic tab reads on every refresh and renders a runtime banner under
+  the matching row. Edits / reloads / removals + an inline
+  "Dismiss" button + section-level "Clear playtest errors"
+  cover the clear paths. The bridge is null-safe in Node tests via
+  an injectable storage param.
+- **`ZoneScriptAction` legacy union removed.** `ZoneScriptAction`,
+  `ZoneScript`, `ZoneScriptBlockSpace`, `executeZoneScript` /
+  `executeZoneScriptAction`, the editor's "Trigger script" UI panel
+  (msg / kill / spawn / erase buttons + offset draft), the
+  `state.zoneScript*` draft fields, the `EditorZone.script` field,
+  `copyZoneScriptAction`, and the `createZoneTriggerSystem(chunks, …)`
+  parameter all gone. The legacy `zones.test.ts` "trigger scripts can
+  show messages, kill the player, and edit blocks" test was deleted;
+  quest behaviour belongs in editor-loaded `.js` scripts that react
+  to `zone-enter` / `zone-exit` events.
+- **Multi-bubble `ui.say` + `ui.clear`.** `interaction-system` now
+  tracks one `ActiveBubble` per `targetId` plus a per-target FIFO
+  queue. Multiple targets render in parallel (each gets its own DOM
+  element positioned over its anchor); back-to-back `ui.say` calls
+  to the same target queue and advance when the current bubble
+  expires. `ui.clear(targetId?)` writes to a new `world.popupClears`
+  side channel (with `pushPopupClear`); the renderer drains it
+  edge-triggered by id, mirroring the existing `popupMessages`
+  pattern. Soft cap of `MAX_BUBBLES = 8` active targets prevents
+  runaway scripts from leaking DOM nodes.
+
+### Still deferred (to Slice 4)
+
+- **Lighthouse Vigil validation quest.** Drafted in §4.1; still not
   authored. The next quest design should exercise the new bindings
-  end-to-end before the surfaces calcify.
-- **Per-row runtime-error display in the Logic tab.** Parse errors
-  show today; runtime errors during playtest still surface only in
-  the in-game debug overlay log + console. Bridging requires writing
-  `sys.broken` (or a slimmer error log) to sessionStorage from the
-  playtest tab and reading it from the editor tab on render.
-- **`ZoneScriptAction` legacy migration.** Still inert in production
-  levels; deprecation sweep when a future change makes it
-  load-bearing.
-- **Multi-bubble `ui.say` + `ui.clear`.** Still flagged from
-  Slice 1.5; still not hit by any authored quest.
+  end-to-end before the surfaces calcify further.
 
 ### Status table delta
 
 `docs/script-engine.md` §11 was updated in this commit to mark the
 six binding surfaces above as shipped, add the new sourceURL pragma +
-parse-banner rows, and move the Lighthouse Vigil + runtime-error
-bridge into the "what's still on the roadmap" list.
+parse-banner rows, and (in the follow-up) flip the runtime-error
+banner, multi-bubble `ui.say`/`ui.clear`, and `ZoneScriptAction`
+removal rows. Only the Lighthouse Vigil quest remains on the roadmap
+side.

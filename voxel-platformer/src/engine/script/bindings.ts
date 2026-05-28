@@ -27,6 +27,7 @@ import type {
     PistonsFacade,
     PlayerFacade,
     ScriptContext,
+    StonesFacade,
     TravelFacade,
     UiFacade,
     VoxelCoord,
@@ -49,6 +50,7 @@ export interface BindingsDeps {
     player: PlayerFacade
     pickups: PickupsFacade
     pistons: PistonsFacade
+    stones?: StonesFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -68,6 +70,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const weather = deps.weather ?? NOOP_WEATHER
     const travel = deps.travel ?? NOOP_TRAVEL
     const level = deps.level ?? NOOP_LEVEL
+    const stones = deps.stones ?? NOOP_STONES
 
     // `on(...)` has two shapes: with filter object, or without (for
     // string-named custom events). Detect by checking arg 2's type —
@@ -162,6 +165,16 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             list: () => pistons.list(),
         },
 
+        stones: {
+            spawn: (pos, opts) => stones.spawn(pos, opts),
+            remove: (id) => stones.remove(id),
+            exists: (id) => stones.exists(id),
+            setSpawnerEnabled: (id, enabled) => stones.setSpawnerEnabled(id, enabled),
+            isSpawnerEnabled: (id) => stones.isSpawnerEnabled(id),
+            triggerSpawner: (id, count) => stones.triggerSpawner(id, count),
+            listSpawners: () => stones.listSpawners(),
+        },
+
         flags: flagsApi,
 
         time: {
@@ -183,6 +196,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
 
         ui: {
             say: (targetId, message, opts) => ui.say(targetId, message, opts),
+            clear: (targetId) => ui.clear?.(targetId),
             dialogue: (request) => ui.dialogue?.(request) ?? Promise.resolve({}),
         },
 
@@ -223,6 +237,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
 
 const NOOP_UI: UiFacade = {
     say() {},
+    clear() {},
 }
 
 const NOOP_DAY_CYCLE: DayCycleFacade = {
@@ -252,6 +267,16 @@ const NOOP_LEVEL: LevelMetaFacade = {
     getSpawn() { return { x: 0, y: 0, z: 0 } },
     getSize() { return 0 },
     getName() { return 'untitled' },
+}
+
+const NOOP_STONES: StonesFacade = {
+    spawn(_pos, opts) { return opts?.id ?? 'stone:noop' },
+    remove() { return false },
+    exists() { return false },
+    setSpawnerEnabled() { return false },
+    isSpawnerEnabled() { return false },
+    triggerSpawner() { return 0 },
+    listSpawners() { return [] },
 }
 
 function makeGeomApi(): GeomApi {

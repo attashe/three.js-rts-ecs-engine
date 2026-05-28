@@ -1,7 +1,14 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { deserializeLevel, serializeLevel } from '../engine/voxel/level-serializer'
-import { copyScriptEntry, copyStoneSpawner, copyZoneScriptAction, DEFAULT_AMBIENT_WEATHER, type EditorState, type EditorLevelMeta } from './editor-state'
+import {
+    copyScriptEntry,
+    copyStonePlacement,
+    copyStoneSpawner,
+    DEFAULT_AMBIENT_WEATHER,
+    type EditorState,
+    type EditorLevelMeta,
+} from './editor-state'
 import { normalizeNpcConfig } from '../game/npcs/npc-types'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../game/player-settings'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
@@ -63,6 +70,8 @@ function clearWorldAndEditorState(
     editorState.pickups = []
     world.pickupMetaByEid.clear()
     world.pickupEntityByScriptId.clear()
+    world.stoneEntityByScriptId.clear()
+    world.stoneSpawnersById.clear()
 
     for (const p of world.pistons) {
         if (p.eid >= 0) {
@@ -78,6 +87,8 @@ function clearWorldAndEditorState(
     world.zoneEvents.length = 0
     world.popupMessages.length = 0
     world.nextPopupMessageId = 1
+    world.popupClears.length = 0
+    world.nextPopupClearId = 1
     editorState.zones = []
 
     editorState.soundSources = []
@@ -90,8 +101,11 @@ function clearWorldAndEditorState(
     editorState.selectedPropId = null
     editorState.npcs = []
     editorState.selectedNpcId = null
+    editorState.stones = []
+    editorState.selectedStoneId = null
     editorState.scripts = []
     editorState.stoneSpawners = []
+    editorState.selectedStoneSpawnerId = null
     // Leave ambientWeather alone — it's level-wide state the user
     // explicitly authored. A fresh "new level" call will overwrite it
     // via createEditorState anyway.
@@ -191,6 +205,7 @@ export function loadLevelFromBuffer(
     if (loaded.metadata) {
         editorState.spawn = { ...loaded.metadata.spawn }
         editorState.player = normalizePlayerSettings(loaded.metadata.player)
+        editorState.stones = (loaded.metadata.stones ?? []).map(copyStonePlacement)
         editorState.stoneSpawners = (loaded.metadata.stoneSpawners ?? []).map(copyStoneSpawner)
         for (const p of loaded.metadata.pickups ?? []) {
             const eid = spawnPickupPreview(world, p.kind, p.position)
@@ -226,9 +241,6 @@ export function loadLevelFromBuffer(
                 min: { ...z.min },
                 max: { ...z.max },
                 triggerSources: z.triggerSources ? [...z.triggerSources] : undefined,
-                script: z.script ? {
-                    actions: z.script.actions.map(copyZoneScriptAction),
-                } : undefined,
                 portal: z.portal ? {
                     targetLevelId: z.portal.targetLevelId,
                     targetArrivalId: z.portal.targetArrivalId,

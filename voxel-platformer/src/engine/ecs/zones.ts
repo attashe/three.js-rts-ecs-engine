@@ -1,7 +1,6 @@
 import type { GameWorld, VoxelCoord } from './world'
 
 export type ZoneTriggerSource = 'player' | 'arrow'
-export type ZoneScriptBlockSpace = 'world' | 'zone-min' | 'zone-max'
 
 export interface ZonePortal {
     /** Project-library level id, usually the `.vplevel` filename without
@@ -11,32 +10,6 @@ export interface ZonePortal {
      *  uses the zone's center X/Z and min Y as the player's foot
      *  position instead of the destination level's authored spawn. */
     readonly targetArrivalId?: string
-}
-
-export type ZoneScriptAction =
-    | { readonly type: 'message'; readonly message: string }
-    | { readonly type: 'kill-player'; readonly message?: string }
-    | {
-        readonly type: 'set-block'
-        /** Target cell. Interpreted as world coords unless `relativeTo` is set. */
-        readonly position: VoxelCoord
-        /** Palette index to write. Use 0 to erase. */
-        readonly block: number
-        readonly relativeTo?: ZoneScriptBlockSpace
-    }
-    | {
-        readonly type: 'fill-blocks'
-        /** Inclusive min corner. Interpreted as world coords unless `relativeTo` is set. */
-        readonly min: VoxelCoord
-        /** Exclusive max corner. Interpreted as world coords unless `relativeTo` is set. */
-        readonly max: VoxelCoord
-        /** Palette index to write. Use 0 to erase. */
-        readonly block: number
-        readonly relativeTo?: ZoneScriptBlockSpace
-    }
-
-export interface ZoneScript {
-    readonly actions: readonly ZoneScriptAction[]
 }
 
 /** Axis-aligned 3D region anchored in world cell space. Ported from the
@@ -61,8 +34,6 @@ export interface Zone {
      *  player-only for `kind: "trigger"` zones, matching the usual trigger
      *  volume default. */
     readonly triggerSources?: readonly ZoneTriggerSource[]
-    /** Optional data-driven actions executed when the trigger activates. */
-    readonly script?: ZoneScript
     /** Portal zones are ordinary trigger zones with a destination. They
      *  default to player-only activation unless `triggerSources` says
      *  otherwise. */

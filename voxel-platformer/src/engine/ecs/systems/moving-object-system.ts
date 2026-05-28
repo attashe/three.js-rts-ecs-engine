@@ -18,8 +18,10 @@ import { PickupKind } from './pickup-system'
 import {
     MovingObjectKind,
     spawnFallingStone,
+    stoneOptionsForConfig,
     type StoneFallSpawnerConfig,
 } from '../../../game/moving-objects'
+import type { GameWorld, StoneSpawnerRuntime } from '../world'
 
 const ARROW_MIN_SETTLE_AGE = 0.18
 const ARROW_REST_SECONDS = 0.06
@@ -64,39 +66,135 @@ export function createFallingStoneSpawnerSystem(
     opts: FallingStoneSpawnerOptions = {},
 ): System {
     const maxMovingStones = opts.maxMovingStones ?? 8
-    const timers = spawners.map(() => 0)
+    const states = spawners.map((spawner, index) => createSpawnerState(spawner, index))
+    let activeWorld: GameWorld | null = null
 
     return {
         fixed: true,
         // Spawners run early in the fixed phase so the new stone gets its full
         // first physics step on the same tick it spawns.
         order: FixedOrder.input + 10,
-        update(world, dt) {
-            if (spawners.length === 0) return
-            const movingStones = countMovingStones(world)
-            if (movingStones >= maxMovingStones) return
-
-            for (let i = 0; i < spawners.length; i++) {
-                timers[i] -= dt
-                if (timers[i] > 0) continue
-
-                const spawner = spawners[i]!
-                const jitter = spawner.jitter ?? 0
-                const offset = jitter > 0 ? pseudoJitter(performance.now() + i * 97) * jitter : 0
-                spawnFallingStone(
-                    world,
-                    { x: spawner.position.x, y: spawner.position.y, z: spawner.position.z + offset },
-                    spawner.velocity,
-                    spawner.options,
-                )
-                timers[i] = spawner.interval
+        init(world) {
+            activeWorld = world
+            for (const state of states) {
+                if (!state.config.id) continue
+                activeWorld.stoneSpawnersById.set(state.config.id, state.controller)
             }
         },
+        update(world, dt) {
+            if (states.length === 0) return
+            let movingStones = countMovingStones(world)
+            if (movingStones >= maxMovingStones) return
+
+            for (const state of states) {
+                if (!state.enabled) continue
+                state.timer -= dt
+                if (state.timer > 0) continue
+                const spawned = spawnFromState(world, state, 1, maxMovingStones - movingStones)
+                movingStones += spawned
+                state.timer = safeInterval(state.config.interval)
+                if (movingStones >= maxMovingStones) return
+            }
+        },
+        dispose() {
+            if (!activeWorld) return
+            for (const state of states) {
+                const id = state.config.id
+                if (id && activeWorld.stoneSpawnersById.get(id) === state.controller) {
+                    activeWorld.stoneSpawnersById.delete(id)
+                }
+            }
+            activeWorld = null
+        },
+    }
+
+    function createSpawnerState(config: StoneFallSpawnerConfig, index: number): SpawnerState {
+        const state: SpawnerState = {
+            config,
+            index,
+            enabled: config.enabled !== false,
+            timer: safeDelay(config.delay),
+            spawned: new Set<number>(),
+            controller: undefined as unknown as StoneSpawnerRuntime,
+        }
+        state.controller = {
+            id: config.id ?? `stone-spawner-${index + 1}`,
+            setEnabled(enabled) {
+                state.enabled = !!enabled
+            },
+            isEnabled() {
+                return state.enabled
+            },
+            trigger(count) {
+                if (!activeWorld || !state.enabled) return 0
+                const globalBudget = Math.max(0, maxMovingStones - countMovingStones(activeWorld))
+                return spawnFromState(activeWorld, state, safeTriggerCount(count), globalBudget)
+            },
+        }
+        return state
     }
 }
 
+interface SpawnerState {
+    config: StoneFallSpawnerConfig
+    index: number
+    enabled: boolean
+    timer: number
+    spawned: Set<number>
+    controller: StoneSpawnerRuntime
+}
+
+function spawnFromState(
+    world: GameWorld,
+    state: SpawnerState,
+    requested: number,
+    globalBudget: number,
+): number {
+    pruneSpawnerStones(world, state)
+    const maxLive = safeMaxLive(state.config.maxLive)
+    const spawnerBudget = maxLive === Infinity ? requested : Math.max(0, maxLive - state.spawned.size)
+    const count = Math.min(requested, spawnerBudget, Math.max(0, globalBudget))
+    let spawned = 0
+    for (let i = 0; i < count; i++) {
+        const spawner = state.config
+        const jitter = spawner.jitter ?? 0
+        const offset = jitter > 0 ? pseudoJitter(performance.now() + state.index * 97 + i * 31) * jitter : 0
+        const eid = spawnFallingStone(
+            world,
+            { x: spawner.position.x, y: spawner.position.y, z: spawner.position.z + offset },
+            spawner.velocity,
+            stoneOptionsForConfig(spawner),
+        )
+        state.spawned.add(eid)
+        spawned++
+    }
+    return spawned
+}
+
+function pruneSpawnerStones(world: GameWorld, state: SpawnerState): void {
+    for (const eid of [...state.spawned]) {
+        if (!isActiveMovingStone(world, eid)) state.spawned.delete(eid)
+    }
+}
+
+function safeDelay(value: number | undefined): number {
+    return Number.isFinite(value) && (value ?? 0) > 0 ? value! : 0
+}
+
+function safeInterval(value: number): number {
+    return Number.isFinite(value) && value > 0 ? value : 1
+}
+
+function safeMaxLive(value: number | undefined): number {
+    return Number.isFinite(value) && (value ?? 0) > 0 ? Math.floor(value!) : Infinity
+}
+
+function safeTriggerCount(value: number | undefined): number {
+    return Number.isFinite(value) && (value ?? 0) > 0 ? Math.min(32, Math.floor(value!)) : 1
+}
+
 function updateArrow(
-    world: Parameters<System['update']>[0],
+    world: GameWorld,
     eid: number,
     dt: number,
 ): void {
@@ -124,7 +222,7 @@ function updateArrow(
 }
 
 function embedArrow(
-    world: Parameters<System['update']>[0],
+    world: GameWorld,
     eid: number,
 ): void {
     if (hasComponent(world, eid, Velocity)) removeComponent(world, eid, Velocity)
@@ -159,20 +257,21 @@ function orientArrow(eid: number): void {
     Rotation.z[eid] = Math.atan2(vy, horiz)
 }
 
-function countMovingStones(world: Parameters<System['update']>[0]): number {
+function countMovingStones(world: GameWorld): number {
     const eids = query(world, [MovingObject])
     let count = 0
     for (let i = 0; i < eids.length; i++) {
         const eid = eids[i]
-        if (
-            MovingObject.kind[eid] === MovingObjectKind.Stone &&
-            hasComponent(world, eid, Velocity) &&
-            !hasComponent(world, eid, Sleeping)
-        ) {
-            count++
-        }
+        if (isActiveMovingStone(world, eid)) count++
     }
     return count
+}
+
+function isActiveMovingStone(world: GameWorld, eid: number): boolean {
+    return hasComponent(world, eid, MovingObject) &&
+        MovingObject.kind[eid] === MovingObjectKind.Stone &&
+        hasComponent(world, eid, Velocity) &&
+        !hasComponent(world, eid, Sleeping)
 }
 
 function pseudoJitter(seed: number): number {

@@ -1,7 +1,7 @@
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import type { VoxelCoord } from '../engine/ecs/world'
-import type { ZonePortal, ZoneScriptAction, ZoneTriggerSource } from '../engine/ecs/zones'
+import type { ZonePortal, ZoneTriggerSource } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
 import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
@@ -10,7 +10,14 @@ import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/
 import { DEFAULT_NPC, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../game/player-settings'
 import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from '../game/weather-config'
-import type { StoneFallSpawnerConfig } from '../game/moving-objects'
+import {
+    DEFAULT_STONE_RADIUS,
+    DEFAULT_STONE_TIER,
+    type StoneFallSpawnerConfig,
+    type StonePlacementConfig,
+    type StoneSpawnOptions,
+    type StoneTierId,
+} from '../game/moving-objects'
 
 export type EditorMode =
     | 'select'
@@ -26,6 +33,8 @@ export type EditorMode =
     | 'place-prop'
     | 'scatter-props'
     | 'place-npc'
+    | 'place-stone'
+    | 'place-stone-spawner'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut;
  *  `orbit` enables free OrbitControls-style scene inspection. */
@@ -57,9 +66,6 @@ export interface EditorZone {
     min: VoxelCoord
     max: VoxelCoord
     triggerSources?: ZoneTriggerSource[]
-    script?: {
-        actions: ZoneScriptAction[]
-    }
     portal?: ZonePortal
     interaction?: {
         prompt?: string
@@ -302,12 +308,6 @@ export interface EditorState {
     zoneHeight: number
     /** Collision source that activates the next placed trigger zone. */
     zoneTriggerMode: EditorZoneTriggerMode
-    /** Script actions attached to the next placed trigger zone. */
-    zoneScriptActions: ZoneScriptAction[]
-    /** Draft message used by the zone script UI. */
-    zoneScriptMessage: string
-    /** Draft block offset from zone min used by spawn/erase script actions. */
-    zoneScriptOffset: VoxelCoord
     /** Portal destination applied when the next placed zone has
      *  `kind === "portal"`. */
     portalTargetLevelId: string
@@ -408,11 +408,26 @@ export interface EditorState {
     npcScriptEnabled: boolean
     npcScriptSource: string
 
+    /** Direct physics stones placed in the editor. They spawn at level start. */
+    stones: StonePlacementConfig[]
+    selectedStoneId: string | null
+    stoneTier: StoneTierId
+    stoneSize: number
+    stoneVelocity: { x: number; y: number; z: number }
+
     /** Plain JavaScript scripts persisted with the level and run in playtest. */
     scripts: ScriptEntry[]
-    /** Runtime-only hazard spawners. No editor placement UI yet, but
-     *  built-in/imported levels must preserve them across save/load. */
+    /** Falling-stone hazard emitters placed in the editor. */
     stoneSpawners: StoneFallSpawnerConfig[]
+    selectedStoneSpawnerId: string | null
+    stoneSpawnerTier: StoneTierId
+    stoneSpawnerSize: number
+    stoneSpawnerVelocity: { x: number; y: number; z: number }
+    stoneSpawnerInterval: number
+    stoneSpawnerDelay: number
+    stoneSpawnerMaxLive: number
+    stoneSpawnerJitter: number
+    stoneSpawnerEnabled: boolean
 
     /** Level-wide visual environment (sky / fog / sun / drifting rain
      *  & snow / lightning). Disabled by default. */
@@ -501,9 +516,6 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         zoneSize: 4,
         zoneHeight: 3,
         zoneTriggerMode: 'player',
-        zoneScriptActions: [],
-        zoneScriptMessage: '',
-        zoneScriptOffset: { x: 0, y: 0, z: 0 },
         portalTargetLevelId: '',
         portalArrivalId: '',
         soundSources: [],
@@ -556,8 +568,22 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         npcInteractionPrompt: DEFAULT_NPC.interactionPrompt,
         npcScriptEnabled: DEFAULT_NPC.scriptEnabled,
         npcScriptSource: DEFAULT_NPC.scriptSource,
+        stones: [],
+        selectedStoneId: null,
+        stoneTier: DEFAULT_STONE_TIER,
+        stoneSize: DEFAULT_STONE_RADIUS,
+        stoneVelocity: { x: 0, y: 0, z: 0 },
         scripts: [],
         stoneSpawners: [],
+        selectedStoneSpawnerId: null,
+        stoneSpawnerTier: DEFAULT_STONE_TIER,
+        stoneSpawnerSize: DEFAULT_STONE_RADIUS,
+        stoneSpawnerVelocity: { x: 0, y: -4, z: 0 },
+        stoneSpawnerInterval: 2,
+        stoneSpawnerDelay: 0,
+        stoneSpawnerMaxLive: 4,
+        stoneSpawnerJitter: 0,
+        stoneSpawnerEnabled: true,
         ambientWeather: {
             // Default to enabled now that an Outdoor mode "just works"
             // without the author hand-picking sky/fog/sun colours — the
@@ -583,6 +609,7 @@ export interface EditorLevelMeta {
     name: string
     spawn: { x: number; y: number; z: number }
     player?: PlayerSettings
+    stones?: StonePlacementConfig[]
     stoneSpawners?: StoneFallSpawnerConfig[]
     pickups: Array<{
         position: { x: number; y: number; z: number }
@@ -616,6 +643,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
         name,
         spawn: { ...state.spawn },
         player: copyPlayerSettings(state.player),
+        stones: state.stones.length === 0 ? undefined : state.stones.map(copyStonePlacement),
         stoneSpawners: state.stoneSpawners.map(copyStoneSpawner),
         pickups: state.pickups.map((p) => ({
             position: { ...p.position },
@@ -641,9 +669,6 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             min: { ...z.min },
             max: { ...z.max },
             triggerSources: z.triggerSources ? [...z.triggerSources] : undefined,
-            script: z.script ? {
-                actions: z.script.actions.map(copyZoneScriptAction),
-            } : undefined,
             portal: z.portal ? {
                 targetLevelId: z.portal.targetLevelId,
                 targetArrivalId: z.portal.targetArrivalId,
@@ -712,13 +737,37 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
 }
 
 export function copyStoneSpawner(spawner: StoneFallSpawnerConfig): StoneFallSpawnerConfig {
-    return {
+    const out: StoneFallSpawnerConfig = {
         position: { ...spawner.position },
         velocity: { ...spawner.velocity },
         interval: spawner.interval,
-        jitter: spawner.jitter,
-        options: spawner.options ? { ...spawner.options } : undefined,
     }
+    if (spawner.id !== undefined) out.id = spawner.id
+    if (spawner.enabled !== undefined) out.enabled = spawner.enabled
+    if (spawner.delay !== undefined) out.delay = spawner.delay
+    if (spawner.maxLive !== undefined) out.maxLive = spawner.maxLive
+    if (spawner.jitter !== undefined) out.jitter = spawner.jitter
+    if (spawner.tier !== undefined) out.tier = spawner.tier
+    if (spawner.size !== undefined) out.size = spawner.size
+    if (spawner.options) out.options = copyStoneSpawnOptions(spawner.options)
+    return out
+}
+
+export function copyStonePlacement(stone: StonePlacementConfig): StonePlacementConfig {
+    const out: StonePlacementConfig = {
+        position: { ...stone.position },
+    }
+    if (stone.id !== undefined) out.id = stone.id
+    if (stone.velocity !== undefined) out.velocity = { ...stone.velocity }
+    if (stone.enabled !== undefined) out.enabled = stone.enabled
+    if (stone.tier !== undefined) out.tier = stone.tier
+    if (stone.size !== undefined) out.size = stone.size
+    if (stone.options) out.options = copyStoneSpawnOptions(stone.options)
+    return out
+}
+
+function copyStoneSpawnOptions(options: StoneSpawnOptions): StoneSpawnOptions {
+    return { ...options }
 }
 
 export function copyScriptEntry(entry: ScriptEntry): ScriptEntry {
@@ -735,23 +784,3 @@ export function copyScriptEntry(entry: ScriptEntry): ScriptEntry {
 
 /** Re-export so editor-ui only needs editor-state to know default block ids. */
 export { BLOCK }
-
-export function copyZoneScriptAction(action: ZoneScriptAction): ZoneScriptAction {
-    if (action.type === 'message') return { type: 'message', message: action.message }
-    if (action.type === 'kill-player') return { type: 'kill-player', message: action.message }
-    if (action.type === 'set-block') {
-        return {
-            type: 'set-block',
-            position: { ...action.position },
-            block: action.block,
-            relativeTo: action.relativeTo,
-        }
-    }
-    return {
-        type: 'fill-blocks',
-        min: { ...action.min },
-        max: { ...action.max },
-        block: action.block,
-        relativeTo: action.relativeTo,
-    }
-}

@@ -10,6 +10,7 @@ import type {
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
+    StonesFacade,
     TravelFacade,
     UiFacade,
     VoxelCoord,
@@ -36,6 +37,7 @@ function stubs() {
         pickupSpawn: [], pickupDespawn: [], pickupExists: [],
         pistonSetEnabled: [], pistonIsEnabled: [], pistonFlip: [], pistonList: [],
         uiSay: [],
+        uiClear: [],
         uiDialogue: [],
         log: [],
         zoneContains: [],
@@ -122,6 +124,7 @@ function stubs() {
     }
     const ui: UiFacade = {
         say(targetId, message, opts) { calls.uiSay.push({ targetId, message, opts }) },
+        clear(targetId) { calls.uiClear.push({ targetId: targetId ?? null }) },
         async dialogue(request) {
             calls.uiDialogue.push(request)
             return { choiceId: request.lines[0]?.choices?.[0]?.id, choiceIndex: 0, text: request.lines[0]?.choices?.[0]?.text }
@@ -296,6 +299,20 @@ test('ui.say forwards target, message, and display options', () => {
     }])
 })
 
+test('ui.clear forwards target id (per-target dismissal)', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    ctx.ui.clear('zone.demo.keeper')
+    assert.deepEqual(s.calls.uiClear, [{ targetId: 'zone.demo.keeper' }])
+})
+
+test('ui.clear with no argument forwards a sweep-all request', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    ctx.ui.clear()
+    assert.deepEqual(s.calls.uiClear, [{ targetId: null }])
+})
+
 test('player.setCheckpoint with an explicit position writes through the facade', () => {
     const s = stubs()
     const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
@@ -452,6 +469,68 @@ test('pistons bindings forward to the facade', () => {
 
     s.setPistonFlipBlocks(true)
     assert.equal(ctx.pistons.flip('piston.trap'), false)
+})
+
+test('stones bindings forward direct stone and spawner control calls', () => {
+    const s = stubs()
+    const calls: unknown[] = []
+    const liveStones = new Set<string>()
+    const enabledSpawners = new Map<string, boolean>([['spawner.rocks', true]])
+    const stones: StonesFacade = {
+        spawn(pos, opts) {
+            calls.push({ method: 'spawn', pos, opts })
+            const id = opts?.id ?? 'stone.generated'
+            liveStones.add(id)
+            return id
+        },
+        remove(id) {
+            calls.push({ method: 'remove', id })
+            return liveStones.delete(id)
+        },
+        exists(id) {
+            calls.push({ method: 'exists', id })
+            return liveStones.has(id)
+        },
+        setSpawnerEnabled(id, enabled) {
+            calls.push({ method: 'setSpawnerEnabled', id, enabled })
+            if (!enabledSpawners.has(id)) return false
+            enabledSpawners.set(id, enabled)
+            return true
+        },
+        isSpawnerEnabled(id) {
+            calls.push({ method: 'isSpawnerEnabled', id })
+            return enabledSpawners.get(id) ?? false
+        },
+        triggerSpawner(id, count) {
+            calls.push({ method: 'triggerSpawner', id, count })
+            return enabledSpawners.has(id) && enabledSpawners.get(id) !== false ? count ?? 1 : 0
+        },
+        listSpawners() {
+            calls.push({ method: 'listSpawners' })
+            return [...enabledSpawners.keys()]
+        },
+    }
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, stones, flags: new Map() })
+
+    assert.equal(ctx.stones.spawn({ x: 1, y: 2, z: 3 }, {
+        id: 'stone.A',
+        tier: 'rock',
+        size: 0.4,
+        velocity: { x: 0, y: -1, z: 0 },
+    }), 'stone.A')
+    assert.equal(ctx.stones.exists('stone.A'), true)
+    assert.deepEqual(ctx.stones.listSpawners(), ['spawner.rocks'])
+    assert.equal(ctx.stones.isSpawnerEnabled('spawner.rocks'), true)
+    assert.equal(ctx.stones.setSpawnerEnabled('spawner.rocks', false), true)
+    assert.equal(ctx.stones.triggerSpawner('spawner.rocks', 3), 0)
+    assert.equal(ctx.stones.remove('stone.A'), true)
+    assert.equal(ctx.stones.exists('stone.A'), false)
+
+    assert.deepEqual(calls[0], {
+        method: 'spawn',
+        pos: { x: 1, y: 2, z: 3 },
+        opts: { id: 'stone.A', tier: 'rock', size: 0.4, velocity: { x: 0, y: -1, z: 0 } },
+    })
 })
 
 test('on(...) handles both filter-and-handler and handler-only forms', async () => {

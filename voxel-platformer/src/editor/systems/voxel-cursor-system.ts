@@ -162,6 +162,8 @@ function resolveCursorCell(
             editorState.mode === 'place-sound' ||
             editorState.mode === 'place-prop' ||
             editorState.mode === 'place-npc' ||
+            editorState.mode === 'place-stone' ||
+            editorState.mode === 'place-stone-spawner' ||
             editorState.mode === 'scatter-props'
         ) {
             return {
@@ -187,7 +189,9 @@ function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; 
         state.mode === 'place-spawn' ||
         state.mode === 'place-sound' ||
         state.mode === 'place-prop' ||
-        state.mode === 'place-npc'
+        state.mode === 'place-npc' ||
+        state.mode === 'place-stone' ||
+        state.mode === 'place-stone-spawner'
     ) return [cursor]
     if (state.mode === 'scatter-props') return scatterBrushCells(state, cursor)
     if (state.mode === 'place-piston') {
@@ -246,6 +250,8 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'place-prop': return 0xb3e5b3
         case 'scatter-props': return 0x9be66f
         case 'place-npc': return 0xffd166
+        case 'place-stone': return 0xff9f43
+        case 'place-stone-spawner': return 0xffb86b
     }
 }
 
@@ -261,6 +267,8 @@ function ghostColour(chunks: ChunkManager, state: EditorState): [number, number,
     if (state.mode === 'place-weather') return [1, 0.84, 0.94]
     if (state.mode === 'scatter-props') return [0.6, 0.9, 0.44]
     if (state.mode === 'place-npc') return [1, 0.82, 0.4]
+    if (state.mode === 'place-stone') return [0.95, 0.68, 0.38]
+    if (state.mode === 'place-stone-spawner') return [1, 0.62, 0.26]
     const entry = chunks.palette.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]

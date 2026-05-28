@@ -4,8 +4,8 @@ Status: **Slices 1, 1.5, 1.6, 2 implemented** on `feature/surface-improve`.
 Authors can now (a) load `.js` files or paste snippets into the editor's
 **Logic** tab, (b) react to zone enter/exit, pickup-taken, player-died,
 and input events, (c) call into world state via the host bindings
-(`chunks`, `audio`, `pickups`, `player`, `flags`, `ui`, `dayCycle`,
-`weather`, `zone`, `geom`). See `script-engine-slice-1-5-review.md`
+(`chunks`, `audio`, `pickups`, `pistons`, `stones`, `player`, `flags`,
+`ui`, `dayCycle`, `weather`, `zone`, `geom`). See `script-engine-slice-1-5-review.md`
 and the §11 implementation status below.
 
 Scripts are how the editor authors quests, cinematics, and event-driven
@@ -89,7 +89,7 @@ async function compileScript(entry: ScriptEntry, ctx: ScriptContext): Promise<vo
     const fn = new AsyncFunction('ctx', `
         "use strict";
         const { on, once, emit, wait, log,
-                player, chunks, pickups, pistons,
+                player, chunks, pickups, pistons, stones,
                 audio, flags, time, zone, random } = ctx;
         ${entry.source}
     `)
@@ -310,6 +310,17 @@ pistons.isEnabled(id: string): boolean
 pistons.flip(id: string): boolean                           // false if unknown, disabled, or mid-physical-travel
 pistons.list(): string[]                                    // enumerate ids in registration order
 
+// Stones — direct physics stones plus editor-authored falling-stone spawners.
+stones.spawn(pos: VoxelCoord,
+             opts?: { id?: string; tier?: string; size?: number;
+                      velocity?: VoxelCoord }): string
+stones.remove(id: string): boolean
+stones.exists(id: string): boolean
+stones.setSpawnerEnabled(id: string, enabled: boolean): boolean
+stones.isSpawnerEnabled(id: string): boolean
+stones.triggerSpawner(id: string, count?: number): number
+stones.listSpawners(): string[]
+
 // Audio — `fade` cross-fades over N seconds on play / stop.
 audio.play(soundId: string,
            opts?: { volume?: number; loop?: boolean; fade?: number }): SoundHandle
@@ -377,8 +388,13 @@ wait(seconds: number): Promise<void>
 // Log
 log(message: string, kind?: 'info' | 'warn' | 'error'): void
 
-// UI
+// UI — popup bubbles. Multiple targets render in parallel; back-to-back
+// `ui.say` calls to the SAME target queue and play sequentially when
+// the current bubble expires. `ui.clear(targetId?)` dismisses bubbles
+// early (per-target or all-at-once) — useful when the player walks
+// away from an NPC mid-line.
 ui.say(targetId: string, message: string, opts?: { seconds?: number }): void
+ui.clear(targetId?: string): void
 ui.dialogue({
   title?: string,
   npc?: { id?, name, avatar?, side? },
@@ -702,7 +718,8 @@ on('level-start', async () => {
 | `pickup-taken` event                          | — | ✅ | tapped in pickup-system |
 | `player.died` event                           | — | ✅ | watchdog inside script-engine-system |
 | `input` event                                 | — | ✅ | Interaction key emits `action: "interact"` |
-| `ui.say` floating bubbles                     | — | ✅ | wired via `interaction-system` |
+| `ui.say` floating bubbles                     | — | ✅ | per-target queue + multi-target parallel render |
+| `ui.clear(targetId?)` dismiss bubbles         | — | ✅ | per-target or sweep-all via `world.popupClears` |
 | `ui.dialogue` modal conversations             | — | ✅ | centered UI with avatars + choices |
 | Stable pickup ids + idempotent spawn          | — | ✅ | `pickups.spawn(..., { id, label })` |
 | `Zone.active` + `zone.setActive/isActive/exists` | — | — / 1.6 | inactive zones synthesise zone-exit |
@@ -713,24 +730,19 @@ on('level-start', async () => {
 | `player.setCheckpoint` / `clearCheckpoint`    | — | ✅ | Slice 3 — `world.lastCheckpoint` + session checkpoint store |
 | `pickups.despawn` / `pickups.exists`          | — | ✅ | Slice 3 — closes the stable-id lifecycle |
 | `pistons.setEnabled/isEnabled/flip/list`      | — | ✅ | Slice 3 — `world.pistonsById`, `pendingFlip` force-flip path |
+| `stones.spawn/remove/exists`                  | — | ✅ | Direct physics stones with stable ids |
+| `stones.setSpawnerEnabled/triggerSpawner/listSpawners` | — | ✅ | Editor-authored falling-stone spawners |
 | `weather.setZoneEnabled` (toggle FX zones)    | — | ✅ | Slice 3 — controller tracks configs / live / enabled |
 | `weather.setZonePreset` (re-spawn with new preset) | — | ✅ | Slice 3 — pairs with setZoneEnabled |
 | `level.spawn / size / name` getters           | — | ✅ | Slice 3 — read-only snapshot of `LevelMeta` |
 | `//# sourceURL=` pragma for runtime errors    | — | ✅ | Slice 3 — devtools attach script name to stack frames |
 | Per-row parse-error banner in Logic tab       | — | ✅ | Slice 3 — runs `parseCheck` at row render time |
-| `ZoneScriptAction` migration                  | — | — | Deferred — legacy union still inert in production levels |
+| Per-row runtime-error banner in Logic tab     | — | ✅ | Slice 3 follow-up — sessionStorage bridge `vp:playtest-script-errors` |
+| `ZoneScriptAction` legacy union               | — | ✅ removed | Slice 3 follow-up — quest behaviour lives in `.js` scripts |
 
 ### What's still on the roadmap
 
 - **Slice 4 (or follow-up cleanup)**:
-  - `ZoneScriptAction` → `ScriptEntry` migration (drop the legacy
-    union; `executeZoneScript` removed). Nothing in production
-    depends on it; this is a deprecation sweep, not feature work.
-  - Editor↔playtest bridge for surfacing playtest *runtime* errors
-    under each Logic-tab row. The §3.6 status drawer's parse half
-    landed in Slice 3; the runtime half needs sessionStorage round-trip
-    from the playtest tab back to the editor.
-  - Multi-bubble `ui.say` + `ui.clear` for back-to-back NPC dialogue.
   - Named-place registry (`level.coord('lantern.position')`).
   - Persistent checkpoints across saves (currently per-session).
   - Lighthouse Vigil validation quest — drafted in

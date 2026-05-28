@@ -199,6 +199,7 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
         spawn: { x: 4.9, y: groundY + 1, z: 11 },
         player: DEFAULT_PLAYER_SETTINGS,
         stoneSpawners: [],
+        stones: [],
         coinPiles: [
             { position: { x: 10, y: groundY + 2, z: 10 }, amount: 5 },
         ],

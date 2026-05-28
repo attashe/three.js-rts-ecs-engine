@@ -13,6 +13,7 @@ import { buildWeatherTab } from './weather-tab'
 import { buildPropsTab } from './props-tab'
 import { buildNpcTab } from './npc-tab'
 import { buildLogicTab } from './logic-tab'
+import { buildStonesTab } from './stones-tab'
 
 export interface MountEditorPanelOptions {
     world: GameWorld
@@ -51,6 +52,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
         { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
         { id: 'weather', label: 'Visual FX', build: () => buildWeatherTab(opts) },
         { id: 'props', label: 'Props', build: () => buildPropsTab(opts) },
+        { id: 'stones', label: 'Stones', build: () => buildStonesTab(opts) },
         { id: 'npcs', label: 'NPCs', build: () => buildNpcTab(opts) },
         { id: 'logic', label: 'Logic', build: () => buildLogicTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },

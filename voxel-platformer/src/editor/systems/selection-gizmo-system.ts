@@ -27,12 +27,16 @@ import type {
 } from '../editor-state'
 import type { EditorProp } from '../../game/props/prop-types'
 import type { NpcConfig } from '../../game/npcs/npc-types'
+import { stoneRadiusForConfig, type StoneFallSpawnerConfig, type StonePlacementConfig } from '../../game/moving-objects'
+import { nextStoneEditorId } from '../stone-ids'
 
 type SelectionRef =
     | { kind: 'spawn' }
     | { kind: 'pickup'; pickup: EditorPickup }
     | { kind: 'prop'; prop: EditorProp }
     | { kind: 'npc'; npc: NpcConfig }
+    | { kind: 'stone'; stone: StonePlacementConfig }
+    | { kind: 'stone-spawner'; spawner: StoneFallSpawnerConfig }
     | { kind: 'zone'; zone: EditorZone }
     | { kind: 'sound-source'; source: EditorSoundSource }
     | { kind: 'sound-zone'; zone: EditorSoundZone }
@@ -48,6 +52,10 @@ interface SelectionBaseline {
     propPosition?: { x: number; y: number; z: number }
     npc?: NpcConfig
     npcPosition?: { x: number; y: number; z: number }
+    stone?: StonePlacementConfig
+    stonePosition?: { x: number; y: number; z: number }
+    stoneSpawner?: StoneFallSpawnerConfig
+    stoneSpawnerPosition?: { x: number; y: number; z: number }
     zone?: EditorZone
     zoneMin?: VoxelCoord
     zoneMax?: VoxelCoord
@@ -143,11 +151,19 @@ export function createSelectionGizmoSystem(
 
     function select(ref: SelectionRef | null): void {
         if (sameSelection(selected, ref)) return
+        if (ref?.kind === 'stone' && !ref.stone.id) {
+            ref.stone.id = nextStoneEditorId(editorState.stones.map((stone) => stone.id), 'stone')
+        }
+        if (ref?.kind === 'stone-spawner' && !ref.spawner.id) {
+            ref.spawner.id = nextStoneEditorId(editorState.stoneSpawners.map((spawner) => spawner.id), 'stone-spawner')
+        }
         selected = ref
         editorState.selectedSoundSourceId = ref?.kind === 'sound-source' ? ref.source.id : null
         editorState.selectedSoundZoneId = ref?.kind === 'sound-zone' ? ref.zone.id : null
         editorState.selectedPropId = ref?.kind === 'prop' ? ref.prop.id : null
         editorState.selectedNpcId = ref?.kind === 'npc' ? ref.npc.id : null
+        editorState.selectedStoneId = ref?.kind === 'stone' ? ref.stone.id ?? null : null
+        editorState.selectedStoneSpawnerId = ref?.kind === 'stone-spawner' ? ref.spawner.id ?? null : null
         baseline = ref ? createBaseline(ref) : null
         if (baseline) {
             target.position.copy(baseline.anchor)
@@ -199,6 +215,12 @@ export function createSelectionGizmoSystem(
         for (const npc of editorState.npcs) {
             addNpcProxy(proxyGroup, proxyMeshes, npc, sameSelection(selected, { kind: 'npc', npc }))
         }
+        for (const stone of editorState.stones) {
+            addStoneProxy(proxyGroup, proxyMeshes, stone, sameSelection(selected, { kind: 'stone', stone }))
+        }
+        for (const spawner of editorState.stoneSpawners) {
+            addStoneSpawnerProxy(proxyGroup, proxyMeshes, spawner, sameSelection(selected, { kind: 'stone-spawner', spawner }))
+        }
         for (const zone of editorState.zones) {
             addBoxProxy(proxyGroup, proxyMeshes, {
                 ref: { kind: 'zone', zone },
@@ -234,7 +256,7 @@ export function createSelectionGizmoSystem(
     return {
         order: RenderOrder.debug + 8,
         init(world) {
-            activeWorld = world as GameWorld
+            activeWorld = world
             scene.add(proxyGroup)
             scene.add(target)
             scene.add(transform.getHelper())
@@ -299,6 +321,22 @@ export function createSelectionGizmoSystem(
                     z: current.npcPosition.z + dz,
                 }
                 break
+            case 'stone':
+                if (!current.stone || !current.stonePosition || !editorState.stones.includes(current.stone)) return
+                current.stone.position = {
+                    x: current.stonePosition.x + dx,
+                    y: current.stonePosition.y + dy,
+                    z: current.stonePosition.z + dz,
+                }
+                break
+            case 'stone-spawner':
+                if (!current.stoneSpawner || !current.stoneSpawnerPosition || !editorState.stoneSpawners.includes(current.stoneSpawner)) return
+                current.stoneSpawner.position = {
+                    x: current.stoneSpawnerPosition.x + dx,
+                    y: current.stoneSpawnerPosition.y + dy,
+                    z: current.stoneSpawnerPosition.z + dz,
+                }
+                break
             case 'zone':
                 if (!current.zone || !current.zoneMin || !current.zoneMax || !editorState.zones.includes(current.zone)) return
                 current.zone.min = addDeltaToVoxel(current.zoneMin, dx, dy, dz)
@@ -340,6 +378,10 @@ export function createSelectionGizmoSystem(
                 return { ref, anchor, prop: ref.prop, propPosition: { ...ref.prop.position } }
             case 'npc':
                 return { ref, anchor, npc: ref.npc, npcPosition: { ...ref.npc.position } }
+            case 'stone':
+                return { ref, anchor, stone: ref.stone, stonePosition: { ...ref.stone.position } }
+            case 'stone-spawner':
+                return { ref, anchor, stoneSpawner: ref.spawner, stoneSpawnerPosition: { ...ref.spawner.position } }
             case 'zone':
                 return { ref, anchor, zone: ref.zone, zoneMin: { ...ref.zone.min }, zoneMax: { ...ref.zone.max } }
             case 'sound-source':
@@ -362,6 +404,26 @@ export function createSelectionGizmoSystem(
             }
             editorState.selectedNpcId = null
             if (selected?.kind === 'npc') select(null)
+        }
+        if (editorState.selectedStoneId) {
+            const stone = editorState.stones.find((s) => s.id === editorState.selectedStoneId)
+            if (stone) {
+                if (selected?.kind === 'stone' && selected.stone === stone) return
+                select({ kind: 'stone', stone })
+                return
+            }
+            editorState.selectedStoneId = null
+            if (selected?.kind === 'stone') select(null)
+        }
+        if (editorState.selectedStoneSpawnerId) {
+            const spawner = editorState.stoneSpawners.find((s) => s.id === editorState.selectedStoneSpawnerId)
+            if (spawner) {
+                if (selected?.kind === 'stone-spawner' && selected.spawner === spawner) return
+                select({ kind: 'stone-spawner', spawner })
+                return
+            }
+            editorState.selectedStoneSpawnerId = null
+            if (selected?.kind === 'stone-spawner') select(null)
         }
         const propId = editorState.selectedPropId
         if (!propId) {
@@ -419,6 +481,27 @@ function addNpcProxy(group: Group, out: Mesh[], npc: NpcConfig, selected: boolea
         center: new Vector3(npc.position.x, npc.position.y + height * 0.5, npc.position.z),
         size: new Vector3(radius * 2, height, radius * 2),
         color: 0xffd166,
+        selected,
+    })
+}
+
+function addStoneProxy(group: Group, out: Mesh[], stone: StonePlacementConfig, selected: boolean): void {
+    const radius = stoneRadiusForConfig(stone)
+    addBoxProxy(group, out, {
+        ref: { kind: 'stone', stone },
+        center: new Vector3(stone.position.x, stone.position.y + radius, stone.position.z),
+        size: new Vector3(radius * 2, radius * 2, radius * 2),
+        color: 0xff9f43,
+        selected,
+    })
+}
+
+function addStoneSpawnerProxy(group: Group, out: Mesh[], spawner: StoneFallSpawnerConfig, selected: boolean): void {
+    addBoxProxy(group, out, {
+        ref: { kind: 'stone-spawner', spawner },
+        center: new Vector3(spawner.position.x, spawner.position.y + 0.25, spawner.position.z),
+        size: new Vector3(0.7, 0.7, 0.7),
+        color: 0xffb86b,
         selected,
     })
 }
@@ -503,6 +586,8 @@ function selectionPriority(ref: SelectionRef): number {
         case 'spawn': return 0
         case 'pickup': return 1
         case 'sound-source': return 1
+        case 'stone': return 1
+        case 'stone-spawner': return 1
         case 'prop': return 2
         case 'npc': return 2
         case 'zone': return 4
@@ -519,6 +604,8 @@ function sameSelection(a: SelectionRef | null, b: SelectionRef | null): boolean 
         case 'pickup': return b.kind === 'pickup' && a.pickup === b.pickup
         case 'prop': return b.kind === 'prop' && a.prop === b.prop
         case 'npc': return b.kind === 'npc' && a.npc === b.npc
+        case 'stone': return b.kind === 'stone' && a.stone === b.stone
+        case 'stone-spawner': return b.kind === 'stone-spawner' && a.spawner === b.spawner
         case 'zone': return b.kind === 'zone' && a.zone === b.zone
         case 'sound-source': return b.kind === 'sound-source' && a.source === b.source
         case 'sound-zone': return b.kind === 'sound-zone' && a.zone === b.zone
@@ -539,6 +626,12 @@ function anchorFor(ref: SelectionRef, state: EditorState): Vector3 | null {
         case 'npc':
             if (!state.npcs.includes(ref.npc)) return null
             return new Vector3(ref.npc.position.x, ref.npc.position.y, ref.npc.position.z)
+        case 'stone':
+            if (!state.stones.includes(ref.stone)) return null
+            return new Vector3(ref.stone.position.x, ref.stone.position.y, ref.stone.position.z)
+        case 'stone-spawner':
+            if (!state.stoneSpawners.includes(ref.spawner)) return null
+            return new Vector3(ref.spawner.position.x, ref.spawner.position.y, ref.spawner.position.z)
         case 'zone':
             if (!state.zones.includes(ref.zone)) return null
             return aabbCenter(ref.zone.min, ref.zone.max)
@@ -620,6 +713,8 @@ function selectionLabel(ref: SelectionRef): string {
         case 'pickup': return `pickup @ ${formatPoint(ref.pickup.position)}`
         case 'prop': return `prop "${ref.prop.kind}" @ ${formatPoint(ref.prop.position)}`
         case 'npc': return `NPC "${ref.npc.name}" @ ${formatPoint(ref.npc.position)}`
+        case 'stone': return `stone "${ref.stone.id ?? 'stone'}" @ ${formatPoint(ref.stone.position)}`
+        case 'stone-spawner': return `stone spawner "${ref.spawner.id ?? 'spawner'}" @ ${formatPoint(ref.spawner.position)}`
         case 'zone': return `zone "${ref.zone.label ?? ref.zone.id}"`
         case 'sound-source': return `sound source "${ref.source.label ?? ref.source.id}"`
         case 'sound-zone': return `sound zone "${ref.zone.label ?? ref.zone.id}"`
@@ -638,6 +733,8 @@ function selectionFingerprint(state: EditorState, selected: SelectionRef | null)
         `pickups:${state.pickups.map((p) => `${p.amount}@${p.position.x},${p.position.y},${p.position.z}`).join(';')}`,
         `props:${state.props.map((p) => `${p.id}:${p.kind}:${p.position.x},${p.position.y},${p.position.z}:${p.scale}`).join(';')}`,
         `npcs:${state.npcs.map((n) => `${n.id}:${n.model}:${n.position.x},${n.position.y},${n.position.z}:${n.scale}:${n.colliderRadius}:${n.colliderHeight}`).join(';')}`,
+        `stones:${state.stones.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.tier}:${s.size}`).join(';')}`,
+        `stoneSpawners:${state.stoneSpawners.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.enabled}:${s.interval}:${s.maxLive}`).join(';')}`,
         `zones:${state.zones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
         `sources:${state.soundSources.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.radius}`).join(';')}`,
         `soundZones:${state.soundZones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
@@ -651,6 +748,8 @@ function selectionKey(ref: SelectionRef, state: EditorState): string {
         case 'pickup': return `pickup:${state.pickups.indexOf(ref.pickup)}`
         case 'prop': return `prop:${ref.prop.id}`
         case 'npc': return `npc:${ref.npc.id}`
+        case 'stone': return `stone:${ref.stone.id ?? state.stones.indexOf(ref.stone)}`
+        case 'stone-spawner': return `stone-spawner:${ref.spawner.id ?? state.stoneSpawners.indexOf(ref.spawner)}`
         case 'zone': return `zone:${ref.zone.id}`
         case 'sound-source': return `sound-source:${ref.source.id}`
         case 'sound-zone': return `sound-zone:${ref.zone.id}`

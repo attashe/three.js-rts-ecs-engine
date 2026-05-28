@@ -8,7 +8,6 @@ import {
     Velocity,
 } from '../components'
 import { MovingObjectKind } from '../../../game/moving-objects'
-import type { ChunkManager } from '../../voxel/chunk-manager'
 import {
     pushLog,
     pushScriptTriggerEvent,
@@ -21,8 +20,6 @@ import {
     isZoneActive,
     zoneAcceptsTrigger,
     type Zone,
-    type ZoneScriptAction,
-    type ZoneScriptBlockSpace,
     type ZoneTriggerEvent,
     type ZoneTriggerSource,
 } from '../zones'
@@ -50,7 +47,13 @@ interface Point {
  * arrow+zone pair and use a swept segment between ticks, so fast arrows can
  * still activate thin trigger volumes.
  */
-export function createZoneTriggerSystem(chunks: ChunkManager, opts: ZoneTriggerSystemOptions = {}): System {
+export function createZoneTriggerSystem(opts?: ZoneTriggerSystemOptions): System
+export function createZoneTriggerSystem(_legacyChunks: unknown, opts?: ZoneTriggerSystemOptions): System
+export function createZoneTriggerSystem(
+    optsOrLegacyChunks: ZoneTriggerSystemOptions | unknown = {},
+    maybeOpts?: ZoneTriggerSystemOptions,
+): System {
+    const opts = maybeOpts ?? (isZoneTriggerOptions(optsOrLegacyChunks) ? optsOrLegacyChunks : {})
     const activePlayers = new Set<string>()
     // Side-table of the metadata an exit event needs (zoneId, source,
     // entityId, last-seen point). Populated on enter, drained on exit.
@@ -83,10 +86,16 @@ export function createZoneTriggerSystem(chunks: ChunkManager, opts: ZoneTriggerS
                 return
             }
 
-            updatePlayerTriggers(world, chunks, zones, activePlayers, activePlayerMeta, opts.onTrigger, log)
-            updateArrowTriggers(world, chunks, zones, prevArrowCenter, firedArrows, opts.onTrigger, log, dt)
+            updatePlayerTriggers(world, zones, activePlayers, activePlayerMeta, opts.onTrigger, log)
+            updateArrowTriggers(world, zones, prevArrowCenter, firedArrows, opts.onTrigger, log, dt)
         },
     }
+}
+
+function isZoneTriggerOptions(value: unknown): value is ZoneTriggerSystemOptions {
+    return typeof value === 'object' &&
+        value !== null &&
+        ('onTrigger' in value || 'log' in value)
 }
 
 interface ActiveTriggerMeta {
@@ -108,7 +117,6 @@ function emitExit(world: GameWorld, meta: ActiveTriggerMeta): void {
 
 function updatePlayerTriggers(
     world: GameWorld,
-    chunks: ChunkManager,
     zones: Zone[],
     activePlayers: Set<string>,
     activePlayerMeta: Map<string, ActiveTriggerMeta>,
@@ -130,11 +138,9 @@ function updatePlayerTriggers(
             activePlayers.add(key)
             const point = entityCenter(world, eid)
             activePlayerMeta.set(key, { zoneId: zone.id, source: 'player', eid, point: { ...point } })
-            emitZoneTrigger(world, chunks, zone, 'player', eid, point, onTrigger, log)
-            // Mirror the existing trigger emission into the script
-            // engine queue. Keeps the legacy `executeZoneScript` path
-            // working for the still-in-use ZoneScriptAction surface
-            // until Slice 3 retires it.
+            emitZoneTrigger(world, zone, 'player', eid, point, onTrigger, log)
+            // Mirror the trigger emission into the script-engine queue
+            // so `on('zone-enter', ...)` handlers see it the next tick.
             pushScriptTriggerEvent(world, {
                 kind: 'zone-enter',
                 zoneId: zone.id,
@@ -158,7 +164,6 @@ function updatePlayerTriggers(
 
 function updateArrowTriggers(
     world: GameWorld,
-    chunks: ChunkManager,
     zones: Zone[],
     prevArrowCenter: Map<number, Point>,
     firedArrows: Set<string>,
@@ -188,7 +193,7 @@ function updateArrowTriggers(
             if (firedArrows.has(key)) continue
             if (!arrowIntersectsZone(world, eid, prev, curr, zone)) continue
             firedArrows.add(key)
-            emitZoneTrigger(world, chunks, zone, 'arrow', eid, curr, onTrigger, log)
+            emitZoneTrigger(world, zone, 'arrow', eid, curr, onTrigger, log)
             // Arrows pass through — emit only enter, never exit, so
             // scripts can react to "an arrow hit this zone" without
             // racing against an exit fired the same frame.
@@ -215,7 +220,6 @@ function updateArrowTriggers(
 
 function emitZoneTrigger(
     world: GameWorld,
-    chunks: ChunkManager,
     zone: Zone,
     source: ZoneTriggerSource,
     eid: number,
@@ -232,73 +236,7 @@ function emitZoneTrigger(
     }
     pushZoneEvent(world, event)
     if (log) pushLog(world, `Zone "${zone.label ?? zone.id}" triggered by ${source}.`)
-    executeZoneScript(world, chunks, zone)
     onTrigger?.(event, zone, world)
-}
-
-function executeZoneScript(world: GameWorld, chunks: ChunkManager, zone: Zone): void {
-    const actions = zone.script?.actions
-    if (!actions || actions.length === 0) return
-    for (let i = 0; i < actions.length; i++) {
-        executeZoneScriptAction(world, chunks, zone, actions[i]!)
-    }
-}
-
-function executeZoneScriptAction(
-    world: GameWorld,
-    chunks: ChunkManager,
-    zone: Zone,
-    action: ZoneScriptAction,
-): void {
-    if (action.type === 'message') {
-        const message = action.message.trim()
-        if (message) pushLog(world, message)
-        return
-    }
-    if (action.type === 'kill-player') {
-        const message = action.message?.trim()
-        if (message) pushLog(world, message)
-        world.deathSignal ??= 'killed-by-zone-script'
-        return
-    }
-    if (action.type === 'set-block') {
-        const p = resolveScriptCoord(zone, action.position, action.relativeTo)
-        chunks.setVoxel(p.x, p.y, p.z, safeBlock(action.block))
-        return
-    }
-    if (action.type === 'fill-blocks') {
-        const min = resolveScriptCoord(zone, action.min, action.relativeTo)
-        const max = resolveScriptCoord(zone, action.max, action.relativeTo)
-        const block = safeBlock(action.block)
-        for (let z = Math.min(min.z, max.z); z < Math.max(min.z, max.z); z++) {
-            for (let y = Math.min(min.y, max.y); y < Math.max(min.y, max.y); y++) {
-                for (let x = Math.min(min.x, max.x); x < Math.max(min.x, max.x); x++) {
-                    chunks.setVoxel(x, y, z, block)
-                }
-            }
-        }
-    }
-}
-
-function resolveScriptCoord(
-    zone: Zone,
-    coord: VoxelCoord,
-    relativeTo: ZoneScriptBlockSpace | undefined,
-): VoxelCoord {
-    const base = relativeTo === 'zone-min'
-        ? zone.min
-        : relativeTo === 'zone-max'
-            ? zone.max
-            : { x: 0, y: 0, z: 0 }
-    return {
-        x: Math.floor(base.x + coord.x),
-        y: Math.floor(base.y + coord.y),
-        z: Math.floor(base.z + coord.z),
-    }
-}
-
-function safeBlock(block: number): number {
-    return Math.max(0, Math.min(65535, Math.floor(block)))
 }
 
 function entityOverlapsZone(world: GameWorld, eid: number, zone: Zone): boolean {

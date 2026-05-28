@@ -5,8 +5,8 @@ import { serializeLevel } from '../engine/voxel/level-serializer'
 import {
     DEFAULT_AMBIENT_WEATHER,
     copyScriptEntry,
+    copyStonePlacement,
     copyStoneSpawner,
-    copyZoneScriptAction,
     type EditorLevelMeta,
 } from './editor-state'
 import {
@@ -60,6 +60,7 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
         name: meta.name,
         spawn: { ...meta.spawn },
         player: copyPlayerSettings(meta.player),
+        stones: meta.stones.length === 0 ? undefined : meta.stones.map(copyStonePlacement),
         stoneSpawners: meta.stoneSpawners.map(copyStoneSpawner),
         pickups: meta.coinPiles.map((pile) => ({
             position: { ...pile.position },
@@ -85,9 +86,6 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             min: { ...zone.min },
             max: { ...zone.max },
             triggerSources: zone.triggerSources ? [...zone.triggerSources] : undefined,
-            script: zone.script ? {
-                actions: zone.script.actions.map(copyZoneScriptAction),
-            } : undefined,
             portal: zone.portal ? { ...zone.portal } : undefined,
             interaction: zone.interaction ? {
                 prompt: zone.interaction.prompt,

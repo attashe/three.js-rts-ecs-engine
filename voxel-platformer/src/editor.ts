@@ -31,6 +31,8 @@ import { createPropPlaceSystem } from './editor/systems/prop-place-system'
 import { createPropRenderSystem } from './game/props/prop-system'
 import { createNpcPlaceSystem } from './editor/systems/npc-place-system'
 import { createNpcRenderSystem } from './game/npcs/npc-render-system'
+import { createStonePlaceSystem } from './editor/systems/stone-place-system'
+import { createStoneRenderSystem } from './editor/systems/stone-render-system'
 import { createSelectionGizmoSystem } from './editor/systems/selection-gizmo-system'
 import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
 import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
@@ -122,11 +124,13 @@ async function main(): Promise<void> {
         .addSystem(createWeatherZonePlaceSystem(engine.input, editorState), 'weatherZonePlace')
         .addSystem(createPropPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'propPlace')
         .addSystem(createNpcPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'npcPlace')
+        .addSystem(createStonePlaceSystem(engine.input, editorState), 'stonePlace')
         .addSystem(createPropRenderSystem(renderer.scene, {
             getProps: () => editorState.props,
             castShadows: true,
         }), 'propRender')
         .addSystem(createNpcRenderSystem(renderer.scene, { getNpcs: () => editorState.npcs }), 'npcRender')
+        .addSystem(createStoneRenderSystem(renderer.scene, editorState), 'stoneRender')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createTorchBlockRenderSystem(renderer.scene, chunks, {

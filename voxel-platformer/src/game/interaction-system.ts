@@ -24,33 +24,52 @@ interface ActiveBubble {
     targetId: string
     message: string
     expiresAt: number
+    /** Queued follow-up messages for the same target, FIFO. Drained
+     *  when the current bubble expires so back-to-back `ui.say` calls
+     *  to one target play sequentially instead of overwriting. */
+    queue: { message: string; seconds: number }[]
 }
 
 const PROJECT = new Vector3()
+const MAX_BUBBLES = 8
 
+/**
+ * Renders popup bubbles authored by `ui.say(...)` and the on-screen
+ * "press E" interaction prompt.
+ *
+ * Multi-bubble model: each `targetId` owns at most one visible bubble;
+ * follow-up `ui.say` calls for the same target queue and play
+ * sequentially when the current bubble expires. Bubbles for *different*
+ * targets render in parallel — two NPCs in the same scene each get
+ * their own DOM node positioned over their anchor. `ui.clear(targetId?)`
+ * dismisses bubbles early (per-target or all-at-once).
+ */
 export function createInteractionSystem(opts: InteractionSystemOptions): System {
-    let root: HTMLDivElement | null = null
-    let messageEl: HTMLDivElement | null = null
     let promptEl: HTMLDivElement | null = null
     let promptLabelEl: HTMLSpanElement | null = null
+    let bubbleLayer: HTMLDivElement | null = null
     let now = 0
     let lastPopupId = 0
-    let bubble: ActiveBubble | null = null
+    let lastClearId = 0
+    const bubbles = new Map<string, ActiveBubble>()
+    const bubbleEls = new Map<string, HTMLDivElement>()
 
     return {
         name: 'interaction',
         order: RenderOrder.cameraFollow + 6,
         init() {
             const built = buildPrompt()
-            root = built.root
-            messageEl = built.messageEl
             promptEl = built.promptEl
             promptLabelEl = built.promptLabelEl
-            document.body.appendChild(root)
+            bubbleLayer = built.bubbleLayer
+            document.body.appendChild(built.bubbleLayer)
+            document.body.appendChild(built.promptEl)
         },
         update(world, dt) {
             now += dt
+            consumePopupClears(world)
             consumePopupMessages(world)
+            expireBubbles()
             const player = playerInfo(world)
             const active = player && world.playerSettings.abilities.interact
                 ? nearestInteractionTarget(world, player)
@@ -66,15 +85,18 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
                     entityId: player.eid,
                 })
             }
-            renderPrompt(world, active)
+            renderPrompt(active)
+            renderBubbles(world)
         },
         dispose() {
-            root?.remove()
-            root = null
-            messageEl = null
+            for (const el of bubbleEls.values()) el.remove()
+            bubbleEls.clear()
+            bubbles.clear()
+            bubbleLayer?.remove()
+            promptEl?.remove()
+            bubbleLayer = null
             promptEl = null
             promptLabelEl = null
-            bubble = null
         },
     }
 
@@ -82,45 +104,133 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
         for (const msg of world.popupMessages) {
             if (msg.id <= lastPopupId) continue
             lastPopupId = msg.id
-            bubble = {
+            const existing = bubbles.get(msg.targetId)
+            if (existing) {
+                // Same target already has a bubble — queue the new
+                // message so it plays after the current one expires.
+                existing.queue.push({ message: msg.message, seconds: msg.seconds })
+                continue
+            }
+            if (bubbles.size >= MAX_BUBBLES) {
+                // Soft cap. Evict the bubble closest to expiry so a
+                // spammy quest can't pile up DOM nodes indefinitely.
+                evictOldestBubble()
+            }
+            bubbles.set(msg.targetId, {
                 targetId: msg.targetId,
                 message: msg.message,
                 expiresAt: now + msg.seconds,
-            }
+                queue: [],
+            })
         }
-        if (bubble && bubble.expiresAt <= now) bubble = null
     }
 
-    function renderPrompt(world: GameWorld, active: InteractionTarget | null): void {
-        if (!root || !messageEl || !promptEl || !promptLabelEl) return
+    function consumePopupClears(world: GameWorld): void {
+        for (const req of world.popupClears) {
+            if (req.id <= lastClearId) continue
+            lastClearId = req.id
+            if (req.targetId === null) {
+                bubbles.clear()
+                removeAllBubbleEls()
+                continue
+            }
+            bubbles.delete(req.targetId)
+            const el = bubbleEls.get(req.targetId)
+            if (el) {
+                el.remove()
+                bubbleEls.delete(req.targetId)
+            }
+        }
+    }
 
-        const bubbleTarget = bubble ? targetForId(world, bubble.targetId) : null
-        const target = bubbleTarget ?? active
-        if (!target) {
-            root.style.display = 'none'
+    function expireBubbles(): void {
+        for (const [id, bubble] of bubbles) {
+            if (bubble.expiresAt > now) continue
+            const next = bubble.queue.shift()
+            if (next) {
+                bubble.message = next.message
+                bubble.expiresAt = now + next.seconds
+                continue
+            }
+            bubbles.delete(id)
+            const el = bubbleEls.get(id)
+            if (el) {
+                el.remove()
+                bubbleEls.delete(id)
+            }
+        }
+    }
+
+    function evictOldestBubble(): void {
+        let oldestId: string | null = null
+        let oldestExpiry = Infinity
+        for (const [id, bubble] of bubbles) {
+            if (bubble.expiresAt < oldestExpiry) {
+                oldestExpiry = bubble.expiresAt
+                oldestId = id
+            }
+        }
+        if (oldestId !== null) {
+            bubbles.delete(oldestId)
+            const el = bubbleEls.get(oldestId)
+            if (el) {
+                el.remove()
+                bubbleEls.delete(oldestId)
+            }
+        }
+    }
+
+    function removeAllBubbleEls(): void {
+        for (const el of bubbleEls.values()) el.remove()
+        bubbleEls.clear()
+    }
+
+    function renderPrompt(active: InteractionTarget | null): void {
+        if (!promptEl || !promptLabelEl) return
+        if (!active) {
+            promptEl.style.display = 'none'
             return
         }
-
-        const screen = projectToScreen(target.anchor, opts.camera(), opts.domElement)
+        const screen = projectToScreen(active.anchor, opts.camera(), opts.domElement)
         if (!screen) {
-            root.style.display = 'none'
+            promptEl.style.display = 'none'
             return
         }
+        promptLabelEl.textContent = active.zone.interaction?.prompt ?? 'Interaction'
+        promptEl.style.display = 'block'
+        promptEl.style.left = `${screen.x}px`
+        promptEl.style.top = `${screen.y}px`
+    }
 
-        const activeMatchesBubble = active?.zone.id === bubble?.targetId
-        if (bubble && target.zone.id === bubble.targetId) {
-            messageEl.textContent = bubble.message
-            messageEl.style.display = 'block'
-            promptEl.style.display = activeMatchesBubble ? 'flex' : 'none'
-        } else {
-            messageEl.style.display = 'none'
-            promptEl.style.display = 'flex'
+    function renderBubbles(world: GameWorld): void {
+        if (!bubbleLayer) return
+        for (const [id, bubble] of bubbles) {
+            const target = targetForId(world, id)
+            // If the zone disappeared or deactivated, hide the bubble
+            // visually but leave the entry in the map so the seconds
+            // timer keeps ticking — the bubble re-appears if the zone
+            // re-activates within its lifetime.
+            let el = bubbleEls.get(id)
+            if (!el) {
+                el = buildBubbleEl(bubble.message)
+                bubbleLayer.appendChild(el)
+                bubbleEls.set(id, el)
+            } else {
+                el.textContent = bubble.message
+            }
+            if (!target) {
+                el.style.display = 'none'
+                continue
+            }
+            const screen = projectToScreen(target.anchor, opts.camera(), opts.domElement)
+            if (!screen) {
+                el.style.display = 'none'
+                continue
+            }
+            el.style.display = 'block'
+            el.style.left = `${screen.x}px`
+            el.style.top = `${screen.y}px`
         }
-        promptLabelEl.textContent = target.zone.interaction?.prompt ?? 'Interaction'
-
-        root.style.display = 'block'
-        root.style.left = `${screen.x}px`
-        root.style.top = `${screen.y}px`
     }
 }
 
@@ -146,7 +256,7 @@ function nearestInteractionTarget(
 
 function targetForId(world: GameWorld, targetId: string): InteractionTarget | null {
     const zone = world.zones.get(targetId)
-    if (!zone || !isInteractionZone(zone) || !isZoneActive(zone)) return null
+    if (!zone || !isZoneActive(zone)) return null
     return { zone, anchor: interactionAnchor(zone), distanceSq: 0 }
 }
 
@@ -181,14 +291,25 @@ function projectToScreen(point: VoxelCoord, camera: Camera, element: HTMLElement
 }
 
 function buildPrompt(): {
-    root: HTMLDivElement
-    messageEl: HTMLDivElement
     promptEl: HTMLDivElement
     promptLabelEl: HTMLSpanElement
+    bubbleLayer: HTMLDivElement
 } {
-    const root = document.createElement('div')
-    root.id = 'voxel-platformer-interaction'
-    Object.assign(root.style, {
+    // Bubbles live in their own pointer-events-none layer so each
+    // bubble can be positioned independently without parenting under
+    // a single root.
+    const bubbleLayer = document.createElement('div')
+    bubbleLayer.id = 'voxel-platformer-popups'
+    Object.assign(bubbleLayer.style, {
+        position: 'fixed',
+        inset: '0',
+        pointerEvents: 'none',
+        zIndex: '1340',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const promptEl = document.createElement('div')
+    promptEl.id = 'voxel-platformer-interaction-prompt'
+    Object.assign(promptEl.style, {
         position: 'fixed',
         display: 'none',
         transform: 'translate(-50%, 0)',
@@ -200,20 +321,8 @@ function buildPrompt(): {
         maxWidth: '240px',
     } satisfies Partial<CSSStyleDeclaration>)
 
-    const messageEl = document.createElement('div')
-    Object.assign(messageEl.style, {
-        marginBottom: '5px',
-        padding: '7px 9px',
-        borderRadius: '7px',
-        background: 'rgba(10, 13, 12, 0.84)',
-        border: '1px solid rgba(250, 238, 184, 0.36)',
-        boxShadow: '0 6px 22px rgba(0, 0, 0, 0.32)',
-        lineHeight: '1.25',
-        whiteSpace: 'normal',
-    } satisfies Partial<CSSStyleDeclaration>)
-
-    const promptEl = document.createElement('div')
-    Object.assign(promptEl.style, {
+    const inner = document.createElement('div')
+    Object.assign(inner.style, {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -228,10 +337,33 @@ function buildPrompt(): {
     } satisfies Partial<CSSStyleDeclaration>)
 
     const promptLabelEl = promptText('Interaction')
-    promptEl.append(keyBadge('E'), promptLabelEl)
+    inner.append(keyBadge('E'), promptLabelEl)
+    promptEl.appendChild(inner)
 
-    root.append(messageEl, promptEl)
-    return { root, messageEl, promptEl, promptLabelEl }
+    return { promptEl, promptLabelEl, bubbleLayer }
+}
+
+function buildBubbleEl(message: string): HTMLDivElement {
+    const el = document.createElement('div')
+    Object.assign(el.style, {
+        position: 'fixed',
+        transform: 'translate(-50%, -100%)',
+        marginTop: '-6px',
+        padding: '7px 9px',
+        borderRadius: '7px',
+        background: 'rgba(10, 13, 12, 0.84)',
+        border: '1px solid rgba(250, 238, 184, 0.36)',
+        boxShadow: '0 6px 22px rgba(0, 0, 0, 0.32)',
+        color: '#f7fbf0',
+        font: '12px ui-sans-serif, system-ui, sans-serif',
+        lineHeight: '1.25',
+        textAlign: 'center',
+        maxWidth: '240px',
+        whiteSpace: 'normal',
+        pointerEvents: 'none',
+    } satisfies Partial<CSSStyleDeclaration>)
+    el.textContent = message
+    return el
 }
 
 function keyBadge(key: string): HTMLSpanElement {
