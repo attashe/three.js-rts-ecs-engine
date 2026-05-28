@@ -12,6 +12,7 @@ import type { EditorState, EditorZone } from '../editor-state'
 
 const GENERIC_COLOUR = 0xff66cc
 const TRIGGER_COLOUR = 0x00e0ff
+const PORTAL_COLOUR = 0x7f8cff
 
 /**
  * Render-side editor overlay that draws a wireframe box for every
@@ -43,6 +44,13 @@ export function createZoneRenderSystem(scene: Scene, editorState: EditorState): 
         depthTest: false,
         depthWrite: false,
     })
+    const portalMaterial = new LineBasicMaterial({
+        color: PORTAL_COLOUR,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+    })
 
     interface Entry {
         line: LineSegments
@@ -51,7 +59,11 @@ export function createZoneRenderSystem(scene: Scene, editorState: EditorState): 
     const entries: Entry[] = []
 
     function isTriggerZone(zone: EditorZone): boolean {
-        return zone.kind === 'trigger' || (zone.triggerSources?.length ?? 0) > 0
+        return zone.kind === 'trigger' || zone.kind === 'portal' || !!zone.portal || (zone.triggerSources?.length ?? 0) > 0
+    }
+
+    function isPortalZone(zone: EditorZone): boolean {
+        return zone.kind === 'portal' || !!zone.portal
     }
 
     function buildLine(zone: EditorZone): LineSegments {
@@ -61,7 +73,7 @@ export function createZoneRenderSystem(scene: Scene, editorState: EditorState): 
         const box = new BoxGeometry(w, h, d)
         const edges = new EdgesGeometry(box)
         box.dispose()
-        const material = isTriggerZone(zone) ? triggerMaterial : genericMaterial
+        const material = isPortalZone(zone) ? portalMaterial : isTriggerZone(zone) ? triggerMaterial : genericMaterial
         const line = new LineSegments(edges, material)
         line.frustumCulled = false
         line.renderOrder = 998
@@ -80,7 +92,8 @@ export function createZoneRenderSystem(scene: Scene, editorState: EditorState): 
      *  rebuilds the box with the right material. */
     function fingerprint(zone: EditorZone): string {
         const trigger = isTriggerZone(zone) ? '1' : '0'
-        return `${zone.id}|${trigger}|${zone.min.x},${zone.min.y},${zone.min.z}|${zone.max.x},${zone.max.y},${zone.max.z}`
+        const portal = isPortalZone(zone) ? '1' : '0'
+        return `${zone.id}|${trigger}|${portal}|${zone.min.x},${zone.min.y},${zone.min.z}|${zone.max.x},${zone.max.y},${zone.max.z}`
     }
 
     return {
@@ -126,6 +139,7 @@ export function createZoneRenderSystem(scene: Scene, editorState: EditorState): 
             scene.remove(group)
             genericMaterial.dispose()
             triggerMaterial.dispose()
+            portalMaterial.dispose()
         },
     }
 }

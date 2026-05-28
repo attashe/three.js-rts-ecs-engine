@@ -97,6 +97,18 @@ test('zoneAcceptsTrigger: trigger zones default to player and can opt into arrow
     assert.equal(zoneAcceptsTrigger({ ...base, triggerSources: ['arrow'] }, 'arrow'), true)
 })
 
+test('zoneAcceptsTrigger: portal zones default to player activation', () => {
+    const portal = {
+        id: 'exit',
+        kind: 'portal',
+        min: { x: 0, y: 0, z: 0 },
+        max: { x: 1, y: 1, z: 1 },
+        portal: { targetLevelId: 'basement' },
+    }
+    assert.equal(zoneAcceptsTrigger(portal, 'player'), true)
+    assert.equal(zoneAcceptsTrigger(portal, 'arrow'), false)
+})
+
 test('ZoneTriggerSystem: player activates a trigger on enter, not every tick', () => {
     const world = createGameWorld()
     defineZone(world, {

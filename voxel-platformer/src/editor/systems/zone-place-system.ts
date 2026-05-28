@@ -62,15 +62,24 @@ function placeZone(world: GameWorld, state: EditorState, cursor: VoxelCoord, id:
         y: state.workingPlaneY + heightCells,
         z: min.z + size,
     }
+    const kind = state.zoneKind.trim() || 'generic'
+    const portalTarget = state.portalTargetLevelId.trim()
+    const portalArrival = state.portalArrivalId.trim()
     const zone: EditorZone = {
         id,
-        kind: state.zoneKind,
+        kind,
         label: state.zoneLabel.trim() || undefined,
         min,
         max,
-        triggerSources: triggerSourcesForMode(state.zoneTriggerMode),
+        triggerSources: kind === 'portal' ? ['player'] : triggerSourcesForMode(state.zoneTriggerMode),
         script: state.zoneScriptActions.length > 0
             ? { actions: state.zoneScriptActions.map(copyZoneScriptAction) }
+            : undefined,
+        portal: kind === 'portal' && portalTarget
+            ? {
+                targetLevelId: portalTarget,
+                targetArrivalId: portalArrival || undefined,
+            }
             : undefined,
     }
     state.zones.push(zone)

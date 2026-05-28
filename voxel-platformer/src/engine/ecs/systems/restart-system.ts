@@ -11,11 +11,15 @@ const REASON_LABEL: Record<DeathReason, string> = {
 
 /**
  * Render-side watcher that triggers a page reload when
- * `world.deathSignal` is set. A brief delay shows a "you died — restarting"
- * overlay so the user understands what happened. SessionStorage holds the
- * current playtest level so reload lands them back on the same map.
+ * `world.deathSignal` is set. A brief delay shows a restart overlay so
+ * the user understands what happened. By default it reloads the page;
+ * callers can provide `onRestart` to rebuild the current location in-place.
  */
-export function createRestartSystem(): System {
+export interface RestartSystemOptions {
+    onRestart?: (reason: DeathReason) => void | Promise<void>
+}
+
+export function createRestartSystem(opts: RestartSystemOptions = {}): System {
     let triggered = false
     let overlay: HTMLElement | null = null
 
@@ -31,7 +35,21 @@ export function createRestartSystem(): System {
             // feels jarring because the user has no idea why the page
             // suddenly blanked.
             setTimeout(() => {
-                window.location.reload()
+                if (!opts.onRestart) {
+                    window.location.reload()
+                    return
+                }
+                Promise.resolve(opts.onRestart(reason))
+                    .catch((err) => {
+                        console.error('Restart failed:', err)
+                        window.location.reload()
+                    })
+                    .finally(() => {
+                        overlay?.remove()
+                        overlay = null
+                        triggered = false
+                        world.deathSignal = null
+                    })
             }, 650)
         },
         dispose() {

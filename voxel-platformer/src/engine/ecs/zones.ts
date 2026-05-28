@@ -3,6 +3,16 @@ import type { GameWorld, VoxelCoord } from './world'
 export type ZoneTriggerSource = 'player' | 'arrow'
 export type ZoneScriptBlockSpace = 'world' | 'zone-min' | 'zone-max'
 
+export interface ZonePortal {
+    /** Project-library level id, usually the `.vplevel` filename without
+     *  extension, e.g. `castle-basement`. */
+    readonly targetLevelId: string
+    /** Optional zone id in the destination level. When present, travel
+     *  uses the zone's center X/Z and min Y as the player's foot
+     *  position instead of the destination level's authored spawn. */
+    readonly targetArrivalId?: string
+}
+
 export type ZoneScriptAction =
     | { readonly type: 'message'; readonly message: string }
     | { readonly type: 'kill-player'; readonly message?: string }
@@ -53,6 +63,10 @@ export interface Zone {
     readonly triggerSources?: readonly ZoneTriggerSource[]
     /** Optional data-driven actions executed when the trigger activates. */
     readonly script?: ZoneScript
+    /** Portal zones are ordinary trigger zones with a destination. They
+     *  default to player-only activation unless `triggerSources` says
+     *  otherwise. */
+    readonly portal?: ZonePortal
     /** Optional interaction affordance. Zones with `kind: "interact"` are
      *  sampled by the gameplay interaction system instead of firing
      *  automatic enter/exit trigger events. */
@@ -137,7 +151,7 @@ export function findZoneAtPoint(
 }
 
 export function isTriggerZone(zone: Zone): boolean {
-    return zone.kind === 'trigger' || (zone.triggerSources?.length ?? 0) > 0
+    return zone.kind === 'trigger' || zone.kind === 'portal' || zone.portal !== undefined || (zone.triggerSources?.length ?? 0) > 0
 }
 
 export function zoneAcceptsTrigger(zone: Zone, source: ZoneTriggerSource): boolean {

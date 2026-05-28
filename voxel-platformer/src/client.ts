@@ -1,8 +1,9 @@
 import { AmbientLight, DirectionalLight } from 'three'
+import { query } from 'bitecs'
 import { Engine } from './engine/engine'
 import { ChunkManager, ChunkRenderer, DEFAULT_PALETTE, createBlockLightSystem } from './engine/voxel'
 import type { System } from './engine/ecs/systems/system'
-import { RenderOrder } from './engine/ecs/systems/orders'
+import { FixedOrder, RenderOrder } from './engine/ecs/systems/orders'
 import { createRenderSyncSystem } from './engine/ecs/systems/render-sync-system'
 import { createCameraControlSystem } from './engine/ecs/systems/camera-control-system'
 import { createCameraFollowSystem } from './engine/ecs/systems/camera-follow-system'
@@ -26,12 +27,15 @@ import { createPlayerDeathSystem } from './engine/ecs/systems/player-death-syste
 import { createRestartSystem } from './engine/ecs/systems/restart-system'
 import { createAudioUnlockSystem } from './engine/ecs/systems/audio-unlock-system'
 import { createPlayerAudioListenerSystem } from './engine/ecs/systems/audio-listener-system'
-import { AudioEngine } from './engine/audio'
+import { AudioEngine, type SoundHandle } from './engine/audio'
+import { Pickup as PickupComponent, PickupValue, Position } from './engine/ecs/components'
+import { despawnEntity } from './engine/ecs/entity'
 import { generatePlatformerLevel } from './game/level'
 import { spawnPlayer } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
 import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/render-layers'
+import { disposeObject3D } from './engine/render/dispose-object'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { createTorchBlockRenderSystemV2 } from './game/torch-block-system-v2'
 import { getTorchSystem } from './engine/render/render-settings'
@@ -41,30 +45,71 @@ import { createSoundSourceSystem, createSoundZoneSystem, startEnvironment } from
 import { createPlayerLocomotionAudioSystem } from './game/player-audio'
 import { createEnvironmentFxSystem, createVisualFxZoneSystem } from './game/weather'
 import { createPropRenderSystem } from './game/props/prop-system'
+import { createNpcRenderSystem } from './game/npcs/npc-render-system'
+import { registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-runtime'
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
-import { defineZone } from './engine/ecs/zones'
+import { createDialogueController } from './game/dialogue-system'
+import { checkpointStorageKey, createSessionCheckpointStore, resolveSpawn, type CheckpointStore } from './game/checkpoint-store'
+import { defineZone, type Zone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
 import { createGameMenuSystem } from './game/game-menu-system'
 import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
-import { deserializeLevel } from './engine/voxel/level-serializer'
+import { copyPlayerSettings, type PlayerSettings } from './game/player-settings'
+import { deserializeLevel, serializeLevel } from './engine/voxel/level-serializer'
 import { consumePlaytestLevel } from './editor/playtest'
 import { levelMetaFromEditor } from './game/level-from-meta'
+import { loadLevelBufferById, normalizeLevelId } from './game/level-library'
 import type { EditorLevelMeta } from './editor/editor-state'
 import type { LevelMeta } from './game/level'
-import type { GameWorld } from './engine/ecs/world'
+import { pushLog, type GameWorld } from './engine/ecs/world'
+import type { ScriptEngineSystem } from './engine/script/script-engine-system'
+import type { FlagValue, ScriptEntry, TravelFacade } from './engine/script/types'
 import demoQuestSource from '../examples/scripts/demo-quest.js?raw'
+import lanternTrialSource from '../examples/scripts/lantern-trial.js?raw'
+import hasteShrineSource from '../examples/scripts/haste-shrine.js?raw'
+
+interface LoadedLocation {
+    id: string
+    meta: LevelMeta
+    chunks: ChunkManager
+    editorMeta?: EditorLevelMeta
+    sourceBuffer?: ArrayBuffer
+    restoredFlags?: Map<string, FlagValue>
+}
+
+interface ActiveLocation {
+    id: string
+    meta: LevelMeta
+    editorMeta?: EditorLevelMeta
+    sourceBuffer?: ArrayBuffer
+    checkpointStore: CheckpointStore
+    entryPlayerSettings: PlayerSettings
+    levelScripts: readonly ScriptEntry[]
+    npcRuntime: RegisteredNpcRuntime | null
+    scriptEngine: ScriptEngineSystem | null
+    environmentHandle: SoundHandle | null
+}
+
+interface LocationSnapshot {
+    buffer: ArrayBuffer
+    flags: Map<string, FlagValue>
+}
+
+interface SystemSlot {
+    readonly system: System
+    set(next: System | null): void
+}
 
 async function main(): Promise<void> {
     const engine = new Engine({ fixedHz: 60 })
     const { renderer, world } = engine
     const actions = createGameActionMap(engine.input)
+    const dialogue = createDialogueController({ input: engine.input })
     const audio = new AudioEngine()
     const audioReady = audio.loadManifest(GAME_AUDIO_MANIFEST)
     void audioReady.catch((err) => console.warn('Game audio failed to load:', err))
 
-    // Lighting. Sun from south-east, target at the centre of the demo level so
-    // the shadow camera covers the whole island.
     const defaultAmbient = new AmbientLight(0xffffff, 0.45)
     enablePlayerVisibility(defaultAmbient)
     renderer.scene.add(defaultAmbient)
@@ -79,63 +124,265 @@ async function main(): Promise<void> {
     sun.shadow.camera.near = 1
     sun.shadow.camera.far = 160
     sun.shadow.mapSize.set(1024, 1024)
-    // Player rig lives on a non-default render layer; opt the sun
-    // into illuminating + shadowing it. Without this the player
-    // appears unlit and casts no sun shadow.
     castShadowOnPlayer(sun)
     renderer.scene.add(sun)
     renderer.scene.add(sun.target)
 
-    // Voxel world + level + chunk renderer.
     const chunks = new ChunkManager(DEFAULT_PALETTE)
-    const meta = loadLevel(chunks)
-    const hasAuthoredEnvironmentFx = Boolean(meta.ambientWeather)
-    defaultAmbient.visible = !hasAuthoredEnvironmentFx
-    sun.visible = !hasAuthoredEnvironmentFx
-    sun.target.position.set(meta.size / 2, 0, meta.size / 2)
-    const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
-    chunkRenderer.rebuildAll()
+    const titleOverlay = mountLocationTitle()
+    const snapshots = new Map<string, LocationSnapshot>()
+    let active: ActiveLocation | null = null
+    let locationVersion = 0
+    let travelInFlight = false
 
-    spawnPlayer(world, { spawn: meta.spawn })
-    for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
-    for (const piston of meta.pistons) registerPistonMechanism(world, chunks, piston)
-    for (const zone of meta.zones) defineZone(world, zone)
+    const slots = {
+        soundSources: createSystemSlot('soundSources', false, 0),
+        soundZones: createSystemSlot('soundZones', false, RenderOrder.cameraFollow + 2),
+        environmentFx: createSystemSlot('environmentFx', false, RenderOrder.cameraFollow + 2),
+        visualFxZones: createSystemSlot('visualFxZones', false, RenderOrder.cameraFollow + 3),
+        propRender: createSystemSlot('propRender', false, RenderOrder.worldRender + 3),
+        npcRender: createSystemSlot('npcRender', false, RenderOrder.worldRender + 1),
+        piston: createSystemSlot('piston', true, FixedOrder.mechanisms),
+        zoneTrigger: createSystemSlot('zoneTrigger', true, FixedOrder.postPhysics - 20),
+        scriptEngine: createSystemSlot('scriptEngine', true, FixedOrder.postPhysics + 5),
+        stoneSpawner: createSystemSlot('stoneSpawner', true, FixedOrder.input + 10),
+        blockLights: createSystemSlot('blockLights', false, RenderOrder.blockLights),
+        chunkRender: createSystemSlot('chunkRender', false, RenderOrder.worldRender),
+        torchBlocks: createSystemSlot('torchBlocks', false, RenderOrder.worldRender + 2),
+    }
+    const allSlots = Object.values(slots)
 
-    // Centre the camera on the player from the very first frame so we don't
-    // see a "fly-in" from the world origin.
-    renderer.iso.target.set(meta.spawn.x, meta.spawn.y, meta.spawn.z)
-    renderer.iso.syncPosition()
-
-    // Wrap chunk-meshing as a render-step system so it integrates with the engine loop.
-    const chunkRenderSystem: System = {
-        name: 'chunkRender',
-        order: RenderOrder.worldRender,
-        update: () => chunkRenderer.update(),
-        dispose: () => chunkRenderer.dispose(),
+    const travelFacade: TravelFacade = {
+        to(levelId, opts) {
+            void travelTo(levelId, { arrivalId: opts?.arrivalId })
+        },
+        reload(opts) {
+            void restartCurrent(opts?.arrivalId)
+        },
     }
 
-    // Level-wide ambient bed — starts once audio is unlocked. Routes
-    // through music-bus or sfx-bus depending on whether the chosen
-    // asset is declared under `music` or `sounds` in the manifest.
-    // Authoring `(none)` in the editor leaves `meta.environment`
-    // undefined ⇒ playtest is genuinely silent.
-    void audioReady.then(() => startEnvironment(audio, meta.environment, GAME_AUDIO_MANIFEST))
+    async function travelTo(levelId: string, opts: { arrivalId?: string } = {}): Promise<void> {
+        if (travelInFlight) return
+        const targetId = normalizeLevelId(levelId)
+        if (!targetId) return
+        travelInFlight = true
+        const carried = currentPlayerSettings(world)
+        try {
+            const loaded = await loadProjectLocation(targetId, snapshots)
+            activateLocation(loaded, {
+                arrivalId: opts.arrivalId,
+                playerSettings: carried,
+                saveCurrent: true,
+                useCheckpoint: false,
+            })
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            console.error('Travel failed:', err)
+            pushLog(world, `Travel failed: ${msg}`)
+        } finally {
+            travelInFlight = false
+        }
+    }
 
-    const environmentFx = createEnvironmentFxSystem(
-        renderer.scene,
-        meta.ambientWeather,
-        () => renderer.iso.camera,
-        () => renderer.iso.target,
-    )
+    async function restartCurrent(arrivalId?: string): Promise<void> {
+        const current = active
+        if (!current || travelInFlight) return
+        travelInFlight = true
+        try {
+            const loaded = await loadLocationForRestart(current, chunks)
+            activateLocation(loaded, {
+                arrivalId,
+                playerSettings: current.entryPlayerSettings,
+                saveCurrent: false,
+                useCheckpoint: true,
+            })
+        } finally {
+            travelInFlight = false
+        }
+    }
+
+    function activateLocation(
+        loaded: LoadedLocation,
+        opts: {
+            arrivalId?: string
+            playerSettings: PlayerSettings
+            saveCurrent: boolean
+            useCheckpoint: boolean
+        },
+    ): void {
+        if (opts.saveCurrent) captureCurrentSnapshot()
+        cleanupActiveLocation()
+        clearRuntimeWorld(world)
+        replaceChunks(chunks, loaded.chunks)
+
+        const version = ++locationVersion
+        const meta = loaded.meta
+        const checkpointStore = createSessionCheckpointStore(checkpointStorageKey(loaded.id))
+        const authoredSpawn = resolveArrival(meta, opts.arrivalId) ?? meta.spawn
+        const effectiveSpawn = opts.useCheckpoint ? resolveSpawn(authoredSpawn, checkpointStore) : authoredSpawn
+        world.lastCheckpoint = opts.useCheckpoint ? checkpointStore.get() : null
+        world.playerSettings = copyPlayerSettings(opts.playerSettings)
+        world.inventory.gold = world.playerSettings.inventory.gold
+        world.inventory.arrows = world.playerSettings.inventory.arrows
+
+        spawnPlayer(world, { spawn: effectiveSpawn, settings: world.playerSettings })
+        for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
+        for (const piston of meta.pistons) registerPistonMechanism(world, chunks, piston)
+        for (const zone of meta.zones) defineZone(world, zone)
+        const npcRuntime = registerRuntimeNpcs(world, meta.npcs)
+        const levelScripts = [...meta.scripts, ...npcRuntime.scripts]
+
+        const nextActive: ActiveLocation = {
+            id: loaded.id,
+            meta,
+            editorMeta: loaded.editorMeta,
+            sourceBuffer: loaded.sourceBuffer,
+            checkpointStore,
+            entryPlayerSettings: copyPlayerSettings(opts.playerSettings),
+            levelScripts,
+            npcRuntime,
+            scriptEngine: null,
+            environmentHandle: null,
+        }
+        active = nextActive
+
+        defaultAmbient.visible = !meta.ambientWeather
+        sun.visible = !meta.ambientWeather
+        sun.target.position.set(meta.size / 2, 0, meta.size / 2)
+        renderer.iso.target.set(effectiveSpawn.x, effectiveSpawn.y, effectiveSpawn.z)
+        renderer.iso.syncPosition()
+
+        installLocationSystems(nextActive, loaded.restoredFlags)
+        void audioReady.then(() => {
+            if (version !== locationVersion || active !== nextActive) return
+            nextActive.environmentHandle = startEnvironment(audio, meta.environment, GAME_AUDIO_MANIFEST)
+        })
+        titleOverlay.show(meta.name)
+    }
+
+    function installLocationSystems(location: ActiveLocation, initialFlags?: ReadonlyMap<string, FlagValue>): void {
+        const meta = location.meta
+        const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
+        chunkRenderer.rebuildAll()
+        const environmentFx = createEnvironmentFxSystem(
+            renderer.scene,
+            meta.ambientWeather,
+            () => renderer.iso.camera,
+            () => renderer.iso.target,
+        )
+        const visualFxZones = createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, { audioReady })
+        const scriptEngine = createGameScriptSystem({
+            world,
+            chunks,
+            audio,
+            audioManifest: GAME_AUDIO_MANIFEST,
+            weatherSystem: environmentFx.weatherSystem,
+            visualFxZones: visualFxZones.controller,
+            dialogue: dialogue.facade,
+            travel: travelFacade,
+            level: meta,
+            checkpointStore: location.checkpointStore,
+            initialFlags,
+            getScripts: () => location.levelScripts,
+        })
+        location.scriptEngine = scriptEngine
+
+        slots.soundSources.set(createSoundSourceSystem(audio, meta.soundSources, { audioReady }))
+        slots.soundZones.set(createSoundZoneSystem(audio, meta.soundZones, { audioReady }))
+        slots.environmentFx.set(environmentFx)
+        slots.visualFxZones.set(visualFxZones)
+        slots.propRender.set(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }))
+        slots.npcRender.set(createNpcRenderSystem(renderer.scene, { getNpcs: () => meta.npcs }))
+        slots.piston.set(createPistonSystem(chunks, {
+            onFlip: (piston, position) => {
+                if (!piston.moveSoundId) return
+                try {
+                    audio.playSpatial(piston.moveSoundId, position, {
+                        deferUntilUnlocked: true,
+                        volume: piston.moveSoundVolume ?? 1,
+                        refDistance: 2,
+                        maxDistance: 24,
+                        rolloffModel: 'inverse',
+                    })
+                } catch (err) {
+                    console.warn(`Piston move sound "${piston.moveSoundId}" failed:`, err)
+                }
+            },
+        }))
+        slots.zoneTrigger.set(createZoneTriggerSystem(chunks, {
+            onTrigger: (event, zone) => {
+                if (event.source !== 'player') return
+                if (!zone.portal?.targetLevelId) return
+                void travelTo(zone.portal.targetLevelId, { arrivalId: zone.portal.targetArrivalId })
+            },
+        }))
+        slots.scriptEngine.set(scriptEngine)
+        slots.stoneSpawner.set(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }))
+        slots.blockLights.set(createBlockLightSystem(chunks, {
+            scene: renderer.scene,
+            camera: () => renderer.iso.camera,
+        }))
+        slots.chunkRender.set({
+            name: 'chunkRender',
+            order: RenderOrder.worldRender,
+            update: () => chunkRenderer.update(),
+            dispose: () => chunkRenderer.dispose(),
+        })
+        slots.torchBlocks.set(
+            getTorchSystem() === 'experimental'
+                ? createTorchBlockRenderSystemV2(renderer.scene, chunks, {
+                    focus: () => renderer.iso.target,
+                    audio,
+                    audioReady,
+                    soundId: GameAudio.TorchFire,
+                })
+                : createTorchBlockRenderSystem(renderer.scene, chunks, {
+                    focus: () => renderer.iso.target,
+                    audio,
+                    audioReady,
+                    soundId: GameAudio.TorchFire,
+                }),
+        )
+    }
+
+    function captureCurrentSnapshot(): void {
+        if (!active?.editorMeta) return
+        active.editorMeta.pickups = captureLiveEditorPickups(world)
+        snapshots.set(active.id, {
+            buffer: serializeLevel(chunks, active.editorMeta),
+            flags: new Map(active.scriptEngine?.flags ?? []),
+        })
+    }
+
+    function cleanupActiveLocation(): void {
+        if (active?.scriptEngine) active.scriptEngine.runtime.emit('level.reset')
+        active?.environmentHandle?.stop(0.25)
+        active?.npcRuntime?.dispose()
+        audio.stopMusic(0.35)
+        for (const slot of allSlots) slot.set(null)
+        if (active) {
+            active.scriptEngine = null
+            active.environmentHandle = null
+            active.npcRuntime = null
+        }
+    }
+
+    const initial = await loadInitialLocation()
+    activateLocation(initial, {
+        playerSettings: copyPlayerSettings(initial.meta.player),
+        saveCurrent: false,
+        useCheckpoint: true,
+    })
 
     engine
         .addSystem(createSunFollowSystem(sun, () => renderer.iso.target), 'sunFollow')
         .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
-        .addSystem(createSoundSourceSystem(audio, meta.soundSources, { audioReady }), 'soundSources')
-        .addSystem(createSoundZoneSystem(audio, meta.soundZones, { audioReady }), 'soundZones')
-        .addSystem(environmentFx, 'environmentFx')
-        .addSystem(createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, { audioReady }), 'visualFxZones')
-        .addSystem(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }), 'propRender')
+        .addSystem(slots.soundSources.system, 'soundSources')
+        .addSystem(slots.soundZones.system, 'soundZones')
+        .addSystem(slots.environmentFx.system, 'environmentFx')
+        .addSystem(slots.visualFxZones.system, 'visualFxZones')
+        .addSystem(slots.propRender.system, 'propRender')
+        .addSystem(slots.npcRender.system, 'npcRender')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,
             onJump: () => audio.play(GameAudio.Jump, {
@@ -167,43 +414,11 @@ async function main(): Promise<void> {
                 { deferUntilUnlocked: true },
             ),
         }), 'pickup')
-        .addSystem(createPistonSystem(chunks, {
-            // Author-tagged movement sound. Fires once per teleport flip
-            // and once per physical arrival — at the piston's current
-            // cell so the falloff matches its visual position.
-            onFlip: (piston, position) => {
-                if (!piston.moveSoundId) return
-                try {
-                    audio.playSpatial(piston.moveSoundId, position, {
-                        deferUntilUnlocked: true,
-                        volume: piston.moveSoundVolume ?? 1,
-                        refDistance: 2,
-                        maxDistance: 24,
-                        rolloffModel: 'inverse',
-                    })
-                } catch (err) {
-                    console.warn(`Piston move sound "${piston.moveSoundId}" failed:`, err)
-                }
-            },
-        }), 'piston')
-        .addSystem(createZoneTriggerSystem(chunks), 'zoneTrigger')
-        .addSystem(createGameScriptSystem({
-            world,
-            chunks,
-            audio,
-            audioManifest: GAME_AUDIO_MANIFEST,
-            weatherSystem: environmentFx.weatherSystem,
-            getScripts: () => meta.scripts,
-        }), 'scriptEngine')
-        .addSystem(createFallingStoneSpawnerSystem(meta.stoneSpawners, { maxMovingStones: 12 }), 'stoneSpawner')
+        .addSystem(slots.piston.system, 'piston')
+        .addSystem(slots.zoneTrigger.system, 'zoneTrigger')
+        .addSystem(slots.scriptEngine.system, 'scriptEngine')
+        .addSystem(slots.stoneSpawner.system, 'stoneSpawner')
         .addSystem(createPhysicsSystem(chunks, {
-            // One-shot stone-impact sfx — fires every time a falling
-            // stone's vertical sweep is blocked at >4 m/s. Volume scales
-            // with the inbound speed so a stone settling at 5 m/s is
-            // much quieter than a 15 m/s slam, and a per-event pitch
-            // jitter keeps a multi-bounce settle from sounding robotic.
-            // Player landings get a louder dedicated "land.wav" via the
-            // locomotion system, so we filter strictly to Stone here.
             impactMinSpeed: 4.0,
             onImpact: (event) => {
                 if (event.movingObjectKind !== MovingObjectKind.Stone) return
@@ -232,35 +447,10 @@ async function main(): Promise<void> {
             },
         }), 'playerDeath')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
-        .addSystem(createBlockLightSystem(chunks, {
-            scene: renderer.scene,
-            camera: () => renderer.iso.camera,
-        }), 'blockLights')
-        .addSystem(chunkRenderSystem, 'chunkRender')
-        .addSystem(
-            // Pick the torch render system at startup based on the
-            // user setting. Switching requires a page reload — the
-            // two systems own different scene objects and can't be
-            // safely hot-swapped without disposing chunks of state.
-            getTorchSystem() === 'experimental'
-                ? createTorchBlockRenderSystemV2(renderer.scene, chunks, {
-                    focus: () => renderer.iso.target,
-                    audio,
-                    audioReady,
-                    soundId: GameAudio.TorchFire,
-                })
-                : createTorchBlockRenderSystem(renderer.scene, chunks, {
-                    focus: () => renderer.iso.target,
-                    audio,
-                    audioReady,
-                    soundId: GameAudio.TorchFire,
-                }),
-            'torchBlocks',
-        )
+        .addSystem(slots.blockLights.system, 'blockLights')
+        .addSystem(slots.chunkRender.system, 'chunkRender')
+        .addSystem(slots.torchBlocks.system, 'torchBlocks')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
-        // Push the log panel below the top-right ↻ Restart / ← Editor
-        // buttons so it doesn't cover them. Buttons sit at top: 8px with
-        // ~28 px height — start the log at 48 px to leave a clear gap.
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
             logPosition: { top: '48px', right: '8px', maxWidth: '320px' },
         }), 'debugOverlay')
@@ -268,12 +458,13 @@ async function main(): Promise<void> {
             renderElement: renderer.webgpu.domElement,
             exitHref: './editor.html',
         }), 'gameMenu')
+        .addSystem(dialogue.system, 'dialogue')
         .addSystem(createInteractionSystem({
             actions,
             camera: () => renderer.iso.camera,
             domElement: renderer.webgpu.domElement,
         }), 'interaction')
-        .addSystem(createRestartSystem(), 'restart')
+        .addSystem(createRestartSystem({ onRestart: () => restartCurrent() }), 'restart')
         .addSystem(createCameraControlSystem(renderer.iso, engine.input, actions, {
             keyboardPan: false,
             edgePan: false,
@@ -288,12 +479,249 @@ async function main(): Promise<void> {
     await engine.start()
 }
 
-/**
- * Top-right "↻ Restart" button. Sets `world.deathSignal = 'manual-restart'`
- * which the `restart-system` picks up to trigger a page reload. Always
- * mounted (works in demo + playtest); when in playtest, sits next to the
- * "← Editor" button.
- */
+function createSystemSlot(name: string, fixed: boolean, order: number): SystemSlot {
+    let current: System | null = null
+    let activeWorld: GameWorld | null = null
+    const system: System = {
+        name,
+        fixed,
+        order,
+        init(world) {
+            activeWorld = world
+            current?.init?.(world)
+        },
+        update(world, dt) {
+            current?.update(world, dt)
+        },
+        dispose() {
+            current?.dispose?.()
+            current = null
+            activeWorld = null
+        },
+    }
+    return {
+        system,
+        set(next) {
+            current?.dispose?.()
+            current = next
+            if (current && activeWorld) current.init?.(activeWorld)
+        },
+    }
+}
+
+function clearRuntimeWorld(world: GameWorld): void {
+    const entities = [...query(world, [Position])]
+    for (const eid of entities) despawnEntity(world, eid)
+    for (const obj of world.object3DByEid.values()) {
+        obj.removeFromParent()
+        disposeObject3D(obj)
+    }
+    world.object3DByEid.clear()
+    world.obstacles.clear()
+    world.pickupMetaByEid.clear()
+    world.pickupEntityByScriptId.clear()
+    world.pistons.length = 0
+    world.zones.clear()
+    world.zoneEvents.length = 0
+    world.popupMessages.length = 0
+    world.nextPopupMessageId = 1
+    world.scriptTriggerEvents.length = 0
+    world.deathSignal = null
+    world.lastCheckpoint = null
+}
+
+function replaceChunks(target: ChunkManager, source: ChunkManager): void {
+    target.clear()
+    target.replacePalette(source.palette)
+    copyChunks(source, target)
+}
+
+function copyChunks(src: ChunkManager, dst: ChunkManager): void {
+    for (const chunk of [...src.allChunks()]) {
+        for (let z = 0; z < 32; z++) {
+            for (let y = 0; y < 32; y++) {
+                for (let x = 0; x < 32; x++) {
+                    const v = chunk.getLocal(x, y, z)
+                    if (v !== 0) {
+                        dst.setVoxel(chunk.cx * 32 + x, chunk.cy * 32 + y, chunk.cz * 32 + z, v)
+                    }
+                }
+            }
+        }
+    }
+}
+
+function currentPlayerSettings(world: GameWorld): PlayerSettings {
+    const settings = copyPlayerSettings(world.playerSettings)
+    settings.inventory.gold = world.inventory.gold
+    settings.inventory.arrows = world.inventory.arrows
+    return settings
+}
+
+function captureLiveEditorPickups(world: GameWorld): EditorLevelMeta['pickups'] {
+    const out: EditorLevelMeta['pickups'] = []
+    const pickups = query(world, [PickupComponent, PickupValue, Position])
+    for (let i = 0; i < pickups.length; i++) {
+        const eid = pickups[i]!
+        if (world.pickupMetaByEid.has(eid)) continue
+        if (PickupValue.kind[eid] !== PickupKind.Gold) continue
+        out.push({
+            kind: PickupValue.kind[eid],
+            amount: PickupValue.amount[eid],
+            position: {
+                x: Position.x[eid],
+                y: Position.y[eid],
+                z: Position.z[eid],
+            },
+        })
+    }
+    return out
+}
+
+function resolveArrival(meta: LevelMeta, arrivalId: string | undefined): { x: number; y: number; z: number } | null {
+    const id = arrivalId?.trim()
+    if (!id) return null
+    const zone = meta.zones.find((z) => z.id === id)
+    if (!zone) return null
+    return zoneSpawnPoint(zone)
+}
+
+function zoneSpawnPoint(zone: Zone): { x: number; y: number; z: number } {
+    return {
+        x: (zone.min.x + zone.max.x) * 0.5,
+        y: zone.min.y,
+        z: (zone.min.z + zone.max.z) * 0.5,
+    }
+}
+
+async function loadInitialLocation(): Promise<LoadedLocation> {
+    const params = new URLSearchParams(window.location.search)
+    const requested = params.get('level')
+    if (requested === 'playtest') {
+        const buffer = consumePlaytestLevel()
+        if (buffer) {
+            try {
+                return loadedEditorLocationFromBuffer('playtest', buffer)
+            } catch (err) {
+                console.error('Playtest level failed to load — falling back to demo:', err)
+            }
+        }
+    } else if (requested && requested !== 'demo') {
+        try {
+            return await loadProjectLocation(requested, new Map())
+        } catch (err) {
+            console.error(`Project level "${requested}" failed to load — falling back to demo:`, err)
+        }
+    }
+    return loadDemoLocation()
+}
+
+async function loadProjectLocation(
+    id: string,
+    snapshots: ReadonlyMap<string, LocationSnapshot>,
+): Promise<LoadedLocation> {
+    const normalized = normalizeLevelId(id)
+    if (normalized === 'demo') return loadDemoLocation()
+    const snapshot = snapshots.get(normalized)
+    if (snapshot) {
+        return {
+            ...loadedEditorLocationFromBuffer(normalized, snapshot.buffer),
+            restoredFlags: new Map(snapshot.flags),
+        }
+    }
+    return loadedEditorLocationFromBuffer(normalized, await loadLevelBufferById(normalized))
+}
+
+async function loadLocationForRestart(active: ActiveLocation, chunks: ChunkManager): Promise<LoadedLocation> {
+    if (active.sourceBuffer) return loadedEditorLocationFromBuffer(active.id, active.sourceBuffer)
+    if (active.editorMeta) {
+        return loadedEditorLocationFromBuffer(active.id, serializeLevel(chunks, active.editorMeta))
+    }
+    return loadDemoLocation()
+}
+
+function loadedEditorLocationFromBuffer(id: string, buffer: ArrayBuffer): LoadedLocation {
+    const loaded = deserializeLevel<EditorLevelMeta>(buffer)
+    const size = Math.max(24, Math.ceil(Math.max(
+        loaded.metadata.spawn.x,
+        loaded.metadata.spawn.z,
+    )) * 2)
+    const locationId = normalizeLevelId(id === 'playtest' ? loaded.metadata.name || id : id)
+    return {
+        id: locationId,
+        meta: levelMetaFromEditor(loaded.metadata, size),
+        editorMeta: loaded.metadata,
+        sourceBuffer: buffer.slice(0),
+        chunks: loaded.chunks,
+    }
+}
+
+function loadDemoLocation(): LoadedLocation {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const demo = generatePlatformerLevel(chunks)
+    demo.scripts = [
+        {
+            id: 'demo-quest',
+            name: 'demo-quest.js',
+            source: demoQuestSource,
+            fromFile: true,
+            sourcePath: 'examples/scripts/demo-quest.js',
+        },
+        {
+            id: 'lantern-trial',
+            name: 'lantern-trial.js',
+            source: lanternTrialSource,
+            fromFile: true,
+            sourcePath: 'examples/scripts/lantern-trial.js',
+        },
+        {
+            id: 'haste-shrine',
+            name: 'haste-shrine.js',
+            source: hasteShrineSource,
+            fromFile: true,
+            sourcePath: 'examples/scripts/haste-shrine.js',
+        },
+    ]
+    return { id: 'demo', meta: demo, chunks }
+}
+
+function mountLocationTitle(): { show(name: string): void } {
+    const el = document.createElement('div')
+    el.style.cssText = [
+        'position: fixed',
+        'top: 48px',
+        'left: 50%',
+        'transform: translateX(-50%)',
+        'z-index: 1100',
+        'padding: 8px 14px',
+        'border-radius: 4px',
+        'background: rgba(8, 12, 16, 0.72)',
+        'color: #d9f7ff',
+        'font: 600 13px ui-sans-serif, system-ui, sans-serif',
+        'letter-spacing: 0.04em',
+        'text-transform: uppercase',
+        'opacity: 0',
+        'transition: opacity 240ms ease',
+        'pointer-events: none',
+        'border: 1px solid rgba(217, 247, 255, 0.18)',
+        'box-shadow: 0 6px 24px rgba(0,0,0,0.28)',
+    ].join('; ')
+    document.body.appendChild(el)
+    let timer = 0
+    return {
+        show(name) {
+            window.clearTimeout(timer)
+            el.textContent = name || 'Untitled'
+            el.style.opacity = '1'
+            timer = window.setTimeout(() => { el.style.opacity = '0' }, 2200)
+        },
+    }
+}
+
+function isPlaytestMode(): boolean {
+    return new URLSearchParams(window.location.search).get('level') === 'playtest'
+}
+
 function mountRestartButton(world: GameWorld): void {
     const btn = document.createElement('button')
     btn.textContent = '↻ Restart'
@@ -314,67 +742,6 @@ function mountRestartButton(world: GameWorld): void {
     document.body.appendChild(btn)
 }
 
-function isPlaytestMode(): boolean {
-    return new URLSearchParams(window.location.search).get('level') === 'playtest'
-}
-
-/**
- * Pick the level the game should load. In playtest mode we deserialize the
- * editor-authored level from session storage and translate its metadata into
- * the runtime `LevelMeta` (mapping editor pickups to coin piles, passing
- * pistons / zones / sound sources through). The procedural demo level is the
- * fallback when there's
- * no playtest snapshot, so the game URL still works as a standalone entry.
- */
-function loadLevel(chunks: ChunkManager): LevelMeta {
-    if (isPlaytestMode()) {
-        const buffer = consumePlaytestLevel()
-        if (buffer) {
-            try {
-                const loaded = deserializeLevel<EditorLevelMeta>(buffer)
-                chunks.replacePalette(loaded.chunks.palette)
-                copyChunks(loaded.chunks, chunks)
-                const size = Math.max(24, Math.ceil(Math.max(
-                    loaded.metadata.spawn.x,
-                    loaded.metadata.spawn.z,
-                )) * 2)
-                return levelMetaFromEditor(loaded.metadata, size)
-            } catch (err) {
-                console.error('Playtest level failed to load — falling back to demo:', err)
-            }
-        }
-    }
-    const demo = generatePlatformerLevel(chunks)
-    demo.scripts = [{
-        id: 'demo-quest',
-        name: 'demo-quest.js',
-        source: demoQuestSource,
-        fromFile: true,
-        sourcePath: 'examples/scripts/demo-quest.js',
-    }]
-    return demo
-}
-
-function copyChunks(src: ChunkManager, dst: ChunkManager): void {
-    for (const chunk of [...src.allChunks()]) {
-        for (let z = 0; z < 32; z++) {
-            for (let y = 0; y < 32; y++) {
-                for (let x = 0; x < 32; x++) {
-                    const v = chunk.getLocal(x, y, z)
-                    if (v !== 0) {
-                        dst.setVoxel(chunk.cx * 32 + x, chunk.cy * 32 + y, chunk.cz * 32 + z, v)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Tiny "← Editor" link in the top-right that ships the player back to the
- * editor when they're running a playtest. Mounted as a static DOM element
- * (no Three / ECS plumbing) so it doesn't grow a custom system.
- */
 function mountBackToEditorButton(): void {
     const btn = document.createElement('a')
     btn.href = './editor.html'

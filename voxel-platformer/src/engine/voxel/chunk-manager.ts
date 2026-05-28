@@ -154,6 +154,14 @@ export class ChunkManager {
         for (const c of this.chunks.values()) yield c
     }
 
+    /** Remove every chunk and dirty marker. Used by level hot-swap paths
+     *  that dispose the current renderer before loading a new location. */
+    clear(): void {
+        this.chunks.clear()
+        this.dirty.clear()
+        this.bulkDirty?.clear()
+    }
+
     /** Drain the dirty set. Caller is expected to remesh each chunk. */
     drainDirty(): Chunk[] {
         const out: Chunk[] = []
