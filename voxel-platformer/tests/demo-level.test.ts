@@ -72,6 +72,16 @@ test('demo level has a paid portal shrine and dormant magic gate FX', () => {
     assert.equal(fx?.enabled, false)
 })
 
+test('demo level includes a lava pond authored as lethal lava blocks', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    generatePlatformerLevel(chunks)
+
+    assert.equal(chunks.getVoxel(16, 4, 4), BLOCK.lava, 'lava pond center should be lava at ground level')
+    assert.equal(chunks.getVoxel(16, 5, 4), BLOCK.air, 'lava pond should expose the liquid surface')
+    assert.equal(chunks.getVoxel(18, 4, 4), BLOCK.lava, 'lava pond should have visible width for surface rendering')
+    assert.equal(chunks.getVoxel(16, 3, 4), BLOCK.stone, 'lava pond should have a stone bed')
+})
+
 test('teleport garden returns to the demo arrival instead of the default spawn', () => {
     const meta = generateTeleportGardenLevel(new ChunkManager(DEFAULT_PALETTE))
     const arrival = meta.zones.find((zone) => zone.id === TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID)
@@ -91,9 +101,7 @@ test('teleport garden is authored as a small park destination', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const meta = generateTeleportGardenLevel(chunks)
 
-    const pondFx = meta.weatherZones.find((zone) => zone.id === 'fx.teleport-garden.pond-water')
-    assert.equal(pondFx?.presetId, 'water')
-    assert.equal(pondFx?.position.y, 4.35)
+    assert.equal(meta.weatherZones.some((zone) => zone.id === 'fx.teleport-garden.pond-water'), false)
     assert.ok(meta.weatherZones.some((zone) => zone.id === 'fx.teleport-garden.falling-leaves' && zone.presetId === 'leaves'))
     assert.ok(meta.props.some((prop) => prop.id === 'teleport-garden:picnic-table' && prop.kind === 'table-2'))
     assert.ok(meta.props.some((prop) => prop.id === 'teleport-garden:sundial' && prop.kind === 'sundial'))
@@ -101,7 +109,9 @@ test('teleport garden is authored as a small park destination', () => {
     assert.equal(meta.coinPiles.length, 3)
     assert.equal(chunks.getVoxel(8, 4, 9), BLOCK.water, 'pond water should sit in the carved ground layer')
     assert.equal(chunks.getVoxel(8, 5, 9), BLOCK.air, 'pond should not float one layer above the terrain')
-    assert.equal(chunks.getVoxel(10, 4, 10), BLOCK.plank, 'boardwalk should remain dry after carving the pond')
+    assert.equal(chunks.getVoxel(10, 4, 10), BLOCK.water, 'pond center should stay open for liquid-surface previews')
+    assert.equal(chunks.getVoxel(7, 4, 8), BLOCK.water, 'pond should be wider than the original compact oval')
+    assert.equal(chunks.getVoxel(13, 4, 8), BLOCK.water, 'pond should be wider than the original compact oval')
 })
 
 test('procedural travel markers do not create per-voxel point lights', () => {

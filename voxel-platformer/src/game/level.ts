@@ -106,6 +106,17 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         // East cliff: dirt body capped with stone; hosts the stone spawners.
         .fill([22, 23], [groundY + 1, cliffTop - 1], [2, 6], BLOCK.dirt)
         .fill([22, 23], [cliffTop, cliffTop], [2, 6], BLOCK.stone)
+        // Contact hazard for the lava block surface and player death path.
+        .pond({
+            center: { x: 16.5, z: 4.5 },
+            radiusX: 2.6,
+            radiusZ: 1.8,
+            waterY: groundY,
+            shoreWidth: 1.0,
+            shoreBlock: BLOCK.stone,
+            bedBlock: BLOCK.stone,
+            waterBlock: BLOCK.lava,
+        })
         // Travel-test gate pad + frame, kept clear of the quest objects so an
         // exported editor file can validate level-to-level travel in isolation.
         .fill([4, 7], [groundY, groundY], [16, 19], BLOCK.stone)

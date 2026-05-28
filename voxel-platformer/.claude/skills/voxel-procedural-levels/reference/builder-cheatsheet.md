@@ -37,6 +37,11 @@ loops: `circle`, `ellipse`, `rect`, `pathMask`, `anyMask`, `allMask`,
 `subtractMask`, `fbmNoise2D`, and `noiseThreshold`. Use `t.set(...)` loops
 only for one-off details that are clearer than a named mask operation.
 
+Author ponds and lava pools as `BLOCK.water` / `BLOCK.lava` voxels. The
+chunk renderer applies animated liquid surfaces to exposed liquid-block top
+faces automatically; do not add a `water` or `lava` Visual FX zone merely to
+cover an ordinary pool.
+
 ## Metadata
 
 Return `defineLevel(...)` instead of hand-writing a full `LevelMeta`:

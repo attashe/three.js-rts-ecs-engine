@@ -475,6 +475,7 @@ async function main(): Promise<void> {
         .addSystem(createMovingObjectSystem(), 'movingObjects')
         .addSystem(createDynamicCollisionSystem(chunks), 'dynamicCollision')
         .addSystem(createPlayerDeathSystem({
+            chunks,
             onDeath: () => {
                 audio.play(GameAudio.Death, { deferUntilUnlocked: true })
                 audio.playStinger(GameAudio.DeathStinger, { deferUntilUnlocked: true })

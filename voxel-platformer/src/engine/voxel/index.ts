@@ -12,6 +12,9 @@ export { ChunkRenderer } from './chunk-renderer'
 export { greedyMesh } from './greedy-mesher'
 export type { MeshData, VoxelSampler } from './greedy-mesher'
 
+export { liquidTopSurfaceMesh } from './liquid-surface-mesher'
+export type { LiquidSurfaceMeshData, LiquidSurfaceMeshOptions } from './liquid-surface-mesher'
+
 export {
     AIR,
     BLOCK,
@@ -22,6 +25,7 @@ export {
     isRaycastTarget,
     isSolid,
     isTorchBlock,
+    liquidBlockKind,
     occludesFaces,
     paletteEntry,
     paletteTileIndex,
@@ -32,7 +36,15 @@ export {
     appendMissingDefaultPaletteEntries,
     clonePalette,
 } from './palette'
-export type { BlockLightSpec, BlockMovementTraits, Palette, PaletteEntry } from './palette'
+export type {
+    BlockContactHazard,
+    BlockLightSpec,
+    BlockMovementTraits,
+    LiquidBlockKind,
+    Palette,
+    PaletteEntry,
+    ResolvedBlockMovementTraits,
+} from './palette'
 
 export {
     ATLAS_SIZE,

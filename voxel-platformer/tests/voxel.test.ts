@@ -5,8 +5,9 @@ import { CHUNK_DIM, chunkKey } from '../src/engine/voxel/chunk'
 import { deserializeLevel, serializeLevel } from '../src/engine/voxel/level-serializer'
 import { voxelAABBOverlap, sweepAxis } from '../src/engine/voxel/voxel-collide'
 import { greedyMesh } from '../src/engine/voxel/greedy-mesher'
+import { liquidTopSurfaceMesh } from '../src/engine/voxel/liquid-surface-mesher'
 import { movementEnvironmentForAABB } from '../src/engine/voxel/movement-effects'
-import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, isRenderableVoxel, voxelOpacity } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, isRenderableVoxel, liquidBlockKind, voxelOpacity } from '../src/engine/voxel/palette'
 import { voxelRaycast } from '../src/engine/voxel/voxel-raycast'
 import { Vector3 } from 'three'
 
@@ -81,24 +82,42 @@ test('voxelAABBOverlap treats max boundary as exclusive', () => {
     }), true)
 })
 
-test('water and cloud are non-physical visible blocks', () => {
+test('water, lava, and cloud are non-physical visible blocks', () => {
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.water), false)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.lava), false)
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.cloud), false)
     assert.ok(voxelOpacity(DEFAULT_PALETTE, BLOCK.water) < 1)
+    assert.ok(voxelOpacity(DEFAULT_PALETTE, BLOCK.lava) < 1)
     assert.ok(voxelOpacity(DEFAULT_PALETTE, BLOCK.cloud) < 1)
+    assert.equal(liquidBlockKind(DEFAULT_PALETTE, BLOCK.water), 'water')
+    assert.equal(liquidBlockKind(DEFAULT_PALETTE, BLOCK.lava), 'lava')
 
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     chunks.setVoxel(0, 0, 0, BLOCK.water)
-    chunks.setVoxel(1, 0, 0, BLOCK.cloud)
+    chunks.setVoxel(1, 0, 0, BLOCK.lava)
+    chunks.setVoxel(2, 0, 0, BLOCK.cloud)
 
     assert.equal(voxelAABBOverlap(chunks, {
         minX: 0,
         minY: 0,
         minZ: 0,
-        maxX: 2,
+        maxX: 3,
         maxY: 1,
         maxZ: 1,
     }), false, 'non-physical blocks do not collide')
+})
+
+test('legacy palettes migrate liquid markers without losing existing special blocks', () => {
+    const legacyPalette = clonePalette(DEFAULT_PALETTE)
+    delete legacyPalette.entries[BLOCK.water]!.liquid
+    legacyPalette.entries.length = BLOCK.lava
+
+    const chunks = new ChunkManager(legacyPalette)
+
+    assert.equal(chunks.palette.entries[BLOCK.torch]?.renderAs, 'torch')
+    assert.equal(chunks.palette.entries[BLOCK.unlitLantern]?.renderAs, 'torch-off')
+    assert.equal(chunks.palette.entries[BLOCK.water]?.liquid, 'water')
+    assert.equal(chunks.palette.entries[BLOCK.lava]?.liquid, 'lava')
 })
 
 test('no-walk block is an invisible collidable border outside debug rendering', () => {
@@ -148,10 +167,41 @@ test('legacy no-walk ward palettes migrate to invisible border semantics', () =>
     assert.equal(isRenderableVoxel(chunks.palette, BLOCK.noWalk), false)
 })
 
-test('movementEnvironmentForAABB applies water movement effects only', () => {
+test('liquid top surface mesh follows exposed water and lava top faces', () => {
+    const cells = new Map<string, number>()
+    const sample = (x: number, y: number, z: number) => cells.get(`${x},${y},${z}`) ?? BLOCK.air
+
+    cells.set('0,0,0', BLOCK.water)
+    cells.set('1,0,0', BLOCK.water)
+    const water = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'water', { subdivisionsPerCell: 1, surfaceOffset: 0 })
+    assert.equal(water.vertexCount, 6, 'two adjacent cells merge into one 2x1 surface grid')
+    assert.equal(water.triangleCount, 4)
+    assert.deepEqual([...new Set([...water.positions].filter((_, i) => i % 3 === 1))], [1])
+
+    cells.set('0,1,0', BLOCK.stone)
+    cells.set('1,1,0', BLOCK.stone)
+    const hidden = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'water', { subdivisionsPerCell: 1, surfaceOffset: 0 })
+    assert.equal(hidden.vertexCount, 0, 'solid blocks immediately above hide the liquid surface')
+
+    cells.clear()
+    cells.set('0,0,0', BLOCK.water)
+    cells.set('0,1,0', BLOCK.lava)
+    const hiddenByLiquid = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'water', { subdivisionsPerCell: 1, surfaceOffset: 0 })
+    assert.equal(hiddenByLiquid.vertexCount, 0, 'liquid blocks immediately above hide internal liquid surfaces')
+
+    cells.clear()
+    cells.set('0,0,0', BLOCK.lava)
+    const lava = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'lava', { subdivisionsPerCell: 1, surfaceOffset: 0 })
+    assert.ok(lava.vertexCount > 0)
+    const noWater = liquidTopSurfaceMesh(sample, 3, DEFAULT_PALETTE, 'water', { subdivisionsPerCell: 1, surfaceOffset: 0 })
+    assert.equal(noWater.vertexCount, 0)
+})
+
+test('movementEnvironmentForAABB applies water movement and lava contact hazards', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     chunks.setVoxel(0, 0, 0, BLOCK.water)
     chunks.setVoxel(2, 0, 0, BLOCK.cloud)
+    chunks.setVoxel(4, 0, 0, BLOCK.lava)
 
     const water = movementEnvironmentForAABB(chunks, {
         minX: 0.1,
@@ -163,6 +213,7 @@ test('movementEnvironmentForAABB applies water movement effects only', () => {
     })
     assert.equal(water.jumpDisabled, true)
     assert.ok(water.speedMultiplier < 1, `expected water to slow movement, got ${water.speedMultiplier}`)
+    assert.equal(water.contactHazard, null)
 
     const cloud = movementEnvironmentForAABB(chunks, {
         minX: 2.1,
@@ -172,7 +223,17 @@ test('movementEnvironmentForAABB applies water movement effects only', () => {
         maxY: 1,
         maxZ: 0.9,
     })
-    assert.deepEqual(cloud, { speedMultiplier: 1, jumpDisabled: false })
+    assert.deepEqual(cloud, { speedMultiplier: 1, jumpDisabled: false, contactHazard: null })
+
+    const lava = movementEnvironmentForAABB(chunks, {
+        minX: 4.1,
+        minY: 0,
+        minZ: 0.1,
+        maxX: 4.9,
+        maxY: 1,
+        maxZ: 0.9,
+    })
+    assert.equal(lava.contactHazard, 'lava')
 })
 
 test('voxelRaycast: arrows (collidable predicate) pass through water and hit stone behind', () => {

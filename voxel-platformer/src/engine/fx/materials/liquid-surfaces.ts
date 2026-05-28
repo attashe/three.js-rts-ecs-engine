@@ -1,4 +1,4 @@
-import { Color, DoubleSide, Mesh, PlaneGeometry, Vector3 } from 'three'
+import { Color, DoubleSide, Mesh, PlaneGeometry, Vector3, type BufferGeometry } from 'three'
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
 import {
     Fn,
@@ -21,6 +21,8 @@ import {
     vec2,
     vec3,
 } from 'three/tsl'
+
+const LOCAL_FX_SURFACE_RENDER_ORDER = 840
 
 /**
  * Production-grade liquid surface materials, driven entirely by the
@@ -55,6 +57,8 @@ export interface LavaSurface extends LiquidSurfaceBase {
 
 export interface WaterSurfaceOpts {
     size: { x: number; z: number }
+    /** Optional custom geometry. When omitted a scaled plane is built. */
+    geometry?: BufferGeometry
     /** Bottom-of-wave tint — dominates troughs. */
     deepColor?: string
     /** Top-of-wave tint — dominates crests and grazing-angle highlights. */
@@ -67,6 +71,10 @@ export interface WaterSurfaceOpts {
     /** Animation rate multiplier. Default 1.0. */
     waveSpeed?: number
     opacity?: number
+    /** FX zones default to false so iso overlays stay readable; voxel-bound
+     *  liquid surfaces pass true so terrain can occlude them normally. */
+    depthTest?: boolean
+    renderOrder?: number
 }
 
 /**
@@ -185,6 +193,7 @@ export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
     const mat = new MeshBasicNodeMaterial({
         transparent: true,
         side: DoubleSide,
+        depthTest: opts.depthTest ?? false,
         depthWrite: false,
     })
     mat.positionNode = newPos
@@ -193,10 +202,12 @@ export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
 
     // 96×96 segments — plenty for smooth Gerstner waves at the demo's
     // zone sizes. Modern hardware doesn't notice.
-    const geo = new PlaneGeometry(1, 1, 96, 96)
-    geo.rotateX(-Math.PI / 2)
+    const ownsGeneratedPlane = !opts.geometry
+    const geo = opts.geometry ?? new PlaneGeometry(1, 1, 96, 96)
+    if (ownsGeneratedPlane) geo.rotateX(-Math.PI / 2)
     const mesh = new Mesh(geo, mat)
-    mesh.scale.set(opts.size.x, 1, opts.size.z)
+    if (ownsGeneratedPlane) mesh.scale.set(opts.size.x, 1, opts.size.z)
+    mesh.renderOrder = opts.renderOrder ?? LOCAL_FX_SURFACE_RENDER_ORDER
 
     return {
         mesh,
@@ -206,7 +217,9 @@ export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
             if (c.foam)    foamColor.value.set(c.foam)
         },
         setOpacity(o) { opacityUniform.value = o },
-        setSize(x, z) { mesh.scale.set(x, 1, z) },
+        setSize(x, z) {
+            if (ownsGeneratedPlane) mesh.scale.set(x, 1, z)
+        },
         dispose() {
             geo.dispose()
             mat.dispose()
@@ -216,6 +229,8 @@ export function buildWaterSurface(opts: WaterSurfaceOpts): WaterSurface {
 
 export interface LavaSurfaceOpts {
     size: { x: number; z: number }
+    /** Optional custom geometry. When omitted a scaled plane is built. */
+    geometry?: BufferGeometry
     hotColor?: string
     crustColor?: string
     glowColor?: string
@@ -225,6 +240,10 @@ export interface LavaSurfaceOpts {
     /** HDR emissive multiplier. Default 4.5 — high enough that the
      *  surface noticeably glows through fog under ACES tonemapping. */
     emissiveStrength?: number
+    /** FX zones default to false so iso overlays stay readable; voxel-bound
+     *  liquid surfaces pass true so terrain can occlude them normally. */
+    depthTest?: boolean
+    renderOrder?: number
 }
 
 /**
@@ -317,6 +336,8 @@ export function buildLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
 
     const mat = new MeshStandardNodeMaterial({
         side: DoubleSide,
+        depthTest: opts.depthTest ?? false,
+        depthWrite: false,
         roughness: 0.92,
         metalness: 0.0,
     })
@@ -334,10 +355,12 @@ export function buildLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
     // cloud weather as if nothing was there, which looked unnatural.
     mat.fog = true
 
-    const geo = new PlaneGeometry(1, 1, 56, 56)
-    geo.rotateX(-Math.PI / 2)
+    const ownsGeneratedPlane = !opts.geometry
+    const geo = opts.geometry ?? new PlaneGeometry(1, 1, 56, 56)
+    if (ownsGeneratedPlane) geo.rotateX(-Math.PI / 2)
     const mesh = new Mesh(geo, mat)
-    mesh.scale.set(opts.size.x, 1, opts.size.z)
+    if (ownsGeneratedPlane) mesh.scale.set(opts.size.x, 1, opts.size.z)
+    mesh.renderOrder = opts.renderOrder ?? LOCAL_FX_SURFACE_RENDER_ORDER
 
     return {
         mesh,
@@ -347,7 +370,9 @@ export function buildLavaSurface(opts: LavaSurfaceOpts): LavaSurface {
             if (c.glow)  glowColor.value.set(c.glow)
         },
         setOpacity(o) { opacityUniform.value = o },
-        setSize(x, z) { mesh.scale.set(x, 1, z) },
+        setSize(x, z) {
+            if (ownsGeneratedPlane) mesh.scale.set(x, 1, z)
+        },
         dispose() {
             geo.dispose()
             mat.dispose()

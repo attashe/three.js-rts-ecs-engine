@@ -119,7 +119,12 @@ export interface StoneSpawnerRuntime {
 
 /** Why the level should restart. Set by gameplay systems; consumed by
  *  `restart-system` which calls `location.reload()`. */
-export type DeathReason = 'fell-into-void' | 'crushed-by-piston' | 'manual-restart' | 'killed-by-zone-script'
+export type DeathReason =
+    | 'fell-into-void'
+    | 'crushed-by-piston'
+    | 'manual-restart'
+    | 'killed-by-zone-script'
+    | 'burned-by-lava'
 
 const MAX_LOG_ENTRIES = 12
 const MAX_ZONE_EVENTS = 64

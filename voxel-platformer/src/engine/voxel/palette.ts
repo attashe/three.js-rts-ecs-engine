@@ -52,6 +52,8 @@ export interface PaletteEntry {
     lightCastsShadow?: boolean
     /** Optional non-cube prop renderer for authored special blocks. */
     renderAs?: 'torch' | 'torch-off'
+    /** Optional animated liquid surface rendered on exposed top faces. */
+    liquid?: 'water' | 'lava'
     /**
      * Atlas tile name driving the chunk-mesh surface detail. When
      * omitted the block renders as a flat colour (the historical
@@ -71,6 +73,16 @@ export interface BlockMovementTraits {
     speedMultiplier?: number
     /** Whether normal/high jumps are disabled while overlapping the block. */
     disableJump?: boolean
+    /** Immediate contact hazard applied while overlapping the block. */
+    contactHazard?: BlockContactHazard
+}
+
+export type BlockContactHazard = 'lava'
+
+export interface ResolvedBlockMovementTraits {
+    speedMultiplier: number
+    disableJump: boolean
+    contactHazard: BlockContactHazard | null
 }
 
 export interface Palette {
@@ -96,6 +108,7 @@ export const BLOCK = {
     cloud: 13,
     torch: 14,
     unlitLantern: 15,
+    lava: 16,
 } as const
 
 /**
@@ -148,6 +161,7 @@ export const DEFAULT_PALETTE: Palette = {
             pathSurface: false,
             opacity: 0.48,
             movement: { speedMultiplier: 0.45, disableJump: true },
+            liquid: 'water',
         },
         {
             name: 'cloud',
@@ -181,6 +195,20 @@ export const DEFAULT_PALETTE: Palette = {
             pathSurface: false,
             opacity: 0,
             renderAs: 'torch-off',
+        },
+        {
+            name: 'lava',
+            color: [1.00, 0.28, 0.08],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0.68,
+            emissive: [1.00, 0.20, 0.04],
+            emissiveIntensity: 0.9,
+            movement: { contactHazard: 'lava' },
+            liquid: 'lava',
         },
     ],
 }
@@ -233,6 +261,13 @@ export function torchBlockState(palette: Palette, index: number): TorchBlockStat
     if (renderAs === 'torch') return 'lit'
     if (renderAs === 'torch-off') return 'unlit'
     return null
+}
+
+export type LiquidBlockKind = 'water' | 'lava'
+
+export function liquidBlockKind(palette: Palette, index: number): LiquidBlockKind | null {
+    if (index === AIR) return null
+    return paletteEntry(palette, index).liquid ?? null
 }
 
 export function isPathSurface(palette: Palette, index: number): boolean {
@@ -300,11 +335,12 @@ export function isRenderableVoxel(palette: Palette, index: number): boolean {
     return voxelOpacity(palette, index) > 0
 }
 
-export function blockMovementTraits(palette: Palette, index: number): Required<BlockMovementTraits> {
+export function blockMovementTraits(palette: Palette, index: number): ResolvedBlockMovementTraits {
     const traits = paletteEntry(palette, index).movement
     return {
         speedMultiplier: traits?.speedMultiplier ?? 1,
         disableJump: traits?.disableJump ?? false,
+        contactHazard: traits?.contactHazard ?? null,
     }
 }
 
@@ -323,8 +359,11 @@ export function clonePalette(palette: Palette): Palette {
 
 export function appendMissingDefaultPaletteEntries(palette: Palette): void {
     normalizeNoWalkBlock(palette)
+    normalizeLiquidBlock(palette, 'water', BLOCK.water)
+    normalizeLiquidBlock(palette, 'lava', BLOCK.lava)
     appendMissingSpecialBlock(palette, BLOCK.torch)
     appendMissingSpecialBlock(palette, BLOCK.unlitLantern)
+    appendMissingLiquidBlock(palette, 'lava', BLOCK.lava)
 }
 
 function normalizeNoWalkBlock(palette: Palette): void {
@@ -343,6 +382,23 @@ function appendMissingSpecialBlock(palette: Palette, defaultIndex: number): void
     const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
     if (!defaultEntry?.renderAs) return
     if (palette.entries.some((entry) => entry.renderAs === defaultEntry.renderAs)) return
+    const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
+    entry.name = uniquePaletteName(palette, entry.name)
+    palette.entries.push(entry)
+}
+
+function normalizeLiquidBlock(palette: Palette, kind: LiquidBlockKind, defaultIndex: number): void {
+    const entry = palette.entries[defaultIndex]
+    const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
+    if (!entry || defaultEntry?.liquid !== kind || entry.liquid === kind) return
+    if (entry.name !== defaultEntry.name) return
+    entry.liquid = kind
+}
+
+function appendMissingLiquidBlock(palette: Palette, kind: LiquidBlockKind, defaultIndex: number): void {
+    if (palette.entries.some((entry) => entry.liquid === kind)) return
+    const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
+    if (defaultEntry?.liquid !== kind) return
     const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
     entry.name = uniquePaletteName(palette, entry.name)
     palette.entries.push(entry)

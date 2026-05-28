@@ -1,15 +1,17 @@
 import type { ChunkManager } from './chunk-manager'
-import { blockMovementTraits } from './palette'
+import { blockMovementTraits, type BlockContactHazard } from './palette'
 import type { AABB } from './voxel-collide'
 
 export interface MovementEnvironment {
     speedMultiplier: number
     jumpDisabled: boolean
+    contactHazard: BlockContactHazard | null
 }
 
 export const DEFAULT_MOVEMENT_ENVIRONMENT: MovementEnvironment = {
     speedMultiplier: 1,
     jumpDisabled: false,
+    contactHazard: null,
 }
 
 export function movementEnvironmentForAABB(chunks: ChunkManager, aabb: AABB): MovementEnvironment {
@@ -23,14 +25,16 @@ export function movementEnvironmentForAABB(chunks: ChunkManager, aabb: AABB): Mo
 
     let speedMultiplier = 1
     let jumpDisabled = false
+    let contactHazard: BlockContactHazard | null = null
     for (let y = y0; y <= y1; y++) {
         for (let z = z0; z <= z1; z++) {
             for (let x = x0; x <= x1; x++) {
                 const traits = blockMovementTraits(chunks.palette, chunks.getVoxel(x, y, z))
                 speedMultiplier = Math.min(speedMultiplier, traits.speedMultiplier)
                 jumpDisabled ||= traits.disableJump
+                contactHazard ??= traits.contactHazard
             }
         }
     }
-    return { speedMultiplier, jumpDisabled }
+    return { speedMultiplier, jumpDisabled, contactHazard }
 }

@@ -45,7 +45,10 @@ needed. `heightfield` records per-column surface heights so props and
 pickups can use `standAt` on uneven terrain. For broad terrain edits,
 combine mask helpers (`circle`, `ellipse`, `rect`, `pathMask`,
 `anyMask`, `subtractMask`, `fbmNoise2D`, `noiseThreshold`) with
-`paintSurface`, `raise`, `lower`, `carve`, and `fillWater`.
+`paintSurface`, `raise`, `lower`, `carve`, and `fillWater`. Ordinary
+water/lava pools should be authored as liquid blocks; exposed liquid block
+tops render their animated surface automatically, so do not place a
+separate Visual FX zone just to cover a pond.
 
 ```ts
 import { fbmNoise2D, noiseThreshold } from './level-builder'

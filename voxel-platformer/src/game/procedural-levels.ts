@@ -121,8 +121,8 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
         .path({ points: [{ x: 15.5, z: 4 }, { x: 15.5, z: 15 }], width: 2.2, block: BLOCK.sand })
         .pond({
             center: { x: 10, z: 10 },
-            radiusX: 3.7,
-            radiusZ: 3.2,
+            radiusX: 4.6,
+            radiusZ: 3.9,
             waterY: pondWaterY,
             shoreWidth: 1.5,
             shoreBlock: BLOCK.sand,
@@ -134,9 +134,6 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
         // doesn't bounce straight back.
         .fill([3, 6], [groundY, groundY], [9, 12], BLOCK.plank)
         .fill([4, 5], [groundY, groundY], [10, 10], BLOCK.door)
-        .fill([8, 12], [groundY, groundY], [10, 10], BLOCK.plank)
-        .fill([9, 11], [groundY, groundY], [8, 8], BLOCK.plank)
-        .fill([9, 11], [groundY, groundY], [12, 12], BLOCK.plank)
         // Return portal pad + two non-lighting marker posts.
         .fill([14, 17], [groundY, groundY], [8, 11], BLOCK.stone)
         .fill([15, 16], [groundY, groundY], [9, 10], BLOCK.door)
@@ -146,10 +143,6 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
         .fill([2, 2], [groundY + 1, groundY + 1], [5, 14], BLOCK.wood)
         .fill([17, 17], [groundY + 1, groundY + 1], [5, 7], BLOCK.wood)
         .fill([17, 17], [groundY + 1, groundY + 1], [12, 14], BLOCK.wood)
-
-    t.fill([8, 12], [pondWaterY, pondWaterY], [10, 10], BLOCK.plank)
-        .fill([9, 11], [pondWaterY, pondWaterY], [8, 8], BLOCK.plank)
-        .fill([9, 11], [pondWaterY, pondWaterY], [12, 12], BLOCK.plank)
 
     const zones: Zone[] = [
         {
@@ -189,16 +182,6 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
             cloudCoverage: 0.2,
         }),
         weatherZones: [
-            {
-                id: 'fx.teleport-garden.pond-water',
-                label: 'Garden Pond Surface',
-                presetId: 'water',
-                position: { x: 10, y: groundY + 0.35, z: 10 },
-                size: { x: 8, y: 1.4, z: 7 },
-                enabled: true,
-                addSound: true,
-                soundVolume: 0.22,
-            },
             {
                 id: 'fx.teleport-garden.falling-leaves',
                 label: 'Falling Leaves',
