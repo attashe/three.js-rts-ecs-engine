@@ -86,8 +86,17 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             return runtime.on(event, undefined, filterOrHandler as EventHandler,
                 handlerOrOpts as { once?: boolean } | undefined)
         }
-        // on(event, filter, handler, opts?)
-        return runtime.on(event, filterOrHandler, handlerOrOpts as EventHandler, maybeOpts)
+        // on(event, filter, handler, opts?). `once` is a *registration*
+        // option, not a data field, but it reads naturally co-located
+        // with the filter — every doc example writes
+        // `on('zone-enter', { zoneId, once: true }, ...)`. The runtime's
+        // matchFilter compares every filter key against the event
+        // payload, so a stray `once` there would test `event.once === true`
+        // and the handler would silently never fire. Lift it out into the
+        // opts channel so both spellings work; an explicit 4th-arg opts
+        // still wins on conflict.
+        const { filter, opts } = liftOnceFromFilter(filterOrHandler, maybeOpts)
+        return runtime.on(event, filter, handlerOrOpts as EventHandler, opts)
     }
 
     const flagsApi: FlagsApi = {
@@ -277,6 +286,29 @@ const NOOP_STONES: StonesFacade = {
     isSpawnerEnabled() { return false },
     triggerSpawner() { return 0 },
     listSpawners() { return [] },
+}
+
+/** Split a boolean `once` out of an author-supplied filter object.
+ *  `once` is a registration option (it removes the subscription after the
+ *  first firing), not a data filter, but authors write it inside the
+ *  filter object because that reads naturally. Returning it on the opts
+ *  channel keeps the runtime's data matcher from ever seeing it. A `once`
+ *  passed explicitly as the 4th `opts` argument takes precedence; a filter
+ *  that contained nothing but `once` collapses to `undefined` (match all).
+ *  `once` is therefore a reserved key in filter objects — it can't be used
+ *  to match a custom event's data field of the same name. */
+function liftOnceFromFilter(
+    rawFilter: object,
+    explicitOpts: { once?: boolean } | undefined,
+): { filter: object | undefined; opts: { once?: boolean } | undefined } {
+    const source = rawFilter as Record<string, unknown>
+    if (typeof source.once !== 'boolean') {
+        return { filter: rawFilter, opts: explicitOpts }
+    }
+    const { once, ...rest } = source
+    const opts = { ...(explicitOpts ?? {}), once: explicitOpts?.once ?? (once as boolean) }
+    const filter = Object.keys(rest).length > 0 ? rest : undefined
+    return { filter, opts }
 }
 
 function makeGeomApi(): GeomApi {

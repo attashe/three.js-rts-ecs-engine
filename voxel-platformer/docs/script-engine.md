@@ -89,8 +89,9 @@ async function compileScript(entry: ScriptEntry, ctx: ScriptContext): Promise<vo
     const fn = new AsyncFunction('ctx', `
         "use strict";
         const { on, once, emit, wait, log,
-                player, chunks, pickups, pistons, stones,
-                audio, flags, time, zone, random } = ctx;
+                player, chunks, pickups, pistons, stones, audio,
+                flags, time, zone, geom, ui,
+                dayCycle, weather, travel, level, random } = ctx;
         ${entry.source}
     `)
     try {
@@ -216,6 +217,26 @@ fires the handler exactly once and disposes the registration —
 saving the author from writing `if (flags.get('foo')) return; flags.set('foo', true);`
 at the top of every body.
 
+`once` may be passed two equivalent ways — as the 4th `opts` argument,
+or co-located inside the filter object — and the binding layer lifts it
+onto registration either way:
+
+```js
+on('zone-enter', { zoneId: 'grove' }, h, { once: true })  // opts arg
+on('zone-enter', { zoneId: 'grove', once: true }, h)      // in the filter
+```
+
+Because the runtime matches every *other* filter key by strict equality
+against the event payload, `once` is a **reserved filter key**: it is
+never matched against payload data. (Before this was lifted, the
+second form silently never fired — `event.once` doesn't exist, so the
+strict-equality match failed. See `script-engine-syntax-review.md`.)
+That same constraint — filters carry data-match keys only, never
+registration/throttle options — is why there is no `zone-inside`
+`{ everyTicks }` trigger: a per-subscription throttle can't live in the
+filter object. The `await wait(n)` + `zone.contains(...)` pattern covers
+the "still inside N seconds later" case without one.
+
 #### Built-in events
 
 | Event | Filter | Handler receives |
@@ -223,7 +244,6 @@ at the top of every body.
 | `level-start` | — | — |
 | `zone-enter` | `{ zoneId, source? }` | `{ entityId, zoneId, source, point }` |
 | `zone-exit` | `{ zoneId, source? }` | same as `zone-enter` |
-| `zone-inside` | `{ zoneId, everyTicks? }` | same as `zone-enter` |
 | `timer` | `{ periodSeconds, oneshot? }` | `{ tick }` |
 | `pickup-taken` | `{ pickupId?, kind? }` | `{ pickupId, kind, position, amount? }` |
 | `input` | `{ action, edge, targetId? }` | `{ action, edge, targetId?, zoneId?, point?, entityId? }` |
@@ -375,6 +395,14 @@ weather.setZonePreset(zoneId: string, presetId: string): boolean
 level.spawn                       // VoxelCoord getter — author-named spawn
 level.size                        // number — XZ extent (block units)
 level.name                        // string — editor-authored name, or 'demo'
+
+// Travel — hot-swap to another project-library level without a browser
+// reload. `arrivalId` names a destination-zone in the target level; when
+// omitted the destination spawn is used. `reload` restarts the current
+// location (same arrival semantics). No-ops on levels wired without a
+// travel system.
+travel.to(levelId: string, opts?: { arrivalId?: string }): void
+travel.reload(opts?: { arrivalId?: string }): void
 
 // Geometry helpers — pure, no world state. Use when you need an AABB
 // test in a place that doesn't justify authoring a real zone (e.g. a
@@ -739,6 +767,8 @@ on('level-start', async () => {
 | Per-row parse-error banner in Logic tab       | — | ✅ | Slice 3 — runs `parseCheck` at row render time |
 | Per-row runtime-error banner in Logic tab     | — | ✅ | Slice 3 follow-up — sessionStorage bridge `vp:playtest-script-errors` |
 | `ZoneScriptAction` legacy union               | — | ✅ removed | Slice 3 follow-up — quest behaviour lives in `.js` scripts |
+| `once` lift from filter object                | — | ✅ | Syntax review F1 — `{ …, once: true }` now equivalent to `opts.once`; reserved filter key |
+| `types/script-api.d.ts` typed contract        | — | ✅ | Syntax review F4 — promised by §3.3, now authored |
 
 ### What's still on the roadmap
 
@@ -760,9 +790,12 @@ Implementation file layout — for anyone navigating the runtime:
 | `src/engine/script/script-engine-system.ts` | ECS system + queue drainer + death watchdog |
 | `src/engine/ecs/world.ts`                  | `ScriptTriggerEvent`, `scriptTriggerEvents` queue, helpers |
 | `examples/scripts/demo-quest.js`           | canonical demo quest (event-driven) |
+| `types/script-api.d.ts`                    | ambient globals for IDE authoring |
 | `docs/script-engine.md`                    | this file |
 | `docs/script-engine-examples.md`           | three canonical use-case examples |
+| `docs/script-engine-syntax-review.md`      | syntax findings + improvement proposals |
 | `docs/script-engine-slice-1-review.md`     | review that drove Slice 1.5 |
+| `.claude/skills/voxel-script-authoring/`   | Claude Code skill: authoring + extending the API |
 
 ---
 
