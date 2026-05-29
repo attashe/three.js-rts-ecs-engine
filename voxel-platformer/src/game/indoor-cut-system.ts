@@ -9,21 +9,21 @@ import { voxelRaycast } from '../engine/voxel/voxel-raycast'
 
 /**
  * Reveals the player when world geometry would hide them from the camera —
- * the roof and floors of a building, an overhang, etc. Implemented on top of
- * the existing world cut: `ChunkRenderer.setCutY(y)` remeshes treating voxels
- * above `y` as air, so whatever is between the camera and the character stops
- * being drawn while they're under cover.
+ * the roof and floors of a building, an overhang, etc. Implemented as a
+ * *localised* cutaway: `ChunkRenderer.setLocalCut` hides voxels above the
+ * player's feet within a radius of the player (XZ) in the shader, so the cover
+ * over the character disappears while the rest of the world is left intact.
+ * It's shader-only (no remesh), so the dome follows the player every frame.
  *
  * Detection tracks *visibility*, not a fixed ceiling: it casts a ray from the
  * character toward the camera viewpoint and checks whether a face-occluding
  * block blocks the line of sight within a short distance. This is robust where
  * a straight-up probe fails — e.g. a tower with an open shaft directly above
- * the player but a wall/roof between them and the camera. Because the cut only
- * changes *meshing* (not the voxel data the ray reads), revealing the
- * character never changes what the ray sees, so there's no cut/uncut
- * oscillation.
+ * the player but a wall/roof between them and the camera. The ray reads voxel
+ * data, which the visual cut never changes, so revealing the character can't
+ * oscillate the cut.
  *
- * Foliage is excluded so walking under a tree canopy doesn't slice the world.
+ * Foliage is excluded so walking under a tree canopy doesn't trigger a cut.
  * Grace counters on enter/exit smooth transient occlusions (passing behind a
  * thin post) without flicker.
  */
@@ -62,17 +62,26 @@ export function isViewpointBlocked(
     return voxelRaycast(chunks, origin, dir, reach, isViewOccluder) !== null
 }
 
+export interface LocalCut {
+    center: { x: number; z: number }
+    radius: number
+    y: number
+}
+
 export interface IndoorCutOptions {
-    /** Apply the cut — wire to `chunkRenderer.setCutY`. */
-    setCutY: (y: number | null) => void
+    /** Apply the localised cutaway — wire to `chunkRenderer.setLocalCut`. */
+    setLocalCut: (cut: LocalCut | null) => void
     /** Camera world position the character's visibility is tested against. */
     viewpoint: () => { x: number; y: number; z: number }
-    /** Blocks of headroom kept above the player's feet when revealing. Default 3. */
+    /** XZ radius of the cutaway dome around the player. Default 6. */
+    revealRadius?: number
+    /** Blocks of headroom kept above the player's feet inside the dome.
+     *  Default 1 (a shin-level lip stays; head and above are cleared). */
     revealHeadroom?: number
     /** Only occluders within this distance of the character count (keeps far
-     *  hills from triggering a cut). Default 28. */
+     *  geometry from triggering a cut). Default 28. */
     maxOccluderDistance?: number
-    /** Seconds between checks. Default 0.12. */
+    /** Seconds between visibility checks. Default 0.12. */
     checkInterval?: number
     /** Consecutive "occluded" checks before cutting (smooths walking past posts). Default 2. */
     enterGraceChecks?: number
@@ -82,13 +91,15 @@ export interface IndoorCutOptions {
     enabled?: () => boolean
 }
 
-const DEFAULT_HEADROOM = 3
+const DEFAULT_RADIUS = 6
+const DEFAULT_HEADROOM = 1
 const DEFAULT_MAX_OCCLUDER = 28
 const DEFAULT_INTERVAL = 0.12
 const DEFAULT_ENTER_GRACE = 2
 const DEFAULT_EXIT_GRACE = 4
 
 export function createIndoorCutSystem(chunks: ChunkManager, opts: IndoorCutOptions): System {
+    const radius = opts.revealRadius ?? DEFAULT_RADIUS
     const headroom = opts.revealHeadroom ?? DEFAULT_HEADROOM
     const maxOccluder = opts.maxOccluderDistance ?? DEFAULT_MAX_OCCLUDER
     const interval = opts.checkInterval ?? DEFAULT_INTERVAL
@@ -98,53 +109,51 @@ export function createIndoorCutSystem(chunks: ChunkManager, opts: IndoorCutOptio
     let accumulator = 0
     let occludedStreak = 0
     let visibleStreak = 0
-    let cutActive = false
-    let appliedCutY: number | null = null
-
-    function apply(cutY: number | null): void {
-        if (cutY === appliedCutY) return
-        appliedCutY = cutY
-        opts.setCutY(cutY)
-    }
+    let active = false
+    let applied = false
 
     return {
-        // Run just before the chunk renderer so a transition this frame is
-        // picked up by the same frame's mesh pass.
         order: RenderOrder.worldRender - 1,
         update(world, dt) {
             if (opts.enabled && !opts.enabled()) {
+                active = false
                 occludedStreak = 0
                 visibleStreak = 0
-                cutActive = false
-                apply(null)
+                if (applied) { applied = false; opts.setLocalCut(null) }
                 return
             }
-            accumulator += dt
-            if (accumulator < interval) return
-            accumulator = 0
 
             const eids = query(world, [PlayerControlled, Position, BoxCollider])
             if (eids.length === 0) return
             const eid = eids[0]!
+            const px = Position.x[eid]!
+            const pz = Position.z[eid]!
             const footY = Position.y[eid]!
             const height = BoxCollider.y[eid]! * 2
-            // Test a point near the top of the character — if the head is
-            // hidden the character reads as obscured.
-            const head = { x: Position.x[eid]!, y: footY + height, z: Position.z[eid]! }
 
-            const occluded = isViewpointBlocked(chunks, head, opts.viewpoint(), maxOccluder)
-            if (occluded) {
-                occludedStreak += 1
-                visibleStreak = 0
-                if (!cutActive && occludedStreak >= enterGrace) cutActive = true
-                if (cutActive) apply(Math.floor(footY) + headroom)
-            } else {
-                visibleStreak += 1
-                occludedStreak = 0
-                if (cutActive && visibleStreak >= exitGrace) {
-                    cutActive = false
-                    apply(null)
+            // Decide indoors/outdoors on a throttle (the raycast is the cost);
+            // the dome itself follows the player every frame for smoothness.
+            accumulator += dt
+            if (accumulator >= interval) {
+                accumulator = 0
+                const head = { x: px, y: footY + height, z: pz }
+                if (isViewpointBlocked(chunks, head, opts.viewpoint(), maxOccluder)) {
+                    occludedStreak += 1
+                    visibleStreak = 0
+                    if (!active && occludedStreak >= enterGrace) active = true
+                } else {
+                    visibleStreak += 1
+                    occludedStreak = 0
+                    if (active && visibleStreak >= exitGrace) active = false
                 }
+            }
+
+            if (active) {
+                opts.setLocalCut({ center: { x: px, z: pz }, radius, y: Math.floor(footY) + headroom })
+                applied = true
+            } else if (applied) {
+                applied = false
+                opts.setLocalCut(null)
             }
         },
     }

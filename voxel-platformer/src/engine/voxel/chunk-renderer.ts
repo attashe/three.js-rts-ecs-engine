@@ -142,6 +142,14 @@ export class ChunkRenderer {
         this.remeshVisible()
     }
 
+    /** Localised "cutaway" used in-game to reveal the character when geometry
+     *  hides them: hide voxels above `y` within `radius` of `center` (world
+     *  XZ). Shader-only (no remesh), so it follows the player every frame and
+     *  leaves the rest of the world intact. Pass `null` to clear. */
+    setLocalCut(params: { center: { x: number; z: number }; radius: number; y: number } | null): void {
+        this.voxelMaterial.setLocalCut(params)
+    }
+
     /** Replace the cover mask — world-cell XZ columns that have hidden
      *  geometry above the working plane. Matching active-layer cells render
      *  faded so the user can tell upper geometry exists there. */

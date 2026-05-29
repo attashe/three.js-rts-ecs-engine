@@ -17,6 +17,7 @@ import {
     RedFormat,
     RepeatWrapping,
     UnsignedByteType,
+    Vector2,
     type Texture,
 } from 'three'
 import { TILES_PER_ROW, TILE_UV_SIZE } from '../../voxel/atlas-manifest'
@@ -79,6 +80,10 @@ export interface VoxelMaterial {
     /** Replace the cover mask. Each `{x, z}` is a world-cell column that
      *  contains hidden geometry above the current working plane. */
     setCoverMaskCells(cells: Iterable<{ x: number; z: number }>): void
+    /** Localised cutaway: hide voxels above `y` within `radius` of `center`
+     *  (world XZ). Shader-only — no remesh — so it can follow a moving target
+     *  every frame. Pass `null` to clear. */
+    setLocalCut(params: { center: { x: number; z: number }; radius: number; y: number } | null): void
     /** Toggle the atlas-sampling pass at runtime. When `false` every
      *  block — textured or not — renders as pure vertex colour. */
     setTexturesEnabled(enabled: boolean): void
@@ -118,6 +123,14 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
 
     const cutActiveUniform = uniform(0)
     const cutYUniform = uniform(NO_CUT_Y)
+    // Localised in-game cutaway (separate from the editor's global working-
+    // plane cut above): hide voxels above `localCutY` within `localCutRadius`
+    // of `localCutCenter` (world XZ), so the character is revealed under cover
+    // without slicing the rest of the world.
+    const localCutActiveUniform = uniform(0)
+    const localCutYUniform = uniform(NO_CUT_Y)
+    const localCutCenterUniform = uniform(new Vector2(0, 0))
+    const localCutRadiusUniform = uniform(0)
     const useTexturesUniform = uniform(opts.texturesEnabled === false ? 0 : 1)
     const maskData = new Uint8Array(maskSize * maskSize)
     const maskTex = new DataTexture(maskData, maskSize, maskSize, RedFormat, UnsignedByteType)
@@ -167,10 +180,26 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const maskValue = tslTexture(maskTex, maskUV).r
     const isCovered = cutActive.and(isActiveLayer).and(maskValue.greaterThan(0.5))
 
+    // ── Localised cutaway dome ────────────────────────────────────────
+    // A fragment inside the dome (above the local cut Y and within the XZ
+    // radius of the centre) is forced fully transparent; `alphaTest` then
+    // discards it so it neither draws nor writes depth — the geometry stays
+    // meshed but stops hiding the character. Everything outside the dome is
+    // untouched, so distant terrain/buildings are never sliced.
+    const inLocalDome = localCutActiveUniform.greaterThan(0.5)
+        .and(y.greaterThan(localCutYUniform))
+        .and(positionWorld.xz.sub(localCutCenterUniform).length().lessThan(localCutRadiusUniform))
+
     const base = vertexColor()
     const baseColor = base.rgb.mul(tileFactor)
     m.colorNode = select(isCovered, baseColor.mul(darken), baseColor)
-    m.opacityNode = base.a.mul(select(isAbove, aboveOpacity, 1.0))
+    m.opacityNode = base.a
+        .mul(select(isAbove, aboveOpacity, 1.0))
+        .mul(select(inLocalDome, float(0.0), float(1.0)))
+    // Discard the fully-transparent dome fragments (opacity 0) so they don't
+    // depth-occlude the revealed character. The threshold sits below every
+    // real block/glass alpha, so only the dome is culled.
+    m.alphaTest = 0.01
     // Per-vertex emissive RGB (intensity pre-multiplied by the mesher).
     // Glow blocks therefore add a self-illuminated colour on top of the lit
     // colour without consuming a real light slot — useful both as a cheap
@@ -200,6 +229,16 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
                 maskData[mz * maskSize + mx] = 255
             }
             maskTex.needsUpdate = true
+        },
+        setLocalCut(params) {
+            if (!params) {
+                localCutActiveUniform.value = 0
+                return
+            }
+            localCutActiveUniform.value = 1
+            localCutYUniform.value = params.y
+            localCutCenterUniform.value.set(params.center.x, params.center.z)
+            localCutRadiusUniform.value = params.radius
         },
         setTexturesEnabled(enabled) {
             useTexturesUniform.value = enabled ? 1 : 0

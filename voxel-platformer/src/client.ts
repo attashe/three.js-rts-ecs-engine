@@ -375,7 +375,7 @@ async function main(): Promise<void> {
             dispose: () => chunkRenderer.dispose(),
         })
         slots.indoorCut.set(createIndoorCutSystem(chunks, {
-            setCutY: (y) => chunkRenderer.setCutY(y),
+            setLocalCut: (cut) => chunkRenderer.setLocalCut(cut),
             viewpoint: () => renderer.iso.camera.position,
         }))
         slots.torchBlocks.set(
