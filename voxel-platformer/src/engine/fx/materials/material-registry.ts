@@ -11,7 +11,7 @@ import type { MaterialRegistryView, ParticleMaterialOpts } from '../core/types'
 
 /**
  * Shared material pool. Most particle emitters can share a single
- * `MeshBasicMaterial` per (texture, blend, depthWrite) tuple — colour
+ * `MeshBasicMaterial` per (texture, blend, depthTest, depthWrite) tuple — colour
  * + opacity are read straight from the live params on every frame.
  *
  * Materials whose `cacheable` is false are owned by the calling
@@ -26,7 +26,12 @@ export class MaterialRegistry implements MaterialRegistryView {
         const cacheable = opts.cacheable !== false
         if (!cacheable) return this.makeFresh(opts)
 
-        const key = `${opts.texture.uuid}|${opts.additive ? 'add' : 'normal'}|${opts.depthWrite ? 'dw' : 'nodw'}`
+        const key = [
+            opts.texture.uuid,
+            opts.additive ? 'add' : 'normal',
+            opts.depthTest ?? false ? 'dt' : 'nodt',
+            opts.depthWrite ? 'dw' : 'nodw',
+        ].join('|')
         let entry = this.cache.get(key)
         if (!entry) {
             const mat = this.makeFresh(opts)
@@ -47,6 +52,7 @@ export class MaterialRegistry implements MaterialRegistryView {
             color: new Color(opts.color),
             transparent: true,
             opacity: opts.opacity,
+            depthTest: opts.depthTest ?? false,
             depthWrite: opts.depthWrite ?? false,
             side: DoubleSide,
             blending: opts.additive ? AdditiveBlending : NormalBlending,

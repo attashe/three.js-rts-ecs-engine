@@ -8,6 +8,8 @@ import { rand } from '../core/sim-utils'
  * (geometries, instanced meshes, scratch arrays) lives here.
  */
 
+export const LOCAL_FX_RENDER_ORDER = 850
+
 export function buildPrimaryBillboard(
     runtime: WeatherZoneRuntime,
     deps: EmitterDeps,
@@ -24,6 +26,7 @@ export function buildPrimaryBillboard(
         ...overrides,
     })
     const mesh = new InstancedMesh(geometry, material, p.count)
+    mesh.renderOrder = LOCAL_FX_RENDER_ORDER
     mesh.frustumCulled = false
     return { mesh, geometry }
 }
@@ -54,6 +57,7 @@ export function buildExtraLayer(
         ...(init.materialOpts ?? {}),
     })
     const mesh = new InstancedMesh(geometry, material, count)
+    mesh.renderOrder = LOCAL_FX_RENDER_ORDER
     mesh.frustumCulled = false
 
     const data: ExtraLayer['data'] = {

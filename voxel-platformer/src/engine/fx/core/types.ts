@@ -283,6 +283,10 @@ export interface ParticleMaterialOpts {
     texture: import('three').Texture
     color: string | number
     opacity: number
+    /** Local Visual FX are gameplay-readable overlays in the iso view.
+     *  They default to `false` so terrain cannot hide the whole effect
+     *  from one camera rotation; opt in for physically occluded particles. */
+    depthTest?: boolean
     depthWrite?: boolean
     additive?: boolean
     /** Whether the registry should treat materials as cache-shared. Set

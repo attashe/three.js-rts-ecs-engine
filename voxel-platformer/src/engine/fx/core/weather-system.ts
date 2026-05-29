@@ -1,4 +1,4 @@
-import { Camera, Object3D, type Scene } from 'three'
+import { Camera, Frustum, Matrix4, Object3D, Sphere, Vector3, type Scene } from 'three'
 import type { AmbientWeatherState, WeatherZoneParams } from './types'
 import { WeatherZone } from './weather-zone'
 import { AmbientWeather, defaultAmbientState } from './ambient-weather'
@@ -39,6 +39,10 @@ export class WeatherSystem {
     private readonly oneShots: { zone: WeatherZone; expireAt: number }[] = []
     private readonly lightBudget: LightBudget
     private readonly dummy = new Object3D()
+    private readonly cullFrustum = new Frustum()
+    private readonly cullMatrix = new Matrix4()
+    private readonly cullSphere = new Sphere()
+    private readonly cullCenter = new Vector3()
     private elapsed = 0
     private readonly cullDistance: number
 
@@ -164,14 +168,28 @@ export class WeatherSystem {
         this.ambient.update(dt, this.elapsed, camera, this.dummy)
         // Visibility / LOD pass. Script-disabled zones remain allocated but
         // inactive so toggling them does not allocate/dispose particle meshes.
+        const cullingEnabled = this.cullDistance > 0
+        const useDistanceCull = cullingEnabled && !isOrthographicCamera(camera)
+        if (cullingEnabled) {
+            camera.updateMatrixWorld()
+            this.cullMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+            this.cullFrustum.setFromProjectionMatrix(this.cullMatrix)
+        }
         const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z
         const d2 = this.cullDistance * this.cullDistance
         for (const zone of this.zones.values()) {
             let visible = zone.runtime.active
-            if (visible && this.cullDistance > 0) {
-                const dx = zone.runtime.params.position.x - cx
-                const dy = zone.runtime.params.position.y - cy
-                const dz = zone.runtime.params.position.z - cz
+            if (visible && cullingEnabled) {
+                const p = zone.runtime.params
+                this.cullCenter.set(p.position.x, p.position.y, p.position.z)
+                this.cullSphere.set(this.cullCenter, zoneCullRadius(p.size))
+                visible = this.cullFrustum.intersectsSphere(this.cullSphere)
+            }
+            if (visible && useDistanceCull) {
+                const p = zone.runtime.params.position
+                const dx = p.x - cx
+                const dy = p.y - cy
+                const dz = p.z - cz
                 visible = (dx * dx + dy * dy + dz * dz) <= d2
             }
             zone.runtime.visible = visible
@@ -217,6 +235,14 @@ export class WeatherSystem {
         this.materials.dispose()
         this.textures.dispose()
     }
+}
+
+function isOrthographicCamera(camera: Camera): boolean {
+    return (camera as Camera & { isOrthographicCamera?: boolean }).isOrthographicCamera === true
+}
+
+function zoneCullRadius(size: { x: number; y: number; z: number }): number {
+    return Math.sqrt(size.x * size.x + size.y * size.y + size.z * size.z) * 0.5 + 4
 }
 
 class DisabledAmbientWeather {
