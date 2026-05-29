@@ -305,6 +305,14 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
     for (let x = 18; x <= length - 18; x++) {
         chunks.setVoxel(x, railY, railZ, BLOCK.rail)
     }
+    // A compact embankment gives the boulevard cart an explicit uphill/downhill
+    // section for testing terrain-following rails in the large streaming level.
+    const railHillStart = 128
+    const railHillEnd = 138
+    t.fill([railHillStart, railHillEnd], [railY, railY], [railZ - 1, railZ + 1], BLOCK.grass)
+    for (let x = railHillStart; x <= railHillEnd; x++) {
+        chunks.setVoxel(x, railY + 1, railZ, BLOCK.rail)
+    }
     // Small station pads make the rail readable from the arrival portal and
     // near the far end without blocking the sand boulevard.
     t.fill([16, 22], [groundY, groundY], [railZ - 1, railZ + 1], BLOCK.plank)

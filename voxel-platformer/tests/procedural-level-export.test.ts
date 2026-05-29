@@ -71,6 +71,11 @@ test('large town includes a long rideable rail line', () => {
 
     assert.ok(cart, 'large town should place a boulevard cart')
     assert.equal(town.chunks.getVoxel(cart!.railCell.x, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
+    assert.equal(town.chunks.getVoxel(127, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
+    assert.equal(town.chunks.getVoxel(128, cart!.railCell.y, cart!.railCell.z), BLOCK.grass)
+    assert.equal(town.chunks.getVoxel(128, cart!.railCell.y + 1, cart!.railCell.z), BLOCK.rail)
+    assert.equal(town.chunks.getVoxel(138, cart!.railCell.y + 1, cart!.railCell.z), BLOCK.rail)
+    assert.equal(town.chunks.getVoxel(139, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
     assert.equal(town.chunks.getVoxel(240, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
     assert.equal(town.chunks.getVoxel(490, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
 })
