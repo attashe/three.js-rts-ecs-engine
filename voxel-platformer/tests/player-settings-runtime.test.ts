@@ -77,6 +77,13 @@ test('indoorCutEnabled defaults on and round-trips through normalization', () =>
     assert.equal(copyPlayerSettings({ ...DEFAULT_PLAYER_SETTINGS, indoorCutEnabled: false }).indoorCutEnabled, false)
 })
 
+test('indoorCutMode defaults to corridor and rejects unknown values', () => {
+    assert.equal(DEFAULT_PLAYER_SETTINGS.indoorCutMode, 'corridor')
+    assert.equal(normalizePlayerSettings({}).indoorCutMode, 'corridor')
+    assert.equal(normalizePlayerSettings({ indoorCutMode: 'ybox' }).indoorCutMode, 'ybox')
+    assert.equal(normalizePlayerSettings({ indoorCutMode: 'bogus' } as never).indoorCutMode, 'corridor')
+})
+
 test('syncPlayerVisuals applies live script model changes', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)

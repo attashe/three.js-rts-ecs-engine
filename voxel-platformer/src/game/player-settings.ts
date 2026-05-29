@@ -37,6 +37,18 @@ export const PLAYER_INVENTORY_LIMITS = {
     arrows: 9999,
 } as const
 
+/** How the indoor reveal clears cover over the character:
+ *  - `corridor`: a narrow cutaway along the player→camera sight line (surgical).
+ *  - `ybox`: hide everything above the player within a wide radius — a
+ *    shader "illusion of global" Y-axis cull that follows the player. */
+export const INDOOR_CUT_MODES = ['corridor', 'ybox'] as const
+export type IndoorCutMode = (typeof INDOOR_CUT_MODES)[number]
+
+export const INDOOR_CUT_MODE_LABELS: Record<IndoorCutMode, string> = {
+    corridor: 'Sight-line corridor',
+    ybox: 'Y-axis cull',
+}
+
 export interface PlayerAbilitySettings {
     movement: boolean
     jump: boolean
@@ -72,9 +84,10 @@ export interface PlayerSettings {
     airPushLift: number
     torch: PlayerTorchSettings
     /** When true (default), world geometry hiding the character from the
-     *  camera (roofs, upper floors) is cut away in a small dome around the
-     *  player so they stay visible indoors. */
+     *  camera (roofs, upper floors) is cut away so they stay visible indoors. */
     indoorCutEnabled: boolean
+    /** Shape of the indoor reveal — see `IndoorCutMode`. Default `corridor`. */
+    indoorCutMode: IndoorCutMode
 }
 
 export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'torch'>> & {
@@ -112,6 +125,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
         castsShadow: true,
     },
     indoorCutEnabled: true,
+    indoorCutMode: 'corridor',
 }
 
 export function copyPlayerSettings(settings: PlayerSettings): PlayerSettings {
@@ -157,6 +171,9 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
             castsShadow: clampBoolean(input?.torch?.castsShadow, base.torch.castsShadow),
         },
         indoorCutEnabled: clampBoolean(input?.indoorCutEnabled, base.indoorCutEnabled),
+        indoorCutMode: INDOOR_CUT_MODES.includes(input?.indoorCutMode as IndoorCutMode)
+            ? input!.indoorCutMode as IndoorCutMode
+            : base.indoorCutMode,
     }
 }
 

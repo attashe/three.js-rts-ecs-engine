@@ -1,9 +1,12 @@
 import type { EditorState } from '../editor-state'
 import {
+    INDOOR_CUT_MODE_LABELS,
+    INDOOR_CUT_MODES,
     PLAYER_ABILITY_KEYS,
     PLAYER_ABILITY_LABELS,
     PLAYER_MODEL_KINDS,
     PLAYER_MODEL_LABELS,
+    type IndoorCutMode,
     type PlayerAbilityKey,
     type PlayerModelKind,
 } from '../../game/player-settings'
@@ -124,7 +127,24 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
     const indoorCutToggle = checkboxInput('Reveal character indoors', state.player.indoorCutEnabled, (checked) => {
         state.player.indoorCutEnabled = checked
     })
-    viewSection.append(indoorCutToggle.row)
+    const cutModeRow = document.createElement('label')
+    cutModeRow.className = 'vpe-field'
+    const cutModeLabel = document.createElement('span')
+    cutModeLabel.className = 'vpe-field-label'
+    cutModeLabel.textContent = 'Reveal style'
+    const cutModeSelect = document.createElement('select')
+    cutModeSelect.className = 'vpe-input'
+    cutModeSelect.style.flex = '1'
+    for (const mode of INDOOR_CUT_MODES) {
+        const opt = document.createElement('option')
+        opt.value = mode
+        opt.textContent = INDOOR_CUT_MODE_LABELS[mode]
+        cutModeSelect.appendChild(opt)
+    }
+    cutModeSelect.value = state.player.indoorCutMode
+    cutModeSelect.onchange = () => { state.player.indoorCutMode = cutModeSelect.value as IndoorCutMode }
+    cutModeRow.append(cutModeLabel, cutModeSelect)
+    viewSection.append(indoorCutToggle.row, cutModeRow)
     root.appendChild(viewSection)
 
     function refresh(): void {
@@ -149,6 +169,7 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
         syncNumber(torchDistanceField, state.player.torch.distance)
         if (torchShadow.input.checked !== state.player.torch.castsShadow) torchShadow.input.checked = state.player.torch.castsShadow
         if (indoorCutToggle.input.checked !== state.player.indoorCutEnabled) indoorCutToggle.input.checked = state.player.indoorCutEnabled
+        if (document.activeElement !== cutModeSelect && cutModeSelect.value !== state.player.indoorCutMode) cutModeSelect.value = state.player.indoorCutMode
     }
 
     refresh()

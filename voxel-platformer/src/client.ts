@@ -378,6 +378,7 @@ async function main(): Promise<void> {
             setLocalCut: (cut) => chunkRenderer.setLocalCut(cut),
             viewpoint: () => renderer.iso.camera.position,
             enabled: () => world.playerSettings?.indoorCutEnabled !== false,
+            mode: () => world.playerSettings?.indoorCutMode ?? 'corridor',
         }))
         slots.torchBlocks.set(
             getTorchSystem() === 'experimental'

@@ -82,6 +82,13 @@ export interface IndoorCutOptions {
     setLocalCut: (cut: LocalCut | null) => void
     /** Camera world position the character's visibility is tested against. */
     viewpoint: () => { x: number; y: number; z: number }
+    /** Reveal shape (read live so a player setting can switch it). Default
+     *  `'corridor'`. `'ybox'` hides everything above the player within a wide
+     *  radius — a shader "illusion of global" Y-axis cull. */
+    mode?: () => 'corridor' | 'ybox'
+    /** Disc radius used in `'ybox'` mode — wide enough to cover the streamed
+     *  world so it reads as global. Default 256. */
+    yAxisRadius?: number
     /** Half-width of the cutaway corridor. Default 4. */
     revealRadius?: number
     /** Blocks of headroom kept above the player's feet inside the cut.
@@ -104,6 +111,7 @@ export interface IndoorCutOptions {
 }
 
 const DEFAULT_RADIUS = 4
+const DEFAULT_Y_AXIS_RADIUS = 256
 const DEFAULT_HEADROOM = 1
 const DEFAULT_MARGIN = 3
 const DEFAULT_MAX_OCCLUDER = 28
@@ -113,6 +121,7 @@ const DEFAULT_EXIT_GRACE = 4
 
 export function createIndoorCutSystem(chunks: ChunkManager, opts: IndoorCutOptions): System {
     const radius = opts.revealRadius ?? DEFAULT_RADIUS
+    const yAxisRadius = opts.yAxisRadius ?? DEFAULT_Y_AXIS_RADIUS
     const headroom = opts.revealHeadroom ?? DEFAULT_HEADROOM
     const margin = opts.occluderMargin ?? DEFAULT_MARGIN
     const maxOccluder = opts.maxOccluderDistance ?? DEFAULT_MAX_OCCLUDER
@@ -168,17 +177,25 @@ export function createIndoorCutSystem(chunks: ChunkManager, opts: IndoorCutOptio
             }
 
             if (active) {
-                const vp = opts.viewpoint()
-                let dx = vp.x - px
-                let dz = vp.z - pz
-                const horiz = Math.hypot(dx, dz)
-                if (horiz > 1e-3) { dx /= horiz; dz /= horiz } else { dx = 0; dz = 0 }
-                opts.setLocalCut({
-                    a: { x: px, z: pz },
-                    b: { x: px + dx * corridorLen, z: pz + dz * corridorLen },
-                    radius,
-                    y: Math.floor(footY) + headroom,
-                })
+                const y = Math.floor(footY) + headroom
+                if ((opts.mode?.() ?? 'corridor') === 'ybox') {
+                    // Degenerate capsule (A == B) with a wide radius: hide
+                    // everything above the player within a big disc → reads as
+                    // a global Y-axis cull, still shader-only.
+                    opts.setLocalCut({ a: { x: px, z: pz }, b: { x: px, z: pz }, radius: yAxisRadius, y })
+                } else {
+                    const vp = opts.viewpoint()
+                    let dx = vp.x - px
+                    let dz = vp.z - pz
+                    const horiz = Math.hypot(dx, dz)
+                    if (horiz > 1e-3) { dx /= horiz; dz /= horiz } else { dx = 0; dz = 0 }
+                    opts.setLocalCut({
+                        a: { x: px, z: pz },
+                        b: { x: px + dx * corridorLen, z: pz + dz * corridorLen },
+                        radius,
+                        y,
+                    })
+                }
                 applied = true
             } else if (applied) {
                 applied = false
