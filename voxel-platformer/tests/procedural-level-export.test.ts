@@ -4,10 +4,13 @@ import { deserializeLevel } from '../src/engine/voxel/level-serializer'
 import { createProceduralEditorLevel } from '../src/editor/procedural-level-export'
 import type { EditorLevelMeta } from '../src/editor/editor-state'
 import {
+    DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
+    LARGE_TOWN_LEVEL_ID,
     PROCEDURAL_LEVEL_DEFINITIONS,
     PROCEDURAL_LEVEL_SCRIPT_FILES,
     TELEPORT_GARDEN_LEVEL_ID,
+    TOWN_FROM_DEMO_ARRIVAL_ID,
     type ProceduralScriptSources,
 } from '../src/game/procedural-levels'
 
@@ -38,4 +41,25 @@ test('procedural demo export preserves scripts and travel metadata', () => {
     )
     assert.ok(demo.editorMeta.zones?.some((zone) => zone.portal?.targetLevelId === TELEPORT_GARDEN_LEVEL_ID))
     assert.ok(garden.editorMeta.zones?.some((zone) => zone.portal?.targetLevelId === DEMO_LEVEL_ID))
+})
+
+test('demo <-> large-town portals resolve to existing arrival zones', () => {
+    const demo = createProceduralEditorLevel(DEMO_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const town = createProceduralEditorLevel(LARGE_TOWN_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+
+    const toTown = demo.editorMeta.zones?.find((zone) => zone.portal?.targetLevelId === LARGE_TOWN_LEVEL_ID)
+    assert.ok(toTown, 'demo should have a portal into the large town')
+    assert.equal(toTown!.portal?.targetArrivalId, TOWN_FROM_DEMO_ARRIVAL_ID)
+    assert.ok(
+        town.editorMeta.zones?.some((zone) => zone.id === TOWN_FROM_DEMO_ARRIVAL_ID && zone.kind === 'arrival'),
+        'town should expose the arrival zone the demo portal targets',
+    )
+
+    const backToDemo = town.editorMeta.zones?.find((zone) => zone.portal?.targetLevelId === DEMO_LEVEL_ID)
+    assert.ok(backToDemo, 'town should have a return portal to the demo')
+    assert.equal(backToDemo!.portal?.targetArrivalId, DEMO_FROM_TOWN_ARRIVAL_ID)
+    assert.ok(
+        demo.editorMeta.zones?.some((zone) => zone.id === DEMO_FROM_TOWN_ARRIVAL_ID && zone.kind === 'arrival'),
+        'demo should expose the arrival zone the town return portal targets',
+    )
 })

@@ -3,3 +3,7 @@ dist/
 .tmp/
 package-lock.json
 import/
+
+# Large streaming-demo location — regenerated in-memory at runtime via the
+# procedural level registry; the 2.6 MB export is not worth tracking.
+public/levels/demo-large-town.vplevel

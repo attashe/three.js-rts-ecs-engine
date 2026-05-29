@@ -11,8 +11,11 @@ import type { PlayerSettings } from './player-settings'
 import type { ScriptEntry } from '../engine/script/types'
 import {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
+    DEMO_FROM_TOWN_ARRIVAL_ID,
+    LARGE_TOWN_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
+    TOWN_FROM_DEMO_ARRIVAL_ID,
 } from './procedural-level-ids'
 import { defineLevel, interactZone, outdoorDay, terrain } from './level-builder'
 
@@ -179,6 +182,12 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         },
     ]
 
+    // Walk-in gate to the Large Town (the mesh-streaming demo location),
+    // tucked in the south-east corner of the plaza.
+    t.fill([19, 22], [groundY, groundY], [19, 22], BLOCK.stone)
+        .fill([19, 19], [groundY + 1, groundY + 3], [19, 19], BLOCK.brick)
+        .fill([22, 22], [groundY + 1, groundY + 3], [22, 22], BLOCK.brick)
+
     // Quest / test zones. The interact spots derive their AABB + prompt
     // anchor from a single center (= the matching prop's position); the
     // trigger / portal / arrival volumes stay explicit min/max regions.
@@ -272,6 +281,27 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             label: 'Return from Teleport Garden',
             min: { x: 8.25, y: groundY + 1, z: 16.75 },
             max: { x: 9.75, y: groundY + 2.8, z: 18.25 },
+        },
+        {
+            // Walk-in portal to the Large Town — active by default (no script
+            // gate), so it's a direct way to exercise mesh streaming.
+            id: 'zone.demo.portal.large-town',
+            kind: 'portal',
+            label: 'Gate to the Large Town',
+            min: { x: 20, y: groundY + 1, z: 20 },
+            max: { x: 22, y: groundY + 3, z: 22 },
+            triggerSources: ['player'],
+            portal: {
+                targetLevelId: LARGE_TOWN_LEVEL_ID,
+                targetArrivalId: TOWN_FROM_DEMO_ARRIVAL_ID,
+            },
+        },
+        {
+            id: DEMO_FROM_TOWN_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Return from the Large Town',
+            min: { x: 18.25, y: groundY + 1, z: 17.25 },
+            max: { x: 19.75, y: groundY + 2.8, z: 18.75 },
         },
     ]
 

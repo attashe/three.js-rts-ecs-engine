@@ -5,17 +5,31 @@ import type { ScriptEntry } from '../engine/script/types'
 import { generatePlatformerLevel, type LevelMeta } from './level'
 import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
 import {
+    generateStructureAsset,
+    placeStructureAsset,
+    prefabSource,
+    proceduralSource,
+    type StructureRotation,
+    type StructureSource,
+} from '../procedural-structures'
+import {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
+    DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
+    LARGE_TOWN_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
+    TOWN_FROM_DEMO_ARRIVAL_ID,
 } from './procedural-level-ids'
 
 export {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
+    DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
+    LARGE_TOWN_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
+    TOWN_FROM_DEMO_ARRIVAL_ID,
 }
 
 export interface ProceduralLevelScriptFile {
@@ -68,6 +82,12 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         file: `${TELEPORT_GARDEN_LEVEL_ID}.vplevel`,
         name: 'Teleport Garden',
         generate: generateTeleportGardenLevel,
+    },
+    {
+        id: LARGE_TOWN_LEVEL_ID,
+        file: `${LARGE_TOWN_LEVEL_ID}.vplevel`,
+        name: 'Large Town',
+        generate: generateLargeTownLevel,
     },
 ]
 
@@ -209,6 +229,100 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
             { id: 'teleport-garden:sundial', kind: 'sundial', position: t.stand(15.2, 14.2), yaw: Math.PI * 0.2, scale: 0.9, gridAligned: false },
             { id: 'teleport-garden:book', kind: 'book-2', position: t.stand(5.2, 14.4), yaw: Math.PI * 0.2, scale: 0.9, gridAligned: false },
         ],
+    })
+}
+
+/**
+ * Large Town — a 512-cell boulevard lined with procedural + prefab
+ * structures. Its job is to exercise the chunk renderer's mesh streaming:
+ * at 512 cells long it far exceeds the in-game mesh window, so walking its
+ * length visibly streams chunks in ahead of the player and out behind.
+ * Doubles as a showcase for the structure-asset placement API
+ * (`placeStructureAsset`) — the same one the editor's Structures tab uses.
+ */
+export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
+    const length = 512 // X span — longer than the mesh window so it streams
+    const depth = 48 // Z span — a 2-chunk-deep strip
+    const groundY = 4
+    const roadZ = 24
+    const t = terrain(chunks, { size: length, groundY })
+
+    // Ground strip (dirt body + grass top) running the length of the boulevard.
+    t.fill([0, length - 1], [0, groundY - 1], [0, depth - 1], BLOCK.dirt)
+        .fill([0, length - 1], [groundY, groundY], [0, depth - 1], BLOCK.grass)
+        .path({ points: [{ x: 4, z: roadZ }, { x: length - 4, z: roadZ }], width: 6, block: BLOCK.sand })
+
+    // Structures lining the avenue, alternating north / south. Stamped through
+    // the same asset-placement API the editor uses, so footprints are
+    // predictable and the street reads as built-up.
+    const northZ = 10
+    const southZ = depth - 12
+    const plots: Array<{ source: StructureSource; rotation: StructureRotation }> = [
+        { source: proceduralSource('house', 1011), rotation: 0 },
+        { source: prefabSource('well'), rotation: 0 },
+        { source: proceduralSource('tower', 1022), rotation: 0 },
+        { source: prefabSource('campfire'), rotation: 0 },
+        { source: proceduralSource('house', 1033), rotation: 90 },
+        { source: prefabSource('banner-arch'), rotation: 90 },
+        { source: proceduralSource('tower', 1044), rotation: 0 },
+        { source: proceduralSource('house', 1055), rotation: 180 },
+        { source: prefabSource('well'), rotation: 0 },
+        { source: proceduralSource('house', 1066), rotation: 270 },
+    ]
+    let plotX = 56
+    for (let i = 0; i < plots.length; i++) {
+        const plot = plots[i]!
+        const z = i % 2 === 0 ? northZ : southZ
+        const asset = generateStructureAsset(plot.source, { palette: chunks.palette, structuralOnly: true })
+        placeStructureAsset(chunks, asset, {
+            origin: { x: plotX, y: groundY + 1, z },
+            rotation: plot.rotation,
+            anchor: 'bottom-center',
+        })
+        plotX += 48
+    }
+
+    // West-end plaza: a stone pad, a return portal gate, and the portal volume.
+    t.fill([4, 14], [groundY, groundY], [roadZ - 4, roadZ + 4], BLOCK.stone)
+    const gate = generateStructureAsset(prefabSource('portal-gate'), { palette: chunks.palette })
+    placeStructureAsset(chunks, gate, {
+        origin: { x: 8, y: groundY + 1, z: roadZ },
+        rotation: 90,
+        anchor: 'bottom-center',
+    })
+
+    const zones: Zone[] = [
+        {
+            id: TOWN_FROM_DEMO_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Arrival from Demo',
+            ...zoneBox({ x: 16, z: roadZ }, { x: 1, z: 1 }, groundY + 1, groundY + 2.8),
+        },
+        {
+            id: 'zone.large-town.portal.demo',
+            kind: 'portal',
+            label: 'Gate back to Demo',
+            ...zoneBox({ x: 8, z: roadZ }, { x: 1.5, z: 1.5 }, groundY + 1, groundY + 3),
+            triggerSources: ['player'],
+            portal: {
+                targetLevelId: DEMO_LEVEL_ID,
+                targetArrivalId: DEMO_FROM_TOWN_ARRIVAL_ID,
+            },
+        },
+    ]
+
+    return defineLevel({
+        name: 'Large Town',
+        size: length,
+        spawn: t.stand(16, roadZ),
+        zones,
+        coinPiles: [
+            { position: { x: 80, y: groundY + 1, z: roadZ }, amount: 3 },
+            { position: { x: 240, y: groundY + 1, z: roadZ }, amount: 3 },
+            { position: { x: 400, y: groundY + 1, z: roadZ }, amount: 3 },
+        ],
+        environment: { soundId: 'music.background', volume: 0.2 },
+        ambient: outdoorDay({ timeOfDay: 14 }),
     })
 }
 
