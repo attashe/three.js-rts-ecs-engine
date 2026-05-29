@@ -103,7 +103,10 @@ export function createVoxelCursorSystem(
                 (editorState.mode === 'paint' && input.isMouseButtonDown(RMB))
             const cursorCell = resolveCursorCell(chunks, ray, editorState, eraseGesture)
             editorState.cursor = cursorCell
-            if (editorState.mode === 'select') {
+            // `place-structure` resolves the cursor cell (so the structure
+            // preview can follow it) but draws no brush outline / ghost —
+            // the structure-preview system owns that visual.
+            if (editorState.mode === 'select' || editorState.mode === 'place-structure') {
                 lines.visible = false
                 ghost.visible = false
                 return
@@ -164,6 +167,7 @@ function resolveCursorCell(
             editorState.mode === 'place-npc' ||
             editorState.mode === 'place-stone' ||
             editorState.mode === 'place-stone-spawner' ||
+            editorState.mode === 'place-structure' ||
             editorState.mode === 'scatter-props'
         ) {
             return {
@@ -252,6 +256,7 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'place-npc': return 0xffd166
         case 'place-stone': return 0xff9f43
         case 'place-stone-spawner': return 0xffb86b
+        case 'place-structure': return 0x9be0ff
     }
 }
 

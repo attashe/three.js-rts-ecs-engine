@@ -1,0 +1,125 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { ChunkManager } from '../src/engine/voxel/chunk-manager'
+import { DEFAULT_PALETTE } from '../src/engine/voxel/palette'
+import {
+    DEFAULT_PREFAB_ID,
+    STRUCTURE_PREFABS,
+    generateStructureAsset,
+    measureStructurePlacement,
+    structurePlacementEdits,
+    placeStructureAsset,
+    prefabSource,
+    proceduralSource,
+    rotatedSize,
+    type StructureRotation,
+    type StructureTransform,
+} from '../src/procedural-structures'
+
+function signature(edits: { x: number; y: number; z: number; value: number }[]): string {
+    return edits.map((e) => `${e.x},${e.y},${e.z}:${e.value}`).sort().join('|')
+}
+
+test('procedural asset is deterministic and normalised to a (0,0,0) min corner', () => {
+    const source = proceduralSource('house', 7)
+    const a = generateStructureAsset(source, { palette: DEFAULT_PALETTE })
+    const b = generateStructureAsset(source, { palette: DEFAULT_PALETTE })
+
+    assert.equal(signature(a.voxels.map((v) => ({ ...v, value: v.block }))), signature(b.voxels.map((v) => ({ ...v, value: v.block }))))
+    assert.equal(a.bounds.minX, 0)
+    assert.equal(a.bounds.minY, 0)
+    assert.equal(a.bounds.minZ, 0)
+    assert.equal(a.size.width, a.bounds.width)
+    assert.ok(a.stats.voxelCount > 0)
+})
+
+test('structuralOnly drops decorative voxels but keeps the structure', () => {
+    const source = proceduralSource('tree', 24, { tree: { style: 'oak', fruitChance: 0.35 } })
+    const full = generateStructureAsset(source)
+    const lean = generateStructureAsset(source, { structuralOnly: true })
+    assert.ok(lean.stats.voxelCount > 0)
+    assert.ok(lean.stats.voxelCount <= full.stats.voxelCount)
+})
+
+test('every prefab generates voxels and resolves a label', () => {
+    for (const prefab of STRUCTURE_PREFABS) {
+        const asset = generateStructureAsset(prefabSource(prefab.id), { palette: DEFAULT_PALETTE })
+        assert.ok(asset.stats.voxelCount > 0, `${prefab.id} should generate voxels`)
+        assert.equal(asset.label, prefab.label)
+        assert.ok(asset.size.width > 0 && asset.size.height > 0 && asset.size.depth > 0)
+    }
+})
+
+test('portal gate prefab has a stable footprint and an emissive keystone', () => {
+    const asset = generateStructureAsset(prefabSource(DEFAULT_PREFAB_ID))
+    assert.equal(asset.footprint.width, 9) // pillars ±3 + base steps ±4 ⇒ 9 wide
+    assert.equal(asset.footprint.depth, 2)
+    assert.ok(asset.voxels.some((v) => v.tag === 'portal-keystone'))
+    assert.ok(asset.voxels.some((v) => v.tag === 'portal-field'))
+})
+
+test('90/270 rotations swap footprint width and depth; 180 keeps them', () => {
+    const asset = generateStructureAsset(prefabSource('banner-arch'))
+    assert.notEqual(asset.size.width, asset.size.depth) // 7 x 1, so swaps are observable
+    assert.deepEqual(rotatedSize(asset, 0), asset.size)
+    assert.deepEqual(rotatedSize(asset, 180), asset.size)
+    const r90 = rotatedSize(asset, 90)
+    assert.equal(r90.width, asset.size.depth)
+    assert.equal(r90.depth, asset.size.width)
+})
+
+test('rotation preserves voxel count and stays inside the rotated bounds', () => {
+    const asset = generateStructureAsset(prefabSource('well'))
+    for (const rotation of [0, 90, 180, 270] as StructureRotation[]) {
+        const transform: StructureTransform = { origin: { x: 0, y: 0, z: 0 }, rotation, anchor: 'min-corner' }
+        const edits = structurePlacementEdits(asset, transform)
+        assert.equal(edits.length, asset.voxels.length)
+        const size = rotatedSize(asset, rotation)
+        for (const e of edits) {
+            assert.ok(e.x >= 0 && e.x < size.width, `x ${e.x} out of [0,${size.width}) at rot ${rotation}`)
+            assert.ok(e.z >= 0 && e.z < size.depth, `z ${e.z} out of [0,${size.depth}) at rot ${rotation}`)
+        }
+    }
+})
+
+test('measureStructurePlacement matches the actual stamped extent', () => {
+    const asset = generateStructureAsset(proceduralSource('tower', 9, { tower: { style: 'round' } }))
+    for (const rotation of [0, 90, 180, 270] as StructureRotation[]) {
+        const transform: StructureTransform = { origin: { x: 40, y: 12, z: -8 }, rotation, anchor: 'bottom-center' }
+        const measured = measureStructurePlacement(asset, transform)
+        const edits = structurePlacementEdits(asset, transform)
+        let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+        for (const e of edits) {
+            minX = Math.min(minX, e.x); maxX = Math.max(maxX, e.x)
+            minY = Math.min(minY, e.y); maxY = Math.max(maxY, e.y)
+            minZ = Math.min(minZ, e.z); maxZ = Math.max(maxZ, e.z)
+        }
+        assert.deepEqual(
+            { minX, minY, minZ, maxX, maxY, maxZ },
+            { minX: measured.bounds.minX, minY: measured.bounds.minY, minZ: measured.bounds.minZ, maxX: measured.bounds.maxX, maxY: measured.bounds.maxY, maxZ: measured.bounds.maxZ },
+        )
+    }
+})
+
+test('bottom-center anchor rests the structure base on origin.y and centres XZ', () => {
+    const asset = generateStructureAsset(prefabSource('campfire'))
+    const transform: StructureTransform = { origin: { x: 5, y: 3, z: 5 }, rotation: 0, anchor: 'bottom-center' }
+    const measured = measureStructurePlacement(asset, transform)
+    assert.equal(measured.bounds.minY, 3) // base sits on the origin row
+    assert.equal((measured.bounds.minX + measured.bounds.maxX) >> 1, 5)
+    assert.equal((measured.bounds.minZ + measured.bounds.maxZ) >> 1, 5)
+})
+
+test('placeStructureAsset stamps the cells and yields invertible undo edits', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const asset = generateStructureAsset(prefabSource('well'))
+    const transform: StructureTransform = { origin: { x: 10, y: 1, z: 10 }, rotation: 90, anchor: 'bottom-center' }
+
+    const result = placeStructureAsset(chunks, asset, transform)
+    assert.ok(result.changedVoxels > 0)
+    for (const e of result.after) assert.equal(chunks.getVoxel(e.x, e.y, e.z), e.value)
+
+    // Undo: re-apply the before edits and confirm the cells are cleared.
+    chunks.applyBulk(result.before)
+    for (const e of result.after) assert.equal(chunks.getVoxel(e.x, e.y, e.z), 0)
+})

@@ -33,6 +33,8 @@ import { createNpcPlaceSystem } from './editor/systems/npc-place-system'
 import { createNpcRenderSystem } from './game/npcs/npc-render-system'
 import { createStonePlaceSystem } from './editor/systems/stone-place-system'
 import { createStoneRenderSystem } from './editor/systems/stone-render-system'
+import { createStructurePlaceSystem } from './editor/systems/structure-place-system'
+import { createStructurePreviewSystem } from './editor/systems/structure-preview-system'
 import { createSelectionGizmoSystem } from './editor/systems/selection-gizmo-system'
 import { createWorkingPlaneSystem } from './editor/systems/working-plane-system'
 import { createWorkingPlaneOutlinesSystem } from './editor/systems/working-plane-outlines-system'
@@ -125,6 +127,7 @@ async function main(): Promise<void> {
         .addSystem(createPropPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'propPlace')
         .addSystem(createNpcPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'npcPlace')
         .addSystem(createStonePlaceSystem(engine.input, editorState), 'stonePlace')
+        .addSystem(createStructurePlaceSystem(engine.input, chunks, editorState, history), 'structurePlace')
         .addSystem(createPropRenderSystem(renderer.scene, {
             getProps: () => editorState.props,
             castShadows: true,
@@ -147,6 +150,7 @@ async function main(): Promise<void> {
         .addSystem(createSoundSourceRenderSystem(renderer.scene, editorState), 'soundSourceRender')
         .addSystem(createSoundZoneRenderSystem(renderer.scene, editorState), 'soundZoneRender')
         .addSystem(createWeatherZoneRenderSystem(renderer.scene, editorState), 'weatherZoneRender')
+        .addSystem(createStructurePreviewSystem(renderer.scene, editorState, chunks), 'structurePreview')
         .addSystem(createSelectionGizmoSystem(renderer.scene, renderer.iso, engine.input, renderer.webgpu.domElement, editorState), 'selectionGizmo')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Editor panel lives top-right; push debug metrics / log to the

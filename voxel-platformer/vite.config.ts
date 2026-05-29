@@ -17,6 +17,7 @@ export default defineConfig({
         editor: resolve(__dirname, 'editor.html'),
         fxDemo: resolve(__dirname, 'fx-demo.html'),
         soundDemo: resolve(__dirname, 'sound-demo.html'),
+        proceduralStructures: resolve(__dirname, 'procedural-structures.html'),
       },
     },
   },

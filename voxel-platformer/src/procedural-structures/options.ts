@@ -1,0 +1,88 @@
+import type { PartialStructureGenerationOptions, StructureGenerationOptions } from './types'
+import { clamp, clamp01, clampInt, finite } from './math'
+
+export const DEFAULT_STRUCTURE_OPTIONS: StructureGenerationOptions = {
+    kind: 'mixed',
+    seed: 1337,
+    variants: 3,
+    spacing: 34,
+    detail: 0.72,
+    variation: 0.42,
+    cleanLoose: true,
+    showTerrain: true,
+    terrainSize: 92,
+    terrainNoise: 0.14,
+    tree: {
+        style: 'mixed',
+        trunkHeight: 16,
+        trunkRadius: 2,
+        crownRadius: 8,
+        branchDensity: 0.62,
+        leafNoise: 0.30,
+        fruitChance: 0.04,
+    },
+    house: {
+        style: 'mixed',
+        width: 20,
+        depth: 16,
+        floors: 1,
+        floorHeight: 6,
+        roofStyle: 'mixed',
+        sideWing: true,
+        porch: true,
+        chimney: true,
+    },
+    tower: {
+        style: 'mixed',
+        radius: 10,
+        height: 36,
+        wallThickness: 2,
+        taper: 0.10,
+        windowEvery: 8,
+        ruinAmount: 0.06,
+        spire: true,
+    },
+}
+
+export function normalizeStructureOptions(opts: PartialStructureGenerationOptions = {}): StructureGenerationOptions {
+    return {
+        ...DEFAULT_STRUCTURE_OPTIONS,
+        ...opts,
+        kind: opts.kind ?? DEFAULT_STRUCTURE_OPTIONS.kind,
+        seed: Math.floor(finite(opts.seed, DEFAULT_STRUCTURE_OPTIONS.seed)),
+        variants: clampInt(opts.variants, 1, 8, DEFAULT_STRUCTURE_OPTIONS.variants),
+        spacing: clampInt(opts.spacing, 14, 64, DEFAULT_STRUCTURE_OPTIONS.spacing),
+        detail: clamp01(finite(opts.detail, DEFAULT_STRUCTURE_OPTIONS.detail)),
+        variation: clamp01(finite(opts.variation, DEFAULT_STRUCTURE_OPTIONS.variation)),
+        terrainSize: clampInt(opts.terrainSize, 28, 160, DEFAULT_STRUCTURE_OPTIONS.terrainSize),
+        terrainNoise: clamp01(finite(opts.terrainNoise, DEFAULT_STRUCTURE_OPTIONS.terrainNoise)),
+        tree: {
+            ...DEFAULT_STRUCTURE_OPTIONS.tree,
+            ...opts.tree,
+            trunkHeight: clampInt(opts.tree?.trunkHeight, 6, 36, DEFAULT_STRUCTURE_OPTIONS.tree.trunkHeight),
+            trunkRadius: clampInt(opts.tree?.trunkRadius, 1, 6, DEFAULT_STRUCTURE_OPTIONS.tree.trunkRadius),
+            crownRadius: clampInt(opts.tree?.crownRadius, 3, 18, DEFAULT_STRUCTURE_OPTIONS.tree.crownRadius),
+            branchDensity: clamp01(finite(opts.tree?.branchDensity, DEFAULT_STRUCTURE_OPTIONS.tree.branchDensity)),
+            leafNoise: clamp01(finite(opts.tree?.leafNoise, DEFAULT_STRUCTURE_OPTIONS.tree.leafNoise)),
+            fruitChance: clamp(finite(opts.tree?.fruitChance, DEFAULT_STRUCTURE_OPTIONS.tree.fruitChance), 0, 0.35),
+        },
+        house: {
+            ...DEFAULT_STRUCTURE_OPTIONS.house,
+            ...opts.house,
+            width: clampInt(opts.house?.width, 10, 38, DEFAULT_STRUCTURE_OPTIONS.house.width),
+            depth: clampInt(opts.house?.depth, 10, 34, DEFAULT_STRUCTURE_OPTIONS.house.depth),
+            floors: clampInt(opts.house?.floors, 1, 3, DEFAULT_STRUCTURE_OPTIONS.house.floors),
+            floorHeight: clampInt(opts.house?.floorHeight, 5, 9, DEFAULT_STRUCTURE_OPTIONS.house.floorHeight),
+        },
+        tower: {
+            ...DEFAULT_STRUCTURE_OPTIONS.tower,
+            ...opts.tower,
+            radius: clampInt(opts.tower?.radius, 5, 18, DEFAULT_STRUCTURE_OPTIONS.tower.radius),
+            height: clampInt(opts.tower?.height, 18, 72, DEFAULT_STRUCTURE_OPTIONS.tower.height),
+            wallThickness: clampInt(opts.tower?.wallThickness, 1, 5, DEFAULT_STRUCTURE_OPTIONS.tower.wallThickness),
+            taper: clamp(finite(opts.tower?.taper, DEFAULT_STRUCTURE_OPTIONS.tower.taper), 0, 0.35),
+            windowEvery: clampInt(opts.tower?.windowEvery, 5, 18, DEFAULT_STRUCTURE_OPTIONS.tower.windowEvery),
+            ruinAmount: clamp(finite(opts.tower?.ruinAmount, DEFAULT_STRUCTURE_OPTIONS.tower.ruinAmount), 0, 0.65),
+        },
+    }
+}

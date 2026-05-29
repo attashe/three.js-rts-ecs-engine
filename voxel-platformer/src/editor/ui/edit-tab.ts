@@ -228,6 +228,8 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
         case 'place-stone':
         case 'place-stone-spawner':
             return buildStoneModePanel()
+        case 'place-structure':
+            return buildStructureModePanel()
     }
 }
 
@@ -254,6 +256,15 @@ function buildStoneModePanel(): RefreshableElement {
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
     hint.textContent = 'Switch to the Stones tab to place physics stones or configure falling-stone spawners.'
+    section.appendChild(hint)
+    return { element: section, refresh() {} }
+}
+
+function buildStructureModePanel(): RefreshableElement {
+    const section = sectionEl('Structures')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.textContent = 'Switch to the Structures tab to pick a prefab or procedural structure, rotation, and seed. The cursor preview shows the bounding box.'
     section.appendChild(hint)
     return { element: section, refresh() {} }
 }

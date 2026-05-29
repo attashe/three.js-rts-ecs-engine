@@ -18,6 +18,9 @@ import {
     type StoneSpawnOptions,
     type StoneTierId,
 } from '../game/moving-objects'
+import type { StructureAnchor, StructureRotation, StructureSourceKind } from '../procedural-structures/asset'
+import type { StructureKind } from '../procedural-structures/types'
+import { DEFAULT_PREFAB_ID } from '../procedural-structures/prefabs'
 
 export type EditorMode =
     | 'select'
@@ -35,6 +38,7 @@ export type EditorMode =
     | 'place-npc'
     | 'place-stone'
     | 'place-stone-spawner'
+    | 'place-structure'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut;
  *  `orbit` enables free OrbitControls-style scene inspection. */
@@ -429,6 +433,25 @@ export interface EditorState {
     stoneSpawnerJitter: number
     stoneSpawnerEnabled: boolean
 
+    /** Multi-block structure placement. Unlike props/NPCs (separate
+     *  entities), placing a structure *bakes its voxels into the level*
+     *  as one undoable bulk edit — so it saves/loads as plain terrain and
+     *  the preview can show the exact footprint before committing. */
+    structureSourceKind: StructureSourceKind
+    /** Prefab id used when `structureSourceKind === 'prefab'`. */
+    structurePrefabId: string
+    /** Procedural generator kind used when `structureSourceKind === 'procedural'`. */
+    structureKind: StructureKind
+    /** Seed for the procedural generator. */
+    structureSeed: number
+    /** Y-axis rotation applied to the next placed structure. */
+    structureRotation: StructureRotation
+    /** Anchor cell the cursor maps onto (default bottom-center). */
+    structureAnchor: StructureAnchor
+    /** Drop purely decorative voxels (flowers/mushrooms/fruit/smoke) for a
+     *  predictable structural footprint. */
+    structureStructuralOnly: boolean
+
     /** Level-wide visual environment (sky / fog / sun / drifting rain
      *  & snow / lightning). Disabled by default. */
     ambientWeather: EditorAmbientWeather
@@ -584,6 +607,13 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         stoneSpawnerMaxLive: 4,
         stoneSpawnerJitter: 0,
         stoneSpawnerEnabled: true,
+        structureSourceKind: 'prefab',
+        structurePrefabId: DEFAULT_PREFAB_ID,
+        structureKind: 'house',
+        structureSeed: 1337,
+        structureRotation: 0,
+        structureAnchor: 'bottom-center',
+        structureStructuralOnly: false,
         ambientWeather: {
             // Default to enabled now that an Outdoor mode "just works"
             // without the author hand-picking sky/fog/sun colours — the
