@@ -14,10 +14,28 @@ import {
     type WaterBlockSurfaceMaterial,
 } from '../fx/materials/liquid-surfaces'
 import { BLOCK, paletteEntry, type LiquidBlockKind, type Palette } from './palette'
+import {
+    chunkCoordsInRadius,
+    chunkDistanceSq,
+    coordKey,
+    diffActiveSet,
+    focusChunk,
+    isWithinRadius,
+    sameChunk,
+    type ChunkCoord,
+    type ChunkStreamingConfig,
+} from './chunk-streaming'
 
 const LIQUID_BLOCK_SURFACE_RENDER_ORDER = 32
 
 type ChunkLiquidSurfaces = Partial<Record<LiquidBlockKind, Mesh>>
+
+export interface ChunkRendererOptions {
+    /** Enable mesh streaming around a focus point. Omit for the legacy
+     *  "mesh every chunk" behaviour (still right for small levels + the
+     *  editor). */
+    streaming?: ChunkStreamingConfig
+}
 
 /**
  * Owns the THREE.Mesh per chunk. Each frame, drains `manager.drainDirty()`
@@ -44,9 +62,19 @@ export class ChunkRenderer {
     private debugInfoEnabled = getDebugInfoEnabled()
     private cutY: number | null = null
 
-    constructor(scene: Scene, manager: ChunkManager) {
+    // Mesh-streaming state (null config ⇒ legacy "mesh everything").
+    private readonly streaming: ChunkStreamingConfig | null
+    /** Chunk keys currently meshed (within the focus radius). Voxel data for
+     *  these and all other chunks stays resident in the manager. */
+    private readonly activeChunks: Map<ChunkKey, ChunkCoord> = new Map()
+    /** Chunk keys awaiting a (re)mesh, drained nearest-first under the budget. */
+    private readonly pending: Map<ChunkKey, ChunkCoord> = new Map()
+    private lastFocusChunk: ChunkCoord | null = null
+
+    constructor(scene: Scene, manager: ChunkManager, options: ChunkRendererOptions = {}) {
         this.scene = scene
         this.manager = manager
+        this.streaming = options.streaming ?? null
         // Build the atlas once at startup — it's a few hundred KB of
         // RGBA, deterministic, and shared by every chunk mesh in the
         // scene. Mirror this in the chunk material so the toggle uniform
@@ -77,11 +105,30 @@ export class ChunkRenderer {
         this.unsubscribeDebugInfo = subscribeDebugInfo((enabled) => {
             if (this.debugInfoEnabled === enabled) return
             this.debugInfoEnabled = enabled
-            for (const c of this.manager.allChunks()) {
-                this.remesh(c)
-            }
-            this.manager.drainDirty()
+            this.remeshVisible()
         })
+    }
+
+    /** Rebuild whatever is currently on screen. Under streaming this re-queues
+     *  the active working set (budgeted over the next frames); otherwise it
+     *  remeshes every loaded chunk immediately. Used by cut + debug toggles
+     *  that change geometry without bumping any chunk's version. */
+    private remeshVisible(): void {
+        if (this.streaming) {
+            this.requeueActiveForRebuild()
+            return
+        }
+        for (const c of this.manager.allChunks()) {
+            this.remesh(c)
+        }
+        this.manager.drainDirty()
+    }
+
+    private requeueActiveForRebuild(): void {
+        for (const [key, coord] of this.activeChunks) {
+            this.meshedVersion.delete(key)
+            this.pending.set(key, coord)
+        }
     }
 
     /** Mark the working-plane row. The material uses this to fade covered
@@ -92,10 +139,7 @@ export class ChunkRenderer {
         if (this.cutY === y) return
         this.cutY = y
         this.voxelMaterial.setCutY(y)
-        for (const c of this.manager.allChunks()) {
-            this.remesh(c)
-        }
-        this.manager.drainDirty()
+        this.remeshVisible()
     }
 
     /** Replace the cover mask — world-cell XZ columns that have hidden
@@ -106,8 +150,22 @@ export class ChunkRenderer {
     }
 
     /** Force a full remesh (e.g. after bulk level generation). Discards any
-     *  dirty markers since we've just rebuilt everything from scratch. */
+     *  dirty markers since we've just rebuilt everything from scratch.
+     *
+     *  Under streaming this disposes any existing meshes and resets the
+     *  working set; `update()` then repopulates it from the focus point over
+     *  the next frames (budgeted), so a large location never stalls on load. */
     rebuildAll(): void {
+        if (this.streaming) {
+            for (const key of [...this.meshByKey.keys()]) this.disposeChunkMeshes(key)
+            for (const key of [...this.liquidSurfaceByKey.keys()]) this.removeLiquidSurfaces(key)
+            this.activeChunks.clear()
+            this.pending.clear()
+            this.meshedVersion.clear()
+            this.lastFocusChunk = null
+            this.manager.drainDirty()
+            return
+        }
         for (const c of this.manager.allChunks()) {
             this.remesh(c)
         }
@@ -116,6 +174,10 @@ export class ChunkRenderer {
 
     /** Drain the manager's dirty set and rebuild changed chunks. */
     update(): void {
+        if (this.streaming) {
+            this.updateStreaming(this.streaming)
+            return
+        }
         const dirty = this.manager.drainDirty()
         if (dirty.length === 0) return
         for (const c of dirty) {
@@ -125,18 +187,96 @@ export class ChunkRenderer {
         }
     }
 
+    /**
+     * Streaming update: keep the meshed working set within `radiusChunks` of
+     * the focus point, dispose meshes that drift out (voxel data retained),
+     * and (re)mesh up to `budgetPerFrame` chunks per frame, nearest first.
+     */
+    private updateStreaming(cfg: ChunkStreamingConfig): void {
+        const center = focusChunk(cfg.focus())
+
+        // Runtime voxel edits (arrows, pistons) + freshly-created chunks: if
+        // they're inside the radius, (re)mesh them regardless of focus motion.
+        for (const c of this.manager.drainDirty()) {
+            const coord: ChunkCoord = { cx: c.cx, cy: c.cy, cz: c.cz }
+            if (!isWithinRadius(center, coord, cfg.radiusChunks)) continue
+            const key = chunkKey(c.cx, c.cy, c.cz)
+            this.activeChunks.set(key, coord)
+            this.meshedVersion.delete(key)
+            this.pending.set(key, coord)
+        }
+
+        // Recompute the working set only when the focus crosses a chunk
+        // boundary — the common case is no change, so this is usually free.
+        if (!this.lastFocusChunk || !sameChunk(center, this.lastFocusChunk)) {
+            this.lastFocusChunk = center
+            const desired = new Set<ChunkKey>()
+            const coords = new Map<ChunkKey, ChunkCoord>()
+            for (const cc of chunkCoordsInRadius(center, cfg.radiusChunks)) {
+                const chunk = this.manager.getChunk(cc.cx, cc.cy, cc.cz)
+                if (!chunk || chunk.nonAirCount === 0) continue
+                const key = coordKey(cc)
+                desired.add(key)
+                coords.set(key, cc)
+            }
+            const { enter, leave } = diffActiveSet(new Set(this.activeChunks.keys()), desired)
+            for (const key of leave) {
+                this.disposeChunkMeshes(key)
+                this.activeChunks.delete(key)
+                this.pending.delete(key)
+                this.meshedVersion.delete(key)
+            }
+            for (const key of enter) {
+                const coord = coords.get(key)!
+                this.activeChunks.set(key, coord)
+                this.pending.set(key, coord)
+            }
+        }
+
+        this.processPending(center, cfg.budgetPerFrame)
+    }
+
+    private processPending(center: ChunkCoord, budget: number): void {
+        if (this.pending.size === 0) return
+        const queue = [...this.pending.values()]
+            .sort((a, b) => chunkDistanceSq(a, center) - chunkDistanceSq(b, center))
+        let remaining = budget
+        for (const coord of queue) {
+            if (remaining <= 0) break
+            const key = coordKey(coord)
+            this.pending.delete(key)
+            const chunk = this.manager.getChunk(coord.cx, coord.cy, coord.cz)
+            if (!chunk) {
+                this.disposeChunkMeshes(key)
+                this.activeChunks.delete(key)
+                continue
+            }
+            // Up-to-date already (e.g. re-queued then nothing changed) → skip.
+            if (this.meshedVersion.get(key) === chunk.version && this.meshByKey.has(key)) continue
+            this.remesh(chunk)
+            remaining--
+        }
+    }
+
+    private disposeSolidMesh(key: ChunkKey): void {
+        const old = this.meshByKey.get(key)
+        if (!old) return
+        this.scene.remove(old)
+        old.geometry.dispose()
+        this.meshByKey.delete(key)
+    }
+
+    private disposeChunkMeshes(key: ChunkKey): void {
+        this.disposeSolidMesh(key)
+        this.removeLiquidSurfaces(key)
+    }
+
     private remesh(chunk: Chunk): void {
         const key = chunkKey(chunk.cx, chunk.cy, chunk.cz)
 
-        // No solid voxels → ensure no mesh in the scene.
+        // No solid voxels → ensure no mesh (solid or liquid) in the scene.
         if (chunk.nonAirCount === 0) {
-            const old = this.meshByKey.get(key)
-            if (old) {
-                this.scene.remove(old)
-                old.geometry.dispose()
-                this.meshByKey.delete(key)
-            }
-            this.removeLiquidSurfaces(key)
+            this.disposeChunkMeshes(key)
             this.meshedVersion.set(key, chunk.version)
             return
         }
@@ -161,12 +301,9 @@ export class ChunkRenderer {
             skipLiquidTopFaces: true,
         })
         if (data.vertexCount === 0) {
-            const old = this.meshByKey.get(key)
-            if (old) {
-                this.scene.remove(old)
-                old.geometry.dispose()
-                this.meshByKey.delete(key)
-            }
+            // Solid geometry is empty, but a liquid-only chunk keeps the
+            // liquid surface built just above — only drop the solid mesh.
+            this.disposeSolidMesh(key)
             this.meshedVersion.set(key, chunk.version)
             return
         }
