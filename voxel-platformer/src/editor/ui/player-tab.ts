@@ -120,6 +120,13 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
     torchSection.append(torchIntensityField.row, torchDistanceField.row, torchShadow.row)
     root.appendChild(torchSection)
 
+    const viewSection = sectionEl('View')
+    const indoorCutToggle = checkboxInput('Reveal character indoors', state.player.indoorCutEnabled, (checked) => {
+        state.player.indoorCutEnabled = checked
+    })
+    viewSection.append(indoorCutToggle.row)
+    root.appendChild(viewSection)
+
     function refresh(): void {
         spawnReadout.textContent = `Spawn: ${state.spawn.x.toFixed(1)}, ${state.spawn.y.toFixed(1)}, ${state.spawn.z.toFixed(1)}`
         placeSpawnBtn.classList.toggle('active', state.mode === 'place-spawn')
@@ -141,6 +148,7 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
         syncNumber(torchIntensityField, state.player.torch.intensity)
         syncNumber(torchDistanceField, state.player.torch.distance)
         if (torchShadow.input.checked !== state.player.torch.castsShadow) torchShadow.input.checked = state.player.torch.castsShadow
+        if (indoorCutToggle.input.checked !== state.player.indoorCutEnabled) indoorCutToggle.input.checked = state.player.indoorCutEnabled
     }
 
     refresh()

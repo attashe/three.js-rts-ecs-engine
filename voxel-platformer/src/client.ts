@@ -377,6 +377,7 @@ async function main(): Promise<void> {
         slots.indoorCut.set(createIndoorCutSystem(chunks, {
             setLocalCut: (cut) => chunkRenderer.setLocalCut(cut),
             viewpoint: () => renderer.iso.camera.position,
+            enabled: () => world.playerSettings?.indoorCutEnabled !== false,
         }))
         slots.torchBlocks.set(
             getTorchSystem() === 'experimental'

@@ -67,6 +67,16 @@ test('player settings normalization keeps saved/script booleans boolean', () => 
     assert.equal(settings.torch.castsShadow, false)
 })
 
+test('indoorCutEnabled defaults on and round-trips through normalization', () => {
+    assert.equal(DEFAULT_PLAYER_SETTINGS.indoorCutEnabled, true)
+    // Absent in old saves → defaults on.
+    assert.equal(normalizePlayerSettings({}).indoorCutEnabled, true)
+    // Explicit (incl. coerced string from a script/save) is respected.
+    assert.equal(normalizePlayerSettings({ indoorCutEnabled: false }).indoorCutEnabled, false)
+    assert.equal(normalizePlayerSettings({ indoorCutEnabled: 'off' } as never).indoorCutEnabled, false)
+    assert.equal(copyPlayerSettings({ ...DEFAULT_PLAYER_SETTINGS, indoorCutEnabled: false }).indoorCutEnabled, false)
+})
+
 test('syncPlayerVisuals applies live script model changes', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)

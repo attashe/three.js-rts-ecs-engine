@@ -71,6 +71,10 @@ export interface PlayerSettings {
     airPushPower: number
     airPushLift: number
     torch: PlayerTorchSettings
+    /** When true (default), world geometry hiding the character from the
+     *  camera (roofs, upper floors) is cut away in a small dome around the
+     *  player so they stay visible indoors. */
+    indoorCutEnabled: boolean
 }
 
 export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'torch'>> & {
@@ -107,6 +111,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
         distance: 14,
         castsShadow: true,
     },
+    indoorCutEnabled: true,
 }
 
 export function copyPlayerSettings(settings: PlayerSettings): PlayerSettings {
@@ -151,6 +156,7 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
             distance: clampNumber(input?.torch?.distance, 0, 80, base.torch.distance),
             castsShadow: clampBoolean(input?.torch?.castsShadow, base.torch.castsShadow),
         },
+        indoorCutEnabled: clampBoolean(input?.indoorCutEnabled, base.indoorCutEnabled),
     }
 }
 
