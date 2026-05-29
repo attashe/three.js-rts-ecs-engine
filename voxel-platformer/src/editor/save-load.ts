@@ -22,7 +22,10 @@ import { registerPistonMechanism } from '../game/mechanisms'
 export const NEW_LEVEL_DEFAULT_PAD_Y = 4
 export const NEW_LEVEL_DEFAULT_WIDTH = 12
 export const NEW_LEVEL_DEFAULT_DEPTH = 12
-export const NEW_LEVEL_MAX_DIMENSION = 64
+// Town-scale ceiling. Editing levels this large relies on the chunk
+// renderer's mesh streaming (see editor.ts) so only the area around the
+// camera is meshed at a time.
+export const NEW_LEVEL_MAX_DIMENSION = 256
 
 /**
  * Wipe the current world + editor state and seed a fresh dirt + grass pad

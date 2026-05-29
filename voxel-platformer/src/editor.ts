@@ -96,7 +96,19 @@ async function main(): Promise<void> {
         }
     }
 
-    const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
+    // Mesh streaming around the camera pivot keeps large authored levels
+    // (up to NEW_LEVEL_MAX_DIMENSION) smooth to edit: only chunks near the
+    // pan/orbit target are meshed, and (re)meshing is spread across frames.
+    // Voxel data stays fully resident, so editing, the working-plane cut, and
+    // the cover mask all keep reading the whole level. Small levels fit inside
+    // the radius, so behaviour there is unchanged.
+    const chunkRenderer = new ChunkRenderer(renderer.scene, chunks, {
+        streaming: {
+            focus: () => renderer.iso.target,
+            radiusChunks: 8,
+            budgetPerFrame: 8,
+        },
+    })
     chunkRenderer.rebuildAll()
 
     renderer.iso.target.set(editorState.spawn.x, editorState.spawn.y, editorState.spawn.z)
