@@ -143,10 +143,11 @@ export class ChunkRenderer {
     }
 
     /** Localised "cutaway" used in-game to reveal the character when geometry
-     *  hides them: hide voxels above `y` within `radius` of `center` (world
-     *  XZ). Shader-only (no remesh), so it follows the player every frame and
-     *  leaves the rest of the world intact. Pass `null` to clear. */
-    setLocalCut(params: { center: { x: number; z: number }; radius: number; y: number } | null): void {
+     *  hides them: hide voxels above `y` within `radius` of the world-XZ
+     *  segment `a`→`b` (player → toward the camera). Shader-only (no remesh),
+     *  so it follows the player every frame and leaves the rest of the world
+     *  intact. Pass `null` to clear. */
+    setLocalCut(params: { a: { x: number; z: number }; b: { x: number; z: number }; radius: number; y: number } | null): void {
         this.voxelMaterial.setLocalCut(params)
     }
 

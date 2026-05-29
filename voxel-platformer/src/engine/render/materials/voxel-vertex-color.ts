@@ -80,10 +80,11 @@ export interface VoxelMaterial {
     /** Replace the cover mask. Each `{x, z}` is a world-cell column that
      *  contains hidden geometry above the current working plane. */
     setCoverMaskCells(cells: Iterable<{ x: number; z: number }>): void
-    /** Localised cutaway: hide voxels above `y` within `radius` of `center`
-     *  (world XZ). Shader-only — no remesh — so it can follow a moving target
-     *  every frame. Pass `null` to clear. */
-    setLocalCut(params: { center: { x: number; z: number }; radius: number; y: number } | null): void
+    /** Localised cutaway: hide voxels above `y` within `radius` of the world-XZ
+     *  segment `a`→`b` (a = player, b = toward the camera past the occluder).
+     *  Shader-only — no remesh — so it can follow a moving target every frame.
+     *  Pass `null` to clear. */
+    setLocalCut(params: { a: { x: number; z: number }; b: { x: number; z: number }; radius: number; y: number } | null): void
     /** Toggle the atlas-sampling pass at runtime. When `false` every
      *  block — textured or not — renders as pure vertex colour. */
     setTexturesEnabled(enabled: boolean): void
@@ -125,11 +126,14 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const cutYUniform = uniform(NO_CUT_Y)
     // Localised in-game cutaway (separate from the editor's global working-
     // plane cut above): hide voxels above `localCutY` within `localCutRadius`
-    // of `localCutCenter` (world XZ), so the character is revealed under cover
-    // without slicing the rest of the world.
+    // of the world-XZ segment A→B, where A is the player and B extends toward
+    // the camera past whatever is hiding them. A capsule (not a disc) so it
+    // reaches an occluding wall however far it sits from the player in a large
+    // room, while only carving a narrow corridor toward the camera.
     const localCutActiveUniform = uniform(0)
     const localCutYUniform = uniform(NO_CUT_Y)
-    const localCutCenterUniform = uniform(new Vector2(0, 0))
+    const localCutAUniform = uniform(new Vector2(0, 0))
+    const localCutBUniform = uniform(new Vector2(0, 0))
     const localCutRadiusUniform = uniform(0)
     const useTexturesUniform = uniform(opts.texturesEnabled === false ? 0 : 1)
     const maskData = new Uint8Array(maskSize * maskSize)
@@ -180,15 +184,20 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const maskValue = tslTexture(maskTex, maskUV).r
     const isCovered = cutActive.and(isActiveLayer).and(maskValue.greaterThan(0.5))
 
-    // ── Localised cutaway dome ────────────────────────────────────────
-    // A fragment inside the dome (above the local cut Y and within the XZ
-    // radius of the centre) is forced fully transparent; `alphaTest` then
-    // discards it so it neither draws nor writes depth — the geometry stays
-    // meshed but stops hiding the character. Everything outside the dome is
-    // untouched, so distant terrain/buildings are never sliced.
+    // ── Localised cutaway capsule ─────────────────────────────────────
+    // A fragment inside the capsule (above the local cut Y and within
+    // `localCutRadius` of the segment A→B) is forced fully transparent;
+    // `alphaTest` then discards it so it neither draws nor writes depth — the
+    // geometry stays meshed but stops hiding the character. Only the corridor
+    // from the player toward the camera is affected, so distant
+    // terrain/buildings are never sliced.
+    const segAB = localCutBUniform.sub(localCutAUniform)
+    const segPA = positionWorld.xz.sub(localCutAUniform)
+    const segT = segPA.dot(segAB).div(segAB.dot(segAB).max(float(0.0001))).clamp(0, 1)
+    const segDist = segPA.sub(segAB.mul(segT)).length()
     const inLocalDome = localCutActiveUniform.greaterThan(0.5)
         .and(y.greaterThan(localCutYUniform))
-        .and(positionWorld.xz.sub(localCutCenterUniform).length().lessThan(localCutRadiusUniform))
+        .and(segDist.lessThan(localCutRadiusUniform))
 
     const base = vertexColor()
     const baseColor = base.rgb.mul(tileFactor)
@@ -237,7 +246,8 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
             }
             localCutActiveUniform.value = 1
             localCutYUniform.value = params.y
-            localCutCenterUniform.value.set(params.center.x, params.center.z)
+            localCutAUniform.value.set(params.a.x, params.a.z)
+            localCutBUniform.value.set(params.b.x, params.b.z)
             localCutRadiusUniform.value = params.radius
         },
         setTexturesEnabled(enabled) {
