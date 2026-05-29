@@ -93,25 +93,37 @@ export class WeatherSystem {
      * the player perceives it as a half-second freeze the first time a
      * magic zone or rain volume comes online.
      *
-     * `compileAsync(scene, camera)` walks the visible scene graph at call
-     * time, so we briefly reveal hidden groups, hand off the work, and
-     * restore visibility once the promise settles. Pre-spawning + warming
-     * is cheap because compileAsync is asynchronous on WebGPU and runs
-     * mostly off the main thread.
+     * `compileAsync(scene, camera)` builds its pipeline-compile list by
+     * projecting the scene through the camera — so it skips anything hidden
+     * OR frustum-culled. A script-toggled zone (e.g. the demo's magic portal)
+     * is both: hidden until enabled, and usually off-screen at level load.
+     * We therefore briefly reveal every zone group AND disable frustum culling
+     * on its meshes for the compile, then restore both once the promise
+     * settles. Without the frustum part, an off-screen zone is never compiled
+     * and still stalls ~1 s the first time it comes online.
      */
     warmShaders(
         compileAsync: (scene: Scene, camera: Camera) => Promise<unknown>,
         camera: Camera,
     ): Promise<void> {
-        const restored: WeatherZone[] = []
+        const restoredZones: WeatherZone[] = []
+        const reculledMeshes: Object3D[] = []
         for (const zone of this.zones.values()) {
             if (!zone.group.visible) {
                 zone.group.visible = true
-                restored.push(zone)
+                restoredZones.push(zone)
             }
+            zone.group.traverse((obj) => {
+                const mesh = obj as Object3D & { isMesh?: boolean }
+                if (mesh.isMesh && obj.frustumCulled !== false) {
+                    obj.frustumCulled = false
+                    reculledMeshes.push(obj)
+                }
+            })
         }
         const restore = () => {
-            for (const z of restored) z.group.visible = false
+            for (const z of restoredZones) z.group.visible = false
+            for (const obj of reculledMeshes) obj.frustumCulled = true
         }
         return compileAsync(this.scene, camera).then(restore, (err) => {
             restore()
