@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
-import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, paletteTileIndex } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, paletteTileIndex, voxelLightSpec } from '../src/engine/voxel/palette'
 import {
     generateStructureScene,
     normalizeStructureOptions,
@@ -238,6 +238,32 @@ test('tower styles generate valid coordinates and expected marker details', () =
         if (style === 'ruined') assert.ok(result.voxels.some((v) => v.tag === 'ruin-rubble-base'))
         if (style === 'ruined') assert.ok(result.voxels.some((v) => v.tag === 'tower-roof-ruin'))
     }
+})
+
+test('lighthouse crown carries a working light beacon', () => {
+    const result = generateStructureScene({
+        kind: 'tower',
+        seed: 9,
+        variants: 1,
+        variation: 0,
+        showTerrain: false,
+        tower: { style: 'lighthouse', radius: 8, height: 28, wallThickness: 2, spire: true },
+    }, DEFAULT_PALETTE)
+
+    const lamp = result.voxels.filter((v) => v.tag === 'lighthouse-lamp')
+    assert.ok(lamp.length >= 2, 'lighthouse should have a glow lamp core')
+    for (const v of lamp) {
+        assert.equal(v.block, BLOCK.glow)
+        assert.ok(voxelLightSpec(DEFAULT_PALETTE, v.block), 'lamp block must emit a point light')
+    }
+    // The flame still sits above the lamp, under the roof.
+    const fire = result.voxels.filter((v) => v.tag === 'lighthouse-fire')
+    assert.ok(fire.length > 0 && voxelLightSpec(DEFAULT_PALETTE, fire[0]!.block))
+    const topLamp = Math.max(...lamp.map((v) => v.y))
+    assert.ok(fire.every((v) => v.y > topLamp), 'flame crowns the lamp')
+    // Glass gallery + metal frame around the light.
+    assert.ok(result.voxels.some((v) => v.tag === 'lantern-glass'))
+    assert.ok(result.voxels.some((v) => v.tag === 'lantern-sill' || v.tag === 'lantern-ring'))
 })
 
 test('tower interior has a stone ground floor and one clean deck per storey', () => {

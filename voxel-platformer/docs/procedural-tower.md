@@ -39,6 +39,18 @@ corners an inward neighbour lands on the *next* ring cell, so carving above it
 would delete the following step (this was the subtle bug behind the original
 unclimbable spiral).
 
+## Lighthouse beacon
+
+The `lighthouse` crown carries a **working light**: a glass gallery (with a metal
+sill and top ring) around a short `glow` lamp column — the brightest emissive
+point-light block in the palette (intensity 6, range 10) — crowned by a `fire`
+flame. So the lantern actually casts light into the level, not just a glowing
+texture. It's deliberately kept to three light-emitting voxels: the block-light
+pool only lights the ~12 nearest sources (`block-light-system.ts`), so a denser
+lamp would monopolise the pool and drown the tower's other lights up close. The
+beacon survives `structuralOnly` stamping, so lighthouses placed in levels (e.g.
+the Large Town) light up.
+
 ## Visual upgrade
 
 The shell is shaded **per voxel** instead of in flat 6-row bands: a hash over

@@ -397,10 +397,31 @@ function towerCrown(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: num
             }
         }
     }
-    if (style === 'lighthouse') {
-        buf.shellCylinder(ox, y + 1, oz, Math.max(2, Math.round(r * 0.65)), Math.max(1, Math.round(r * 0.42)), y + 3, BLOCK.glass, 'lantern-glass')
-        buf.set(ox, y + 2, oz, BLOCK.fire, 'lighthouse-fire')
-    }
+    if (style === 'lighthouse') towerLighthouseLantern(buf, ox, y, oz, r)
+}
+
+/**
+ * Lighthouse beacon: a glass gallery around a real working lamp. The core is a
+ * short `glow` column — the brightest emissive point-light block in the palette
+ * (intensity 6, range 10) — so the lantern actually casts light into the level,
+ * crowned by a flickering `fire` flame. A metal sill and ring frame the glass.
+ *
+ * Kept to three light-emitting voxels on purpose: the block-light pool only
+ * lights the ~12 nearest sources, so a denser lamp would monopolise it and
+ * drown the tower's other lights when the player is close. The roof sits at y+4.
+ */
+function towerLighthouseLantern(buf: VoxelBuffer, ox: number, y: number, oz: number, r: number): void {
+    const glassR = Math.max(2, Math.round(r * 0.65))
+    const coreR = Math.max(1, Math.round(r * 0.42))
+    // Metal sill below, glass gallery, metal ring framing the top of the glass.
+    buf.shellCylinder(ox, y, oz, glassR, glassR - 1, y, BLOCK.metal, 'lantern-sill')
+    buf.shellCylinder(ox, y + 1, oz, glassR, coreR, y + 3, BLOCK.glass, 'lantern-glass')
+    buf.shellCylinder(ox, y + 3, oz, glassR, glassR - 1, y + 3, BLOCK.metal, 'lantern-ring')
+    // The working light: a stacked glow lamp (point lights add into a beacon)
+    // topped by a flame so it reads as a lit lantern, not a glowing cube.
+    buf.set(ox, y + 1, oz, BLOCK.glow, 'lighthouse-lamp')
+    buf.set(ox, y + 2, oz, BLOCK.glow, 'lighthouse-lamp')
+    buf.set(ox, y + 3, oz, BLOCK.fire, 'lighthouse-fire')
 }
 
 function towerSquareCrownCorbels(buf: VoxelBuffer, ox: number, y: number, oz: number, r: number): void {
