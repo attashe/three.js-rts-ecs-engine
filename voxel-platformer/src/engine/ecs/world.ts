@@ -117,6 +117,35 @@ export interface StoneSpawnerRuntime {
     trigger(count?: number): number
 }
 
+export type RailCartFacing = 'north' | 'east' | 'south' | 'west'
+
+export interface RailCartConfig {
+    id: string
+    railCell: VoxelCoord
+    front: RailCartFacing
+    speed?: number
+    interactionRadius?: number
+    enabled?: boolean
+}
+
+export interface RailCartRuntime {
+    id: string
+    eid: number
+    railCell: VoxelCoord
+    front: RailCartFacing
+    speed: number
+    interactionRadius: number
+    enabled: boolean
+    occupiedBy: number | null
+    segment: {
+        from: VoxelCoord
+        to: VoxelCoord
+        travelDir: RailCartFacing
+        inputSign: 1 | -1
+        t: number
+    } | null
+}
+
 /** Why the level should restart. Set by gameplay systems; consumed by
  *  `restart-system` which calls `location.reload()`. */
 export type DeathReason =
@@ -155,6 +184,11 @@ export interface GameContext {
     stoneEntityByScriptId: Map<string, number>
     /** Stable editor/script id -> live falling-stone spawner controller. */
     stoneSpawnersById: Map<string, StoneSpawnerRuntime>
+    /** Runtime rail carts for this location. Carts are kinematic rideable
+     *  entities driven by rail-cart-system and addressed by scripts via id. */
+    railCarts: RailCartRuntime[]
+    railCartsById: Map<string, RailCartRuntime>
+    ridingCartByPlayer: Map<number, RailCartRuntime>
     /** Named AABB regions placed by the editor (or seeded by `level.ts`).
      *  Gameplay can query these via `isPointInZone` / `findZoneAtPoint`. */
     zones: Map<string, Zone>
@@ -249,6 +283,9 @@ export function createGameWorld(): GameWorld {
         pistonsById: new Map<string, PistonMechanism>(),
         stoneEntityByScriptId: new Map<string, number>(),
         stoneSpawnersById: new Map<string, StoneSpawnerRuntime>(),
+        railCarts: [],
+        railCartsById: new Map<string, RailCartRuntime>(),
+        ridingCartByPlayer: new Map<number, RailCartRuntime>(),
         zones: new Map<string, Zone>(),
         zoneEvents: [],
         log: [],

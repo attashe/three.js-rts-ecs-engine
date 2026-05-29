@@ -51,7 +51,7 @@ export interface PaletteEntry {
      *  diagnose the shadow pipeline. */
     lightCastsShadow?: boolean
     /** Optional non-cube prop renderer for authored special blocks. */
-    renderAs?: 'torch' | 'torch-off'
+    renderAs?: 'torch' | 'torch-off' | 'rail'
     /** Optional animated liquid surface rendered on exposed top faces. */
     liquid?: 'water' | 'lava'
     /**
@@ -133,6 +133,7 @@ export const BLOCK = {
     moss: 38,
     smoke: 39,
     fire: 40,
+    rail: 41,
 } as const
 
 /**
@@ -321,6 +322,17 @@ export const DEFAULT_PALETTE: Palette = {
             lightIntensity: 4.0,
             lightDistance: 7,
         },
+        {
+            name: 'rail',
+            color: [0.42, 0.38, 0.32],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0,
+            renderAs: 'rail',
+        },
     ],
 }
 
@@ -362,6 +374,18 @@ export function isRaycastTarget(palette: Palette, index: number): boolean {
 
 export function isTorchBlock(palette: Palette, index: number): boolean {
     return torchBlockState(palette, index) !== null
+}
+
+export function isRailBlock(palette: Palette, index: number): boolean {
+    if (index === AIR) return false
+    return paletteEntry(palette, index).renderAs === 'rail'
+}
+
+export function railBlockIndex(palette: Palette): number {
+    const direct = palette.entries[BLOCK.rail]
+    if (direct?.renderAs === 'rail') return BLOCK.rail
+    const found = palette.entries.findIndex((entry) => entry.renderAs === 'rail')
+    return found > AIR ? found : BLOCK.rail
 }
 
 export type TorchBlockState = 'lit' | 'unlit'
@@ -443,6 +467,7 @@ function clamp01(v: number): number {
 
 export function isRenderableVoxel(palette: Palette, index: number): boolean {
     if (isTorchBlock(palette, index)) return false
+    if (isRailBlock(palette, index)) return false
     return voxelOpacity(palette, index) > 0
 }
 
@@ -476,6 +501,7 @@ export function appendMissingDefaultPaletteEntries(palette: Palette): void {
     appendMissingSpecialBlock(palette, BLOCK.unlitLantern)
     appendMissingLiquidBlock(palette, 'lava', BLOCK.lava)
     appendMissingStructureBlocks(palette)
+    appendMissingSpecialBlock(palette, BLOCK.rail)
 }
 
 function normalizeNoWalkBlock(palette: Palette): void {

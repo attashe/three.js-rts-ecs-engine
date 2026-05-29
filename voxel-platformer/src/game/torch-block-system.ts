@@ -17,6 +17,7 @@ import { PlayerControlled, Position } from '../engine/ecs/components'
 import { CHUNK_DIM } from '../engine/voxel/chunk'
 import { RENDER_LAYER } from '../engine/render/render-layers'
 import type { Chunk } from '../engine/voxel/chunk'
+import { chunkCoordsInRadius, focusChunk, sameChunk, type ChunkCoord } from '../engine/voxel/chunk-streaming'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { isCollidable, occludesFaces, torchBlockState } from '../engine/voxel/palette'
 import { sharedCylinderGeometry, sharedMaterial, sharedSphereGeometry } from './assets/shared-primitives'
@@ -59,6 +60,12 @@ export interface TorchBlockRenderOptions {
     /** Cap on simultaneously-rendered torches. Default 256 — beyond
      *  this the system silently drops extras. */
     maxInstances?: number
+    /** When a `focus` is provided, only torches in chunks within this
+     *  Chebyshev radius (in chunks) of the focus are tracked/instanced, so
+     *  the instance cap fills with the nearest torches and per-frame work is
+     *  bounded by nearby content rather than the whole world. Default 6.
+     *  Without a focus the system tracks every chunk (back-compat). */
+    trackRadiusChunks?: number
     /** Cube shadow-map size for the shadow-casting pool slot(s).
      *  Default 256 — small enough that one shadow light costs ~3 MB
      *  and 6 face renders per frame. */
@@ -124,6 +131,7 @@ const DEFAULT_FOCUS_RADIUS = 28
 const DEFAULT_TORCH_SOUND_RADIUS = 5
 const DEFAULT_TORCH_SOUND_SOURCES = 3
 const DEFAULT_MAX_INSTANCES = 256
+const DEFAULT_TRACK_RADIUS_CHUNKS = 6
 const DEFAULT_SHADOW_MAP_SIZE = 256
 const PARK_X = 1e6
 const PARK_Y = -1e6
@@ -196,6 +204,7 @@ export function createTorchBlockRenderSystem(
     const poolSize = lightsEnabled ? Math.max(0, Math.floor(opts.maxLights ?? DEFAULT_TORCH_LIGHTS)) : 0
     const focusRadius = Math.max(1, opts.focusRadius ?? DEFAULT_FOCUS_RADIUS)
     const focusRadius2 = focusRadius * focusRadius
+    const trackRadiusChunks = Math.max(1, Math.floor(opts.trackRadiusChunks ?? DEFAULT_TRACK_RADIUS_CHUNKS))
     const shadowMapSize = Math.max(64, Math.floor(opts.shadowMapSize ?? DEFAULT_SHADOW_MAP_SIZE))
     const maxShadows = Math.max(0, Math.min(poolSize, Math.floor(opts.maxShadows ?? 0)))
 
@@ -294,6 +303,11 @@ export function createTorchBlockRenderSystem(
     let soundDisabled = false
     let elapsed = 0
     let lastCutY: number | null | undefined
+    // Focus-aware tracking: re-evaluate the in-radius chunk set only when the
+    // focus crosses a chunk boundary or the chunk count changes (so the
+    // per-frame path never iterates the whole world or allocates).
+    let lastFocusChunk: ChunkCoord | null = null
+    let lastChunkCount = -1
 
     if (opts.audioReady) {
         void opts.audioReady.then(() => {
@@ -493,32 +507,63 @@ export function createTorchBlockRenderSystem(
         chunkSnapshots.set(chunk, { version: chunk.version, epoch: syncEpoch, torchKeys: newKeys })
     }
 
-    function syncTorches(): void {
+    function syncTorches(focus: Vec3Like | null): void {
         const palSig = palettePropSignature(chunks)
         if (palSig !== paletteSignature) {
             paletteSignature = palSig
             for (const snapshot of chunkSnapshots.values()) snapshot.version = -1
         }
         syncEpoch++
-        for (const chunk of chunks.allChunks()) {
-            const snapshot = chunkSnapshots.get(chunk)
-            if (snapshot && snapshot.version === chunk.version) {
-                snapshot.epoch = syncEpoch
-                continue
+
+        if (!focus) {
+            // No focus → track every chunk (back-compat).
+            for (const chunk of chunks.allChunks()) reconcileChunk(chunk)
+        } else {
+            const center = focusChunk(focus)
+            const count = chunks.chunkCount()
+            // Re-walk the in-radius cube only when the focus crosses a chunk
+            // boundary or a chunk is added/removed; otherwise just re-sync the
+            // already-active chunks (bounded by the radius, not the world).
+            const reevaluate = !lastFocusChunk || !sameChunk(center, lastFocusChunk) || count !== lastChunkCount
+            lastFocusChunk = center
+            lastChunkCount = count
+            if (reevaluate) {
+                for (const cc of chunkCoordsInRadius(center, trackRadiusChunks)) {
+                    const chunk = chunks.getChunk(cc.cx, cc.cy, cc.cz)
+                    if (chunk) reconcileChunk(chunk)
+                }
+            } else {
+                for (const [chunk, snapshot] of chunkSnapshots) {
+                    snapshot.epoch = syncEpoch
+                    if (snapshot.version !== chunk.version) syncChunk(chunk)
+                }
             }
-            syncChunk(chunk)
         }
-        // Release torches in chunks that vanished (not visited this pass).
+
+        // Release torches in chunks not visited this pass (left the radius or vanished).
         for (const [chunk, snapshot] of chunkSnapshots) {
             if (snapshot.epoch === syncEpoch) continue
-            for (const torchKey of snapshot.torchKeys) {
-                const record = records.get(torchKey)
-                if (!record) continue
-                stopTorchSound(record, 0.2)
-                releaseSlot(record.slot)
-                records.delete(torchKey)
-            }
+            releaseChunkTorches(snapshot)
             chunkSnapshots.delete(chunk)
+        }
+    }
+
+    function reconcileChunk(chunk: Chunk): void {
+        const snapshot = chunkSnapshots.get(chunk)
+        if (snapshot && snapshot.version === chunk.version) {
+            snapshot.epoch = syncEpoch
+            return
+        }
+        syncChunk(chunk)
+    }
+
+    function releaseChunkTorches(snapshot: ChunkSnapshot): void {
+        for (const torchKey of snapshot.torchKeys) {
+            const record = records.get(torchKey)
+            if (!record) continue
+            stopTorchSound(record, 0.2)
+            releaseSlot(record.slot)
+            records.delete(torchKey)
         }
     }
 
@@ -638,16 +683,16 @@ export function createTorchBlockRenderSystem(
     return {
         name: 'torchBlocks',
         order: RenderOrder.worldRender + 2,
-        init() {
-            syncTorches()
+        init(world) {
+            syncTorches(resolveFocus(world))
             lastCutY = undefined
             applyVisibility()
         },
         update(world, dt) {
             elapsed += dt
-            syncTorches()
-            applyVisibility()
             const focus = resolveFocus(world)
+            syncTorches(focus)
+            applyVisibility()
             classifyAndAnimate(focus)
             assignLightPool()
             syncTorchSounds(world)

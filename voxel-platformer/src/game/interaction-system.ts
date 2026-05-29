@@ -12,12 +12,29 @@ export interface InteractionSystemOptions {
     actions: ActionMap
     camera: () => Camera
     domElement: HTMLElement
+    providers?: readonly InteractionProvider[]
 }
 
-interface InteractionTarget {
-    zone: Zone
+export interface InteractionProviderTarget {
+    id: string
+    prompt: string
     anchor: VoxelCoord
     distanceSq: number
+    interact(world: GameWorld, player: { eid: number; x: number; y: number; z: number }): void
+}
+
+export type InteractionProvider = (
+    world: GameWorld,
+    player: { eid: number; x: number; y: number; z: number },
+) => InteractionProviderTarget | null
+
+interface InteractionTarget {
+    id: string
+    prompt: string
+    anchor: VoxelCoord
+    distanceSq: number
+    interact(world: GameWorld, player: { eid: number; x: number; y: number; z: number }): void
+    zone?: Zone
 }
 
 interface ActiveBubble {
@@ -72,18 +89,10 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
             expireBubbles()
             const player = playerInfo(world)
             const active = player && world.playerSettings.abilities.interact
-                ? nearestInteractionTarget(world, player)
+                ? nearestInteractionTarget(world, player, opts.providers ?? [])
                 : null
-            if (player && active && opts.actions.consumePressed(GameAction.Interact, active.zone.id)) {
-                pushScriptTriggerEvent(world, {
-                    kind: 'input',
-                    action: GameAction.Interact,
-                    edge: 'pressed',
-                    targetId: active.zone.id,
-                    zoneId: active.zone.id,
-                    point: { x: player.x, y: player.y, z: player.z },
-                    entityId: player.eid,
-                })
+            if (player && active && opts.actions.consumePressed(GameAction.Interact, active.id)) {
+                active.interact(world, player)
             }
             renderPrompt(active)
             renderBubbles(world)
@@ -196,7 +205,7 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
             promptEl.style.display = 'none'
             return
         }
-        promptLabelEl.textContent = active.zone.interaction?.prompt ?? 'Interaction'
+        promptLabelEl.textContent = active.prompt
         promptEl.style.display = 'block'
         promptEl.style.left = `${screen.x}px`
         promptEl.style.top = `${screen.y}px`
@@ -237,6 +246,7 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
 function nearestInteractionTarget(
     world: GameWorld,
     player: { eid: number; x: number; y: number; z: number },
+    providers: readonly InteractionProvider[],
 ): InteractionTarget | null {
     let best: InteractionTarget | null = null
     for (const zone of world.zones.values()) {
@@ -249,7 +259,39 @@ function nearestInteractionTarget(
         const dz = player.z - anchor.z
         const distanceSq = dx * dx + dy * dy + dz * dz
         if (distanceSq > radius * radius) continue
-        if (!best || distanceSq < best.distanceSq) best = { zone, anchor, distanceSq }
+        if (!best || distanceSq < best.distanceSq) {
+            best = {
+                id: zone.id,
+                zone,
+                anchor,
+                distanceSq,
+                prompt: zone.interaction?.prompt ?? 'Interaction',
+                interact(activeWorld, activePlayer) {
+                    pushScriptTriggerEvent(activeWorld, {
+                        kind: 'input',
+                        action: GameAction.Interact,
+                        edge: 'pressed',
+                        targetId: zone.id,
+                        zoneId: zone.id,
+                        point: { x: activePlayer.x, y: activePlayer.y, z: activePlayer.z },
+                        entityId: activePlayer.eid,
+                    })
+                },
+            }
+        }
+    }
+    for (const provider of providers) {
+        const target = provider(world, player)
+        if (!target) continue
+        if (!best || target.distanceSq < best.distanceSq) {
+            best = {
+                id: target.id,
+                prompt: target.prompt,
+                anchor: target.anchor,
+                distanceSq: target.distanceSq,
+                interact: target.interact,
+            }
+        }
     }
     return best
 }
@@ -257,7 +299,14 @@ function nearestInteractionTarget(
 function targetForId(world: GameWorld, targetId: string): InteractionTarget | null {
     const zone = world.zones.get(targetId)
     if (!zone || !isZoneActive(zone)) return null
-    return { zone, anchor: interactionAnchor(zone), distanceSq: 0 }
+    return {
+        id: zone.id,
+        zone,
+        anchor: interactionAnchor(zone),
+        distanceSq: 0,
+        prompt: zone.interaction?.prompt ?? 'Interaction',
+        interact() {},
+    }
 }
 
 function isInteractionZone(zone: Zone): boolean {

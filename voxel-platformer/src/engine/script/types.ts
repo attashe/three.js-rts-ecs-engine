@@ -133,6 +133,13 @@ export interface StonesFacade {
     listSpawners(): string[]
 }
 
+export interface CartsFacade {
+    setEnabled(id: string, enabled: boolean): boolean
+    isEnabled(id: string): boolean
+    isOccupied(id: string): boolean
+    list(): string[]
+}
+
 export interface ZoneFacade {
     contains(zoneId: string, who: 'player' | VoxelCoord): boolean
     exists(zoneId: string): boolean
@@ -245,6 +252,7 @@ export interface ScriptContext {
     pickups: PickupsApi
     pistons: PistonsApi
     stones: StonesApi
+    carts: CartsApi
     flags: FlagsApi
     time: TimeApi
     zone: ZoneApi
@@ -394,6 +402,16 @@ export interface StonesApi {
     triggerSpawner(id: string, count?: number): number
     /** Snapshot of every script-targetable stone spawner id in this level. */
     listSpawners(): string[]
+}
+
+export interface CartsApi {
+    /** Toggle a level-authored rail cart. Unknown ids return false. */
+    setEnabled(id: string, enabled: boolean): boolean
+    isEnabled(id: string): boolean
+    /** True while a player is mounted in this cart. */
+    isOccupied(id: string): boolean
+    /** Snapshot of every script-targetable rail cart id in this level. */
+    list(): string[]
 }
 
 export interface PickupSpawnOptions {

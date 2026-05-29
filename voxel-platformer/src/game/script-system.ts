@@ -8,6 +8,7 @@ import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { createScriptEngineSystem } from '../engine/script/script-engine-system'
 import type {
     AudioFacade,
+    CartsFacade,
     ChunksFacade,
     DayCycleFacade,
     LogFacade,
@@ -258,6 +259,25 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         },
     }
 
+    const carts: CartsFacade = {
+        setEnabled(id, enabled) {
+            const cart = opts.world.railCartsById.get(id)
+            if (!cart) return false
+            cart.enabled = !!enabled
+            return true
+        },
+        isEnabled(id) {
+            return opts.world.railCartsById.get(id)?.enabled === true
+        },
+        isOccupied(id) {
+            const cart = opts.world.railCartsById.get(id)
+            return cart !== undefined && cart.occupiedBy !== null
+        },
+        list() {
+            return Array.from(opts.world.railCartsById.keys())
+        },
+    }
+
     const zone: ZoneFacade = {
         contains(zoneId, who) {
             const z = opts.world.zones.get(zoneId)
@@ -303,6 +323,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         pickups,
         pistons,
         stones,
+        carts,
         zone,
         log,
         ui: {

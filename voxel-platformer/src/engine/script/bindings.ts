@@ -14,6 +14,7 @@
 
 import type {
     AudioFacade,
+    CartsFacade,
     ChunksFacade,
     DayCycleFacade,
     Disposer,
@@ -51,6 +52,7 @@ export interface BindingsDeps {
     pickups: PickupsFacade
     pistons: PistonsFacade
     stones?: StonesFacade
+    carts?: CartsFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -71,6 +73,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const travel = deps.travel ?? NOOP_TRAVEL
     const level = deps.level ?? NOOP_LEVEL
     const stones = deps.stones ?? NOOP_STONES
+    const carts = deps.carts ?? NOOP_CARTS
 
     // `on(...)` has two shapes: with filter object, or without (for
     // string-named custom events). Detect by checking arg 2's type —
@@ -184,6 +187,13 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             listSpawners: () => stones.listSpawners(),
         },
 
+        carts: {
+            setEnabled: (id, enabled) => carts.setEnabled(id, enabled),
+            isEnabled: (id) => carts.isEnabled(id),
+            isOccupied: (id) => carts.isOccupied(id),
+            list: () => carts.list(),
+        },
+
         flags: flagsApi,
 
         time: {
@@ -286,6 +296,13 @@ const NOOP_STONES: StonesFacade = {
     isSpawnerEnabled() { return false },
     triggerSpawner() { return 0 },
     listSpawners() { return [] },
+}
+
+const NOOP_CARTS: CartsFacade = {
+    setEnabled() { return false },
+    isEnabled() { return false },
+    isOccupied() { return false },
+    list() { return [] },
 }
 
 /** Split a boolean `once` out of an author-supplied filter object.

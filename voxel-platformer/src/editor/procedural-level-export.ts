@@ -104,6 +104,14 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             loop: source.loop,
             autoplay: source.autoplay,
         })),
+        railCarts: meta.railCarts.length === 0 ? undefined : meta.railCarts.map((cart) => ({
+            id: cart.id,
+            railCell: { ...cart.railCell },
+            front: cart.front,
+            speed: cart.speed,
+            interactionRadius: cart.interactionRadius,
+            enabled: cart.enabled,
+        })),
         environment: meta.environment ? { ...meta.environment } : undefined,
         soundZones: meta.soundZones.map((zone) => ({
             id: zone.id,

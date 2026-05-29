@@ -59,6 +59,7 @@ function minimalLevelMeta(spawn: LevelMeta['spawn']): LevelMeta {
         pistons: [],
         zones: [],
         soundSources: [],
+        railCarts: [],
         soundZones: [],
         weatherZones: [],
         props: [],

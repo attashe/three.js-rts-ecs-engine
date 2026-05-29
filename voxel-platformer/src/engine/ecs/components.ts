@@ -44,6 +44,14 @@ export const MovingObject = {
     age: new Float32Array(MAX_ENTITIES),
 }
 
+/** Tag for kinematic rideable rail carts. Runtime state lives in
+ *  `GameWorld.railCarts` because routing stores object references and ids. */
+export const RailCart = {}
+
+/** Tag on the player while mounted in a rail cart. Physics / locomotion
+ *  systems skip this entity; the rail-cart system owns its transform. */
+export const RidingCart = {}
+
 /**
  * Material parameters for a dynamic body. Read by physics-system every step
  * for entities that also have Position + Velocity + BoxCollider.

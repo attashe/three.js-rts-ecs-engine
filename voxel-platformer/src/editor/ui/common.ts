@@ -97,6 +97,21 @@ export const PANEL_CSS = `
     background: #ff8a2f;
     transform: rotate(12deg);
 }
+.vpe-swatch.rail {
+    background: rgba(217, 247, 255, 0.08);
+}
+.vpe-swatch.rail::before,
+.vpe-swatch.rail::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    width: 4px;
+    height: 16px;
+    border-radius: 2px;
+    background: #a6abb0;
+}
+.vpe-swatch.rail::before { left: 7px; }
+.vpe-swatch.rail::after { right: 7px; }
 .vpe-button {
     background: rgba(217, 247, 255, 0.1); color: inherit;
     border: 1px solid rgba(217, 247, 255, 0.25);

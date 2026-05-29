@@ -5,6 +5,7 @@ import type { ChunkManager } from './chunk-manager'
 import { CHUNK_DIM, chunkKey, type Chunk, type ChunkKey } from './chunk'
 import { voxelLightSpec, type BlockLightSpec, type Palette } from './palette'
 import { RENDER_LAYER } from '../render/render-layers'
+import { chunkCoordsInRadius, focusChunk, sameChunk, type ChunkCoord } from './chunk-streaming'
 
 export interface BlockLightSystemOptions {
     scene: Scene
@@ -17,6 +18,14 @@ export interface BlockLightSystemOptions {
     /** Per-cell intensity scale. Default 1. Useful for global dimming when
      *  many emissive blocks would otherwise wash out the scene. */
     intensityScale?: number
+    /** Focus point (player / camera target). When provided, only emissive
+     *  voxels in chunks within `trackRadiusChunks` are tracked, so the source
+     *  set — and the per-frame nearest-selection — is bounded by nearby
+     *  content rather than the whole world. Without it, every chunk is scanned
+     *  (back-compat). */
+    focus?: () => { x: number; y: number; z: number }
+    /** Chebyshev chunk radius for `focus` tracking. Default 6. */
+    trackRadiusChunks?: number
 }
 
 export interface BlockLightSource {
@@ -49,13 +58,18 @@ const SHADOW_NEAR = 0.1
 export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSystemOptions): System {
     const { scene, camera } = opts
     const sources = new Map<string, BlockLightSource>()
-    // Keyed by the Chunk object (stable; chunks aren't evicted) so the
-    // per-frame change scan never allocates a `chunkKey` string.
-    const scannedVersion = new Map<Chunk, number>()
+    // Keyed by the Chunk object (stable) so the per-frame change scan never
+    // allocates a `chunkKey` string. `epoch` marks chunks visited this pass for
+    // focus-radius eviction.
+    const scanned = new Map<Chunk, { version: number; epoch: number }>()
     const maxLights = opts.maxLights ?? 12
     const intensityScale = Math.max(0, opts.intensityScale ?? 1)
+    const trackRadiusChunks = Math.max(1, Math.floor(opts.trackRadiusChunks ?? 6))
     const pool: PointLight[] = []
     let paletteFingerprint = 0
+    let scanEpoch = 0
+    let lastFocusChunk: ChunkCoord | null = null
+    let lastChunkCount = -1
 
     function applySpec(light: PointLight, spec: BlockLightSpec): void {
         const wanted = spec.intensity * intensityScale
@@ -115,15 +129,55 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
             const key = `${wx},${wy},${wz}`
             sources.set(key, { key, chunkKey: ck, x: wx + 0.5, y: wy + 0.5, z: wz + 0.5, spec })
         })
-        scannedVersion.set(chunk, chunk.version)
+        scanned.set(chunk, { version: chunk.version, epoch: scanEpoch })
+    }
+
+    function reconcileChunk(chunk: Chunk): void {
+        const entry = scanned.get(chunk)
+        if (entry && entry.version === chunk.version) {
+            entry.epoch = scanEpoch
+            return
+        }
+        scanChunk(chunk)
+    }
+
+    /** Walk chunks (all, or only those near the focus) into the source set,
+     *  then drop sources for chunks not visited this pass. */
+    function reconcile(): void {
+        scanEpoch++
+        const focus = opts.focus?.()
+        if (!focus) {
+            for (const chunk of chunks.allChunks()) reconcileChunk(chunk)
+        } else {
+            const center = focusChunk(focus)
+            const count = chunks.chunkCount()
+            const reevaluate = !lastFocusChunk || !sameChunk(center, lastFocusChunk) || count !== lastChunkCount
+            lastFocusChunk = center
+            lastChunkCount = count
+            if (reevaluate) {
+                for (const cc of chunkCoordsInRadius(center, trackRadiusChunks)) {
+                    const chunk = chunks.getChunk(cc.cx, cc.cy, cc.cz)
+                    if (chunk) reconcileChunk(chunk)
+                }
+            } else {
+                for (const [chunk, entry] of scanned) {
+                    entry.epoch = scanEpoch
+                    if (entry.version !== chunk.version) scanChunk(chunk)
+                }
+            }
+        }
+        for (const [chunk, entry] of scanned) {
+            if (entry.epoch === scanEpoch) continue
+            dropChunk(chunkKey(chunk.cx, chunk.cy, chunk.cz))
+            scanned.delete(chunk)
+        }
     }
 
     function fullRescan(): void {
         sources.clear()
-        scannedVersion.clear()
-        for (const chunk of chunks.allChunks()) {
-            scanChunk(chunk)
-        }
+        scanned.clear()
+        lastFocusChunk = null // force a full radius re-walk
+        reconcile()
     }
 
     function syncPool(cam: Camera): void {
@@ -160,17 +214,14 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
                 paletteFingerprint = fp
                 fullRescan()
             } else {
-                for (const chunk of chunks.allChunks()) {
-                    if (scannedVersion.get(chunk) === chunk.version) continue
-                    scanChunk(chunk)
-                }
+                reconcile()
             }
             syncPool(camera())
         },
         dispose() {
             disposePool()
             sources.clear()
-            scannedVersion.clear()
+            scanned.clear()
         },
     }
 }

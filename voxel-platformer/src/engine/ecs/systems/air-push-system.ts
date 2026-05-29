@@ -5,6 +5,7 @@ import {
     PlayerControlled,
     Position,
     RigidBody,
+    RidingCart,
     Rotation,
     Sleeping,
     StaticRenderable,
@@ -65,6 +66,7 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             if (players.length === 0) return
             const player = players[0]
             if (!actions.consumePressed(actionId, player)) return
+            if (hasComponent(world, player, RidingCart)) return
             if (!world.playerSettings.abilities.airPush) {
                 pushLog(world, 'Air Push is disabled.')
                 return

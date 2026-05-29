@@ -40,6 +40,8 @@ import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/rend
 import { disposeObject3D } from './engine/render/dispose-object'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { createTorchBlockRenderSystemV2 } from './game/torch-block-system-v2'
+import { createRailRenderSystem } from './game/rail/rail-render-system'
+import { createRailCartSystem, nearestRailCartInteractionTarget } from './game/rail/rail-cart-system'
 import { getTorchSystem } from './engine/render/render-settings'
 import { spawnCoinPile } from './game/pickups'
 import { spawnLevelStone } from './game/stones'
@@ -164,6 +166,8 @@ async function main(): Promise<void> {
         chunkRender: createSystemSlot('chunkRender', false, RenderOrder.worldRender),
         indoorCut: createSystemSlot('indoorCut', false, RenderOrder.worldRender - 1),
         torchBlocks: createSystemSlot('torchBlocks', false, RenderOrder.worldRender + 2),
+        railRender: createSystemSlot('railRender', false, RenderOrder.worldRender + 2),
+        railCarts: createSystemSlot('railCarts', true, FixedOrder.input + 4),
     }
     const allSlots = Object.values(slots)
 
@@ -340,6 +344,7 @@ async function main(): Promise<void> {
         slots.visualFxZones.set(visualFxZones)
         slots.propRender.set(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }))
         slots.npcRender.set(createNpcRenderSystem(renderer.scene, { getNpcs: () => meta.npcs }))
+        slots.railCarts.set(createRailCartSystem(chunks, meta.railCarts, { actions }))
         slots.piston.set(createPistonSystem(chunks, {
             onFlip: (piston, position) => {
                 if (!piston.moveSoundId) return
@@ -395,6 +400,7 @@ async function main(): Promise<void> {
                     soundId: GameAudio.TorchFire,
                 }),
         )
+        slots.railRender.set(createRailRenderSystem(renderer.scene, chunks))
     }
 
     function captureCurrentSnapshot(): void {
@@ -467,6 +473,7 @@ async function main(): Promise<void> {
             ),
         }), 'pickup')
         .addSystem(slots.piston.system, 'piston')
+        .addSystem(slots.railCarts.system, 'railCarts')
         .addSystem(slots.zoneTrigger.system, 'zoneTrigger')
         .addSystem(slots.scriptEngine.system, 'scriptEngine')
         .addSystem(slots.stoneSpawner.system, 'stoneSpawner')
@@ -504,6 +511,7 @@ async function main(): Promise<void> {
         .addSystem(slots.chunkRender.system, 'chunkRender')
         .addSystem(slots.indoorCut.system, 'indoorCut')
         .addSystem(slots.torchBlocks.system, 'torchBlocks')
+        .addSystem(slots.railRender.system, 'railRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
             logPosition: { top: '48px', right: '8px', maxWidth: '320px' },
@@ -519,6 +527,9 @@ async function main(): Promise<void> {
             actions,
             camera: () => renderer.iso.camera,
             domElement: renderer.webgpu.domElement,
+            providers: [
+                (activeWorld, player) => nearestRailCartInteractionTarget(activeWorld, player, chunks),
+            ],
         }), 'interaction')
         .addSystem(createRestartSystem({
             onRestart: (reason) => restartCurrent({ useCheckpoint: reason !== 'manual-restart' }),
@@ -580,6 +591,9 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.pickupEntityByScriptId.clear()
     world.stoneEntityByScriptId.clear()
     world.stoneSpawnersById.clear()
+    world.railCarts.length = 0
+    world.railCartsById.clear()
+    world.ridingCartByPlayer.clear()
     world.pistons.length = 0
     world.pistonsById.clear()
     world.zones.clear()

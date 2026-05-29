@@ -168,7 +168,7 @@ test('defineLevel fills empty defaults and keeps required fields', () => {
     assert.equal(meta.size, 24)
     assert.deepEqual(meta.spawn, { x: 1, y: 2, z: 3 })
     assert.equal(meta.player, DEFAULT_PLAYER_SETTINGS)
-    for (const field of ['stoneSpawners', 'stones', 'coinPiles', 'pistons', 'zones', 'soundSources', 'soundZones', 'weatherZones', 'props', 'npcs', 'scripts'] as const) {
+    for (const field of ['stoneSpawners', 'stones', 'coinPiles', 'pistons', 'zones', 'soundSources', 'railCarts', 'soundZones', 'weatherZones', 'props', 'npcs', 'scripts'] as const) {
         assert.deepEqual(meta[field], [], `${field} defaults to []`)
     }
     assert.equal(meta.environment, undefined)

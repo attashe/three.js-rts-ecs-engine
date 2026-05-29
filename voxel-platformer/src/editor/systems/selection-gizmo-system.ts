@@ -14,9 +14,11 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { Position } from '../../engine/ecs/components'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
 import type { System } from '../../engine/ecs/systems/system'
-import { pushLog, type GameWorld, type VoxelCoord } from '../../engine/ecs/world'
+import { pushLog, type GameWorld, type RailCartConfig, type VoxelCoord } from '../../engine/ecs/world'
 import type { Input } from '../../engine/input/input'
 import type { IsometricCamera } from '../../engine/render/isometric-camera'
+import type { ChunkManager } from '../../engine/voxel/chunk-manager'
+import { isRailBlock } from '../../engine/voxel/palette'
 import type {
     EditorPickup,
     EditorSoundSource,
@@ -37,6 +39,7 @@ type SelectionRef =
     | { kind: 'npc'; npc: NpcConfig }
     | { kind: 'stone'; stone: StonePlacementConfig }
     | { kind: 'stone-spawner'; spawner: StoneFallSpawnerConfig }
+    | { kind: 'rail-cart'; cart: RailCartConfig }
     | { kind: 'zone'; zone: EditorZone }
     | { kind: 'sound-source'; source: EditorSoundSource }
     | { kind: 'sound-zone'; zone: EditorSoundZone }
@@ -56,6 +59,8 @@ interface SelectionBaseline {
     stonePosition?: { x: number; y: number; z: number }
     stoneSpawner?: StoneFallSpawnerConfig
     stoneSpawnerPosition?: { x: number; y: number; z: number }
+    railCart?: RailCartConfig
+    railCartCell?: VoxelCoord
     zone?: EditorZone
     zoneMin?: VoxelCoord
     zoneMax?: VoxelCoord
@@ -86,6 +91,7 @@ export function createSelectionGizmoSystem(
     iso: IsometricCamera,
     input: Input,
     domElement: HTMLElement,
+    chunks: ChunkManager,
     editorState: EditorState,
 ): System {
     const transform = new TransformControls(iso.camera, domElement)
@@ -135,10 +141,10 @@ export function createSelectionGizmoSystem(
         if (suppressObjectChange || !baseline) return
         const delta = selectionDelta(target.position, baseline, editorState)
         applyDelta(baseline, delta)
-        const snappedAnchor = baseline.anchor.clone().add(delta)
-        if (target.position.distanceToSquared(snappedAnchor) > 1e-8) {
+        const appliedAnchor = anchorFor(baseline.ref, editorState) ?? baseline.anchor.clone().add(delta)
+        if (target.position.distanceToSquared(appliedAnchor) > 1e-8) {
             suppressObjectChange = true
-            target.position.copy(snappedAnchor)
+            target.position.copy(appliedAnchor)
             suppressObjectChange = false
         }
         proxyFingerprint = ''
@@ -164,6 +170,7 @@ export function createSelectionGizmoSystem(
         editorState.selectedNpcId = ref?.kind === 'npc' ? ref.npc.id : null
         editorState.selectedStoneId = ref?.kind === 'stone' ? ref.stone.id ?? null : null
         editorState.selectedStoneSpawnerId = ref?.kind === 'stone-spawner' ? ref.spawner.id ?? null : null
+        editorState.selectedRailCartId = ref?.kind === 'rail-cart' ? ref.cart.id : null
         baseline = ref ? createBaseline(ref) : null
         if (baseline) {
             target.position.copy(baseline.anchor)
@@ -220,6 +227,9 @@ export function createSelectionGizmoSystem(
         }
         for (const spawner of editorState.stoneSpawners) {
             addStoneSpawnerProxy(proxyGroup, proxyMeshes, spawner, sameSelection(selected, { kind: 'stone-spawner', spawner }))
+        }
+        for (const cart of editorState.railCarts) {
+            addRailCartProxy(proxyGroup, proxyMeshes, cart, sameSelection(selected, { kind: 'rail-cart', cart }))
         }
         for (const zone of editorState.zones) {
             addBoxProxy(proxyGroup, proxyMeshes, {
@@ -337,6 +347,14 @@ export function createSelectionGizmoSystem(
                     z: current.stoneSpawnerPosition.z + dz,
                 }
                 break
+            case 'rail-cart':
+                if (!current.railCart || !current.railCartCell || !editorState.railCarts.includes(current.railCart)) return
+                {
+                    const nextCell = addDeltaToVoxel(current.railCartCell, dx, dy, dz)
+                    if (!isRailBlock(chunks.palette, chunks.getVoxel(nextCell.x, nextCell.y, nextCell.z))) return
+                    current.railCart.railCell = nextCell
+                }
+                break
             case 'zone':
                 if (!current.zone || !current.zoneMin || !current.zoneMax || !editorState.zones.includes(current.zone)) return
                 current.zone.min = addDeltaToVoxel(current.zoneMin, dx, dy, dz)
@@ -382,6 +400,8 @@ export function createSelectionGizmoSystem(
                 return { ref, anchor, stone: ref.stone, stonePosition: { ...ref.stone.position } }
             case 'stone-spawner':
                 return { ref, anchor, stoneSpawner: ref.spawner, stoneSpawnerPosition: { ...ref.spawner.position } }
+            case 'rail-cart':
+                return { ref, anchor, railCart: ref.cart, railCartCell: { ...ref.cart.railCell } }
             case 'zone':
                 return { ref, anchor, zone: ref.zone, zoneMin: { ...ref.zone.min }, zoneMax: { ...ref.zone.max } }
             case 'sound-source':
@@ -424,6 +444,16 @@ export function createSelectionGizmoSystem(
             }
             editorState.selectedStoneSpawnerId = null
             if (selected?.kind === 'stone-spawner') select(null)
+        }
+        if (editorState.selectedRailCartId) {
+            const cart = editorState.railCarts.find((c) => c.id === editorState.selectedRailCartId)
+            if (cart) {
+                if (selected?.kind === 'rail-cart' && selected.cart === cart) return
+                select({ kind: 'rail-cart', cart })
+                return
+            }
+            editorState.selectedRailCartId = null
+            if (selected?.kind === 'rail-cart') select(null)
         }
         const propId = editorState.selectedPropId
         if (!propId) {
@@ -502,6 +532,16 @@ function addStoneSpawnerProxy(group: Group, out: Mesh[], spawner: StoneFallSpawn
         center: new Vector3(spawner.position.x, spawner.position.y + 0.25, spawner.position.z),
         size: new Vector3(0.7, 0.7, 0.7),
         color: 0xffb86b,
+        selected,
+    })
+}
+
+function addRailCartProxy(group: Group, out: Mesh[], cart: RailCartConfig, selected: boolean): void {
+    addBoxProxy(group, out, {
+        ref: { kind: 'rail-cart', cart },
+        center: new Vector3(cart.railCell.x + 0.5, cart.railCell.y + 0.36, cart.railCell.z + 0.5),
+        size: new Vector3(0.92, 0.58, 0.92),
+        color: 0xf0c36b,
         selected,
     })
 }
@@ -588,6 +628,7 @@ function selectionPriority(ref: SelectionRef): number {
         case 'sound-source': return 1
         case 'stone': return 1
         case 'stone-spawner': return 1
+        case 'rail-cart': return 1
         case 'prop': return 2
         case 'npc': return 2
         case 'zone': return 4
@@ -606,6 +647,7 @@ function sameSelection(a: SelectionRef | null, b: SelectionRef | null): boolean 
         case 'npc': return b.kind === 'npc' && a.npc === b.npc
         case 'stone': return b.kind === 'stone' && a.stone === b.stone
         case 'stone-spawner': return b.kind === 'stone-spawner' && a.spawner === b.spawner
+        case 'rail-cart': return b.kind === 'rail-cart' && a.cart === b.cart
         case 'zone': return b.kind === 'zone' && a.zone === b.zone
         case 'sound-source': return b.kind === 'sound-source' && a.source === b.source
         case 'sound-zone': return b.kind === 'sound-zone' && a.zone === b.zone
@@ -632,6 +674,9 @@ function anchorFor(ref: SelectionRef, state: EditorState): Vector3 | null {
         case 'stone-spawner':
             if (!state.stoneSpawners.includes(ref.spawner)) return null
             return new Vector3(ref.spawner.position.x, ref.spawner.position.y, ref.spawner.position.z)
+        case 'rail-cart':
+            if (!state.railCarts.includes(ref.cart)) return null
+            return new Vector3(ref.cart.railCell.x + 0.5, ref.cart.railCell.y, ref.cart.railCell.z + 0.5)
         case 'zone':
             if (!state.zones.includes(ref.zone)) return null
             return aabbCenter(ref.zone.min, ref.zone.max)
@@ -715,6 +760,7 @@ function selectionLabel(ref: SelectionRef): string {
         case 'npc': return `NPC "${ref.npc.name}" @ ${formatPoint(ref.npc.position)}`
         case 'stone': return `stone "${ref.stone.id ?? 'stone'}" @ ${formatPoint(ref.stone.position)}`
         case 'stone-spawner': return `stone spawner "${ref.spawner.id ?? 'spawner'}" @ ${formatPoint(ref.spawner.position)}`
+        case 'rail-cart': return `rail cart "${ref.cart.id}" @ ${formatPoint(ref.cart.railCell)}`
         case 'zone': return `zone "${ref.zone.label ?? ref.zone.id}"`
         case 'sound-source': return `sound source "${ref.source.label ?? ref.source.id}"`
         case 'sound-zone': return `sound zone "${ref.zone.label ?? ref.zone.id}"`
@@ -735,6 +781,7 @@ function selectionFingerprint(state: EditorState, selected: SelectionRef | null)
         `npcs:${state.npcs.map((n) => `${n.id}:${n.model}:${n.position.x},${n.position.y},${n.position.z}:${n.scale}:${n.colliderRadius}:${n.colliderHeight}`).join(';')}`,
         `stones:${state.stones.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.tier}:${s.size}`).join(';')}`,
         `stoneSpawners:${state.stoneSpawners.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.enabled}:${s.interval}:${s.maxLive}`).join(';')}`,
+        `railCarts:${state.railCarts.map((c) => `${c.id}:${c.railCell.x},${c.railCell.y},${c.railCell.z}:${c.front}:${c.speed}:${c.enabled}`).join(';')}`,
         `zones:${state.zones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
         `sources:${state.soundSources.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.radius}`).join(';')}`,
         `soundZones:${state.soundZones.map((z) => `${z.id}:${z.min.x},${z.min.y},${z.min.z}:${z.max.x},${z.max.y},${z.max.z}`).join(';')}`,
@@ -750,6 +797,7 @@ function selectionKey(ref: SelectionRef, state: EditorState): string {
         case 'npc': return `npc:${ref.npc.id}`
         case 'stone': return `stone:${ref.stone.id ?? state.stones.indexOf(ref.stone)}`
         case 'stone-spawner': return `stone-spawner:${ref.spawner.id ?? state.stoneSpawners.indexOf(ref.spawner)}`
+        case 'rail-cart': return `rail-cart:${ref.cart.id}`
         case 'zone': return `zone:${ref.zone.id}`
         case 'sound-source': return `sound-source:${ref.source.id}`
         case 'sound-zone': return `sound-zone:${ref.zone.id}`

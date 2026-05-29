@@ -33,6 +33,8 @@ import { createNpcPlaceSystem } from './editor/systems/npc-place-system'
 import { createNpcRenderSystem } from './game/npcs/npc-render-system'
 import { createStonePlaceSystem } from './editor/systems/stone-place-system'
 import { createStoneRenderSystem } from './editor/systems/stone-render-system'
+import { createRailCartPlaceSystem } from './editor/systems/rail-cart-place-system'
+import { createRailCartRenderSystem } from './editor/systems/rail-cart-render-system'
 import { createStructurePlaceSystem } from './editor/systems/structure-place-system'
 import { createStructurePreviewSystem } from './editor/systems/structure-preview-system'
 import { createSelectionGizmoSystem } from './editor/systems/selection-gizmo-system'
@@ -44,6 +46,7 @@ import { createOrbitCameraSystem } from './editor/systems/orbit-camera-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
 import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/render-layers'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
+import { createRailRenderSystem } from './game/rail/rail-render-system'
 import { mountEditorPanel } from './editor/editor-ui'
 import { consumePlaytestLevel } from './editor/playtest'
 import { loadLevelFromBuffer } from './editor/save-load'
@@ -139,6 +142,7 @@ async function main(): Promise<void> {
         .addSystem(createPropPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'propPlace')
         .addSystem(createNpcPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'npcPlace')
         .addSystem(createStonePlaceSystem(engine.input, editorState), 'stonePlace')
+        .addSystem(createRailCartPlaceSystem(engine.input, chunks, editorState), 'railCartPlace')
         .addSystem(createStructurePlaceSystem(engine.input, chunks, editorState, history), 'structurePlace')
         .addSystem(createPropRenderSystem(renderer.scene, {
             getProps: () => editorState.props,
@@ -146,6 +150,7 @@ async function main(): Promise<void> {
         }), 'propRender')
         .addSystem(createNpcRenderSystem(renderer.scene, { getNpcs: () => editorState.npcs }), 'npcRender')
         .addSystem(createStoneRenderSystem(renderer.scene, editorState), 'stoneRender')
+        .addSystem(createRailCartRenderSystem(renderer.scene, editorState), 'railCartRender')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(chunkRenderSystem, 'chunkRender')
         .addSystem(createTorchBlockRenderSystem(renderer.scene, chunks, {
@@ -153,6 +158,9 @@ async function main(): Promise<void> {
             focus: () => renderer.iso.target,
             lightsEnabled: false,
         }), 'torchBlocks')
+        .addSystem(createRailRenderSystem(renderer.scene, chunks, {
+            cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
+        }), 'railRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
         .addSystem(createWorkingPlaneSystem(renderer.scene, engine.input, renderer.iso, editorState), 'workingPlane')
         .addSystem(createWorkingPlaneOutlinesSystem(renderer.scene, chunks, editorState), 'workingPlaneOutlines')
@@ -163,7 +171,7 @@ async function main(): Promise<void> {
         .addSystem(createSoundZoneRenderSystem(renderer.scene, editorState), 'soundZoneRender')
         .addSystem(createWeatherZoneRenderSystem(renderer.scene, editorState), 'weatherZoneRender')
         .addSystem(createStructurePreviewSystem(renderer.scene, editorState, chunks), 'structurePreview')
-        .addSystem(createSelectionGizmoSystem(renderer.scene, renderer.iso, engine.input, renderer.webgpu.domElement, editorState), 'selectionGizmo')
+        .addSystem(createSelectionGizmoSystem(renderer.scene, renderer.iso, engine.input, renderer.webgpu.domElement, chunks, editorState), 'selectionGizmo')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         // Editor panel lives top-right; push debug metrics / log to the
         // bottom corners so the four panels don't collide.

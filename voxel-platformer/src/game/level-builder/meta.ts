@@ -12,6 +12,7 @@
 
 import type { AmbientWeatherState } from '../../engine/fx/core/types'
 import type { Zone } from '../../engine/ecs/zones'
+import type { RailCartConfig } from '../../engine/ecs/world'
 import type { AmbientWeatherRuntimeConfig } from '../weather-config'
 import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from '../weather-config'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../player-settings'
@@ -44,6 +45,7 @@ export interface LevelSpec {
     pistons?: PistonMechanismConfig[]
     zones?: Zone[]
     soundSources?: SoundSourceConfig[]
+    railCarts?: RailCartConfig[]
     soundZones?: SoundZoneConfig[]
     environment?: EnvironmentConfig
     weatherZones?: WeatherZoneRuntimeConfig[]
@@ -69,6 +71,7 @@ export function defineLevel(spec: LevelSpec): LevelMeta {
         pistons: spec.pistons ?? [],
         zones: spec.zones ?? [],
         soundSources: spec.soundSources ?? [],
+        railCarts: spec.railCarts ?? [],
         soundZones: spec.soundZones ?? [],
         environment: spec.environment,
         weatherZones: spec.weatherZones ?? [],

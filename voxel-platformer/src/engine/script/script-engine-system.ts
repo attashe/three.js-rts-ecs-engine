@@ -29,6 +29,7 @@ import { compileScript, type CompileFailure, type CompileSuccess } from './compi
 import { createRuntime, type ScriptRuntime } from './runtime'
 import type {
     AudioFacade,
+    CartsFacade,
     ChunksFacade,
     DayCycleFacade,
     FlagValue,
@@ -53,6 +54,7 @@ export interface ScriptEngineSystemOptions {
     pickups: PickupsFacade
     pistons: PistonsFacade
     stones?: StonesFacade
+    carts?: CartsFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -121,6 +123,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         pickups: opts.pickups,
         pistons: opts.pistons,
         stones: opts.stones,
+        carts: opts.carts,
         zone: opts.zone,
         log: opts.log,
         ui: opts.ui,

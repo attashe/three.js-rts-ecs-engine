@@ -10,6 +10,7 @@ import {
     Position,
     Renderable,
     RigidBody,
+    RidingCart,
     Rotation,
     Sleeping,
     StaticRenderable,
@@ -110,6 +111,7 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
             let stuckBodies = 0
             for (let i = 0; i < eids.length; i++) {
                 const eid = eids[i]
+                if (hasComponent(world, eid, RidingCart)) continue
                 const hasRb = hasComponent(world, eid, RigidBody)
 
                 const gravityScale = hasRb && RigidBody.gravityScale[eid] !== 0

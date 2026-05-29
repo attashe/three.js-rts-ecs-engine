@@ -1,6 +1,6 @@
 import { BLOCK, DEFAULT_PALETTE } from '../engine/voxel/palette'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
-import type { VoxelCoord } from '../engine/ecs/world'
+import type { RailCartConfig, RailCartFacing, VoxelCoord } from '../engine/ecs/world'
 import type { ZonePortal, ZoneTriggerSource } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
 import { GameAudio } from '../game/audio'
@@ -38,6 +38,7 @@ export type EditorMode =
     | 'place-npc'
     | 'place-stone'
     | 'place-stone-spawner'
+    | 'place-rail-cart'
     | 'place-structure'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut;
@@ -433,6 +434,14 @@ export interface EditorState {
     stoneSpawnerJitter: number
     stoneSpawnerEnabled: boolean
 
+    /** Rideable carts placed on rail voxels. */
+    railCarts: RailCartConfig[]
+    selectedRailCartId: string | null
+    railCartFacing: RailCartFacing
+    railCartSpeed: number
+    railCartInteractionRadius: number
+    railCartEnabled: boolean
+
     /** Multi-block structure placement. Unlike props/NPCs (separate
      *  entities), placing a structure *bakes its voxels into the level*
      *  as one undoable bulk edit — so it saves/loads as plain terrain and
@@ -607,6 +616,12 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         stoneSpawnerMaxLive: 4,
         stoneSpawnerJitter: 0,
         stoneSpawnerEnabled: true,
+        railCarts: [],
+        selectedRailCartId: null,
+        railCartFacing: 'east',
+        railCartSpeed: 4,
+        railCartInteractionRadius: 1.65,
+        railCartEnabled: true,
         structureSourceKind: 'prefab',
         structurePrefabId: DEFAULT_PREFAB_ID,
         structureKind: 'house',
@@ -649,6 +664,8 @@ export interface EditorLevelMeta {
     pistons: EditorPiston[]
     zones?: EditorZone[]
     soundSources?: EditorSoundSource[]
+    /** Rideable rail carts. */
+    railCarts?: RailCartConfig[]
     /** Level-wide ambient bed. Absent / `soundId: null` ⇒ no env sound. */
     environment?: EditorEnvironment
     /** AABB sound zones that fade ambient audio in/out as the player
@@ -719,6 +736,14 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             volume: s.volume,
             loop: s.loop,
             autoplay: s.autoplay,
+        })),
+        railCarts: state.railCarts.length === 0 ? undefined : state.railCarts.map((cart) => ({
+            id: cart.id,
+            railCell: { ...cart.railCell },
+            front: cart.front,
+            speed: cart.speed,
+            interactionRadius: cart.interactionRadius,
+            enabled: cart.enabled,
         })),
         environment: state.environment.soundId
             ? { soundId: state.environment.soundId, volume: state.environment.volume }

@@ -75,6 +75,9 @@ function clearWorldAndEditorState(
     world.pickupEntityByScriptId.clear()
     world.stoneEntityByScriptId.clear()
     world.stoneSpawnersById.clear()
+    world.railCarts.length = 0
+    world.railCartsById.clear()
+    world.ridingCartByPlayer.clear()
 
     for (const p of world.pistons) {
         if (p.eid >= 0) {
@@ -96,6 +99,8 @@ function clearWorldAndEditorState(
 
     editorState.soundSources = []
     editorState.selectedSoundSourceId = null
+    editorState.railCarts = []
+    editorState.selectedRailCartId = null
     editorState.soundZones = []
     editorState.selectedSoundZoneId = null
     editorState.weatherZones = []
@@ -266,6 +271,18 @@ export function loadLevelFromBuffer(
                 volume: Number.isFinite(s.volume) ? s.volume : 1,
                 loop: s.loop ?? true,
                 autoplay: s.autoplay ?? true,
+            })
+        }
+        for (const cart of loaded.metadata.railCarts ?? []) {
+            editorState.railCarts.push({
+                id: cart.id,
+                railCell: { ...cart.railCell },
+                front: cart.front,
+                speed: Number.isFinite(cart.speed) && (cart.speed ?? 0) > 0 ? cart.speed : 4,
+                interactionRadius: Number.isFinite(cart.interactionRadius) && (cart.interactionRadius ?? 0) > 0
+                    ? cart.interactionRadius
+                    : 1.65,
+                enabled: cart.enabled !== false,
             })
         }
         for (const z of loaded.metadata.soundZones ?? []) {
