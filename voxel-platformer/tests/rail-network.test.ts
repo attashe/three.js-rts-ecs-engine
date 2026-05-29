@@ -159,13 +159,17 @@ test('rail cart follows uphill and downhill rail cells over terrain supports', (
     actions.hold(GameAction.MoveForward)
     system.update?.(world, 0.125)
     assert.ok(Math.abs(Position.x[player] - 1.0) < 1e-5)
-    assert.ok(Math.abs(Position.y[player] - 1.9) < 1e-5)
+    assert.ok(Math.abs(Position.y[player] - 2.4) < 1e-5)
 
     system.update?.(world, 0.125)
     assert.deepEqual(world.railCarts[0]?.railCell, { x: 1, y: 2, z: 0 })
     assert.ok(Math.abs(Position.y[player] - 2.4) < 1e-5)
 
-    system.update?.(world, 0.25)
+    system.update?.(world, 0.125)
+    assert.ok(Math.abs(Position.x[player] - 2.0) < 1e-5)
+    assert.ok(Math.abs(Position.y[player] - 2.4) < 1e-5)
+
+    system.update?.(world, 0.125)
     assert.deepEqual(world.railCarts[0]?.railCell, { x: 2, y: 1, z: 0 })
     assert.ok(Math.abs(Position.y[player] - 1.4) < 1e-5)
 })

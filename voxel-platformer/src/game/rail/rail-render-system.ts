@@ -366,10 +366,10 @@ function buildRailGeometry(shape: RailShapeInfo): BufferGeometry {
         parts.push(box(0.06, 0.05, 0.36, 0.18, 0.09, 0, 0.55, 0.56, 0.56))
     } else {
         addTie(parts, 0, 0)
-        if (addNorth) addTie(parts, 0, -0.34, false, shape.slopes[RailDirection.North] * 0.34)
-        if (addEast) addTie(parts, 0.34, 0, true, shape.slopes[RailDirection.East] * 0.34)
-        if (addSouth) addTie(parts, 0, 0.34, false, shape.slopes[RailDirection.South] * 0.34)
-        if (addWest) addTie(parts, -0.34, 0, true, shape.slopes[RailDirection.West] * 0.34)
+        if (addNorth) addTie(parts, 0, -0.34, false, tieHeightOffset(shape.slopes[RailDirection.North]))
+        if (addEast) addTie(parts, 0.34, 0, true, tieHeightOffset(shape.slopes[RailDirection.East]))
+        if (addSouth) addTie(parts, 0, 0.34, false, tieHeightOffset(shape.slopes[RailDirection.South]))
+        if (addWest) addTie(parts, -0.34, 0, true, tieHeightOffset(shape.slopes[RailDirection.West]))
     }
 
     const merged = mergeGeometries(parts, false)
@@ -380,7 +380,9 @@ function buildRailGeometry(shape: RailShapeInfo): BufferGeometry {
 
 function addSegment(parts: BufferGeometry[], dir: RailDirection, slope: RailSlopeDelta): void {
     const metal = [0.56, 0.57, 0.56] as const
-    const dy = slope * 0.5
+    // Only the lower rail cell renders the ramp. A higher cell connected to a
+    // lower neighbor stays flat to its edge so it never sinks into its support.
+    const dy = slope > 0 ? 1 : 0
     switch (dir) {
         case RailDirection.North:
             parts.push(slopeBox(0.055, 0.055, -0.2, 0.095, 0, 0, dy, -0.5, ...metal))
@@ -399,6 +401,10 @@ function addSegment(parts: BufferGeometry[], dir: RailDirection, slope: RailSlop
             parts.push(slopeBox(0.055, 0.055, 0, 0.095, 0.2, -0.5, dy, 0, ...metal))
             return
     }
+}
+
+function tieHeightOffset(slope: RailSlopeDelta): number {
+    return slope > 0 ? 0.68 : 0
 }
 
 function addTie(parts: BufferGeometry[], x: number, z: number, eastWest = false, yOffset = 0): void {

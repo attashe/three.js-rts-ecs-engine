@@ -347,11 +347,23 @@ function cartPosition(cart: RailCartRuntime): { x: number; y: number; z: number 
 
 function cartSegmentPosition(segment: NonNullable<RailCartRuntime['segment']>, tValue: number): { x: number; y: number; z: number } {
     const t = Math.max(0, Math.min(1, tValue))
+    const fromY = segment.from.y + 0.06
+    const toY = segment.to.y + 0.06
     return {
         x: segment.from.x + 0.5 + (segment.to.x - segment.from.x) * t,
-        y: segment.from.y + 0.06 + (segment.to.y - segment.from.y) * t,
+        y: railSegmentHeight(fromY, toY, t),
         z: segment.from.z + 0.5 + (segment.to.z - segment.from.z) * t,
     }
+}
+
+function railSegmentHeight(fromY: number, toY: number, t: number): number {
+    if (toY > fromY) {
+        return t < 0.5 ? fromY + (toY - fromY) * t * 2 : toY
+    }
+    if (toY < fromY) {
+        return t < 0.5 ? fromY : fromY + (toY - fromY) * (t - 0.5) * 2
+    }
+    return fromY
 }
 
 function cartBlockedAt(
