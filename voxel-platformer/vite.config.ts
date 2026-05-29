@@ -18,6 +18,7 @@ export default defineConfig({
         fxDemo: resolve(__dirname, 'fx-demo.html'),
         soundDemo: resolve(__dirname, 'sound-demo.html'),
         proceduralStructures: resolve(__dirname, 'procedural-structures.html'),
+        backdropDemo: resolve(__dirname, 'backdrop-demo.html'),
       },
     },
   },

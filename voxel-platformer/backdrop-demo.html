@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voxel Platformer — Backdrop Scenery</title>
+    <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #f6cda0; }
+        #hint {
+            position: fixed; left: 12px; bottom: 12px; z-index: 10;
+            padding: 6px 10px; border-radius: 6px;
+            background: rgba(20, 14, 10, 0.5); color: #fff;
+            font: 12px/1.4 system-ui, sans-serif;
+        }
+        kbd { padding: 1px 5px; background: rgba(255,255,255,0.18); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="hint"><kbd>Drag</kbd> orbit · <kbd>Scroll</kbd> zoom — authored distant ranges fog-blended into the sky</div>
+    <script type="module" src="/src/backdrop-demo.ts"></script>
+</body>
+</html>
