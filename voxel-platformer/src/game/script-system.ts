@@ -18,6 +18,7 @@ import type {
     ScriptEntry,
     StonesFacade,
     StoneScriptSpawnOptions,
+    TradeFacade,
     TravelFacade,
     FlagValue,
     UiFacade,
@@ -40,6 +41,13 @@ import {
     type PlayerSettingsPatch,
 } from './player-settings'
 import { syncPlayerVisuals } from './player'
+import type { TradeMenuFacade } from './trade-system'
+import {
+    applyTradeSelection,
+    normalizeTradeRequest,
+    sanitizeTradeInventory,
+    type TradeSelection,
+} from './trade'
 
 export interface GameScriptSystemOptions {
     world: GameWorld
@@ -56,6 +64,7 @@ export interface GameScriptSystemOptions {
      *  returns false. */
     visualFxZones?: VisualFxZoneController | null
     dialogue?: Pick<UiFacade, 'dialogue'>
+    trade?: TradeMenuFacade
     travel?: TravelFacade
     /** Source for the `level.spawn / size / name` getters. Narrowed to
      *  the three fields the script API exposes so widening the script
@@ -306,6 +315,25 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         },
     }
 
+    const trade: TradeFacade = {
+        async open(request) {
+            const normalized = normalizeTradeRequest(request)
+            const inventoryAtOpen = tradeInventory(opts.world)
+            if (normalized.items.length === 0) {
+                return { status: 'unavailable', reason: 'Shop has no tradeable items.', inventory: inventoryAtOpen }
+            }
+            if (!opts.trade) {
+                return { status: 'unavailable', reason: 'Trade menu is not available.', inventory: inventoryAtOpen }
+            }
+            const selection: TradeSelection = await opts.trade.open(normalized, inventoryAtOpen)
+            const result = applyTradeSelection(normalized, tradeInventory(opts.world), selection)
+            if (result.status === 'bought' || result.status === 'sold') {
+                applyTradeInventory(opts.world, result.inventory)
+            }
+            return result
+        },
+    }
+
     // Weather + day-cycle bindings are wired only when an ambient
     // weather system exists for the level. Scripts that try to call
     // `weather.setRain(...)` on a level with no ambient see the
@@ -341,6 +369,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                 return opts.dialogue?.dialogue?.(request) ?? Promise.resolve({})
             },
         },
+        trade,
         dayCycle,
         weather,
         travel: opts.travel,
@@ -382,6 +411,20 @@ function applyPlayerPatch(world: GameWorld, patch: PlayerSettingsPatch) {
     world.inventory.gold = next.inventory.gold
     world.inventory.arrows = next.inventory.arrows
     return next
+}
+
+function tradeInventory(world: GameWorld) {
+    return sanitizeTradeInventory({
+        gold: world.inventory.gold,
+        arrows: world.inventory.arrows,
+    })
+}
+
+function applyTradeInventory(world: GameWorld, inventory: { gold: number; arrows: number }): void {
+    world.inventory.gold = inventory.gold
+    world.inventory.arrows = inventory.arrows
+    world.playerSettings.inventory.gold = inventory.gold
+    world.playerSettings.inventory.arrows = inventory.arrows
 }
 
 function safeInventoryAmount(value: number, fallback: number, max: number): number {

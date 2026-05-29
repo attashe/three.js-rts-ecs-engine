@@ -5,7 +5,9 @@ import { BLOCK, DEFAULT_PALETTE, voxelLightSpec } from '../src/engine/voxel/pale
 import { generatePlatformerLevel } from '../src/game/level'
 import {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
+    DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
+    LARGE_TOWN_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     generateTeleportGardenLevel,
@@ -42,6 +44,34 @@ test('demo level has a portal and safe return arrival for travel tests', () => {
     assert.equal(portal?.triggerSources?.includes('player'), true)
     assert.equal(portal?.active, false, 'paid shrine script should open this gate temporarily')
     assert.equal(arrival?.kind, 'arrival')
+})
+
+test('demo large-town portal and return arrival sit on clear ground', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const meta = generatePlatformerLevel(chunks)
+    const portal = meta.zones.find((zone) => zone.portal?.targetLevelId === LARGE_TOWN_LEVEL_ID)
+    const arrival = meta.zones.find((zone) => zone.id === DEMO_FROM_TOWN_ARRIVAL_ID)
+
+    assert.equal(portal?.kind, 'portal')
+    assert.equal(arrival?.kind, 'arrival')
+    assert.deepEqual(portal?.min, { x: 20, y: 5, z: 21 })
+    assert.deepEqual(portal?.max, { x: 22, y: 7, z: 23 })
+
+    const portalMin = portal!.min
+    const portalMax = portal!.max
+    for (let x = portalMin.x; x < portalMax.x; x++) {
+        for (let zz = portalMin.z; zz < portalMax.z; zz++) {
+            assert.notEqual(chunks.getVoxel(x, 4, zz), BLOCK.air, `portal ${x},4,${zz} should have floor`)
+            assert.equal(chunks.getVoxel(x, 5, zz), BLOCK.air, `portal ${x},5,${zz} should be clear`)
+            assert.equal(chunks.getVoxel(x, 6, zz), BLOCK.air, `portal ${x},6,${zz} should be clear`)
+        }
+    }
+
+    const arrivalX = Math.floor((arrival!.min.x + arrival!.max.x) * 0.5)
+    const arrivalZ = Math.floor((arrival!.min.z + arrival!.max.z) * 0.5)
+    assert.notEqual(chunks.getVoxel(arrivalX, 4, arrivalZ), BLOCK.air, 'return arrival should have floor')
+    assert.equal(chunks.getVoxel(arrivalX, 5, arrivalZ), BLOCK.air, 'return arrival foot cell should be clear')
+    assert.equal(chunks.getVoxel(arrivalX, 6, arrivalZ), BLOCK.air, 'return arrival body cell should be clear')
 })
 
 test('demo pistons carry stable ids for script targeting', () => {

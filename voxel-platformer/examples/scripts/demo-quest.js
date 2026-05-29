@@ -39,6 +39,24 @@ const SHARDS = [
 ]
 
 const REWARD = { x: 10.5, y: 5, z: 10.6 }
+const KEEPER_SPEAKER = { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper', side: 'left' }
+const PLAYER_SPEAKER = { id: 'player', name: 'You', avatar: 'player', side: 'right' }
+const KEEPER_SHOP = {
+    id: 'demo.keeper.supplies',
+    title: "Keeper Arlen's Supplies",
+    npc: KEEPER_SPEAKER,
+    currency: 'gold',
+    items: [{
+        id: 'arrows.bundle',
+        name: 'Arrow bundle',
+        description: 'Five straight arrows for careful shots.',
+        resource: 'arrows',
+        unitSize: 5,
+        buyPrice: 3,
+        sellPrice: 1,
+        stock: 20,
+    }],
+}
 
 on('level-start', () => {
     const questState = state()
@@ -71,18 +89,30 @@ async function handleKeeperInteraction() {
                 choices: [
                     { id: 'accept', text: 'I will find the shards.' },
                     { id: 'ask', text: 'What are Sun Shards?' },
+                    { id: 'trade', text: 'Show me your supplies.' },
                 ],
             },
         ])
+        if (intro.choiceId === 'trade') {
+            await openKeeperTrade()
+            return
+        }
         if (intro.choiceId === 'ask') {
-            await keeperDialogue([
+            const followup = await keeperDialogue([
                 { speaker: 'keeper', text: 'Small pieces of a kinder sun. They hide where the plaza taught its first lessons.' },
                 {
                     speaker: 'keeper',
                     text: 'Stairs, walls, and high places remember them best.',
-                    choices: [{ id: 'accept', text: 'Then I will find them.' }],
+                    choices: [
+                        { id: 'accept', text: 'Then I will find them.' },
+                        { id: 'trade', text: 'Show me your supplies first.' },
+                    ],
                 },
             ])
+            if (followup.choiceId === 'trade') {
+                await openKeeperTrade()
+                return
+            }
         }
         flags.set(STATE, 'active')
         ensureShardsSpawned()
@@ -93,11 +123,15 @@ async function handleKeeperInteraction() {
     if (questState === 'active') {
         ensureShardsSpawned()
         const missing = remainingShards()
-        await keeperDialogue([{
+        const result = await keeperDialogue([{
             speaker: 'keeper',
             text: `${missing.length} shard(s) still wait: ${missing.map((s) => s.hint).join(', ')}.`,
-            choices: [{ id: 'leave', text: 'I will keep looking.' }],
+            choices: [
+                { id: 'leave', text: 'I will keep looking.' },
+                { id: 'trade', text: 'Show me your supplies.' },
+            ],
         }])
+        if (result.choiceId === 'trade') await openKeeperTrade()
         return
     }
 
@@ -108,17 +142,23 @@ async function handleKeeperInteraction() {
             choices: [
                 { id: 'give', text: 'Here are the Sun Shards.' },
                 { id: 'wait', text: 'Not yet.' },
+                { id: 'trade', text: 'Show me your supplies.' },
             ],
         }])
         if (turnIn.choiceId === 'give') await completeQuest()
+        else if (turnIn.choiceId === 'trade') await openKeeperTrade()
         return
     }
 
-    await keeperDialogue([{
+    const done = await keeperDialogue([{
         speaker: 'keeper',
         text: 'The lantern holds. Walk carefully, friend.',
-        choices: [{ id: 'leave', text: 'I will.' }],
+        choices: [
+            { id: 'leave', text: 'I will.' },
+            { id: 'trade', text: 'Show me your supplies.' },
+        ],
     }])
+    if (done.choiceId === 'trade') await openKeeperTrade()
 }
 
 on('pickup-taken', { kind: ITEM_KIND }, (event) => {
@@ -186,10 +226,23 @@ async function keeperDialogue(lines) {
     }
     return ui.dialogue({
         title: 'Keeper Arlen',
-        npc: { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper', side: 'left' },
-        player: { id: 'player', name: 'You', avatar: 'player', side: 'right' },
+        npc: KEEPER_SPEAKER,
+        player: PLAYER_SPEAKER,
         lines,
     })
+}
+
+async function openKeeperTrade() {
+    const result = await trade.open(KEEPER_SHOP)
+    if (result.status === 'bought') {
+        const arrows = result.gained.arrows ?? result.quantity * result.unitSize
+        ui.say(KEEPER_ZONE, `Wrapped ${arrows} arrow(s). Spend them with care.`, { seconds: 3 })
+    } else if (result.status === 'sold') {
+        const arrows = result.removed.arrows ?? result.quantity * result.unitSize
+        ui.say(KEEPER_ZONE, `I can use those ${arrows} arrow(s). Take ${result.gained.gold} gold.`, { seconds: 3 })
+    } else if (result.status === 'unavailable') {
+        ui.say(KEEPER_ZONE, result.reason ?? 'The supplies are not ready.', { seconds: 3 })
+    }
 }
 
 function lightLantern() {

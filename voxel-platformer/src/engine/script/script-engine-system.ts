@@ -41,6 +41,7 @@ import type {
     ScriptContext,
     ScriptEntry,
     StonesFacade,
+    TradeFacade,
     TravelFacade,
     UiFacade,
     WeatherFacade,
@@ -58,6 +59,7 @@ export interface ScriptEngineSystemOptions {
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
+    trade?: TradeFacade
     /** Optional. When omitted, scripts call `dayCycle.*` and see
      *  bindings.ts's NOOP_DAY_CYCLE (returns midday, ignores writes). */
     dayCycle?: DayCycleFacade
@@ -127,6 +129,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         zone: opts.zone,
         log: opts.log,
         ui: opts.ui,
+        trade: opts.trade,
         dayCycle: opts.dayCycle,
         weather: opts.weather,
         travel: opts.travel,

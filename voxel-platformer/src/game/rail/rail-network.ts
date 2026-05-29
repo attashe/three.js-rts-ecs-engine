@@ -26,6 +26,13 @@ export const RAIL_MASK = {
 } as const
 
 export type RailConnectionMask = number
+export type RailSlopeDelta = -1 | 0 | 1
+
+export interface RailNeighbor {
+    dir: RailDirection
+    cell: VoxelCoord
+    dy: RailSlopeDelta
+}
 
 export type RailVariant =
     | 'isolated'
@@ -100,12 +107,40 @@ export function railConnectionMaskFromGetter(
 ): RailConnectionMask {
     let mask = 0
     for (const dir of RAIL_DIRS) {
-        const offset = directionOffset(dir)
-        if (isRailBlock(palette, getVoxel(x + offset.dx, y, z + offset.dz))) {
+        if (railNeighborFromGetter(palette, getVoxel, { x, y, z }, dir)) {
             mask |= 1 << dir
         }
     }
     return mask
+}
+
+export function railNeighborCell(chunks: ChunkManager, cell: VoxelCoord, dir: RailDirection): RailNeighbor | null {
+    return railNeighborFromGetter(
+        chunks.palette,
+        (x, y, z) => chunks.getVoxel(x, y, z),
+        cell,
+        dir,
+    )
+}
+
+export function railNeighborFromGetter(
+    palette: Palette,
+    getVoxel: (x: number, y: number, z: number) => number,
+    cell: VoxelCoord,
+    dir: RailDirection,
+): RailNeighbor | null {
+    const offset = directionOffset(dir)
+    // Same-height rails remain preferred. The +1/-1 fallback creates
+    // terrain-following ramps without introducing dedicated slope blocks.
+    for (const dy of [0, 1, -1] as const) {
+        const x = cell.x + offset.dx
+        const y = cell.y + dy
+        const z = cell.z + offset.dz
+        if (isRailBlock(palette, getVoxel(x, y, z))) {
+            return { dir, cell: { x, y, z }, dy }
+        }
+    }
+    return null
 }
 
 export function railVariantFromMask(mask: RailConnectionMask): RailVariantInfo {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Voxel NPC Creation"
+  short_description: "Create voxel NPCs with models and dialogue"
+  default_prompt: "Use $voxel-npc-creation to create a named NPC with a model, description, and interaction dialogue."

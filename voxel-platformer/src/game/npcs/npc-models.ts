@@ -17,6 +17,8 @@ export function createNpcModel(kind: NpcModelKind): Group {
             return createPlayerNpcModel()
         case 'keeper':
             return createKeeperNpcModel()
+        case 'large-troll':
+            return createLargeTrollModel()
     }
 }
 
@@ -92,6 +94,92 @@ function createKeeperNpcModel(): Group {
     beard.name = 'KeeperBeard'
     beard.position.set(0, 1.23, 0.19)
     root.add(beard)
+
+    return root
+}
+
+function createLargeTrollModel(): Group {
+    const root = new Group()
+    root.name = 'NpcModel:large-troll'
+
+    const figure = createMainCharacter({
+        tunicColor: 0x394b4f,
+        cloakColor: 0x4f2430,
+        skinColor: 0x6f8d6b,
+        metalColor: 0xd2b45f,
+        bootColor: 0x251f19,
+    })
+    figure.name = 'LargeTrollFigure'
+    figure.scale.setScalar(1.85)
+    root.add(figure)
+
+    const robe = shadowed(new Mesh(
+        sharedBoxGeometry(0.92, 0.1, 0.64),
+        sharedMaterial(0x24343c, 0.82),
+    ))
+    robe.name = 'LargeTrollRobeHem'
+    robe.position.set(0, 0.52, 0.02)
+    root.add(robe)
+
+    const sash = shadowed(new Mesh(
+        sharedBoxGeometry(1.02, 0.1, 0.08),
+        sharedMaterial(0xb98f45, 0.48, 0.16),
+    ))
+    sash.name = 'LargeTrollSash'
+    sash.position.set(0, 1.34, 0.47)
+    root.add(sash)
+
+    const brow = shadowed(new Mesh(
+        sharedBoxGeometry(0.56, 0.08, 0.12),
+        sharedMaterial(0x42573e, 0.78),
+    ))
+    brow.name = 'LargeTrollHeavyBrow'
+    brow.position.set(0, 2.67, 0.31)
+    root.add(brow)
+
+    const leftLens = shadowed(new Mesh(
+        sharedSphereGeometry(0.09, 10, 6),
+        sharedMaterial(0x9fd7d3, 0.32, 0.08, 0.54),
+    ))
+    leftLens.name = 'LargeTrollLeftLens'
+    leftLens.position.set(-0.18, 2.57, 0.35)
+    leftLens.scale.set(1.1, 0.72, 0.2)
+    root.add(leftLens)
+
+    const rightLens = shadowed(new Mesh(
+        sharedSphereGeometry(0.09, 10, 6),
+        sharedMaterial(0x9fd7d3, 0.32, 0.08, 0.54),
+    ))
+    rightLens.name = 'LargeTrollRightLens'
+    rightLens.position.set(0.18, 2.57, 0.35)
+    rightLens.scale.set(1.1, 0.72, 0.2)
+    root.add(rightLens)
+
+    const bridge = shadowed(new Mesh(
+        sharedBoxGeometry(0.14, 0.025, 0.035),
+        sharedMaterial(0xd2b45f, 0.42, 0.24),
+    ))
+    bridge.name = 'LargeTrollGlassesBridge'
+    bridge.position.set(0, 2.57, 0.38)
+    root.add(bridge)
+
+    const book = shadowed(new Mesh(
+        sharedBoxGeometry(0.56, 0.08, 0.42),
+        sharedMaterial(0x6c2f34, 0.68),
+    ))
+    book.name = 'LargeTrollBook'
+    book.position.set(-0.58, 1.26, 0.36)
+    book.rotation.z = 0.2
+    root.add(book)
+
+    const pages = shadowed(new Mesh(
+        sharedBoxGeometry(0.48, 0.03, 0.34),
+        sharedMaterial(0xe6dcc3, 0.72),
+    ))
+    pages.name = 'LargeTrollBookPages'
+    pages.position.set(-0.58, 1.31, 0.36)
+    pages.rotation.z = 0.2
+    root.add(pages)
 
     return root
 }

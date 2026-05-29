@@ -29,6 +29,7 @@ const PICKUP_OUTLINE_COLOUR = 0x8fb6ff
 const PISTON_FROM_COLOUR = 0xc594ff
 const SPAWN_OUTLINE_COLOUR = 0x57e1ff
 const SOUND_OUTLINE_COLOUR = 0x66e6ff
+const RAIL_CART_OUTLINE_COLOUR = 0xf0c36b
 
 /**
  * Render-side cursor preview for the editor:
@@ -106,7 +107,7 @@ export function createVoxelCursorSystem(
             // `place-structure` resolves the cursor cell (so the structure
             // preview can follow it) but draws no brush outline / ghost —
             // the structure-preview system owns that visual.
-            if (editorState.mode === 'select' || editorState.mode === 'place-structure') {
+            if (editorState.mode === 'select' || editorState.mode === 'place-structure' || editorState.mode === 'terrain') {
                 lines.visible = false
                 ghost.visible = false
                 return
@@ -176,6 +177,7 @@ function resolveCursorCell(
                 z: hit.voxel.z + hit.normal.z,
             }
         }
+        if (editorState.mode === 'terrain') return { ...hit.voxel }
         return { ...hit.voxel }
     }
     // No voxel hit — intersect against the working plane so the cursor
@@ -195,7 +197,8 @@ function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; 
         state.mode === 'place-prop' ||
         state.mode === 'place-npc' ||
         state.mode === 'place-stone' ||
-        state.mode === 'place-stone-spawner'
+        state.mode === 'place-stone-spawner' ||
+        state.mode === 'place-rail-cart'
     ) return [cursor]
     if (state.mode === 'scatter-props') return scatterBrushCells(state, cursor)
     if (state.mode === 'place-piston') {
@@ -243,6 +246,7 @@ function outlineColour(mode: EditorState['mode']): number {
     switch (mode) {
         case 'select': return 0xffd166
         case 'paint': return PAINT_OUTLINE_COLOUR
+        case 'terrain': return 0x9cff57
         case 'erase': return ERASE_OUTLINE_COLOUR
         case 'spawn-pickup': return PICKUP_OUTLINE_COLOUR
         case 'place-piston': return PISTON_FROM_COLOUR
@@ -256,6 +260,7 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'place-npc': return 0xffd166
         case 'place-stone': return 0xff9f43
         case 'place-stone-spawner': return 0xffb86b
+        case 'place-rail-cart': return RAIL_CART_OUTLINE_COLOUR
         case 'place-structure': return 0x9be0ff
     }
 }
@@ -274,6 +279,7 @@ function ghostColour(chunks: ChunkManager, state: EditorState): [number, number,
     if (state.mode === 'place-npc') return [1, 0.82, 0.4]
     if (state.mode === 'place-stone') return [0.95, 0.68, 0.38]
     if (state.mode === 'place-stone-spawner') return [1, 0.62, 0.26]
+    if (state.mode === 'place-rail-cart') return [0.94, 0.76, 0.42]
     const entry = chunks.palette.entries[state.activeBlock]
     if (!entry) return [1, 1, 1]
     return [entry.color[0], entry.color[1], entry.color[2]]

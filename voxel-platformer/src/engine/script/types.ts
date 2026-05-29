@@ -162,6 +162,10 @@ export interface UiFacade {
     dialogue?(request: DialogueRequest): Promise<DialogueResult>
 }
 
+export interface TradeFacade {
+    open(request: TradeRequest): Promise<TradeResult>
+}
+
 /** Read-only snapshot of the level the script engine was started against.
  *  Implementations return fresh copies of mutable fields (e.g. spawn) so
  *  scripts can't mutate level metadata by writing to the returned object. */
@@ -258,6 +262,7 @@ export interface ScriptContext {
     zone: ZoneApi
     geom: GeomApi
     ui: UiApi
+    trade: TradeApi
     dayCycle: DayCycleApi
     weather: WeatherApi
     travel: TravelApi
@@ -469,6 +474,72 @@ export interface UiApi {
      *  or after the player chooses a reply and advances past it. */
     dialogue(request: DialogueRequest): Promise<DialogueResult>
 }
+
+export interface TradeApi {
+    /** Open an NPC trade menu. The engine validates the selected
+     *  transaction and mutates player inventory atomically before the
+     *  Promise resolves. */
+    open(request: TradeRequest): Promise<TradeResult>
+}
+
+export type TradeCurrency = 'gold'
+export type TradeResource = 'arrows'
+export type TradeMode = 'buy' | 'sell'
+
+export interface TradeInventorySnapshot {
+    gold: number
+    arrows: number
+}
+
+export interface TradeItem {
+    /** Stable id returned in TradeResult and used by UI selection. */
+    id: string
+    name: string
+    description?: string
+    /** Player inventory resource granted/removed by this item. */
+    resource: TradeResource
+    /** Resource units per trade quantity. Defaults to 1. */
+    unitSize?: number
+    /** Gold cost per quantity. Omit to disable buying this item. */
+    buyPrice?: number
+    /** Gold paid to the player per quantity. Omit to disable selling. */
+    sellPrice?: number
+    /** Optional per-open buy stock in quantities, not resource units. */
+    stock?: number
+    disabled?: boolean
+}
+
+export interface TradeRequest {
+    id?: string
+    title?: string
+    npc?: DialogueSpeaker
+    currency?: TradeCurrency
+    items: readonly TradeItem[]
+}
+
+export type TradeResult =
+    | {
+        status: 'bought'
+        itemId: string
+        itemName: string
+        quantity: number
+        unitSize: number
+        spent: { gold: number }
+        gained: Partial<Record<TradeResource, number>>
+        inventory: TradeInventorySnapshot
+    }
+    | {
+        status: 'sold'
+        itemId: string
+        itemName: string
+        quantity: number
+        unitSize: number
+        gained: { gold: number }
+        removed: Partial<Record<TradeResource, number>>
+        inventory: TradeInventorySnapshot
+    }
+    | { status: 'cancelled'; inventory?: TradeInventorySnapshot }
+    | { status: 'unavailable'; reason?: string; inventory?: TradeInventorySnapshot }
 
 export interface DialogueSpeaker {
     /** Stable speaker id used by lines, e.g. `keeper`, `player`. */

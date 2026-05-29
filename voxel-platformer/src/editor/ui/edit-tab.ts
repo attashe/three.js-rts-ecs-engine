@@ -33,9 +33,11 @@ interface ModeDef {
 const MODES: readonly ModeDef[] = [
     { mode: 'select', label: 'Select', hint: 'Pick movable editor objects and drag the snap-to-grid gizmo.' },
     { mode: 'paint', label: 'Paint', hint: 'LMB places the active block, RMB erases.' },
+    { mode: 'terrain', label: 'Terrain', hint: 'Brush-edit terrain height and surface material using the Terrain tab settings.' },
     { mode: 'erase', label: 'Erase', hint: 'LMB erases. (Same as RMB in Paint.)' },
     { mode: 'spawn-pickup', label: 'Pickup', hint: 'Drop gold piles on the working plane.' },
     { mode: 'place-piston', label: 'Piston', hint: 'Place a moving block — teleport or physical motion.' },
+    { mode: 'place-rail-cart', label: 'Cart', hint: 'Place a rideable cart on an existing rail block.' },
     { mode: 'place-zone', label: 'Zone', hint: 'Region you can attach triggers / scripts to.' },
     { mode: 'place-sound', label: 'Sound', hint: 'Place the sound source configured in the Sound tab.' },
 ]
@@ -207,6 +209,8 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
         case 'paint':
         case 'erase':
             return buildBrushPanel(state)
+        case 'terrain':
+            return buildTerrainModePanel()
         case 'spawn-pickup':
             return buildPickupPanel(state)
         case 'place-piston':
@@ -228,6 +232,8 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
         case 'place-stone':
         case 'place-stone-spawner':
             return buildStoneModePanel()
+        case 'place-rail-cart':
+            return buildRailCartModePanel()
         case 'place-structure':
             return buildStructureModePanel()
     }
@@ -238,6 +244,15 @@ function buildPropModePanel(): RefreshableElement {
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
     hint.textContent = 'Switch to the Props tab to pick single placement or scatter brush settings.'
+    section.appendChild(hint)
+    return { element: section, refresh() {} }
+}
+
+function buildTerrainModePanel(): RefreshableElement {
+    const section = sectionEl('Terrain')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.textContent = 'Switch to the Terrain tab to choose sculpt, flatten, smooth, ramp, or paint-surface brushes.'
     section.appendChild(hint)
     return { element: section, refresh() {} }
 }
@@ -256,6 +271,15 @@ function buildStoneModePanel(): RefreshableElement {
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
     hint.textContent = 'Switch to the Stones tab to place physics stones or configure falling-stone spawners.'
+    section.appendChild(hint)
+    return { element: section, refresh() {} }
+}
+
+function buildRailCartModePanel(): RefreshableElement {
+    const section = sectionEl('Rail Cart')
+    const hint = document.createElement('div')
+    hint.className = 'vpe-hint'
+    hint.textContent = 'Switch to the Rails tab to configure direction and speed. LMB places on rail blocks; RMB removes nearest cart.'
     section.appendChild(hint)
     return { element: section, refresh() {} }
 }
@@ -313,7 +337,8 @@ function buildPaletteSection(ctx: EditTabContext): RefreshableElement {
         const keyHint = block <= 9 ? ` · key ${block}` : ''
         swatch.title = `${entry.name} (${block})${keyHint}`
         swatch.classList.toggle('torch', entry.renderAs === 'torch')
-        swatch.style.background = entry.renderAs === 'torch' ? '' : colorToSwatchCss(entry)
+        swatch.classList.toggle('rail', entry.renderAs === 'rail')
+        swatch.style.background = entry.renderAs === 'torch' || entry.renderAs === 'rail' ? '' : colorToSwatchCss(entry)
     }
 
     function sync(): void {

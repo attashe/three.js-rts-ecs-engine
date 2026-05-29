@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
-import { BLOCK, DEFAULT_PALETTE, clonePalette, paletteTileIndex } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, paletteTileIndex } from '../src/engine/voxel/palette'
 import {
     generateStructureScene,
     normalizeStructureOptions,
@@ -240,7 +240,7 @@ test('tower styles generate valid coordinates and expected marker details', () =
     }
 })
 
-test('tower interior floors are clean decks with stairwell openings', () => {
+test('tower interior has a stone ground floor and one clean deck per storey', () => {
     const result = generateStructureScene({
         kind: 'tower',
         seed: 21,
@@ -249,25 +249,33 @@ test('tower interior floors are clean decks with stairwell openings', () => {
         showTerrain: false,
         tower: { style: 'round', radius: 8, height: 28, wallThickness: 2, spire: false, taper: 0 },
     }, DEFAULT_PALETTE)
-
-    assert.equal(result.voxels.some((v) => v.tag === 'tower-floor-slats'), false)
-    assert.ok(result.voxels.some((v) => v.tag === 'tower-stairwell-rim'))
     const cells = new Set(result.voxels.map((v) => `${v.x},${v.y},${v.z}`))
-    const firstFloorY = 6
-    const floor = new Set(result.voxels
-        .filter((v) => (
-            v.tag === 'tower-floor-deck'
-            || v.tag === 'tower-floor-rim'
-            || v.tag === 'tower-spiral-step'
-            || v.tag === 'tower-stair-landing'
-            || v.tag === 'tower-stairwell-rim'
-        ) && v.y === firstFloorY)
-        .map((v) => `${v.x},${v.z}`))
-    assert.ok(floor.size > 70)
 
-    assert.equal(cells.has('-2,6,0'), false, 'first floor should have an open stairwell hole')
-    assert.ok(floor.has('-4,0'), 'first floor should frame the stairwell opening')
-    assert.ok(result.voxels.some((v) => v.tag === 'tower-floor-deck' && v.y === 24), 'upper tower floor should not be omitted near the crown')
+    // A real ground floor so the player can walk from the entry to the stair.
+    const ground = result.voxels.filter((v) => v.tag === 'tower-floor-ground')
+    assert.ok(ground.length > 70)
+    assert.equal(new Set(ground.map((v) => v.y)).size, 1, 'ground floor is a single slab at the base')
+
+    // One timber deck per storey, including the top storey near the crown.
+    for (const storeyY of [6, 12, 18, 24]) {
+        const deck = result.voxels.filter((v) => v.tag === 'tower-floor-deck' && v.y === storeyY)
+        assert.ok(deck.length > 30, `storey deck missing at y=${storeyY}`)
+    }
+    assert.ok(result.voxels.some((v) => v.tag === 'tower-floor-rim'))
+
+    // Each storey deck is punched through where the spiral passes: the cell
+    // directly above the tread that tucks under the deck must be open.
+    const steps = result.voxels.filter((v) => v.tag === 'tower-spiral-step')
+    const stepAt = new Map(steps.map((v) => [`${v.x},${v.y},${v.z}`, v]))
+    let punched = 0
+    for (const storeyY of [6, 12, 18, 24]) {
+        for (const v of steps) {
+            if (v.y !== storeyY - 1) continue
+            if (stepAt.has(`${v.x},${storeyY},${v.z}`)) continue // it became a landing, not a hole
+            if (!cells.has(`${v.x},${storeyY},${v.z}`)) punched++
+        }
+    }
+    assert.ok(punched >= 4, 'stairwell should be open through every storey deck')
 })
 
 test('tower interior includes a continuous spiral stair from entry to crown', () => {
@@ -280,17 +288,72 @@ test('tower interior includes a continuous spiral stair from entry to crown', ()
         tower: { style: 'round', radius: 8, height: 28, wallThickness: 2, spire: false, taper: 0 },
     }, DEFAULT_PALETTE)
 
-    const steps = result.voxels.filter((v) => v.tag === 'tower-spiral-step')
-    assert.ok(steps.length > 40)
-    const stepYs = new Set(steps.map((v) => v.y))
-    for (let y = 1; y <= 27; y++) assert.equal(stepYs.has(y), true, `missing spiral step at y=${y}`)
+    // Every rung of the climb is present: a spiral step or a storey/top landing
+    // at every level from the first step to the crown.
+    const treadYs = new Set(result.voxels
+        .filter((v) => v.tag === 'tower-spiral-step' || v.tag === 'tower-stair-landing' || v.tag === 'tower-top-landing')
+        .map((v) => v.y))
+    for (let y = 1; y <= 27; y++) assert.equal(treadYs.has(y), true, `missing tread at y=${y}`)
+
     assert.ok(result.voxels.some((v) => v.tag === 'tower-stair-landing' && v.y === 6))
     assert.ok(result.voxels.some((v) => v.tag === 'tower-stair-landing' && v.y === 12))
     assert.ok(result.voxels.some((v) => v.tag === 'tower-stair-landing' && v.y === 24))
     assert.ok(result.voxels.some((v) => v.tag === 'tower-top-landing' && v.y === 27))
     assert.ok(result.voxels.some((v) => v.tag === 'tower-spiral-pillar'))
-    for (const step of steps) assert.ok(step.x * step.x + step.z * step.z < 36, `spiral step outside interior at ${step.x},${step.y},${step.z}`)
+
+    const steps = result.voxels.filter((v) => v.tag === 'tower-spiral-step')
     for (const step of steps) assert.ok(Math.max(Math.abs(step.x), Math.abs(step.z)) <= 3, `spiral step too wide at ${step.x},${step.y},${step.z}`)
+})
+
+test('tower spiral is climbable end-to-end with the player 1-voxel step-up', () => {
+    // Reachability proof: model the player as feet-on-a-solid-block with two
+    // clear cells of body above, walking the 4-neighbourhood with the engine's
+    // free 1-voxel step-up (and any drop). The crown must be reachable from the
+    // ground floor — this is the regression guard for the old, unclimbable spiral.
+    for (const style of ['round', 'square', 'lighthouse'] as const) {
+        const result = generateStructureScene({
+            kind: 'tower',
+            seed: 22,
+            variants: 1,
+            variation: 0,
+            showTerrain: false,
+            tower: { style, radius: 8, height: 28, wallThickness: 2, spire: false, taper: 0 },
+        }, DEFAULT_PALETTE)
+
+        const solid = new Set(result.voxels
+            .filter((v) => isCollidable(DEFAULT_PALETTE, v.block))
+            .map((v) => `${v.x},${v.y},${v.z}`))
+        const S = (x: number, y: number, z: number): boolean => solid.has(`${x},${y},${z}`)
+        const air = (x: number, y: number, z: number): boolean => !S(x, y, z)
+        const stance = (x: number, y: number, z: number): boolean => S(x, y - 1, z) && air(x, y, z) && air(x, y + 1, z)
+
+        const seen = new Set<string>()
+        const queue: Array<[number, number, number]> = []
+        const add = (x: number, y: number, z: number): void => {
+            if (!stance(x, y, z)) return
+            const k = `${x},${y},${z}`
+            if (seen.has(k)) return
+            seen.add(k)
+            queue.push([x, y, z])
+        }
+        for (let x = -4; x <= 4; x++) for (let z = -4; z <= 4; z++) add(x, 1, z)
+
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const
+        for (let head = 0; head < queue.length; head++) {
+            const [x, y, z] = queue[head]!
+            for (const [dx, dz] of dirs) {
+                const nx = x + dx
+                const nz = z + dz
+                if (air(x, y + 1, z)) add(nx, y + 1, nz) // step up one
+                add(nx, y, nz) // walk level
+                for (let yy = y - 1; yy >= 0; yy--) { if (S(nx, yy - 1, nz)) { add(nx, yy, nz); break } } // drop
+            }
+        }
+
+        let top = -Infinity
+        for (const k of seen) top = Math.max(top, Number(k.split(',')[1]))
+        assert.ok(top >= 27, `${style} tower crown unreachable — climb stalled at y=${top}`)
+    }
 })
 
 test('tower roof sits on a crown deck without a vertical gap above crenels', () => {

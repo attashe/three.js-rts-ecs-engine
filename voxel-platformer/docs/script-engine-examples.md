@@ -71,6 +71,20 @@ ui.dialogue({
 // `sundial`, `book`, and `npc`, or an explicit image path like
 // `/avatars/merchant.png`.
 
+trade.open({
+  title?: string,
+  npc?: { id?, name, avatar? },
+  items: [{
+    id: string,
+    name: string,
+    resource: 'arrows',
+    unitSize?: number,
+    buyPrice?: number,
+    sellPrice?: number,
+    stock?: number
+  }]
+}): Promise<{ status: 'bought' | 'sold' | 'cancelled' | 'unavailable' }>
+
 flags.get(name)
 flags.set(name, value)
 
@@ -97,8 +111,29 @@ Built-in event names: `level-start`, `zone-enter`, `zone-exit`,
 any string the author picks (`'quest.amulet.complete'`,
 `'shop.unlocked'`, …) — same `on` / `emit` for both.
 
-That's the whole list. Twelve verbs, eight events. Everything in the
+That's the core list. Shop trading adds one modal transaction verb; everything in the
 three examples uses only this surface.
+
+Small shop scripts should let `trade.open` own the transaction instead
+of manually subtracting gold in dialogue branches:
+
+```js
+on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
+    const result = await trade.open({
+        title: 'Field Supplies',
+        npc: { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper' },
+        items: [{
+            id: 'arrows.bundle',
+            name: 'Arrow bundle',
+            resource: 'arrows',
+            unitSize: 5,
+            buyPrice: 3,
+            sellPrice: 1,
+        }],
+    })
+    if (result.status === 'bought') ui.say(NPC_INTERACTION, 'Good hunting.')
+})
+```
 
 Stubs for future categories — `camera.*`, `dialogue.*`, `npc.*`,
 `hud.*` — appear in Example 3 but are flagged as v2. They drop in

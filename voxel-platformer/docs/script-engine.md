@@ -436,11 +436,58 @@ ui.dialogue({
     choices?: [{ id: string, text: string, disabled?: boolean }]
   }]
 }): Promise<{ choiceId?, choiceIndex?, text? }>
+
+// Trade — opens the NPC trade menu and applies a validated buy/sell
+// transaction before resolving. V1 uses gold as currency and arrows as
+// the first inventory-backed resource.
+trade.open({
+  id?: string,
+  title?: string,
+  npc?: { id?, name, avatar?, side? },
+  currency?: 'gold',
+  items: [{
+    id: string,
+    name: string,
+    description?: string,
+    resource: 'arrows',
+    unitSize?: number,
+    buyPrice?: number,
+    sellPrice?: number,
+    stock?: number,
+    disabled?: boolean
+  }]
+}): Promise<
+  | { status: 'bought', itemId: string, quantity: number, spent: { gold: number },
+      gained: { arrows?: number }, inventory: { gold: number, arrows: number } }
+  | { status: 'sold', itemId: string, quantity: number, gained: { gold: number },
+      removed: { arrows?: number }, inventory: { gold: number, arrows: number } }
+  | { status: 'cancelled' }
+  | { status: 'unavailable', reason?: string, inventory?: { gold: number, arrows: number } }
+>
 ```
 
 Dialogue `avatar` values can use built-in replaceable PNG keys
 (`keeper`, `player`, `sundial`, `book`, `npc`) or an explicit image path such
 as `/avatars/merchant.png`. Unknown strings fall back to the labelled badge.
+
+Example NPC shop:
+
+```js
+const result = await trade.open({
+    title: "Keeper Arlen's Supplies",
+    npc: { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper' },
+    items: [{
+        id: 'arrows.bundle',
+        name: 'Arrow bundle',
+        resource: 'arrows',
+        unitSize: 5,
+        buyPrice: 3,
+        sellPrice: 1,
+        stock: 20,
+    }],
+})
+if (result.status === 'bought') ui.say(NPC_INTERACTION, 'Good hunting.')
+```
 
 Cross-script messaging uses the unified `on / emit / once` from §3.1
 — there's no separate `signal.*` namespace.
@@ -749,6 +796,7 @@ on('level-start', async () => {
 | `ui.say` floating bubbles                     | — | ✅ | per-target queue + multi-target parallel render |
 | `ui.clear(targetId?)` dismiss bubbles         | — | ✅ | per-target or sweep-all via `world.popupClears` |
 | `ui.dialogue` modal conversations             | — | ✅ | centered UI with avatars + choices |
+| `trade.open` NPC buy/sell menu                | — | ✅ | gold currency + arrows resource in v1 |
 | Stable pickup ids + idempotent spawn          | — | ✅ | `pickups.spawn(..., { id, label })` |
 | `Zone.active` + `zone.setActive/isActive/exists` | — | — / 1.6 | inactive zones synthesise zone-exit |
 | `flag.changed` event                          | — | — / 1.6 | cross-script observation w/o polling |

@@ -12,6 +12,8 @@ import type {
     PistonsFacade,
     PlayerFacade,
     ScriptEntry,
+    TradeFacade,
+    TradeResult,
     VoxelCoord,
     ZoneFacade,
 } from '../src/engine/script/types'
@@ -33,6 +35,7 @@ interface Harness {
     pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[]
     popupMessages: { targetId: string; message: string; seconds?: number }[]
     dialogueRequests: unknown[]
+    tradeRequests: unknown[]
     chunkSets: { x: number; y: number; z: number; block: number }[]
     interact: (targetId: string) => void
     takePickup: (kind: string, pickupId?: string, amount?: number, position?: VoxelCoord) => void
@@ -40,13 +43,17 @@ interface Harness {
     tick: (seconds: number) => Promise<void>
 }
 
-function makeHarness(): Harness {
+function makeHarness(opts: {
+    dialogueChoiceId?: string
+    tradeResult?: TradeResult
+} = {}): Harness {
     const world = createGameWorld()
     const log: string[] = []
     const audioPlays: string[] = []
     const pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[] = []
     const popupMessages: { targetId: string; message: string; seconds?: number }[] = []
     const dialogueRequests: unknown[] = []
+    const tradeRequests: unknown[] = []
     const chunkSets: { x: number; y: number; z: number; block: number }[] = []
     const livePickupIds = new Set<string>()
 
@@ -99,6 +106,12 @@ function makeHarness(): Harness {
     const logFacade: LogFacade = {
         log(msg) { log.push(msg) },
     }
+    const trade: TradeFacade = {
+        async open(request) {
+            tradeRequests.push(request)
+            return opts.tradeResult ?? { status: 'cancelled' }
+        },
+    }
 
     // Capture dayCycle calls so the test can assert dusk-on-completion.
     const dayCycleCalls: { method: string; args: unknown[] }[] = []
@@ -106,7 +119,7 @@ function makeHarness(): Harness {
     let cycleEnabled = true
 
     const sys = createScriptEngineSystem({
-        audio, chunks, player, pickups, pistons, zone, log: logFacade,
+        audio, chunks, player, pickups, pistons, trade, zone, log: logFacade,
         ui: {
             say(targetId, message, opts) {
                 popupMessages.push({ targetId, message, seconds: opts?.seconds })
@@ -114,7 +127,10 @@ function makeHarness(): Harness {
             async dialogue(request) {
                 dialogueRequests.push(request)
                 const choices = request.lines.find((line) => line.choices && line.choices.length > 0)?.choices ?? []
-                const firstEnabled = choices.findIndex((choice) => !choice.disabled)
+                const preferred = opts.dialogueChoiceId
+                    ? choices.findIndex((choice) => choice.id === opts.dialogueChoiceId && !choice.disabled)
+                    : -1
+                const firstEnabled = preferred >= 0 ? preferred : choices.findIndex((choice) => !choice.disabled)
                 const index = firstEnabled >= 0 ? firstEnabled : 0
                 const choice = choices[index]
                 return choice
@@ -148,6 +164,7 @@ function makeHarness(): Harness {
         pickupSpawns,
         popupMessages,
         dialogueRequests,
+        tradeRequests,
         chunkSets,
         interact(targetId) {
             pushScriptTriggerEvent(world, {
@@ -219,6 +236,34 @@ test('demo quest: talking to the keeper starts the quest and spawns three shards
     assert.ok(h.dialogueRequests.some((request) =>
         JSON.stringify(request).includes('plaza lantern'),
     ))
+})
+
+test('demo quest: keeper trade option opens the arrow shop', async () => {
+    const h = makeHarness({
+        dialogueChoiceId: 'trade',
+        tradeResult: {
+            status: 'bought',
+            itemId: 'arrows.bundle',
+            itemName: 'Arrow bundle',
+            quantity: 2,
+            unitSize: 5,
+            spent: { gold: 6 },
+            gained: { arrows: 10 },
+            inventory: { gold: 4, arrows: 10 },
+        },
+    })
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+
+    assert.equal(h.tradeRequests.length, 1)
+    const request = h.tradeRequests[0] as { title?: string; items?: { id?: string; resource?: string; unitSize?: number }[] }
+    assert.equal(request.title, "Keeper Arlen's Supplies")
+    assert.equal(request.items?.[0]?.id, 'arrows.bundle')
+    assert.equal(request.items?.[0]?.resource, 'arrows')
+    assert.equal(request.items?.[0]?.unitSize, 5)
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), undefined)
+    assert.ok(h.popupMessages.some((msg) => msg.message.includes('10 arrow')))
 })
 
 test('demo quest: collecting all shards marks the quest ready to turn in', async () => {

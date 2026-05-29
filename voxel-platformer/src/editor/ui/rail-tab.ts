@@ -25,7 +25,7 @@ export function buildRailTab(opts: MountEditorPanelOptions): RefreshableElement 
 
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
-    hint.textContent = 'Rails adapt into straights, corners, T-junctions, and crosses from neighboring rail cells.'
+    hint.textContent = 'Rails adapt into straights, corners, T-junctions, crosses, and one-block slopes from neighboring rail cells.'
     paintSection.appendChild(hint)
     root.appendChild(paintSection)
 

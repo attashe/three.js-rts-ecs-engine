@@ -55,6 +55,7 @@ import { registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
 import { createDialogueController } from './game/dialogue-system'
+import { createTradeController } from './game/trade-system'
 import { checkpointStorageKey, createSessionCheckpointStore, resolveSpawn, type CheckpointStore } from './game/checkpoint-store'
 import { defineZone, type Zone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
     const { renderer, world } = engine
     const actions = createGameActionMap(engine.input)
     const dialogue = createDialogueController({ input: engine.input })
+    const trade = createTradeController({ input: engine.input })
     const audio = new AudioEngine()
     const audioReady = audio.loadManifest(GAME_AUDIO_MANIFEST)
     void audioReady.catch((err) => console.warn('Game audio failed to load:', err))
@@ -330,6 +332,7 @@ async function main(): Promise<void> {
             weatherSystem: environmentFx.weatherSystem,
             visualFxZones: visualFxZones.controller,
             dialogue: dialogue.facade,
+            trade: trade.facade,
             travel: travelFacade,
             level: meta,
             checkpointStore: location.checkpointStore,
@@ -523,6 +526,7 @@ async function main(): Promise<void> {
             exitHref: './editor.html',
         }), 'gameMenu')
         .addSystem(dialogue.system, 'dialogue')
+        .addSystem(trade.system, 'trade')
         .addSystem(createInteractionSystem({
             actions,
             camera: () => renderer.iso.camera,

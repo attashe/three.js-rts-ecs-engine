@@ -1,4 +1,4 @@
-import { addComponents, addComponent, hasComponent, removeComponent } from 'bitecs'
+import { addComponents, addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import {
     BoxGeometry,
     Group,
@@ -9,14 +9,16 @@ import {
 import type { ActionMap } from '../../engine/input/actions'
 import { GameAction } from '../actions'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
-import { isRailBlock } from '../../engine/voxel/palette'
+import { isCollidable, isRailBlock } from '../../engine/voxel/palette'
 import type { System } from '../../engine/ecs/systems/system'
 import { FixedOrder } from '../../engine/ecs/systems/orders'
 import {
     BoxCollider,
+    MovingObject,
     Position,
     RailCart,
     Renderable,
+    RigidBody,
     RidingCart,
     Rotation,
     Velocity,
@@ -30,13 +32,14 @@ import {
     type VoxelCoord,
 } from '../../engine/ecs/world'
 import { createEntity, despawnEntity } from '../../engine/ecs/entity'
-import { aabbFromFoot, voxelAABBOverlap, type AABB } from '../../engine/voxel/voxel-collide'
+import { aabbFromCenter, aabbFromFoot, voxelAABBOverlap, type AABB } from '../../engine/voxel/voxel-collide'
+import { MovingObjectKind } from '../moving-objects'
 import {
-    addDirection,
     chooseRailExit,
     maskHas,
     oppositeDirection,
     railConnectionMask,
+    railNeighborCell,
     RailDirection,
     type RailDirection as RailDir,
 } from './rail-network'
@@ -49,7 +52,11 @@ const DEFAULT_CART_SPEED = 4
 const DEFAULT_INTERACTION_RADIUS = 1.65
 const CART_HALF = { x: 0.43, y: 0.28, z: 0.43 }
 const PLAYER_SEAT_Y = 0.34
+const VOXEL_EPS = 1e-6
 const tmpAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpCartAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpEntityAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpExclude = new Set<number>()
 
 export function createRailCartSystem(
     chunks: ChunkManager,
@@ -186,7 +193,7 @@ function updateCart(world: GameWorld, chunks: ChunkManager, actions: ActionMap, 
         startSegment(chunks, cart, inputSign)
     }
     if (cart.segment && inputSign !== 0) {
-        stepSegment(chunks, cart, inputSign, dt)
+        stepSegment(world, chunks, cart, inputSign, dt)
     }
 
     syncCartTransform(cart)
@@ -200,10 +207,11 @@ function startSegment(chunks: ChunkManager, cart: RailCartRuntime, inputSign: 1 
         : oppositeDirection(facingToDirection(cart.front))
     const next = departDirection(chunks, cart.railCell, desired)
     if (next === null) return false
-    const target = addDirection(cart.railCell, next)
+    const target = railNeighborCell(chunks, cart.railCell, next)?.cell
+    if (!target) return false
     cart.segment = {
         from: { ...cart.railCell },
-        to: target,
+        to: { ...target },
         travelDir: directionToFacing(next),
         inputSign,
         t: 0,
@@ -211,11 +219,14 @@ function startSegment(chunks: ChunkManager, cart: RailCartRuntime, inputSign: 1 
     return true
 }
 
-function stepSegment(chunks: ChunkManager, cart: RailCartRuntime, inputSign: 1 | -1, dt: number): void {
+function stepSegment(world: GameWorld, chunks: ChunkManager, cart: RailCartRuntime, inputSign: 1 | -1, dt: number): void {
     const segment = cart.segment
     if (!segment) return
     const step = Math.max(0, cart.speed) * dt
-    segment.t += inputSign === segment.inputSign ? step : -step
+    const nextT = segment.t + (inputSign === segment.inputSign ? step : -step)
+    const blockedT = Math.max(0, Math.min(1, nextT))
+    if (blockedT !== segment.t && cartBlockedBetween(world, chunks, cart, segment, segment.t, blockedT)) return
+    segment.t = nextT
     if (segment.t <= 0) {
         cart.railCell = { ...segment.from }
         cart.segment = null
@@ -234,10 +245,11 @@ function stepSegment(chunks: ChunkManager, cart: RailCartRuntime, inputSign: 1 |
     cart.segment = null
 
     if (nextDir !== null && inputSign === segment.inputSign) {
-        const to = addDirection(cart.railCell, nextDir)
+        const to = railNeighborCell(chunks, cart.railCell, nextDir)?.cell
+        if (!to) return
         cart.segment = {
             from: { ...cart.railCell },
-            to,
+            to: { ...to },
             travelDir: directionToFacing(nextDir),
             inputSign: segment.inputSign,
             t: 0,
@@ -324,18 +336,111 @@ function syncRider(world: GameWorld, cart: RailCartRuntime): void {
 
 function cartPosition(cart: RailCartRuntime): { x: number; y: number; z: number } {
     if (cart.segment) {
-        const t = Math.max(0, Math.min(1, cart.segment.t))
-        return {
-            x: cart.segment.from.x + 0.5 + (cart.segment.to.x - cart.segment.from.x) * t,
-            y: cart.segment.from.y + 0.06,
-            z: cart.segment.from.z + 0.5 + (cart.segment.to.z - cart.segment.from.z) * t,
-        }
+        return cartSegmentPosition(cart.segment, cart.segment.t)
     }
     return {
         x: cart.railCell.x + 0.5,
         y: cart.railCell.y + 0.06,
         z: cart.railCell.z + 0.5,
     }
+}
+
+function cartSegmentPosition(segment: NonNullable<RailCartRuntime['segment']>, tValue: number): { x: number; y: number; z: number } {
+    const t = Math.max(0, Math.min(1, tValue))
+    return {
+        x: segment.from.x + 0.5 + (segment.to.x - segment.from.x) * t,
+        y: segment.from.y + 0.06 + (segment.to.y - segment.from.y) * t,
+        z: segment.from.z + 0.5 + (segment.to.z - segment.from.z) * t,
+    }
+}
+
+function cartBlockedAt(
+    world: GameWorld,
+    chunks: ChunkManager,
+    cart: RailCartRuntime,
+    segment: NonNullable<RailCartRuntime['segment']>,
+    tValue: number,
+): boolean {
+    const pos = cartSegmentPosition(segment, tValue)
+    aabbFromFoot(pos, CART_HALF, tmpCartAabb)
+    if (cartVoxelAABBOverlap(chunks, tmpCartAabb, segment)) return true
+
+    tmpExclude.clear()
+    tmpExclude.add(cart.eid)
+    if (cart.occupiedBy !== null) tmpExclude.add(cart.occupiedBy)
+    if (world.obstacles.intersectsExcept(tmpCartAabb, tmpExclude)) return true
+    return overlapsActiveStone(world, tmpCartAabb, tmpExclude)
+}
+
+function cartBlockedBetween(
+    world: GameWorld,
+    chunks: ChunkManager,
+    cart: RailCartRuntime,
+    segment: NonNullable<RailCartRuntime['segment']>,
+    fromT: number,
+    toT: number,
+): boolean {
+    const delta = toT - fromT
+    const steps = Math.max(1, Math.ceil(Math.abs(delta) / 0.125))
+    for (let i = 1; i <= steps; i++) {
+        if (cartBlockedAt(world, chunks, cart, segment, fromT + (delta * i) / steps)) return true
+    }
+    return false
+}
+
+function cartVoxelAABBOverlap(
+    chunks: ChunkManager,
+    aabb: AABB,
+    segment: NonNullable<RailCartRuntime['segment']>,
+): boolean {
+    const x0 = Math.floor(aabb.minX)
+    const y0 = Math.floor(aabb.minY)
+    const z0 = Math.floor(aabb.minZ)
+    const x1 = Math.floor(aabb.maxX - VOXEL_EPS)
+    const y1 = Math.floor(aabb.maxY - VOXEL_EPS)
+    const z1 = Math.floor(aabb.maxZ - VOXEL_EPS)
+
+    for (let y = y0; y <= y1; y++) {
+        for (let z = z0; z <= z1; z++) {
+            for (let x = x0; x <= x1; x++) {
+                // Sloped rail travel uses a box collider, so ignore only the
+                // terrain blocks directly supporting the rail endpoints.
+                if (isRailSupportVoxel(segment, x, y, z)) continue
+                if (isCollidable(chunks.palette, chunks.getVoxel(x, y, z))) return true
+            }
+        }
+    }
+    return false
+}
+
+function isRailSupportVoxel(segment: NonNullable<RailCartRuntime['segment']>, x: number, y: number, z: number): boolean {
+    return isSupportUnderRailCell(segment.from, x, y, z) || isSupportUnderRailCell(segment.to, x, y, z)
+}
+
+function isSupportUnderRailCell(cell: VoxelCoord, x: number, y: number, z: number): boolean {
+    return x === cell.x && y === cell.y - 1 && z === cell.z
+}
+
+function overlapsActiveStone(world: GameWorld, cartBox: AABB, exclude: ReadonlySet<number>): boolean {
+    const colliders = query(world, [Position, BoxCollider, MovingObject])
+    for (let i = 0; i < colliders.length; i++) {
+        const eid = colliders[i]!
+        if (exclude.has(eid)) continue
+        if (MovingObject.kind[eid] !== MovingObjectKind.Stone) continue
+        const half = { x: BoxCollider.x[eid], y: BoxCollider.y[eid], z: BoxCollider.z[eid] }
+        const pos = { x: Position.x[eid], y: Position.y[eid], z: Position.z[eid] }
+        const other = hasComponent(world, eid, RigidBody) && RigidBody.centerAnchored[eid] === 1
+            ? aabbFromCenter(pos, half, tmpEntityAabb)
+            : aabbFromFoot(pos, half, tmpEntityAabb)
+        if (aabbOverlap(cartBox, other)) return true
+    }
+    return false
+}
+
+function aabbOverlap(a: AABB, b: AABB): boolean {
+    return a.maxX > b.minX && a.minX < b.maxX &&
+        a.maxY > b.minY && a.minY < b.maxY &&
+        a.maxZ > b.minZ && a.minZ < b.maxZ
 }
 
 function updateCartObstacle(world: GameWorld, cart: RailCartRuntime): void {
@@ -370,7 +475,7 @@ function findDismountPosition(
         const offset = directionOffsetVector(dir)
         const candidate = {
             x: pos.x + offset.x,
-            y: cart.railCell.y,
+            y: pos.y,
             z: pos.z + offset.z,
         }
         aabbFromFoot(candidate, half, tmpAabb)

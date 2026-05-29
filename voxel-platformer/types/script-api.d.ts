@@ -441,6 +441,72 @@ interface UiApi {
 
 declare const ui: UiApi
 
+// ─── trade (NPC shop transactions) ───────────────────────────────────
+
+type TradeCurrency = 'gold'
+type TradeResource = 'arrows'
+
+interface TradeInventorySnapshot {
+    gold: number
+    arrows: number
+}
+
+interface TradeItem {
+    id: string
+    name: string
+    description?: string
+    /** Player inventory resource granted by buying or removed by selling. */
+    resource: TradeResource
+    /** Resource units per selected quantity. Defaults to 1. */
+    unitSize?: number
+    /** Gold cost per quantity. Omit to disable buying. */
+    buyPrice?: number
+    /** Gold paid to the player per quantity. Omit to disable selling. */
+    sellPrice?: number
+    /** Per-open buy stock in quantities, not resource units. */
+    stock?: number
+    disabled?: boolean
+}
+
+interface TradeRequest {
+    id?: string
+    title?: string
+    npc?: DialogueSpeaker
+    currency?: TradeCurrency
+    items: readonly TradeItem[]
+}
+
+type TradeResult =
+    | {
+        status: 'bought'
+        itemId: string
+        itemName: string
+        quantity: number
+        unitSize: number
+        spent: { gold: number }
+        gained: Partial<Record<TradeResource, number>>
+        inventory: TradeInventorySnapshot
+    }
+    | {
+        status: 'sold'
+        itemId: string
+        itemName: string
+        quantity: number
+        unitSize: number
+        gained: { gold: number }
+        removed: Partial<Record<TradeResource, number>>
+        inventory: TradeInventorySnapshot
+    }
+    | { status: 'cancelled'; inventory?: TradeInventorySnapshot }
+    | { status: 'unavailable'; reason?: string; inventory?: TradeInventorySnapshot }
+
+interface TradeApi {
+    /** Open a shop menu and apply the validated buy/sell transaction. */
+    open(request: TradeRequest): Promise<TradeResult>
+}
+
+declare const trade: TradeApi
+
 // ─── dayCycle ─────────────────────────────────────────────────────────
 
 interface DayCycleApi {

@@ -28,7 +28,7 @@ function npc(id: string): NpcConfig {
 }
 
 test('NPC model registry exposes keeper and player models', () => {
-    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'player'])
+    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'player', 'large-troll'])
     for (const kind of NPC_MODEL_KINDS) {
         assert.ok(NPC_MODEL_LABELS[kind].length > 0)
         const model = createNpcModel(kind)

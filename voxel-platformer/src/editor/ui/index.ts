@@ -11,10 +11,12 @@ import { buildPlayerTab } from './player-tab'
 import { buildSoundTab } from './sound-tab'
 import { buildWeatherTab } from './weather-tab'
 import { buildPropsTab } from './props-tab'
+import { buildTerrainTab } from './terrain-tab'
 import { buildNpcTab } from './npc-tab'
 import { buildLogicTab } from './logic-tab'
 import { buildStonesTab } from './stones-tab'
 import { buildStructuresTab } from './structures-tab'
+import { buildRailTab } from './rail-tab'
 
 export interface MountEditorPanelOptions {
     world: GameWorld
@@ -52,6 +54,8 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
         { id: 'player', label: 'Player', build: () => buildPlayerTab(opts) },
         { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
         { id: 'weather', label: 'Visual FX', build: () => buildWeatherTab(opts) },
+        { id: 'terrain', label: 'Terrain', build: () => buildTerrainTab(opts) },
+        { id: 'rails', label: 'Rails', build: () => buildRailTab(opts) },
         { id: 'props', label: 'Props', build: () => buildPropsTab(opts) },
         { id: 'structures', label: 'Structures', build: () => buildStructuresTab(opts) },
         { id: 'stones', label: 'Stones', build: () => buildStonesTab(opts) },

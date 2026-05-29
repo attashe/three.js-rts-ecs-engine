@@ -1,5 +1,6 @@
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK } from '../engine/voxel/palette'
+import type { RailCartConfig } from '../engine/ecs/world'
 import type { Zone } from '../engine/ecs/zones'
 import type { PistonMechanismConfig } from './mechanisms'
 import { STONE_TIER, type StoneFallSpawnerConfig, type StonePlacementConfig } from './moving-objects'
@@ -45,6 +46,8 @@ export interface LevelMeta {
     zones: Zone[]
     /** Static spatial audio emitters registered by client.ts. */
     soundSources: SoundSourceConfig[]
+    /** Rideable kinematic carts placed on authored rail blocks. */
+    railCarts: RailCartConfig[]
     /** AABB ambient zones that fade audio in/out as the player enters/leaves. */
     soundZones: SoundZoneConfig[]
     /** Level-wide ambient bed (stereo, non-spatial). Optional. */
@@ -182,11 +185,12 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         },
     ]
 
-    // Walk-in gate to the Large Town (the mesh-streaming demo location),
-    // tucked in the south-east corner of the plaza.
-    t.fill([19, 22], [groundY, groundY], [19, 22], BLOCK.stone)
-        .fill([19, 19], [groundY + 1, groundY + 3], [19, 19], BLOCK.brick)
-        .fill([22, 22], [groundY + 1, groundY + 3], [22, 22], BLOCK.brick)
+    // Walk-in gate to the Large Town (the mesh-streaming demo location).
+    // Keep it just south of the raised platform; the platform's stone fill
+    // occupies y=groundY+1..groundY+3 at z<=20.
+    t.fill([19, 22], [groundY, groundY], [21, 23], BLOCK.stone)
+        .fill([19, 19], [groundY + 1, groundY + 3], [23, 23], BLOCK.brick)
+        .fill([22, 22], [groundY + 1, groundY + 3], [21, 21], BLOCK.brick)
 
     // Quest / test zones. The interact spots derive their AABB + prompt
     // anchor from a single center (= the matching prop's position); the
@@ -288,8 +292,8 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             id: 'zone.demo.portal.large-town',
             kind: 'portal',
             label: 'Gate to the Large Town',
-            min: { x: 20, y: groundY + 1, z: 20 },
-            max: { x: 22, y: groundY + 3, z: 22 },
+            min: { x: 20, y: groundY + 1, z: 21 },
+            max: { x: 22, y: groundY + 3, z: 23 },
             triggerSources: ['player'],
             portal: {
                 targetLevelId: LARGE_TOWN_LEVEL_ID,
@@ -300,8 +304,8 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             id: DEMO_FROM_TOWN_ARRIVAL_ID,
             kind: 'arrival',
             label: 'Return from the Large Town',
-            min: { x: 18.25, y: groundY + 1, z: 17.25 },
-            max: { x: 19.75, y: groundY + 2.8, z: 18.75 },
+            min: { x: 18.25, y: groundY + 1, z: 21.25 },
+            max: { x: 19.75, y: groundY + 2.8, z: 22.75 },
         },
     ]
 
@@ -368,6 +372,16 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         },
     ]
 
+    const railY = groundY + 1
+    for (let x = 3; x <= 8; x++) {
+        chunks.setVoxel(x, railY, 9, BLOCK.rail)
+        chunks.setVoxel(x, railY, 14, BLOCK.rail)
+    }
+    for (let z = 9; z <= 14; z++) {
+        chunks.setVoxel(3, railY, z, BLOCK.rail)
+        chunks.setVoxel(8, railY, z, BLOCK.rail)
+    }
+
     return defineLevel({
         name: 'demo',
         size,
@@ -377,6 +391,14 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         pistons,
         zones,
         props,
+        railCarts: [{
+            id: 'demo:rail-cart',
+            railCell: { x: 3, y: railY, z: 9 },
+            front: 'east',
+            speed: 4,
+            interactionRadius: 1.75,
+            enabled: true,
+        }],
         // Demo keeps the background music bed; editor-authored levels start
         // with no environment and pick a track from the Sound tab.
         environment: { soundId: 'music.background', volume: 0.36 },

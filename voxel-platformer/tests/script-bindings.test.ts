@@ -11,6 +11,7 @@ import type {
     PistonsFacade,
     PlayerFacade,
     StonesFacade,
+    TradeFacade,
     TravelFacade,
     UiFacade,
     VoxelCoord,
@@ -39,6 +40,7 @@ function stubs() {
         uiSay: [],
         uiClear: [],
         uiDialogue: [],
+        tradeOpen: [],
         log: [],
         zoneContains: [],
     }
@@ -130,6 +132,21 @@ function stubs() {
             return { choiceId: request.lines[0]?.choices?.[0]?.id, choiceIndex: 0, text: request.lines[0]?.choices?.[0]?.text }
         },
     }
+    const trade: TradeFacade = {
+        async open(request) {
+            calls.tradeOpen.push(request)
+            return {
+                status: 'bought',
+                itemId: request.items[0]?.id ?? 'missing',
+                itemName: request.items[0]?.name ?? 'Missing',
+                quantity: 2,
+                unitSize: request.items[0]?.unitSize ?? 1,
+                spent: { gold: 6 },
+                gained: { arrows: 10 },
+                inventory: { gold: 1, arrows: 13 },
+            }
+        },
+    }
     const zone: ZoneFacade = {
         contains(zoneId, who) { calls.zoneContains.push({ zoneId, who }); return zoneId === 'inside' },
         exists: () => true,
@@ -141,7 +158,7 @@ function stubs() {
     }
     return {
         calls,
-        deps: { audio, chunks, player, pickups, pistons, ui, zone, log },
+        deps: { audio, chunks, player, pickups, pistons, ui, trade, zone, log },
         setPlayerPos(p: VoxelCoord | null) { playerPos = p },
         setGold(g: number) { gold = g },
         setArrows(a: number) { arrows = a },
@@ -411,6 +428,35 @@ test('ui.dialogue forwards modal dialogue requests and resolves the result', asy
     })
     assert.equal(s.calls.uiDialogue.length, 1)
     assert.deepEqual(result, { choiceId: 'yes', choiceIndex: 0, text: 'Yes.' })
+})
+
+test('trade.open forwards shop requests and resolves transaction results', async () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    const result = await ctx.trade.open({
+        title: 'Field Supplies',
+        npc: { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper' },
+        items: [{
+            id: 'arrows.bundle',
+            name: 'Arrow bundle',
+            resource: 'arrows',
+            unitSize: 5,
+            buyPrice: 3,
+            sellPrice: 1,
+        }],
+    })
+
+    assert.equal(s.calls.tradeOpen.length, 1)
+    assert.deepEqual(result, {
+        status: 'bought',
+        itemId: 'arrows.bundle',
+        itemName: 'Arrow bundle',
+        quantity: 2,
+        unitSize: 5,
+        spent: { gold: 6 },
+        gained: { arrows: 10 },
+        inventory: { gold: 1, arrows: 13 },
+    })
 })
 
 test('flags.get / set is backed by the injected Map and persists across reads', () => {

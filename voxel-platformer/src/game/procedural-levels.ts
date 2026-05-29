@@ -9,9 +9,11 @@ import {
     placeStructureAsset,
     prefabSource,
     proceduralSource,
+    structurePropPlacements,
     type StructureRotation,
     type StructureSource,
 } from '../procedural-structures'
+import type { EditorProp } from './props/prop-types'
 import {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
@@ -269,16 +271,23 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
         { source: prefabSource('well'), rotation: 0 },
         { source: proceduralSource('house', 1066), rotation: 270 },
     ]
+    // Each structure is stamped as solid voxels, but its ground plantings are
+    // recovered as real flower / mushroom prop meshes (`structurePropPlacements`)
+    // instead of the flat cubes the generator emits — so the verges read as
+    // planted, not pixelated.
+    const props: EditorProp[] = []
     let plotX = 56
     for (let i = 0; i < plots.length; i++) {
         const plot = plots[i]!
         const z = i % 2 === 0 ? northZ : southZ
         const asset = generateStructureAsset(plot.source, { palette: chunks.palette, structuralOnly: true })
-        placeStructureAsset(chunks, asset, {
+        const transform = {
             origin: { x: plotX, y: groundY + 1, z },
             rotation: plot.rotation,
-            anchor: 'bottom-center',
-        })
+            anchor: 'bottom-center' as const,
+        }
+        placeStructureAsset(chunks, asset, transform)
+        props.push(...structurePropPlacements(asset, transform, `large-town:plot-${i}`))
         plotX += 48
     }
 
@@ -290,6 +299,16 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
         rotation: 90,
         anchor: 'bottom-center',
     })
+
+    const railY = groundY + 1
+    const railZ = roadZ + 2
+    for (let x = 18; x <= length - 18; x++) {
+        chunks.setVoxel(x, railY, railZ, BLOCK.rail)
+    }
+    // Small station pads make the rail readable from the arrival portal and
+    // near the far end without blocking the sand boulevard.
+    t.fill([16, 22], [groundY, groundY], [railZ - 1, railZ + 1], BLOCK.plank)
+        .fill([length - 24, length - 16], [groundY, groundY], [railZ - 1, railZ + 1], BLOCK.plank)
 
     const zones: Zone[] = [
         {
@@ -315,7 +334,37 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
         name: 'Large Town',
         size: length,
         spawn: t.stand(16, roadZ),
+        props,
         zones,
+        railCarts: [{
+            id: 'large-town:boulevard-cart',
+            railCell: { x: 20, y: railY, z: railZ },
+            front: 'east',
+            speed: 8,
+            interactionRadius: 2.25,
+            enabled: true,
+        }],
+        npcs: [{
+            id: 'large-town:large-troll-curator',
+            name: 'Curator Brannok',
+            model: 'large-troll',
+            position: t.stand(34, roadZ - 6),
+            yaw: 0,
+            scale: 1,
+            gridAligned: false,
+            collisionEnabled: true,
+            colliderRadius: 0.72,
+            colliderHeight: 3.2,
+            interactionEnabled: true,
+            interactionRadius: 3.4,
+            interactionPrompt: 'Greet',
+            scriptEnabled: true,
+            scriptSource: [
+                `on('input', { action: 'interact', targetId: NPC_INTERACTION }, () => {`,
+                `  ui.say(NPC_INTERACTION, 'Mind the rail line. Every city keeps its rhythm.', { seconds: 4 })`,
+                `})`,
+            ].join('\n'),
+        }],
         coinPiles: [
             { position: { x: 80, y: groundY + 1, z: roadZ }, amount: 3 },
             { position: { x: 240, y: groundY + 1, z: roadZ }, amount: 3 },

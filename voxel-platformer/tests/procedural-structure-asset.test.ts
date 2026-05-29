@@ -1,13 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
-import { DEFAULT_PALETTE } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE } from '../src/engine/voxel/palette'
 import {
     DEFAULT_PREFAB_ID,
     STRUCTURE_PREFABS,
     generateStructureAsset,
     measureStructurePlacement,
     structurePlacementEdits,
+    structurePropPlacements,
     placeStructureAsset,
     prefabSource,
     proceduralSource,
@@ -122,4 +123,48 @@ test('placeStructureAsset stamps the cells and yields invertible undo edits', ()
     // Undo: re-apply the before edits and confirm the cells are cleared.
     chunks.applyBulk(result.before)
     for (const e of result.after) assert.equal(chunks.getVoxel(e.x, e.y, e.z), 0)
+})
+
+test('structuralOnly recovers ground plantings as flower/mushroom props, not cubes', () => {
+    const source = proceduralSource('tree', 7)
+
+    // Full asset keeps the flat decoration voxels and exposes no props.
+    const full = generateStructureAsset(source, { palette: DEFAULT_PALETTE })
+    assert.equal(full.decorationProps.length, 0)
+    assert.ok(full.voxels.some((v) => v.block === BLOCK.flower || v.block === BLOCK.mushroom))
+
+    // structuralOnly drops those voxels and re-emits them as prop placements.
+    const structural = generateStructureAsset(source, { palette: DEFAULT_PALETTE, structuralOnly: true })
+    assert.equal(structural.voxels.some((v) => v.block === BLOCK.flower || v.block === BLOCK.mushroom), false)
+    assert.ok(structural.decorationProps.length > 0)
+    for (const p of structural.decorationProps) {
+        // Ground plantings can scatter beyond the trunk's structural footprint,
+        // so local coords may be negative — they stay in the asset's frame.
+        assert.match(p.kind, /^(flower|mushroom)(-[23])?$/)
+        assert.ok(p.scale >= 0.85 && p.scale <= 1.15)
+    }
+
+    // Deterministic — same source yields the same plantings.
+    const again = generateStructureAsset(source, { palette: DEFAULT_PALETTE, structuralOnly: true })
+    assert.deepEqual(structural.decorationProps, again.decorationProps)
+})
+
+test('structurePropPlacements lands plantings on cell centres and applies the transform', () => {
+    const asset = generateStructureAsset(proceduralSource('tree', 7), { palette: DEFAULT_PALETTE, structuralOnly: true })
+    const transform: StructureTransform = { origin: { x: 200, y: 6, z: 60 }, rotation: 90, anchor: 'bottom-center' }
+    const props = structurePropPlacements(asset, transform, 'town:plot-3')
+
+    assert.equal(props.length, asset.decorationProps.length)
+    const ids = new Set(props.map((p) => p.id))
+    assert.equal(ids.size, props.length, 'prop ids are unique and stable')
+    for (const p of props) {
+        assert.ok(p.id.startsWith('town:plot-3:'))
+        assert.equal(p.position.x % 1, 0.5, 'x sits on the cell centre')
+        assert.equal(p.position.z % 1, 0.5, 'z sits on the cell centre')
+        assert.equal(p.gridAligned, false)
+    }
+
+    // An asset whose decoration is still voxels (full stamp) yields no props.
+    const full = generateStructureAsset(proceduralSource('tree', 7), { palette: DEFAULT_PALETTE })
+    assert.equal(structurePropPlacements(full, transform, 'x').length, 0)
 })

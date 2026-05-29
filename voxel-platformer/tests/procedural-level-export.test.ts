@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { BLOCK } from '../src/engine/voxel/palette'
 import { deserializeLevel } from '../src/engine/voxel/level-serializer'
 import { createProceduralEditorLevel } from '../src/editor/procedural-level-export'
 import type { EditorLevelMeta } from '../src/editor/editor-state'
@@ -62,4 +63,26 @@ test('demo <-> large-town portals resolve to existing arrival zones', () => {
         demo.editorMeta.zones?.some((zone) => zone.id === DEMO_FROM_TOWN_ARRIVAL_ID && zone.kind === 'arrival'),
         'demo should expose the arrival zone the town return portal targets',
     )
+})
+
+test('large town includes a long rideable rail line', () => {
+    const town = createProceduralEditorLevel(LARGE_TOWN_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const cart = town.runtimeMeta.railCarts.find((candidate) => candidate.id === 'large-town:boulevard-cart')
+
+    assert.ok(cart, 'large town should place a boulevard cart')
+    assert.equal(town.chunks.getVoxel(cart!.railCell.x, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
+    assert.equal(town.chunks.getVoxel(240, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
+    assert.equal(town.chunks.getVoxel(490, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
+})
+
+test('large town includes a collidable large troll NPC', () => {
+    const town = createProceduralEditorLevel(LARGE_TOWN_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const npc = town.runtimeMeta.npcs.find((candidate) => candidate.id === 'large-town:large-troll-curator')
+
+    assert.ok(npc, 'large town should place the large troll curator')
+    assert.equal(npc!.model, 'large-troll')
+    assert.equal(npc!.collisionEnabled, true)
+    assert.equal(npc!.colliderHeight, 3.2)
+    assert.equal(npc!.colliderRadius, 0.72)
+    assert.equal(town.chunks.getVoxel(Math.floor(npc!.position.x), npc!.position.y - 1, Math.floor(npc!.position.z)), BLOCK.grass)
 })

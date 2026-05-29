@@ -11,6 +11,8 @@ import { createEditorActionMap } from './editor/actions'
 import { createEditorState } from './editor/editor-state'
 import { createVoxelCursorSystem } from './editor/systems/voxel-cursor-system'
 import { createVoxelPaintSystem } from './editor/systems/voxel-paint-system'
+import { createTerrainEditSystem } from './editor/systems/terrain-edit-system'
+import { createTerrainPreviewSystem } from './editor/systems/terrain-preview-system'
 import { createHistorySystem } from './editor/systems/history-system'
 import { createCommandStack } from './editor/history'
 import { createPaletteHotkeySystem } from './editor/systems/palette-hotkey-system'
@@ -131,6 +133,7 @@ async function main(): Promise<void> {
         .addSystem(createSunFollowSystem(sun, () => renderer.iso.target), 'sunFollow')
         .addSystem(createHistorySystem(engine.input, history), 'history')
         .addSystem(createPaletteHotkeySystem(chunks, engine.input, renderer.iso, editorState), 'paletteHotkeys')
+        .addSystem(createTerrainEditSystem(chunks, engine.input, editorState, history), 'terrainEdit')
         .addSystem(createVoxelPaintSystem(chunks, engine.input, editorState, history), 'voxelPaint')
         .addSystem(createPickupSpawnSystem(engine.input, editorState), 'pickupSpawn')
         .addSystem(createPistonPlaceSystem(chunks, engine.input, editorState), 'pistonPlace')
@@ -162,6 +165,7 @@ async function main(): Promise<void> {
             cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
         }), 'railRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
+        .addSystem(createTerrainPreviewSystem(renderer.scene, chunks, editorState), 'terrainPreview')
         .addSystem(createWorkingPlaneSystem(renderer.scene, engine.input, renderer.iso, editorState), 'workingPlane')
         .addSystem(createWorkingPlaneOutlinesSystem(renderer.scene, chunks, editorState), 'workingPlaneOutlines')
         .addSystem(createSpawnMarkerSystem(renderer.scene, editorState), 'spawnMarker')

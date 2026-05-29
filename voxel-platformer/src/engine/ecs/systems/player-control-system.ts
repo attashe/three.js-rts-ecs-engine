@@ -129,6 +129,11 @@ export function createPlayerControlSystem(
                     Velocity.x[eid] = 0
                     Velocity.y[eid] = 0
                     Velocity.z[eid] = 0
+                    if (jumpBuffered) {
+                        actions.consumePressed(actionIds.jump, eid)
+                        jumpBuffered = false
+                    }
+                    updateAimRotation(world, eid, pointer, pointerRay)
                     continue
                 }
                 const grounded = hasComponent(world, eid, Grounded)
@@ -156,27 +161,34 @@ export function createPlayerControlSystem(
                     onJump?.(eid)
                 }
 
-                // Aim follows the mouse on the player's current ground plane.
-                // Movement remains camera-relative, so strafing and backing up are possible.
-                if (hasComponent(world, eid, Rotation)) {
-                    if (pointer && Math.abs(pointerRay.direction.y) > 0.0001) {
-                        const t = (Position.y[eid] - pointerRay.origin.y) / pointerRay.direction.y
-                        const lookX = pointerRay.origin.x + pointerRay.direction.x * t
-                        const lookZ = pointerRay.origin.z + pointerRay.direction.z * t
-                        const dx = lookX - Position.x[eid]
-                        const dz = lookZ - Position.z[eid]
-                        if (t > 0 && Math.hypot(dx, dz) > 0.08) {
-                            Rotation.y[eid] = Math.atan2(dx, dz)
-                        }
-                    } else {
-                        const horizSpeed = Math.hypot(Velocity.x[eid], Velocity.z[eid])
-                        if (horizSpeed <= 0.5) continue
-                        Rotation.y[eid] = Math.atan2(Velocity.x[eid], Velocity.z[eid])
-                    }
-                }
+                updateAimRotation(world, eid, pointer, pointerRay)
             }
         },
     }
+}
+
+function updateAimRotation(
+    world: Parameters<System['update']>[0],
+    eid: number,
+    pointer: ReturnType<Input['getPointer']>,
+    pointerRay: ReturnType<typeof makeRay>,
+): void {
+    if (!hasComponent(world, eid, Rotation)) return
+    // Aim follows the mouse on the player's current ground plane. Movement
+    // remains camera-relative, so strafing and backing up are possible.
+    if (pointer && Math.abs(pointerRay.direction.y) > 0.0001) {
+        const t = (Position.y[eid] - pointerRay.origin.y) / pointerRay.direction.y
+        const lookX = pointerRay.origin.x + pointerRay.direction.x * t
+        const lookZ = pointerRay.origin.z + pointerRay.direction.z * t
+        const dx = lookX - Position.x[eid]
+        const dz = lookZ - Position.z[eid]
+        if (t > 0 && Math.hypot(dx, dz) > 0.08) {
+            Rotation.y[eid] = Math.atan2(dx, dz)
+        }
+        return
+    }
+    const horizSpeed = Math.hypot(Velocity.x[eid], Velocity.z[eid])
+    if (horizSpeed > 0.5) Rotation.y[eid] = Math.atan2(Velocity.x[eid], Velocity.z[eid])
 }
 
 function playerAABBForEid(eid: number, out: AABB): AABB {

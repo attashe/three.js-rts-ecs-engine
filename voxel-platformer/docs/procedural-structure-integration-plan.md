@@ -55,14 +55,31 @@ The default anchor should be bottom center. Structure rotations should be limite
 - Show width, depth, height, and estimated block count in the editor UI.
 - Recompute preview only when generator options, seed, rotation, or anchor changes.
 
-## Decorative Migration
+## Decorative Migration — implemented
 
-The demo generator may keep fruit, flowers, and mushrooms for now. During game integration, split output into:
+Ground plantings are no longer flat cubes in stamped levels. When an asset is
+built with `structuralOnly: true`, the generator now:
 
-- Structural voxels: houses, towers, trunks, branches, roofs, walls, terrain-compatible details.
-- Props: flowers, mushrooms, fruit, small signs, crates, and other decorative repeatables.
+- Strips the decorative voxels from `asset.voxels` as before (predictable
+  structural footprint), and
+- Re-emits the ground plantings (generator tags `ground-detail` / `garden-plant`,
+  blocks `flower` / `mushroom`) as `asset.decorationProps` — prop placements in
+  the asset's normalised local frame. Each planting picks a `flower(-2/-3)` or
+  `mushroom(-2/-3)` variant, yaw, and scale hashed from its cell, so the choice
+  is deterministic. The matching cap voxel (a mushroom's `fruit` top) is ignored
+  — one prop per stem. Tree fruit and chimney smoke just drop.
 
-Props should be placed through the existing prop/scatter pipeline so they can use models, instancing, and prop-specific editor controls.
+`structurePropPlacements(asset, transform, idPrefix)` is the prop-mesh
+counterpart to `structurePlacementEdits`: it resolves those local plantings to
+world-space `EditorProp`s (centre of the cell, foot on the floor, transform
+rotation applied, stable ids from `idPrefix` + local cell). Levels stamp the
+structural voxels and feed the returned props straight into `LevelMeta.props`,
+so they render through the instanced prop pipeline with real models.
+
+The Large Town generator uses this: every plot's house garden now shows real
+flower meshes along the verge instead of flat voxels. Assets stamped *with*
+their decoration still as voxels (`structuralOnly` false) return no props, so
+plantings are never doubled.
 
 ## Tests
 

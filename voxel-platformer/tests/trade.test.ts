@@ -1,0 +1,88 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {
+    applyTradeSelection,
+    normalizeTradeRequest,
+    tradeAvailability,
+} from '../src/game/trade'
+
+const SHOP = normalizeTradeRequest({
+    title: 'Field Supplies',
+    items: [{
+        id: 'arrows.bundle',
+        name: 'Arrow bundle',
+        resource: 'arrows',
+        unitSize: 5,
+        buyPrice: 3,
+        sellPrice: 1,
+        stock: 4,
+    }],
+})
+
+test('trade buy subtracts gold and grants bundled arrows', () => {
+    const result = applyTradeSelection(SHOP, { gold: 10, arrows: 2 }, {
+        action: 'buy',
+        itemId: 'arrows.bundle',
+        quantity: 2,
+    })
+
+    assert.deepEqual(result, {
+        status: 'bought',
+        itemId: 'arrows.bundle',
+        itemName: 'Arrow bundle',
+        quantity: 2,
+        unitSize: 5,
+        spent: { gold: 6 },
+        gained: { arrows: 10 },
+        inventory: { gold: 4, arrows: 12 },
+    })
+})
+
+test('trade sell removes bundled arrows and grants gold', () => {
+    const result = applyTradeSelection(SHOP, { gold: 2, arrows: 12 }, {
+        action: 'sell',
+        itemId: 'arrows.bundle',
+        quantity: 2,
+    })
+
+    assert.deepEqual(result, {
+        status: 'sold',
+        itemId: 'arrows.bundle',
+        itemName: 'Arrow bundle',
+        quantity: 2,
+        unitSize: 5,
+        gained: { gold: 2 },
+        removed: { arrows: 10 },
+        inventory: { gold: 4, arrows: 2 },
+    })
+})
+
+test('trade rejects unaffordable buys without mutating inventory', () => {
+    const result = applyTradeSelection(SHOP, { gold: 2, arrows: 0 }, {
+        action: 'buy',
+        itemId: 'arrows.bundle',
+        quantity: 1,
+    })
+
+    assert.equal(result.status, 'unavailable')
+    assert.deepEqual(result.inventory, { gold: 2, arrows: 0 })
+})
+
+test('trade rejects selling more bundles than the player owns', () => {
+    const result = applyTradeSelection(SHOP, { gold: 0, arrows: 4 }, {
+        action: 'sell',
+        itemId: 'arrows.bundle',
+        quantity: 1,
+    })
+
+    assert.equal(result.status, 'unavailable')
+    assert.deepEqual(result.inventory, { gold: 0, arrows: 4 })
+})
+
+test('trade availability respects stock, gold, and inventory capacity', () => {
+    const item = SHOP.items[0]!
+    assert.equal(tradeAvailability(item, 'buy', { gold: 99, arrows: 0 }).maxQuantity, 4)
+    assert.equal(tradeAvailability(item, 'buy', { gold: 5, arrows: 0 }).maxQuantity, 1)
+    assert.equal(tradeAvailability(item, 'sell', { gold: 0, arrows: 14 }).maxQuantity, 2)
+    assert.equal(tradeAvailability(item, 'sell', { gold: 999999, arrows: 14 }).maxQuantity, 0)
+})

@@ -16,10 +16,11 @@ import { CHUNK_DIM, chunkKey, type Chunk, type ChunkKey } from '../../engine/vox
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import { isRailBlock } from '../../engine/voxel/palette'
 import {
-    railConnectionMask,
-    railVariantFromMask,
-    type RailVariant,
-    type RailVariantInfo,
+    maskHas,
+    railNeighborCell,
+    RailDirection,
+    type RailConnectionMask,
+    type RailSlopeDelta,
 } from './rail-network'
 
 export interface RailRenderOptions {
@@ -31,6 +32,7 @@ interface RailRecord {
     key: string
     slot: number
     bucketKey: string
+    shape: RailShapeInfo
     y: number
 }
 
@@ -41,19 +43,25 @@ interface ChunkSnapshot {
 
 interface Bucket {
     mesh: InstancedMesh
+    shape: RailShapeInfo
     keyBySlot: (string | null)[]
     liveCount: number
     capacity: number
     dirty: boolean
 }
 
-const VARIANTS: readonly RailVariant[] = ['isolated', 'end', 'straight', 'corner', 't', 'cross']
+interface RailShapeInfo {
+    mask: RailConnectionMask
+    slopes: readonly [RailSlopeDelta, RailSlopeDelta, RailSlopeDelta, RailSlopeDelta]
+}
+
 const MAX_INITIAL_CAPACITY = 256
 const tmpPos = new Vector3()
 const tmpQuat = new Quaternion()
 const tmpScale = new Vector3(1, 1, 1)
 const tmpMatrix = new Matrix4()
-const tmpYAxis = new Vector3(0, 1, 0)
+const tmpRailDir = new Vector3()
+const railGeometryForward = new Vector3(0, 0, 1)
 
 let sharedMaterial: MeshStandardMaterial | null = null
 
@@ -80,12 +88,12 @@ export function createRailRenderSystem(
     const buckets = new Map<string, Bucket>()
     let lastCutY: number | null | undefined
 
-    function ensureBucket(info: RailVariantInfo): Bucket {
-        const key = bucketKey(info)
+    function ensureBucket(shape: RailShapeInfo): Bucket {
+        const key = bucketKey(shape)
         let bucket = buckets.get(key)
         if (bucket) return bucket
         const capacity = Math.min(maxInstances, MAX_INITIAL_CAPACITY)
-        const mesh = new InstancedMesh(geometryForVariant(info.variant), railMaterial(), capacity)
+        const mesh = new InstancedMesh(geometryForShape(shape), railMaterial(), capacity)
         mesh.name = `Rail:${key}`
         mesh.count = 0
         mesh.castShadow = true
@@ -94,6 +102,7 @@ export function createRailRenderSystem(
         scene.add(mesh)
         bucket = {
             mesh,
+            shape,
             keyBySlot: new Array(capacity).fill(null),
             liveCount: 0,
             capacity,
@@ -117,8 +126,7 @@ export function createRailRenderSystem(
         let nextCapacity = bucket.capacity
         while (nextCapacity < minCapacity && nextCapacity < maxInstances) nextCapacity *= 2
         nextCapacity = Math.min(nextCapacity, maxInstances)
-        const variant = bucketKeyValue.split(':')[0] as RailVariant
-        const nextMesh = new InstancedMesh(geometryForVariant(variant), railMaterial(), nextCapacity)
+        const nextMesh = new InstancedMesh(geometryForShape(bucket.shape), railMaterial(), nextCapacity)
         nextMesh.name = `Rail:${bucketKeyValue}`
         nextMesh.count = bucket.liveCount
         nextMesh.castShadow = true
@@ -156,19 +164,19 @@ export function createRailRenderSystem(
         bucket.dirty = true
     }
 
-    function writeRecord(record: RailRecord, x: number, y: number, z: number, info: RailVariantInfo): void {
+    function writeRecord(record: RailRecord, x: number, y: number, z: number): void {
         const bucket = buckets.get(record.bucketKey)
         if (!bucket) return
         tmpPos.set(x + 0.5, y, z + 0.5)
-        tmpQuat.setFromAxisAngle(tmpYAxis, -info.rotation * Math.PI * 0.5)
+        tmpQuat.identity()
         tmpMatrix.compose(tmpPos, tmpQuat, tmpScale)
         bucket.mesh.setMatrixAt(record.slot, tmpMatrix)
         bucket.dirty = true
     }
 
     function upsertRail(wx: number, wy: number, wz: number, key: string): void {
-        const info = railVariantFromMask(railConnectionMask(chunks, wx, wy, wz))
-        const nextBucketKey = bucketKey(info)
+        const shape = railShapeInfo(chunks, wx, wy, wz)
+        const nextBucketKey = bucketKey(shape)
         let record = records.get(key)
         if (record && record.bucketKey !== nextBucketKey) {
             releaseRecord(record)
@@ -176,14 +184,15 @@ export function createRailRenderSystem(
             record = undefined
         }
         if (!record) {
-            const bucket = ensureBucket(info)
+            const bucket = ensureBucket(shape)
             if (bucket.liveCount >= maxInstances) return
             const slot = allocateSlot(nextBucketKey, bucket, key)
-            record = { key, slot, bucketKey: nextBucketKey, y: wy }
+            record = { key, slot, bucketKey: nextBucketKey, shape, y: wy }
             records.set(key, record)
         }
+        record.shape = shape
         record.y = wy
-        writeRecord(record, wx, wy, wz, info)
+        writeRecord(record, wx, wy, wz)
     }
 
     function syncChunk(chunk: Chunk, key: ChunkKey): void {
@@ -245,14 +254,12 @@ export function createRailRenderSystem(
         if (cutY === null) {
             for (const record of records.values()) {
                 const [x, y, z] = record.key.split(',').map(Number) as [number, number, number]
-                const info = railVariantInfoFromBucket(record.bucketKey)
-                writeRecord(record, x, y, z, info)
+                writeRecord(record, x, y, z)
             }
             return
         }
         for (const record of records.values()) {
             const [x, y, z] = record.key.split(',').map(Number) as [number, number, number]
-            const info = railVariantInfoFromBucket(record.bucketKey)
             const bucket = buckets.get(record.bucketKey)
             if (!bucket) continue
             if (record.y > cutY) {
@@ -260,7 +267,7 @@ export function createRailRenderSystem(
                 bucket.mesh.setMatrixAt(record.slot, tmpMatrix)
                 bucket.dirty = true
             } else {
-                writeRecord(record, x, y, z, info)
+                writeRecord(record, x, y, z)
             }
         }
     }
@@ -298,83 +305,129 @@ export function createRailRenderSystem(
     }
 }
 
-function bucketKey(info: RailVariantInfo): string {
-    return `${info.variant}:${info.rotation}`
-}
-
-function railVariantInfoFromBucket(key: string): RailVariantInfo {
-    const [variant, rotation] = key.split(':') as [RailVariant, string]
-    return { variant, rotation: Number(rotation) as 0 | 1 | 2 | 3 }
+function bucketKey(shape: RailShapeInfo): string {
+    return `${shape.mask}:${shape.slopes.join(',')}`
 }
 
 function chunkSignature(chunks: ChunkManager, chunk: Chunk): string {
-    const versions = [
-        chunk.version,
-        chunks.getChunk(chunk.cx - 1, chunk.cy, chunk.cz)?.version ?? -1,
-        chunks.getChunk(chunk.cx + 1, chunk.cy, chunk.cz)?.version ?? -1,
-        chunks.getChunk(chunk.cx, chunk.cy, chunk.cz - 1)?.version ?? -1,
-        chunks.getChunk(chunk.cx, chunk.cy, chunk.cz + 1)?.version ?? -1,
-    ]
+    const versions: number[] = []
+    for (let dy = -1; dy <= 1; dy++) {
+        versions.push(
+            chunks.getChunk(chunk.cx, chunk.cy + dy, chunk.cz)?.version ?? -1,
+            chunks.getChunk(chunk.cx - 1, chunk.cy + dy, chunk.cz)?.version ?? -1,
+            chunks.getChunk(chunk.cx + 1, chunk.cy + dy, chunk.cz)?.version ?? -1,
+            chunks.getChunk(chunk.cx, chunk.cy + dy, chunk.cz - 1)?.version ?? -1,
+            chunks.getChunk(chunk.cx, chunk.cy + dy, chunk.cz + 1)?.version ?? -1,
+        )
+    }
     return versions.join(':')
 }
 
-const geometryCache = new Map<RailVariant, BufferGeometry>()
+function railShapeInfo(chunks: ChunkManager, x: number, y: number, z: number): RailShapeInfo {
+    const cell = { x, y, z }
+    let mask = 0
+    const slopes: [RailSlopeDelta, RailSlopeDelta, RailSlopeDelta, RailSlopeDelta] = [0, 0, 0, 0]
+    for (const dir of [RailDirection.North, RailDirection.East, RailDirection.South, RailDirection.West] as const) {
+        const neighbor = railNeighborCell(chunks, cell, dir)
+        if (!neighbor) continue
+        mask |= 1 << dir
+        slopes[dir] = neighbor.dy
+    }
+    return { mask, slopes }
+}
 
-function geometryForVariant(variant: RailVariant): BufferGeometry {
-    let geo = geometryCache.get(variant)
+const geometryCache = new Map<string, BufferGeometry>()
+
+function geometryForShape(shape: RailShapeInfo): BufferGeometry {
+    const key = bucketKey(shape)
+    let geo = geometryCache.get(key)
     if (!geo) {
-        geo = buildRailGeometry(variant)
-        geometryCache.set(variant, geo)
+        geo = buildRailGeometry(shape)
+        geometryCache.set(key, geo)
     }
     return geo
 }
 
-function buildRailGeometry(variant: RailVariant): BufferGeometry {
+function buildRailGeometry(shape: RailShapeInfo): BufferGeometry {
     const parts: BufferGeometry[] = []
-    const addNorth = variant === 'isolated' || variant === 'end' || variant === 'straight' || variant === 'corner' || variant === 't' || variant === 'cross'
-    const addSouth = variant === 'straight' || variant === 't' || variant === 'cross'
-    const addEast = variant === 'corner' || variant === 't' || variant === 'cross'
-    const addWest = variant === 't' || variant === 'cross'
+    const addNorth = maskHas(shape.mask, RailDirection.North)
+    const addEast = maskHas(shape.mask, RailDirection.East)
+    const addSouth = maskHas(shape.mask, RailDirection.South)
+    const addWest = maskHas(shape.mask, RailDirection.West)
 
-    if (addNorth) addSegment(parts, 'north')
-    if (addSouth) addSegment(parts, 'south')
-    if (addEast) addSegment(parts, 'east')
-    if (addWest) addSegment(parts, 'west')
+    if (addNorth) addSegment(parts, RailDirection.North, shape.slopes[RailDirection.North])
+    if (addEast) addSegment(parts, RailDirection.East, shape.slopes[RailDirection.East])
+    if (addSouth) addSegment(parts, RailDirection.South, shape.slopes[RailDirection.South])
+    if (addWest) addSegment(parts, RailDirection.West, shape.slopes[RailDirection.West])
 
-    if (variant === 'isolated') {
+    if (shape.mask === 0) {
         parts.push(box(0.64, 0.06, 0.12, 0, 0.03, 0, 0.38, 0.24, 0.12))
         parts.push(box(0.06, 0.05, 0.36, -0.18, 0.09, 0, 0.55, 0.56, 0.56))
         parts.push(box(0.06, 0.05, 0.36, 0.18, 0.09, 0, 0.55, 0.56, 0.56))
     } else {
         addTie(parts, 0, 0)
-        if (addNorth) addTie(parts, 0, -0.34)
-        if (addSouth) addTie(parts, 0, 0.34)
-        if (addEast) addTie(parts, 0.34, 0, true)
-        if (addWest) addTie(parts, -0.34, 0, true)
+        if (addNorth) addTie(parts, 0, -0.34, false, shape.slopes[RailDirection.North] * 0.34)
+        if (addEast) addTie(parts, 0.34, 0, true, shape.slopes[RailDirection.East] * 0.34)
+        if (addSouth) addTie(parts, 0, 0.34, false, shape.slopes[RailDirection.South] * 0.34)
+        if (addWest) addTie(parts, -0.34, 0, true, shape.slopes[RailDirection.West] * 0.34)
     }
 
     const merged = mergeGeometries(parts, false)
     for (const part of parts) part.dispose()
-    if (!merged) throw new Error(`buildRailGeometry: failed to merge ${variant}`)
+    if (!merged) throw new Error(`buildRailGeometry: failed to merge ${bucketKey(shape)}`)
     return merged
 }
 
-function addSegment(parts: BufferGeometry[], dir: 'north' | 'south' | 'east' | 'west'): void {
+function addSegment(parts: BufferGeometry[], dir: RailDirection, slope: RailSlopeDelta): void {
     const metal = [0.56, 0.57, 0.56] as const
-    if (dir === 'north' || dir === 'south') {
-        const z = dir === 'north' ? -0.24 : 0.24
-        parts.push(box(0.055, 0.055, 0.5, -0.2, 0.095, z, ...metal))
-        parts.push(box(0.055, 0.055, 0.5, 0.2, 0.095, z, ...metal))
-    } else {
-        const x = dir === 'east' ? 0.24 : -0.24
-        parts.push(box(0.5, 0.055, 0.055, x, 0.095, -0.2, ...metal))
-        parts.push(box(0.5, 0.055, 0.055, x, 0.095, 0.2, ...metal))
+    const dy = slope * 0.5
+    switch (dir) {
+        case RailDirection.North:
+            parts.push(slopeBox(0.055, 0.055, -0.2, 0.095, 0, 0, dy, -0.5, ...metal))
+            parts.push(slopeBox(0.055, 0.055, 0.2, 0.095, 0, 0, dy, -0.5, ...metal))
+            return
+        case RailDirection.South:
+            parts.push(slopeBox(0.055, 0.055, -0.2, 0.095, 0, 0, dy, 0.5, ...metal))
+            parts.push(slopeBox(0.055, 0.055, 0.2, 0.095, 0, 0, dy, 0.5, ...metal))
+            return
+        case RailDirection.East:
+            parts.push(slopeBox(0.055, 0.055, 0, 0.095, -0.2, 0.5, dy, 0, ...metal))
+            parts.push(slopeBox(0.055, 0.055, 0, 0.095, 0.2, 0.5, dy, 0, ...metal))
+            return
+        case RailDirection.West:
+            parts.push(slopeBox(0.055, 0.055, 0, 0.095, -0.2, -0.5, dy, 0, ...metal))
+            parts.push(slopeBox(0.055, 0.055, 0, 0.095, 0.2, -0.5, dy, 0, ...metal))
+            return
     }
 }
 
-function addTie(parts: BufferGeometry[], x: number, z: number, eastWest = false): void {
-    if (eastWest) parts.push(box(0.12, 0.055, 0.68, x, 0.035, z, 0.36, 0.22, 0.12))
-    else parts.push(box(0.68, 0.055, 0.12, x, 0.035, z, 0.36, 0.22, 0.12))
+function addTie(parts: BufferGeometry[], x: number, z: number, eastWest = false, yOffset = 0): void {
+    if (eastWest) parts.push(box(0.12, 0.055, 0.68, x, 0.035 + yOffset, z, 0.36, 0.22, 0.12))
+    else parts.push(box(0.68, 0.055, 0.12, x, 0.035 + yOffset, z, 0.36, 0.22, 0.12))
+}
+
+function slopeBox(
+    width: number,
+    height: number,
+    lateralX: number,
+    baseY: number,
+    lateralZ: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    r: number,
+    g: number,
+    b: number,
+): BufferGeometry {
+    const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    const geo = new BoxGeometry(width, height, length)
+    tmpRailDir.set(dx, dy, dz).normalize()
+    tmpQuat.setFromUnitVectors(railGeometryForward, tmpRailDir)
+    tmpPos.set(lateralX + dx * 0.5, baseY + dy * 0.5, lateralZ + dz * 0.5)
+    tmpMatrix.compose(tmpPos, tmpQuat, tmpScale)
+    geo.applyMatrix4(tmpMatrix)
+    paintVertexColor(geo, r, g, b)
+    return geo
 }
 
 function box(

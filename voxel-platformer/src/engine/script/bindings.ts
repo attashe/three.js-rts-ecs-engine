@@ -29,6 +29,7 @@ import type {
     PlayerFacade,
     ScriptContext,
     StonesFacade,
+    TradeFacade,
     TravelFacade,
     UiFacade,
     VoxelCoord,
@@ -56,6 +57,7 @@ export interface BindingsDeps {
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
+    trade?: TradeFacade
     dayCycle?: DayCycleFacade
     weather?: WeatherFacade
     travel?: TravelFacade
@@ -68,6 +70,7 @@ export interface BindingsDeps {
 export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const { runtime, audio, chunks, player, pickups, pistons, zone, log, flags } = deps
     const ui = deps.ui ?? NOOP_UI
+    const trade = deps.trade ?? NOOP_TRADE
     const dayCycle = deps.dayCycle ?? NOOP_DAY_CYCLE
     const weather = deps.weather ?? NOOP_WEATHER
     const travel = deps.travel ?? NOOP_TRAVEL
@@ -219,6 +222,10 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             dialogue: (request) => ui.dialogue?.(request) ?? Promise.resolve({}),
         },
 
+        trade: {
+            open: (request) => trade.open(request),
+        },
+
         dayCycle: {
             get hour() { return dayCycle.getHour() },
             get enabled() { return dayCycle.isEnabled() },
@@ -257,6 +264,12 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
 const NOOP_UI: UiFacade = {
     say() {},
     clear() {},
+}
+
+const NOOP_TRADE: TradeFacade = {
+    open() {
+        return Promise.resolve({ status: 'unavailable', reason: 'Trade menu is not available.' })
+    },
 }
 
 const NOOP_DAY_CYCLE: DayCycleFacade = {

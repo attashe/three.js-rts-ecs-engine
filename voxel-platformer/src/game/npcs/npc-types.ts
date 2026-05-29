@@ -5,6 +5,7 @@ import type { AABB } from '../../engine/voxel/voxel-collide'
 export const NPC_MODEL_KINDS = [
     'keeper',
     'player',
+    'large-troll',
 ] as const
 
 export type NpcModelKind = (typeof NPC_MODEL_KINDS)[number]
@@ -12,6 +13,7 @@ export type NpcModelKind = (typeof NPC_MODEL_KINDS)[number]
 export const NPC_MODEL_LABELS: Record<NpcModelKind, string> = {
     keeper: 'Keeper',
     player: 'Player',
+    'large-troll': 'Large Troll',
 }
 
 export interface NpcConfig {

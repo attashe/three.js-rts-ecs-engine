@@ -5,6 +5,7 @@ import type { ZonePortal, ZoneTriggerSource } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
 import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
+import type { TerrainBrushShape, TerrainFalloff, TerrainTool } from './terrain-brush'
 import type { PistonDirection } from './piston-direction'
 import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
 import { DEFAULT_NPC, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
@@ -25,6 +26,7 @@ import { DEFAULT_PREFAB_ID } from '../procedural-structures/prefabs'
 export type EditorMode =
     | 'select'
     | 'paint'
+    | 'terrain'
     | 'erase'
     | 'spawn-pickup'
     | 'place-piston'
@@ -264,6 +266,27 @@ export interface EditorState {
     brush: BrushKind
     /** Drag-brush anchor cell while a drag brush stroke is active. */
     brushDragAnchor: VoxelCoord | null
+    /** Terrain sculpting tool used in `terrain` mode. */
+    terrainTool: TerrainTool
+    /** Terrain brush footprint in XZ columns. */
+    terrainBrushShape: TerrainBrushShape
+    /** Terrain brush radius in XZ cells. */
+    terrainRadius: number
+    /** Strength per terrain stamp. Sculpt/flatten use voxel steps; smooth uses it as a blend factor. */
+    terrainStrength: number
+    /** Falloff curve inside the terrain brush footprint. */
+    terrainFalloff: TerrainFalloff
+    /** Absolute Y target used by flatten and set-height style terrain edits. */
+    terrainTargetHeight: number
+    /** Fill material used below newly raised terrain. */
+    terrainFillBlock: number
+    /** When true, terrain height edits paint the resulting top surface with `activeBlock`. */
+    terrainRepaintTop: boolean
+    /** Bounded Y search/edit range for terrain columns. */
+    terrainMinY: number
+    terrainMaxY: number
+    /** Drag anchor used by the ramp terrain tool. */
+    terrainDragAnchor: VoxelCoord | null
     /** What clicks do. */
     mode: EditorMode
     /** Last cell the mouse raycast hit (in voxel coords). null when no hit. */
@@ -528,6 +551,17 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         activeBlock: grass,
         brush: 'single',
         brushDragAnchor: null,
+        terrainTool: 'sculpt',
+        terrainBrushShape: 'circle',
+        terrainRadius: 4,
+        terrainStrength: 1,
+        terrainFalloff: 'smooth',
+        terrainTargetHeight: spawn.y - 1,
+        terrainFillBlock: BLOCK.dirt,
+        terrainRepaintTop: false,
+        terrainMinY: 0,
+        terrainMaxY: 96,
+        terrainDragAnchor: null,
         mode: 'paint',
         cursor: null,
         spawn,

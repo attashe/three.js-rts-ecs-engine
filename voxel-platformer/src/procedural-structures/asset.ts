@@ -10,6 +10,8 @@ import type {
 import { boundsOf, VoxelBuffer } from './buffer'
 import { generateStructureScene } from './generator'
 import { getPrefab } from './prefabs'
+import { hash2 } from './math'
+import type { EditorProp, EditorPropKind } from '../game/props/prop-types'
 
 /**
  * Structure assets — a thin, engine-facing layer over the raw voxel
@@ -50,14 +52,34 @@ export interface Footprint {
     depth: number
 }
 
-/** Decorative voxels filtered out when `structuralOnly` is requested — these
- *  are the demo extras the integration plan earmarks for the prop pipeline. */
+/** Decorative voxels filtered out when `structuralOnly` is requested. The
+ *  ground plantings among them (flowers / mushrooms) are re-emitted as proper
+ *  prop meshes via `decorationProps`; the rest (tree fruit, chimney smoke)
+ *  simply drop. */
 const DECORATIVE_BLOCKS = new Set<number>([
     BLOCK.flower,
     BLOCK.mushroom,
     BLOCK.fruit,
     BLOCK.smoke,
 ])
+
+/** Generator tags whose decorative voxels become real prop instances rather
+ *  than flat cubes — the ground plantings the structures scatter. */
+const PLANTING_TAGS = new Set<string>(['ground-detail', 'garden-plant'])
+
+const FLOWER_PROP_KINDS = ['flower', 'flower-2', 'flower-3'] as const
+const MUSHROOM_PROP_KINDS = ['mushroom', 'mushroom-2', 'mushroom-3'] as const
+
+/** A planting recovered from a structure's decorative voxels, in the asset's
+ *  origin-normalised local frame (same space as `voxels`). */
+export interface LocalPropPlacement {
+    kind: EditorPropKind
+    x: number
+    y: number
+    z: number
+    yaw: number
+    scale: number
+}
 
 export interface StructureAssetOptions {
     /** Drop purely decorative voxels (flowers / mushrooms / fruit / smoke)
@@ -74,6 +96,9 @@ export interface StructureAsset {
     voxels: StructureVoxel[]
     /** Local bounds — always anchored at min (0, 0, 0). */
     bounds: StructureBounds
+    /** Ground plantings recovered as prop instances when `structuralOnly` was
+     *  requested (empty otherwise). Local frame matches `voxels`. */
+    decorationProps: LocalPropPlacement[]
     size: StructureSize
     footprint: Footprint
     stats: {
@@ -147,8 +172,12 @@ export function generateStructureAsset(
     const filtered = options.structuralOnly
         ? raw.voxels.filter((v) => !DECORATIVE_BLOCKS.has(v.block))
         : raw.voxels
-    const voxels = normalizeToOrigin(filtered)
+    const offset = originOffset(filtered)
+    const voxels = filtered.map((v) => ({ x: v.x - offset.x, y: v.y - offset.y, z: v.z - offset.z, block: v.block, tag: v.tag }))
     const bounds = boundsOf(voxels)
+    // Only recover plantings as props when their flat voxels were dropped;
+    // otherwise they're still rendered as cubes and a prop would double them.
+    const decorationProps = options.structuralOnly ? plantingProps(raw.voxels, offset) : []
 
     const materialCounts: Record<number, number> = {}
     for (const v of voxels) materialCounts[v.block] = (materialCounts[v.block] ?? 0) + 1
@@ -163,10 +192,54 @@ export function generateStructureAsset(
         label: raw.label,
         voxels,
         bounds,
+        decorationProps,
         size: { width: bounds.width, height: bounds.height, depth: bounds.depth },
         footprint: { width: bounds.width, depth: bounds.depth },
         stats: { voxelCount: voxels.length, materialCounts, materialNames },
     }
+}
+
+/** Min corner of a voxel set — the offset that normalises it to origin. */
+function originOffset(voxels: readonly StructureVoxel[]): { x: number; y: number; z: number } {
+    if (voxels.length === 0) return { x: 0, y: 0, z: 0 }
+    let x = Infinity
+    let y = Infinity
+    let z = Infinity
+    for (const v of voxels) {
+        if (v.x < x) x = v.x
+        if (v.y < y) y = v.y
+        if (v.z < z) z = v.z
+    }
+    return { x, y, z }
+}
+
+/**
+ * Turn the structure's ground plantings (tagged `ground-detail` /
+ * `garden-plant`) into local prop placements. A planting's voxel becomes one
+ * flower or mushroom prop, sitting on the cell's floor; its variant, yaw, and
+ * scale are hashed from the cell so the choice is stable and deterministic.
+ * The matching cap voxel (e.g. a mushroom's `fruit` top) is ignored — one prop
+ * per stem.
+ */
+function plantingProps(raw: readonly StructureVoxel[], offset: { x: number; y: number; z: number }): LocalPropPlacement[] {
+    const props: LocalPropPlacement[] = []
+    for (const v of raw) {
+        if (!PLANTING_TAGS.has(v.tag)) continue
+        const kinds = v.block === BLOCK.flower ? FLOWER_PROP_KINDS
+            : v.block === BLOCK.mushroom ? MUSHROOM_PROP_KINDS
+                : null
+        if (!kinds) continue
+        const kind = kinds[Math.min(kinds.length - 1, Math.floor(hash2(v.x, v.z, 11) * kinds.length))]!
+        props.push({
+            kind,
+            x: v.x - offset.x,
+            y: v.y - offset.y,
+            z: v.z - offset.z,
+            yaw: hash2(v.x, v.z, 23) * Math.PI * 2,
+            scale: 0.85 + hash2(v.x, v.z, 31) * 0.3,
+        })
+    }
+    return props
 }
 
 interface RawVoxels {
@@ -190,20 +263,6 @@ function rawVoxels(source: StructureSource, palette?: Palette): RawVoxels {
         label: kind.charAt(0).toUpperCase() + kind.slice(1),
         names: result.materialNames,
     }
-}
-
-/** Shift voxels so the min corner sits at (0, 0, 0). Returns a fresh array. */
-function normalizeToOrigin(voxels: readonly StructureVoxel[]): StructureVoxel[] {
-    if (voxels.length === 0) return []
-    let minX = Infinity
-    let minY = Infinity
-    let minZ = Infinity
-    for (const v of voxels) {
-        if (v.x < minX) minX = v.x
-        if (v.y < minY) minY = v.y
-        if (v.z < minZ) minZ = v.z
-    }
-    return voxels.map((v) => ({ x: v.x - minX, y: v.y - minY, z: v.z - minZ, block: v.block, tag: v.tag }))
 }
 
 /** Local size of the asset after applying a rotation (W/D swap on 90/270). */
@@ -288,6 +347,36 @@ export function structurePlacementEdits(asset: StructureAsset, transform: Struct
         edits.push({ x: baseX + r.x, y: baseY + v.y, z: baseZ + r.z, value: v.block })
     }
     return edits
+}
+
+/**
+ * Resolve the asset's recovered plantings to world-space props under a
+ * transform — the prop-mesh counterpart to `structurePlacementEdits`. Positions
+ * land on the centre of each planting cell, with the prop's foot on the cell
+ * floor; ids are derived from `idPrefix` plus the local cell so they're stable
+ * across regenerations. Returns `[]` for assets stamped with their decoration
+ * still as voxels (nothing to recover).
+ */
+export function structurePropPlacements(asset: StructureAsset, transform: StructureTransform, idPrefix: string): EditorProp[] {
+    if (asset.decorationProps.length === 0) return []
+    const localSize = asset.size
+    const size = rotatedSize(asset, transform.rotation)
+    const a = anchorOffset(size, transform.anchor)
+    const baseX = transform.origin.x - a.x
+    const baseY = transform.origin.y - a.y
+    const baseZ = transform.origin.z - a.z
+    const spin = (transform.rotation * Math.PI) / 180
+    return asset.decorationProps.map((p) => {
+        const r = rotateCell(p.x, p.z, localSize.width, localSize.depth, transform.rotation)
+        return {
+            id: `${idPrefix}:${p.kind}:${p.x}-${p.z}`,
+            kind: p.kind,
+            position: { x: baseX + r.x + 0.5, y: baseY + p.y, z: baseZ + r.z + 0.5 },
+            yaw: p.yaw + spin,
+            scale: p.scale,
+            gridAligned: false,
+        }
+    })
 }
 
 /** Full placement description: world bounds, footprint, and the edits. */

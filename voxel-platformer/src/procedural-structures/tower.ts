@@ -2,9 +2,14 @@ import { BLOCK } from '../engine/voxel/palette'
 import type { StructureGenerationOptions, TowerStyle } from './types'
 import { VoxelBuffer } from './buffer'
 import type { Rng } from './math'
-import { choose, clamp, randFloat, randInt } from './math'
+import { choose, clamp, hash2, randFloat, randInt } from './math'
 
 const TOWER_FLOOR_INTERVAL = 6
+// Wall-hugging spiral runs on a fixed ring just inside the walls. A radius-3
+// ring gives ~24 cells per revolution: at rise-1-per-cell that is the gentlest
+// pitch the player's free 1-voxel step-up can climb, with room for a 2-wide
+// tread and a clear 2-cell-tall stairwell carved above it.
+const TOWER_STAIR_RADIUS = 3
 
 export function composeTower(buf: VoxelBuffer, ox: number, oy: number, oz: number, opts: StructureGenerationOptions, rng: Rng): void {
     const p = opts.tower
@@ -15,26 +20,48 @@ export function composeTower(buf: VoxelBuffer, ox: number, oy: number, oz: numbe
     towerShell(buf, ox, oy, oz, r, h, thick, style, opts)
     towerDoorArch(buf, ox, oy, oz, r, thick)
     towerWindowsAndSlits(buf, ox, oy, oz, r, h, thick, p.windowEvery, style, opts)
-    towerInteriorFloors(buf, ox, oy, oz, r, h, thick, style, opts)
+    towerInterior(buf, ox, oy, oz, r, h, thick, style, opts)
     towerControlledRuin(buf, ox, oy, oz, r, h, style, rng, opts)
     towerButtresses(buf, ox, oy, oz, r, h, style, opts)
     towerExteriorStairs(buf, ox, oy, oz, r, h, thick, style, opts)
     const crownR = towerOuterRadiusAt(oy, r, h, oy + h - 1, opts)
     towerCrown(buf, ox, oy, oz, crownR, h, style, opts.tower.spire)
     towerRoof(buf, ox, oy, oz, crownR, h, style, rng, opts)
-    towerInteriorStairs(buf, ox, oy, oz, r, h, thick, style, opts)
     towerBannersMossTorches(buf, ox, oy, oz, r, h, style, rng, opts)
 }
 
 function towerShell(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
     const square = style === 'square'
+    const shade = opts.detail > 0.3
     for (let y = 0; y < h; y++) {
-        const ro = towerOuterRadiusAt(oy, r, h, oy + y, opts)
+        const wy = oy + y
+        const ro = towerOuterRadiusAt(oy, r, h, wy, opts)
         const ri = Math.max(0, ro - thick)
-        const block = y % 6 === 0 && opts.detail > 0.55 ? BLOCK.stone2 : BLOCK.stone
-        if (square) buf.hollowBox(ox - ro, oy + y, oz - ro, ox + ro, oy + y, oz + ro, thick, block, 'tower-wall-square')
-        else buf.shellCylinder(ox, oy + y, oz, ro, ri, oy + y, block, 'tower-wall-round')
+        const plinth = y < 2
+        const tag = square ? 'tower-wall-square' : 'tower-wall-round'
+        for (let x = -ro; x <= ro; x++) {
+            for (let z = -ro; z <= ro; z++) {
+                const onShell = square
+                    ? Math.max(Math.abs(x), Math.abs(z)) > ro - thick
+                    : (() => { const d = x * x + z * z; return d <= ro * ro && d >= ri * ri })()
+                if (!onShell) continue
+                buf.set(ox + x, wy, oz + z, towerStoneBlock(x, wy, z, plinth, shade), tag)
+            }
+        }
     }
+}
+
+// Per-voxel masonry shading: a hash over (x, y, z) sprinkles `stone2` and the
+// occasional `darkStone` through a `stone` field so the wall reads as fitted
+// blocks instead of a flat banded cylinder. The bottom two courses go dark for
+// a weathered plinth.
+function towerStoneBlock(x: number, y: number, z: number, plinth: boolean, shade: boolean): number {
+    if (plinth) return BLOCK.darkStone
+    if (!shade) return BLOCK.stone
+    const n = hash2(x * 2 + y, z * 2 - y, 7)
+    if (n < 0.10) return BLOCK.darkStone
+    if (n < 0.42) return BLOCK.stone2
+    return BLOCK.stone
 }
 
 function towerOuterRadiusAt(oy: number, r: number, h: number, y: number, opts: StructureGenerationOptions): number {
@@ -118,22 +145,30 @@ function towerEntryApproach(buf: VoxelBuffer, ox: number, oy: number, outsideZ: 
     buf.fillBox(ox - 2, oy, outsideZ - 2, ox + 2, oy, outsideZ - 1, BLOCK.stone2, 'tower-entry-landing')
 }
 
-function towerInteriorFloors(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
-    for (let y = oy + TOWER_FLOOR_INTERVAL; y <= oy + h - 4; y += TOWER_FLOOR_INTERVAL) {
-        const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts)
-        for (let x = -inner; x <= inner; x++) {
-            for (let z = -inner; z <= inner; z++) {
-                if (!towerInteriorContains(style, x, z, inner)) continue
-                const border = style === 'square'
-                    ? Math.max(Math.abs(x), Math.abs(z)) === inner
-                    : x * x + z * z >= (inner - 1) * (inner - 1)
-                const block = border
-                    ? BLOCK.woodDark
-                    : ((x + z + y) % 4 === 0 ? BLOCK.plank : BLOCK.wood)
-                buf.set(ox + x, y, oz + z, block, border ? 'tower-floor-rim' : 'tower-floor-deck')
-            }
-        }
-    }
+/**
+ * Climbable interior: a stone ground floor, one timber deck per storey, and a
+ * wall-hugging spiral stair that the player can actually walk from the entry to
+ * the crown. The whole thing is built to a single invariant — between every
+ * consecutive pair of treads the rise is exactly 1 and the move is one cell
+ * horizontally, which is precisely what the engine's free 1-voxel step-up can
+ * clear (see physics-system: horizontal sweep before the ground sweep). A
+ * 2-cell-tall stairwell is carved above the spiral (last, see below) so nothing
+ * — neither the decks it passes through nor the wall — ever blocks the climb.
+ */
+function towerInterior(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+    const firstStep = oy + 1
+    const topStep = oy + h - 1
+    const path = towerStairLoopPath(TOWER_STAIR_RADIUS)
+    const storeys = towerStoreyLevels(oy, h)
+
+    towerGroundFloor(buf, ox, oy, oz, r, h, thick, style, opts)
+    for (const y of storeys) towerStoreyDeck(buf, ox, oy, oz, r, h, thick, y, style, opts)
+    towerSpiralStair(buf, ox, oy, oz, r, h, thick, firstStep, topStep, path, storeys, style, opts)
+    // Carve last so the punch clears the body-space directly above every tread
+    // (otherwise the storey deck a tread tucks under would block standing on
+    // it). The carve only ever touches cells above treads, never treads
+    // themselves — consecutive treads are always offset, so no step is lost.
+    towerCarveStairwell(buf, ox, oy, oz, firstStep, topStep, path)
 }
 
 interface TowerInteriorSlice {
@@ -153,82 +188,80 @@ function towerInteriorContains(style: Exclude<TowerStyle, 'mixed'>, x: number, z
         : x * x + z * z < inner * inner
 }
 
-function towerInteriorStairs(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
-    const firstY = oy + 1
-    const lastY = oy + h - 1
-    const { inner } = towerInteriorSlice(oy, r, h, thick, lastY, opts)
-    const radius = towerStairRadius(inner)
-    const path = towerStairLoopPath(radius)
-    towerStairwellOpenings(buf, ox, oy, oz, r, h, thick, radius, style, opts)
-    for (let y = firstY; y <= lastY; y++) {
-        const i = y - firstY
-        const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts)
-        const [x, z] = towerClampedStairCell(path[i % path.length]!, inner)
-        const [innerX, innerZ] = towerStairInnerCell(x, z)
-        if (!towerInteriorContains(style, x, z, inner)) continue
-        buf.set(ox, y, oz, BLOCK.darkStone, 'tower-spiral-pillar')
-        if (isTowerFloorLevel(oy, y) || y === lastY) {
-            towerStairLanding(buf, ox, y, oz, x, z, innerX, innerZ, inner, style, y === lastY ? 'tower-top-landing' : 'tower-stair-landing')
-        }
-        placeTowerStairTread(buf, ox, y, oz, x, z, innerX, innerZ, inner, style)
-        if (opts.detail > 0.55 && i % 4 === 0) {
-            const [railX, railZ] = towerStairOuterRailCell(x, z)
-            const frontRail = z < 0 && railZ < z
-            if (!frontRail && towerInteriorContains(style, railX, railZ, inner)) buf.set(ox + railX, y + 1, oz + railZ, BLOCK.woodDark, 'tower-spiral-rail')
-        }
-    }
+function towerStoreyLevels(oy: number, h: number): number[] {
+    const levels: number[] = []
+    for (let y = oy + TOWER_FLOOR_INTERVAL; y <= oy + h - 4; y += TOWER_FLOOR_INTERVAL) levels.push(y)
+    return levels
 }
 
-function isTowerFloorLevel(oy: number, y: number): boolean {
-    return y > oy && (y - oy) % TOWER_FLOOR_INTERVAL === 0
-}
-
-function towerStairRadius(inner: number): number {
-    return Math.max(1, Math.min(Math.max(1, inner - 3), Math.floor(inner * 0.45), 3))
-}
-
-function towerStairwellOpenings(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, stairRadius: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
-    for (let y = oy + TOWER_FLOOR_INTERVAL; y <= oy + h - 4; y += TOWER_FLOOR_INTERVAL) {
-        const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts)
-        const opening = Math.max(2, Math.min(inner - 2, stairRadius + 1))
-        carveTowerStairwellOpening(buf, ox, y, oz, opening, inner, style)
-        frameTowerStairwellOpening(buf, ox, y, oz, opening, inner, style)
-    }
-}
-
-function carveTowerStairwellOpening(buf: VoxelBuffer, ox: number, y: number, oz: number, opening: number, inner: number, style: Exclude<TowerStyle, 'mixed'>): void {
-    for (let x = -opening; x <= opening; x++) {
-        for (let z = -opening; z <= opening; z++) {
-            if (towerInteriorContains(style, x, z, inner) && towerStairwellContains(style, x, z, opening)) buf.del(ox + x, y, oz + z)
-        }
-    }
-}
-
-function frameTowerStairwellOpening(buf: VoxelBuffer, ox: number, y: number, oz: number, opening: number, inner: number, style: Exclude<TowerStyle, 'mixed'>): void {
-    for (let x = -opening - 1; x <= opening + 1; x++) {
-        for (let z = -opening - 1; z <= opening + 1; z++) {
+function towerGroundFloor(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+    const { inner } = towerInteriorSlice(oy, r, h, thick, oy, opts)
+    for (let x = -inner; x <= inner; x++) {
+        for (let z = -inner; z <= inner; z++) {
             if (!towerInteriorContains(style, x, z, inner)) continue
-            if (!towerStairwellRimContains(style, x, z, opening)) continue
-            buf.set(ox + x, y, oz + z, BLOCK.woodDark, 'tower-stairwell-rim')
+            const block = (x + z) % 4 === 0 ? BLOCK.stone2 : BLOCK.stone
+            buf.set(ox + x, oy, oz + z, block, 'tower-floor-ground')
         }
     }
 }
 
-function towerStairwellContains(style: Exclude<TowerStyle, 'mixed'>, x: number, z: number, opening: number): boolean {
-    return style === 'square'
-        ? Math.max(Math.abs(x), Math.abs(z)) <= opening
-        : x * x + z * z <= opening * opening
+function towerStoreyDeck(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, y: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+    const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts)
+    for (let x = -inner; x <= inner; x++) {
+        for (let z = -inner; z <= inner; z++) {
+            if (!towerInteriorContains(style, x, z, inner)) continue
+            const border = style === 'square'
+                ? Math.max(Math.abs(x), Math.abs(z)) === inner
+                : x * x + z * z >= (inner - 1) * (inner - 1)
+            const block = border
+                ? BLOCK.woodDark
+                : ((x + z + y) % 4 === 0 ? BLOCK.plank : BLOCK.wood)
+            buf.set(ox + x, y, oz + z, block, border ? 'tower-floor-rim' : 'tower-floor-deck')
+        }
+    }
 }
 
-function towerStairwellRimContains(style: Exclude<TowerStyle, 'mixed'>, x: number, z: number, opening: number): boolean {
-    if (style === 'square') return Math.max(Math.abs(x), Math.abs(z)) === opening + 1
-    const d = x * x + z * z
-    return d > opening * opening && d <= (opening + 1) * (opening + 1)
+function towerSpiralStair(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, firstStep: number, topStep: number, path: Array<readonly [number, number]>, storeys: number[], style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+    const storeySet = new Set(storeys)
+    const period = path.length
+    for (let y = firstStep; y <= topStep; y++) {
+        const i = y - firstStep
+        const [cx, cz] = path[i % period]!
+        const [ix, iz] = towerStairInnerCell(cx, cz)
+        const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts)
+        // Central newel the spiral wraps around.
+        buf.set(ox, y, oz, BLOCK.darkStone, 'tower-spiral-pillar')
+        // 2-wide tread: the ring cell plus its inward neighbour, so the player
+        // always has a full cell of footing whichever side they hug.
+        buf.set(ox + cx, y, oz + cz, BLOCK.stone2, 'tower-spiral-step')
+        if ((ix !== cx || iz !== cz) && towerInteriorContains(style, ix, iz, inner)) {
+            buf.set(ox + ix, y, oz + iz, BLOCK.woodDark, 'tower-spiral-step')
+        }
+        if (storeySet.has(y) || y === topStep) {
+            towerStairLanding(buf, ox, y, oz, cx, cz, ix, iz, inner, style, y === topStep ? 'tower-top-landing' : 'tower-stair-landing')
+        }
+    }
 }
 
-function towerClampedStairCell(cell: readonly [number, number], inner: number): readonly [number, number] {
-    const limit = Math.max(1, inner - 2)
-    return [clamp(cell[0], -limit, limit), clamp(cell[1], -limit, limit)]
+/**
+ * Delete the two cells directly above every tread (and its inward neighbour) so
+ * the climber has a clear 2-high column the whole way up. Where the spiral runs
+ * under a storey deck this punches the stairwell opening; the deck cells left
+ * around the hole stay as the rim. Only ever deletes cells *above* a tread, and
+ * consecutive treads are always offset, so it never erases a step.
+ */
+function towerCarveStairwell(buf: VoxelBuffer, ox: number, oy: number, oz: number, firstStep: number, topStep: number, path: Array<readonly [number, number]>): void {
+    const period = path.length
+    for (let y = firstStep; y <= topStep; y++) {
+        const i = y - firstStep
+        const [cx, cz] = path[i % period]!
+        // Clear two cells only above the *ring* cell — the column the climber
+        // actually walks up. The inward tread is bonus footing; carving above
+        // it would, at the ring's corners, delete the next step's ring tread
+        // (a corner's inward neighbour lands on the following ring cell).
+        buf.del(ox + cx, y + 1, oz + cz)
+        buf.del(ox + cx, y + 2, oz + cz)
+    }
 }
 
 function towerStairLoopPath(radius: number): Array<readonly [number, number]> {
@@ -246,20 +279,6 @@ function towerStairInnerCell(x: number, z: number): readonly [number, number] {
     if (z !== 0) return [x, z + (z > 0 ? -1 : 1)]
     if (x !== 0) return [x + (x > 0 ? -1 : 1), z]
     return [x, z]
-}
-
-function towerStairOuterRailCell(x: number, z: number): readonly [number, number] {
-    if (Math.abs(x) > Math.abs(z)) return [x + Math.sign(x), z]
-    if (z !== 0) return [x, z + Math.sign(z)]
-    if (x !== 0) return [x + Math.sign(x), z]
-    return [x, z]
-}
-
-function placeTowerStairTread(buf: VoxelBuffer, ox: number, y: number, oz: number, x: number, z: number, innerX: number, innerZ: number, inner: number, style: Exclude<TowerStyle, 'mixed'>): void {
-    buf.set(ox + x, y, oz + z, BLOCK.stone2, 'tower-spiral-step')
-    if ((innerX !== x || innerZ !== z) && towerInteriorContains(style, innerX, innerZ, inner)) {
-        buf.set(ox + innerX, y, oz + innerZ, BLOCK.woodDark, 'tower-spiral-step')
-    }
 }
 
 function towerStairLanding(buf: VoxelBuffer, ox: number, y: number, oz: number, x: number, z: number, innerX: number, innerZ: number, inner: number, style: Exclude<TowerStyle, 'mixed'>, tag: string): void {
