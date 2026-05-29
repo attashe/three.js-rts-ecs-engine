@@ -2,8 +2,8 @@ import { Color, PointLight, type Camera, type Scene } from 'three'
 import type { System } from '../ecs/systems/system'
 import { RenderOrder } from '../ecs/systems/orders'
 import type { ChunkManager } from './chunk-manager'
-import { CHUNK_DIM, chunkKey, type ChunkKey } from './chunk'
-import { voxelLightSpec, type BlockLightSpec } from './palette'
+import { CHUNK_DIM, chunkKey, type Chunk, type ChunkKey } from './chunk'
+import { voxelLightSpec, type BlockLightSpec, type Palette } from './palette'
 import { RENDER_LAYER } from '../render/render-layers'
 
 export interface BlockLightSystemOptions {
@@ -49,11 +49,13 @@ const SHADOW_NEAR = 0.1
 export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSystemOptions): System {
     const { scene, camera } = opts
     const sources = new Map<string, BlockLightSource>()
-    const scannedVersion = new Map<ChunkKey, number>()
+    // Keyed by the Chunk object (stable; chunks aren't evicted) so the
+    // per-frame change scan never allocates a `chunkKey` string.
+    const scannedVersion = new Map<Chunk, number>()
     const maxLights = opts.maxLights ?? 12
     const intensityScale = Math.max(0, opts.intensityScale ?? 1)
     const pool: PointLight[] = []
-    let paletteFingerprint = ''
+    let paletteFingerprint = 0
 
     function applySpec(light: PointLight, spec: BlockLightSpec): void {
         const wanted = spec.intensity * intensityScale
@@ -98,17 +100,14 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
         }
     }
 
-    function scanChunk(cx: number, cy: number, cz: number): void {
-        const chunk = chunks.getChunk(cx, cy, cz)
-        const ck = chunkKey(cx, cy, cz)
+    function scanChunk(chunk: Chunk): void {
+        // Build the string key only here (on an actual change), not in the
+        // per-frame version scan below.
+        const ck = chunkKey(chunk.cx, chunk.cy, chunk.cz)
         dropChunk(ck)
-        if (!chunk) {
-            scannedVersion.delete(ck)
-            return
-        }
-        const baseX = cx * CHUNK_DIM
-        const baseY = cy * CHUNK_DIM
-        const baseZ = cz * CHUNK_DIM
+        const baseX = chunk.cx * CHUNK_DIM
+        const baseY = chunk.cy * CHUNK_DIM
+        const baseZ = chunk.cz * CHUNK_DIM
         chunk.forEachSolid((lx, ly, lz, value) => {
             const spec = voxelLightSpec(chunks.palette, value)
             if (!spec) return
@@ -116,14 +115,14 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
             const key = `${wx},${wy},${wz}`
             sources.set(key, { key, chunkKey: ck, x: wx + 0.5, y: wy + 0.5, z: wz + 0.5, spec })
         })
-        scannedVersion.set(ck, chunk.version)
+        scannedVersion.set(chunk, chunk.version)
     }
 
     function fullRescan(): void {
         sources.clear()
         scannedVersion.clear()
         for (const chunk of chunks.allChunks()) {
-            scanChunk(chunk.cx, chunk.cy, chunk.cz)
+            scanChunk(chunk)
         }
     }
 
@@ -144,21 +143,8 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
         }
     }
 
-    function fingerprintPalette(): string {
-        // Length-prefix + per-entry emissive/light fields. Cheap to recompute
-        // (we run it once per frame); changes only when an editor user
-        // touches the palette UI, so the resulting full rescan is rare.
-        const parts: string[] = [String(chunks.palette.entries.length)]
-        for (const entry of chunks.palette.entries) {
-            const e = entry.emissive ?? [0, 0, 0]
-            const lc = entry.lightColor ?? entry.emissive ?? entry.color
-            parts.push(
-                `${e[0]},${e[1]},${e[2]}|${entry.emissiveIntensity ?? 0}|` +
-                `${lc[0]},${lc[1]},${lc[2]}|${entry.lightIntensity ?? 0}|` +
-                `${entry.lightDistance ?? 0}|${entry.lightCastsShadow ? 1 : 0}`,
-            )
-        }
-        return parts.join(';')
+    function fingerprintPalette(): number {
+        return hashLightPalette(chunks.palette)
     }
 
     return {
@@ -175,9 +161,8 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
                 fullRescan()
             } else {
                 for (const chunk of chunks.allChunks()) {
-                    const ck = chunkKey(chunk.cx, chunk.cy, chunk.cz)
-                    if (scannedVersion.get(ck) === chunk.version) continue
-                    scanChunk(chunk.cx, chunk.cy, chunk.cz)
+                    if (scannedVersion.get(chunk) === chunk.version) continue
+                    scanChunk(chunk)
                 }
             }
             syncPool(camera())
@@ -188,6 +173,47 @@ export function createBlockLightSystem(chunks: ChunkManager, opts: BlockLightSys
             scannedVersion.clear()
         },
     }
+}
+
+/**
+ * Numeric fingerprint of the palette's emissive/light fields. Replaces a
+ * per-frame ~40-entry string build with an allocation-free fold, so the
+ * editor-palette-edit guard costs nothing at runtime (where the palette is
+ * fixed). Changes only when an emissive/light field changes ⇒ one rescan.
+ */
+function hashLightPalette(palette: Palette): number {
+    let h = 0x811c9dc5
+    h = foldByte(h, palette.entries.length)
+    for (const entry of palette.entries) {
+        const e = entry.emissive
+        const lc = entry.lightColor ?? entry.emissive ?? entry.color
+        h = foldNum(h, e ? e[0] : 0)
+        h = foldNum(h, e ? e[1] : 0)
+        h = foldNum(h, e ? e[2] : 0)
+        h = foldNum(h, entry.emissiveIntensity ?? 0)
+        h = foldNum(h, lc[0])
+        h = foldNum(h, lc[1])
+        h = foldNum(h, lc[2])
+        h = foldNum(h, entry.lightIntensity ?? 0)
+        h = foldNum(h, entry.lightDistance ?? 0)
+        h = foldByte(h, entry.lightCastsShadow ? 1 : 0)
+    }
+    return h >>> 0
+}
+
+/** Fold a (quantised) float into an FNV-1a-style hash, byte by byte. */
+function foldNum(h: number, v: number): number {
+    let q = Math.round(v * 1000) | 0
+    h = foldByte(h, q & 0xff)
+    q >>= 8
+    h = foldByte(h, q & 0xff)
+    q >>= 8
+    h = foldByte(h, q & 0xff)
+    return h
+}
+
+function foldByte(h: number, byte: number): number {
+    return Math.imul((h ^ (byte & 0xff)) >>> 0, 16777619) >>> 0
 }
 
 export function selectNearestSources(

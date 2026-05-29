@@ -14,7 +14,7 @@ import type { AudioEngine, SoundHandle, Vec3Like } from '../engine/audio'
 import type { System } from '../engine/ecs/systems/system'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import { PlayerControlled, Position } from '../engine/ecs/components'
-import { CHUNK_DIM, chunkKey, type ChunkKey } from '../engine/voxel/chunk'
+import { CHUNK_DIM } from '../engine/voxel/chunk'
 import { RENDER_LAYER } from '../engine/render/render-layers'
 import type { Chunk } from '../engine/voxel/chunk'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
@@ -103,6 +103,10 @@ interface TorchRecord {
 
 interface ChunkSnapshot {
     version: number
+    /** Sync pass that last visited this chunk — chunks not visited in the
+     *  current pass have vanished and get released. Avoids a per-frame
+     *  `seenChunks` Set + `chunkKey` string. */
+    epoch: number
     torchKeys: Set<string>
 }
 
@@ -182,7 +186,10 @@ export function createTorchBlockRenderSystem(
     opts: TorchBlockRenderOptions = {},
 ): System {
     const records = new Map<string, TorchRecord>()
-    const chunkSnapshots = new Map<ChunkKey, ChunkSnapshot>()
+    // Keyed by the Chunk object so the per-frame change scan never builds a
+    // `chunkKey` string; `syncEpoch` marks visited chunks for vanish-detection.
+    const chunkSnapshots = new Map<Chunk, ChunkSnapshot>()
+    let syncEpoch = 0
     let paletteSignature = palettePropSignature(chunks)
     const maxInstances = Math.max(1, Math.floor(opts.maxInstances ?? DEFAULT_MAX_INSTANCES))
     const lightsEnabled = opts.lightsEnabled !== false
@@ -420,8 +427,8 @@ export function createTorchBlockRenderSystem(
         record.sound?.setPosition(soundPosition(record))
     }
 
-    function syncChunk(chunk: Chunk, key: ChunkKey): void {
-        const prev = chunkSnapshots.get(key)
+    function syncChunk(chunk: Chunk): void {
+        const prev = chunkSnapshots.get(chunk)
         const baseX = chunk.cx * CHUNK_DIM
         const baseY = chunk.cy * CHUNK_DIM
         const baseZ = chunk.cz * CHUNK_DIM
@@ -483,7 +490,7 @@ export function createTorchBlockRenderSystem(
                 records.delete(oldKey)
             }
         }
-        chunkSnapshots.set(key, { version: chunk.version, torchKeys: newKeys })
+        chunkSnapshots.set(chunk, { version: chunk.version, epoch: syncEpoch, torchKeys: newKeys })
     }
 
     function syncTorches(): void {
@@ -492,17 +499,18 @@ export function createTorchBlockRenderSystem(
             paletteSignature = palSig
             for (const snapshot of chunkSnapshots.values()) snapshot.version = -1
         }
-        const seenChunks = new Set<ChunkKey>()
+        syncEpoch++
         for (const chunk of chunks.allChunks()) {
-            const key = chunkKey(chunk.cx, chunk.cy, chunk.cz)
-            seenChunks.add(key)
-            const snapshot = chunkSnapshots.get(key)
-            if (snapshot && snapshot.version === chunk.version) continue
-            syncChunk(chunk, key)
+            const snapshot = chunkSnapshots.get(chunk)
+            if (snapshot && snapshot.version === chunk.version) {
+                snapshot.epoch = syncEpoch
+                continue
+            }
+            syncChunk(chunk)
         }
-        for (const key of chunkSnapshots.keys()) {
-            if (seenChunks.has(key)) continue
-            const snapshot = chunkSnapshots.get(key)!
+        // Release torches in chunks that vanished (not visited this pass).
+        for (const [chunk, snapshot] of chunkSnapshots) {
+            if (snapshot.epoch === syncEpoch) continue
             for (const torchKey of snapshot.torchKeys) {
                 const record = records.get(torchKey)
                 if (!record) continue
@@ -510,7 +518,7 @@ export function createTorchBlockRenderSystem(
                 releaseSlot(record.slot)
                 records.delete(torchKey)
             }
-            chunkSnapshots.delete(key)
+            chunkSnapshots.delete(chunk)
         }
     }
 
@@ -833,13 +841,16 @@ function distanceSquared(a: Vec3Like, b: Vec3Like): number {
     return dx * dx + dy * dy + dz * dz
 }
 
-function palettePropSignature(chunks: ChunkManager): string {
-    let sig = ''
+/** Allocation-free numeric fingerprint of the palette's `renderAs` fields —
+ *  replaces a per-frame string build. Changes only when an editor palette edit
+ *  toggles a block's prop renderer, triggering a torch resync. */
+function palettePropSignature(chunks: ChunkManager): number {
+    let h = 0x811c9dc5
     for (const entry of chunks.palette.entries) {
-        sig += entry.renderAs ?? ''
-        sig += ','
+        const code = entry.renderAs === 'torch' ? 1 : entry.renderAs === 'torch-off' ? 2 : 0
+        h = Math.imul((h ^ code) >>> 0, 16777619) >>> 0
     }
-    return sig
+    return h >>> 0
 }
 
 function mountSignature(mount: TorchMount): string {
