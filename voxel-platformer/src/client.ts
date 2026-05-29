@@ -34,6 +34,7 @@ import { DEMO_LEVEL_ID } from './game/procedural-level-ids'
 import { getProceduralLevelDefinition, type ProceduralScriptSources } from './game/procedural-levels'
 import { spawnPlayer } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
+import { createIndoorCutSystem } from './game/indoor-cut-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
 import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/render-layers'
 import { disposeObject3D } from './engine/render/dispose-object'
@@ -161,6 +162,7 @@ async function main(): Promise<void> {
         stoneSpawner: createSystemSlot('stoneSpawner', true, FixedOrder.input + 10),
         blockLights: createSystemSlot('blockLights', false, RenderOrder.blockLights),
         chunkRender: createSystemSlot('chunkRender', false, RenderOrder.worldRender),
+        indoorCut: createSystemSlot('indoorCut', false, RenderOrder.worldRender - 1),
         torchBlocks: createSystemSlot('torchBlocks', false, RenderOrder.worldRender + 2),
     }
     const allSlots = Object.values(slots)
@@ -288,7 +290,17 @@ async function main(): Promise<void> {
 
     function installLocationSystems(location: ActiveLocation, initialFlags?: ReadonlyMap<string, FlagValue>): void {
         const meta = location.meta
-        const chunkRenderer = new ChunkRenderer(renderer.scene, chunks)
+        // Mesh streaming: keep only chunks near the camera target (which
+        // follows the player) meshed, and spread (re)meshing across frames so
+        // large locations never stall on load or on a cut change. Voxel data
+        // stays fully resident — this bounds meshing + draw cost, not memory.
+        const chunkRenderer = new ChunkRenderer(renderer.scene, chunks, {
+            streaming: {
+                focus: () => renderer.iso.target,
+                radiusChunks: 6,
+                budgetPerFrame: 6,
+            },
+        })
         chunkRenderer.rebuildAll()
         const environmentFx = createEnvironmentFxSystem(
             renderer.scene,
@@ -362,6 +374,9 @@ async function main(): Promise<void> {
             update: () => chunkRenderer.update(),
             dispose: () => chunkRenderer.dispose(),
         })
+        slots.indoorCut.set(createIndoorCutSystem(chunks, {
+            setCutY: (y) => chunkRenderer.setCutY(y),
+        }))
         slots.torchBlocks.set(
             getTorchSystem() === 'experimental'
                 ? createTorchBlockRenderSystemV2(renderer.scene, chunks, {
@@ -484,6 +499,7 @@ async function main(): Promise<void> {
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(slots.blockLights.system, 'blockLights')
         .addSystem(slots.chunkRender.system, 'chunkRender')
+        .addSystem(slots.indoorCut.system, 'indoorCut')
         .addSystem(slots.torchBlocks.system, 'torchBlocks')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
