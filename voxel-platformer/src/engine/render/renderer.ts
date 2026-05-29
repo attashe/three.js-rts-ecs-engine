@@ -1,7 +1,19 @@
-import { ACESFilmicToneMapping, Color, PCFSoftShadowMap, Scene } from 'three'
+import { ACESFilmicToneMapping, Color, PCFSoftShadowMap, Scene, type Camera } from 'three'
 import { WebGPURenderer } from 'three/webgpu'
 import { IsometricCamera } from './isometric-camera'
 import { StatsHUD } from './stats-hud'
+
+/**
+ * Optional perspective backdrop drawn behind the orthographic world. The
+ * renderer draws `scene` with `camera` first (clearing colour + depth to the
+ * backdrop's sky), then clears depth and draws the main ortho scene on top —
+ * so a deep, foreshortened distant vista (which an ortho camera can't produce)
+ * sits behind the crisp isometric gameplay. See `createBackdropPass`.
+ */
+export interface RendererBackdrop {
+    readonly scene: Scene
+    readonly camera: Camera
+}
 
 export class WebGPUUnavailableError extends Error {
     constructor() {
@@ -31,6 +43,7 @@ export class Renderer {
     readonly iso: IsometricCamera
     readonly webgpu: WebGPURenderer
     readonly stats: StatsHUD
+    private backdrop: RendererBackdrop | null = null
 
     constructor() {
         if (!('gpu' in navigator) || navigator.gpu == null) {
@@ -74,7 +87,27 @@ export class Renderer {
         this.stats.update(dt)
     }
 
+    /** Install (or clear with `null`) a perspective backdrop drawn behind the
+     *  ortho world. The main scene must leave its `background` null so the
+     *  backdrop's sky shows through. */
+    setBackdrop(backdrop: RendererBackdrop | null): void {
+        this.backdrop = backdrop
+    }
+
     render(): void {
+        const bp = this.backdrop
+        if (bp) {
+            // Pass 1: backdrop (clears colour to its sky + depth).
+            this.webgpu.autoClear = true
+            this.webgpu.render(bp.scene, bp.camera)
+            // Pass 2: ortho world on top — keep the backdrop colour, drop its
+            // depth so near geometry isn't occluded by far ranges.
+            this.webgpu.autoClear = false
+            this.webgpu.clearDepth()
+            this.webgpu.render(this.scene, this.iso.camera)
+            this.webgpu.autoClear = true
+            return
+        }
         this.webgpu.render(this.scene, this.iso.camera)
     }
 
