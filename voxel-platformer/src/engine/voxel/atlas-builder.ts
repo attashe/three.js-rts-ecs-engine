@@ -54,6 +54,11 @@ const PAINTERS: Record<TileName, TilePainter> = {
     leaf: paintLeaf,
     plank: paintPlank,
     cloud: paintCloud,
+    roof: paintRoof,
+    thatch: paintThatch,
+    plaster: paintPlaster,
+    glass: paintGlass,
+    metal: paintMetal,
 }
 
 export function buildVoxelAtlas(): AtlasBuildResult {
@@ -316,5 +321,80 @@ function paintCloud(rgba: Uint8Array, originX: number, originY: number): void {
                 }
             }
         }
+    }
+}
+
+/** Roof tile — staggered rows with shallow shadow joints. */
+function paintRoof(rgba: Uint8Array, originX: number, originY: number): void {
+    fillTile(rgba, originX, originY, 0.97)
+    const tileH = 6
+    const tileW = 10
+    for (let y = 0; y < TILE_SIZE; y++) {
+        const row = Math.floor(y / tileH)
+        const rowY = y % tileH
+        const offset = (row % 2) * Math.floor(tileW / 2)
+        for (let x = 0; x < TILE_SIZE; x++) {
+            const localX = (x + offset) % tileW
+            if (rowY === 0 || localX === 0) setLum(rgba, originX + x, originY + y, 0.70)
+            else if (rowY === 1) setLum(rgba, originX + x, originY + y, 0.86)
+        }
+    }
+}
+
+/** Thatch — loose diagonal straw lines over a warm base. */
+function paintThatch(rgba: Uint8Array, originX: number, originY: number): void {
+    const rng = makeRng(8008)
+    fillTile(rgba, originX, originY, 0.98)
+    for (let i = 0; i < 34; i++) {
+        let x = Math.floor(rng() * TILE_SIZE)
+        let y = Math.floor(rng() * TILE_SIZE)
+        const len = 3 + Math.floor(rng() * 8)
+        const slope = rng() < 0.5 ? -1 : 1
+        const lum = 0.72 + rng() * 0.16
+        for (let s = 0; s < len; s++) {
+            if (x >= 0 && x < TILE_SIZE && y >= 0 && y < TILE_SIZE) setLum(rgba, originX + x, originY + y, lum)
+            x += 1
+            if (rng() < 0.55) y += slope
+        }
+    }
+}
+
+/** Plaster — mostly smooth with a few soft flecks. */
+function paintPlaster(rgba: Uint8Array, originX: number, originY: number): void {
+    const rng = makeRng(9009)
+    fillTile(rgba, originX, originY, 0.98)
+    for (let y = 0; y < TILE_SIZE; y++) {
+        for (let x = 0; x < TILE_SIZE; x++) {
+            if (rng() < 0.075) setLum(rgba, originX + x, originY + y, 0.80 + rng() * 0.14)
+        }
+    }
+}
+
+/** Glass — clean diagonal highlights and a darker lower edge. */
+function paintGlass(rgba: Uint8Array, originX: number, originY: number): void {
+    fillTile(rgba, originX, originY, 0.98)
+    for (let y = 0; y < TILE_SIZE; y++) {
+        for (let x = 0; x < TILE_SIZE; x++) {
+            if (Math.abs((x - y) - 4) <= 1 || Math.abs((x - y) - 16) <= 1) {
+                setLum(rgba, originX + x, originY + y, 1.0)
+            } else if (y > TILE_SIZE - 4 || x < 2) {
+                setLum(rgba, originX + x, originY + y, 0.84)
+            }
+        }
+    }
+}
+
+/** Metal — broad bands and tiny rivet dots. */
+function paintMetal(rgba: Uint8Array, originX: number, originY: number): void {
+    const rng = makeRng(10010)
+    fillTile(rgba, originX, originY, 0.96)
+    for (let y = 0; y < TILE_SIZE; y++) {
+        const band = Math.sin(y * 0.52) * 0.04
+        for (let x = 0; x < TILE_SIZE; x++) setLum(rgba, originX + x, originY + y, 0.93 + band)
+    }
+    for (let i = 0; i < 8; i++) {
+        const x = Math.floor(rng() * TILE_SIZE)
+        const y = Math.floor(rng() * TILE_SIZE)
+        setLum(rgba, originX + x, originY + y, 0.66)
     }
 }

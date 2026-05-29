@@ -109,6 +109,30 @@ export const BLOCK = {
     torch: 14,
     unlitLantern: 15,
     lava: 16,
+    woodDark: 17,
+    bark: 18,
+    barkDark: 19,
+    barkLight: 20,
+    leafDark: 21,
+    leafLight: 22,
+    deepLeaf: 23,
+    fruit: 24,
+    flower: 25,
+    mushroom: 26,
+    wall: 27,
+    plaster: 28,
+    roof: 29,
+    roofDark: 30,
+    thatch: 31,
+    trim: 32,
+    glass: 33,
+    darkStone: 34,
+    stone2: 35,
+    metal: 36,
+    banner: 37,
+    moss: 38,
+    smoke: 39,
+    fire: 40,
 } as const
 
 /**
@@ -209,6 +233,93 @@ export const DEFAULT_PALETTE: Palette = {
             emissiveIntensity: 0.9,
             movement: { contactHazard: 'lava' },
             liquid: 'lava',
+        },
+        { name: 'dark wood', color: [0.34, 0.21, 0.11], solid: true, textureKey: 'wood' },
+        { name: 'bark', color: [0.44, 0.27, 0.14], solid: true, textureKey: 'wood' },
+        { name: 'dark bark', color: [0.24, 0.15, 0.09], solid: true, textureKey: 'wood' },
+        { name: 'light bark', color: [0.72, 0.69, 0.63], solid: true, textureKey: 'wood' },
+        { name: 'dark leaf', color: [0.11, 0.34, 0.17], solid: true, textureKey: 'leaf' },
+        { name: 'light leaf', color: [0.44, 0.73, 0.33], solid: true, textureKey: 'leaf' },
+        { name: 'deep leaf', color: [0.08, 0.28, 0.15], solid: true, textureKey: 'leaf' },
+        {
+            name: 'fruit',
+            color: [0.84, 0.35, 0.30],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+        },
+        {
+            name: 'flower',
+            color: [0.95, 0.84, 0.42],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+        },
+        {
+            name: 'mushroom',
+            color: [0.90, 0.82, 0.65],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+        },
+        { name: 'wall', color: [0.65, 0.56, 0.40], solid: true, textureKey: 'plaster' },
+        { name: 'plaster', color: [0.85, 0.81, 0.69], solid: true, textureKey: 'plaster' },
+        { name: 'roof', color: [0.55, 0.18, 0.14], solid: true, textureKey: 'roof' },
+        { name: 'dark roof', color: [0.34, 0.11, 0.09], solid: true, textureKey: 'roof' },
+        { name: 'thatch', color: [0.72, 0.58, 0.31], solid: true, textureKey: 'thatch' },
+        { name: 'trim', color: [0.94, 0.91, 0.78], solid: true, textureKey: 'plank' },
+        {
+            name: 'glass',
+            color: [0.57, 0.84, 0.93],
+            solid: true,
+            occludesFaces: false,
+            opacity: 0.72,
+            textureKey: 'glass',
+        },
+        { name: 'dark stone', color: [0.27, 0.32, 0.36], solid: true, textureKey: 'stone' },
+        { name: 'stone 2', color: [0.48, 0.54, 0.57], solid: true, textureKey: 'stone' },
+        { name: 'metal', color: [0.47, 0.51, 0.54], solid: true, textureKey: 'metal' },
+        { name: 'banner', color: [0.72, 0.20, 0.23], solid: true, textureKey: 'plaster' },
+        {
+            name: 'moss',
+            color: [0.30, 0.55, 0.30],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            textureKey: 'leaf',
+        },
+        {
+            name: 'smoke',
+            color: [0.59, 0.63, 0.66],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: false,
+            pathSurface: false,
+            opacity: 0.38,
+        },
+        {
+            name: 'fire',
+            color: [1.00, 0.63, 0.26],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: false,
+            pathSurface: false,
+            opacity: 0.82,
+            emissive: [1.00, 0.42, 0.08],
+            emissiveIntensity: 1.35,
+            lightColor: [1.00, 0.45, 0.12],
+            lightIntensity: 4.0,
+            lightDistance: 7,
         },
     ],
 }
@@ -364,6 +475,7 @@ export function appendMissingDefaultPaletteEntries(palette: Palette): void {
     appendMissingSpecialBlock(palette, BLOCK.torch)
     appendMissingSpecialBlock(palette, BLOCK.unlitLantern)
     appendMissingLiquidBlock(palette, 'lava', BLOCK.lava)
+    appendMissingStructureBlocks(palette)
 }
 
 function normalizeNoWalkBlock(palette: Palette): void {
@@ -400,6 +512,54 @@ function appendMissingLiquidBlock(palette: Palette, kind: LiquidBlockKind, defau
     const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
     if (defaultEntry?.liquid !== kind) return
     const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
+    entry.name = uniquePaletteName(palette, entry.name)
+    palette.entries.push(entry)
+}
+
+const DEFAULT_STRUCTURE_BLOCKS = [
+    BLOCK.woodDark,
+    BLOCK.bark,
+    BLOCK.barkDark,
+    BLOCK.barkLight,
+    BLOCK.leafDark,
+    BLOCK.leafLight,
+    BLOCK.deepLeaf,
+    BLOCK.fruit,
+    BLOCK.flower,
+    BLOCK.mushroom,
+    BLOCK.wall,
+    BLOCK.plaster,
+    BLOCK.roof,
+    BLOCK.roofDark,
+    BLOCK.thatch,
+    BLOCK.trim,
+    BLOCK.glass,
+    BLOCK.darkStone,
+    BLOCK.stone2,
+    BLOCK.metal,
+    BLOCK.banner,
+    BLOCK.moss,
+    BLOCK.smoke,
+    BLOCK.fire,
+] as const
+
+function appendMissingStructureBlocks(palette: Palette): void {
+    for (const index of DEFAULT_STRUCTURE_BLOCKS) {
+        appendMissingDefaultBlockByName(palette, index)
+    }
+}
+
+function appendMissingDefaultBlockByName(palette: Palette, defaultIndex: number): void {
+    const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
+    if (!defaultEntry) return
+    if (palette.entries.some((entry) => entry.name === defaultEntry.name)) return
+
+    const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
+    if (palette.entries.length === defaultIndex) {
+        palette.entries.push(entry)
+        return
+    }
+
     entry.name = uniquePaletteName(palette, entry.name)
     palette.entries.push(entry)
 }

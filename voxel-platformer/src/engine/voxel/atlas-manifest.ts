@@ -46,6 +46,11 @@ export const TILE_NAMES = [
     'leaf',
     'plank',
     'cloud',
+    'roof',
+    'thatch',
+    'plaster',
+    'glass',
+    'metal',
 ] as const
 
 export type TileName = (typeof TILE_NAMES)[number]
