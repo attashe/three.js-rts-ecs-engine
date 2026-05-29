@@ -376,6 +376,7 @@ async function main(): Promise<void> {
         })
         slots.indoorCut.set(createIndoorCutSystem(chunks, {
             setCutY: (y) => chunkRenderer.setCutY(y),
+            viewpoint: () => renderer.iso.camera.position,
         }))
         slots.torchBlocks.set(
             getTorchSystem() === 'experimental'
