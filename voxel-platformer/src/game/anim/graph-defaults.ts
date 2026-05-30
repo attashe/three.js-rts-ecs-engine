@@ -15,8 +15,21 @@ const WALK_OFF = 0.4
 const RUN_ON = 3.2
 const RUN_OFF = 3.0
 const LAND_SECONDS = 0.22
+const ATTACK_SECONDS = 0.42
+const SHOOT_SECONDS = 0.55
+// Duration of the `die` topple before settling into the held `dead` pose.
+const DIE_SECONDS = 0.7
+
+/** Living states death can interrupt. Enumerated (rather than `from: '*'`) so the
+ *  terminal `dead` state can't re-trigger `die` on itself. */
+const LIVING_STATES = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'shoot'] as const
 
 export const LOCOMOTION_GRAPH_ID = 'humanoid.locomotion'
+export const COMBAT_GRAPH_ID = 'humanoid.combatLocomotion'
+
+/** Param names for the combat overlay. `attack` (melee swipe) and `shoot` (bow)
+ *  are one-shot triggers; `dead` latches (once dead, stay dead). */
+export const COMBAT_PARAM = { attack: 'attack', shoot: 'shoot', dead: 'dead' } as const
 
 export function locomotionGraph(): AnimGraphDef {
     return {
@@ -70,6 +83,66 @@ export function locomotionGraph(): AnimGraphDef {
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<', value: RUN_OFF }] },
             { from: 'run', to: 'idle',
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<', value: WALK_OFF }] },
+        ],
+    }
+}
+
+/**
+ * Locomotion + combat: the base graph plus a one-shot `attack` swing and a
+ * terminal `dead` state. Used by the part-based player/NPC rigs. The reference
+ * rig / glb path keeps using `locomotionGraph()` (which has no attack/die clips).
+ */
+export function combatLocomotionGraph(): AnimGraphDef {
+    const base = locomotionGraph()
+    const C = COMBAT_PARAM
+    return {
+        ...base,
+        id: COMBAT_GRAPH_ID,
+        params: [
+            ...base.params ?? [],
+            { name: C.attack, default: 0, trigger: true },
+            { name: C.shoot, default: 0, trigger: true },
+            { name: C.dead, default: 0 },
+        ],
+        states: [
+            ...base.states,
+            { id: 'attack', loop: 'once' },
+            { id: 'shoot', loop: 'once' },
+            // Death: `die` topples the body (clamps its last frame), then settles
+            // into the looping `dead` lying pose. Both terminal.
+            { id: 'die', loop: 'clamp' },
+            { id: 'dead', loop: 'loop' },
+        ],
+        transitions: [
+            // Death preempts everything: each living state can fall into `die`.
+            ...LIVING_STATES.map((from) => ({
+                from, to: 'die', priority: 1000, blendSeconds: 0.12,
+                conditions: [{ param: C.dead, op: '==' as const, value: 1 }],
+            })),
+            // Settle into the held lying pose once the topple has played out.
+            { from: 'die', to: 'dead', priority: 1000, minTimeInState: DIE_SECONDS,
+                conditions: [{ param: C.dead, op: '==', value: 1 }] },
+            // Attack: one-shot, above locomotion/airborne; airborne (pri 100/90)
+            // still interrupts mid-swing once the trigger has cleared.
+            { from: '*', to: 'attack', priority: 200, blendSeconds: 0.06,
+                conditions: [{ param: C.attack, op: '==', value: 1 }] },
+            // Return to locomotion once the swing has read.
+            { from: 'attack', to: 'run', priority: 12, minTimeInState: ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
+            { from: 'attack', to: 'walk', priority: 11, minTimeInState: ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
+            { from: 'attack', to: 'idle', priority: 10, minTimeInState: ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
+            // Shoot: one-shot bow draw + release, same precedence as attack.
+            { from: '*', to: 'shoot', priority: 200, blendSeconds: 0.06,
+                conditions: [{ param: C.shoot, op: '==', value: 1 }] },
+            { from: 'shoot', to: 'run', priority: 12, minTimeInState: SHOOT_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
+            { from: 'shoot', to: 'walk', priority: 11, minTimeInState: SHOOT_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
+            { from: 'shoot', to: 'idle', priority: 10, minTimeInState: SHOOT_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
+            ...base.transitions,
         ],
     }
 }

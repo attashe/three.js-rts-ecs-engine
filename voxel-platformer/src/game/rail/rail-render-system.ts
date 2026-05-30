@@ -33,7 +33,9 @@ interface RailRecord {
     slot: number
     bucketKey: string
     shape: RailShapeInfo
+    x: number
     y: number
+    z: number
 }
 
 interface ChunkSnapshot {
@@ -87,6 +89,7 @@ export function createRailRenderSystem(
     const snapshots = new Map<ChunkKey, ChunkSnapshot>()
     const buckets = new Map<string, Bucket>()
     let lastCutY: number | null | undefined
+    let lastChunkRevision = -1
 
     function ensureBucket(shape: RailShapeInfo): Bucket {
         const key = bucketKey(shape)
@@ -96,9 +99,9 @@ export function createRailRenderSystem(
         const mesh = new InstancedMesh(geometryForShape(shape), railMaterial(), capacity)
         mesh.name = `Rail:${key}`
         mesh.count = 0
-        mesh.castShadow = true
+        mesh.castShadow = false
         mesh.receiveShadow = true
-        mesh.frustumCulled = false
+        mesh.frustumCulled = true
         scene.add(mesh)
         bucket = {
             mesh,
@@ -129,9 +132,9 @@ export function createRailRenderSystem(
         const nextMesh = new InstancedMesh(geometryForShape(bucket.shape), railMaterial(), nextCapacity)
         nextMesh.name = `Rail:${bucketKeyValue}`
         nextMesh.count = bucket.liveCount
-        nextMesh.castShadow = true
+        nextMesh.castShadow = false
         nextMesh.receiveShadow = true
-        nextMesh.frustumCulled = false
+        nextMesh.frustumCulled = true
         for (let slot = 0; slot < bucket.liveCount; slot++) {
             bucket.mesh.getMatrixAt(slot, tmpMatrix)
             nextMesh.setMatrixAt(slot, tmpMatrix)
@@ -164,10 +167,10 @@ export function createRailRenderSystem(
         bucket.dirty = true
     }
 
-    function writeRecord(record: RailRecord, x: number, y: number, z: number): void {
+    function writeRecord(record: RailRecord): void {
         const bucket = buckets.get(record.bucketKey)
         if (!bucket) return
-        tmpPos.set(x + 0.5, y, z + 0.5)
+        tmpPos.set(record.x + 0.5, record.y, record.z + 0.5)
         tmpQuat.identity()
         tmpMatrix.compose(tmpPos, tmpQuat, tmpScale)
         bucket.mesh.setMatrixAt(record.slot, tmpMatrix)
@@ -187,12 +190,14 @@ export function createRailRenderSystem(
             const bucket = ensureBucket(shape)
             if (bucket.liveCount >= maxInstances) return
             const slot = allocateSlot(nextBucketKey, bucket, key)
-            record = { key, slot, bucketKey: nextBucketKey, shape, y: wy }
+            record = { key, slot, bucketKey: nextBucketKey, shape, x: wx, y: wy, z: wz }
             records.set(key, record)
         }
         record.shape = shape
+        record.x = wx
         record.y = wy
-        writeRecord(record, wx, wy, wz)
+        record.z = wz
+        writeRecord(record)
     }
 
     function syncChunk(chunk: Chunk, key: ChunkKey): void {
@@ -225,6 +230,9 @@ export function createRailRenderSystem(
     }
 
     function syncRails(): void {
+        const revision = chunks.revision()
+        if (revision === lastChunkRevision) return
+        lastChunkRevision = revision
         const seen = new Set<ChunkKey>()
         for (const chunk of chunks.allChunks()) {
             const key = chunkKey(chunk.cx, chunk.cy, chunk.cz)
@@ -253,13 +261,11 @@ export function createRailRenderSystem(
         lastCutY = cutY
         if (cutY === null) {
             for (const record of records.values()) {
-                const [x, y, z] = record.key.split(',').map(Number) as [number, number, number]
-                writeRecord(record, x, y, z)
+                writeRecord(record)
             }
             return
         }
         for (const record of records.values()) {
-            const [x, y, z] = record.key.split(',').map(Number) as [number, number, number]
             const bucket = buckets.get(record.bucketKey)
             if (!bucket) continue
             if (record.y > cutY) {
@@ -267,7 +273,7 @@ export function createRailRenderSystem(
                 bucket.mesh.setMatrixAt(record.slot, tmpMatrix)
                 bucket.dirty = true
             } else {
-                writeRecord(record, x, y, z)
+                writeRecord(record)
             }
         }
     }
@@ -276,6 +282,7 @@ export function createRailRenderSystem(
         for (const bucket of buckets.values()) {
             if (!bucket.dirty) continue
             bucket.mesh.instanceMatrix.needsUpdate = true
+            bucket.mesh.computeBoundingSphere()
             bucket.dirty = false
         }
     }
@@ -365,7 +372,7 @@ function buildRailGeometry(shape: RailShapeInfo): BufferGeometry {
         parts.push(box(0.06, 0.05, 0.36, -0.18, 0.09, 0, 0.55, 0.56, 0.56))
         parts.push(box(0.06, 0.05, 0.36, 0.18, 0.09, 0, 0.55, 0.56, 0.56))
     } else {
-        addTie(parts, 0, 0)
+        addTie(parts, 0, 0, centerTieRunsEastWest(addNorth, addEast, addSouth, addWest))
         if (addNorth) addTie(parts, 0, -0.34, false, tieHeightOffset(shape.slopes[RailDirection.North]))
         if (addEast) addTie(parts, 0.34, 0, true, tieHeightOffset(shape.slopes[RailDirection.East]))
         if (addSouth) addTie(parts, 0, 0.34, false, tieHeightOffset(shape.slopes[RailDirection.South]))
@@ -376,6 +383,12 @@ function buildRailGeometry(shape: RailShapeInfo): BufferGeometry {
     for (const part of parts) part.dispose()
     if (!merged) throw new Error(`buildRailGeometry: failed to merge ${bucketKey(shape)}`)
     return merged
+}
+
+function centerTieRunsEastWest(addNorth: boolean, addEast: boolean, addSouth: boolean, addWest: boolean): boolean {
+    const hasNorthSouth = addNorth || addSouth
+    const hasEastWest = addEast || addWest
+    return hasEastWest && !hasNorthSouth
 }
 
 function addSegment(parts: BufferGeometry[], dir: RailDirection, slope: RailSlopeDelta): void {

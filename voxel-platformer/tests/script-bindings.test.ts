@@ -7,6 +7,7 @@ import type {
     ChunksFacade,
     FlagValue,
     LogFacade,
+    NpcFacade,
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
@@ -216,6 +217,39 @@ test('audio bindings forward id and opts', () => {
     ctx.audio.stop(handle, { fade: 0.5 })
     assert.deepEqual(s.calls.audioPlay, [{ id: 'sfx.gate', opts: { volume: 0.5, fade: 1.5, loop: true } }])
     assert.equal(Array.isArray(s.calls.audioStop) && s.calls.audioStop.length, 1)
+})
+
+test('npc bindings forward attack/die/exists/list through the facade', () => {
+    const s = stubs()
+    const calls: unknown[] = []
+    const live = new Set(['troll', 'keeper'])
+    const npc: NpcFacade = {
+        attack(id) { calls.push({ type: 'attack', id }); return live.has(id) },
+        die(id) { calls.push({ type: 'die', id }); return live.delete(id) },
+        exists(id) { return live.has(id) },
+        list() { return [...live] },
+    }
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, npc, flags: new Map() })
+
+    assert.equal(ctx.npc.attack('troll'), true)
+    assert.equal(ctx.npc.attack('ghost'), false)
+    assert.deepEqual(ctx.npc.list().sort(), ['keeper', 'troll'])
+    assert.equal(ctx.npc.die('troll'), true)
+    assert.equal(ctx.npc.exists('troll'), false)
+    assert.deepEqual(calls, [
+        { type: 'attack', id: 'troll' },
+        { type: 'attack', id: 'ghost' },
+        { type: 'die', id: 'troll' },
+    ])
+})
+
+test('npc bindings are a safe no-op when no facade is provided', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+    assert.equal(ctx.npc.attack('troll'), false)
+    assert.equal(ctx.npc.die('troll'), false)
+    assert.equal(ctx.npc.exists('troll'), false)
+    assert.deepEqual(ctx.npc.list(), [])
 })
 
 test('travel bindings forward location changes and reload requests', () => {

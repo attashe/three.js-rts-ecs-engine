@@ -165,6 +165,18 @@ writeWav('high-jump.wav', mix(0.64, [
     rumble(0.00, 0.64, 62, 0.15, 6321),
 ]))
 
+// Air Push - a short pressure-wave spell cue. Dark filtered air and
+// a low body impact keep it grounded; no bright rising pitch sweep, so
+// it reads as forceful air pressure instead of cartoon magic.
+writeWav('air-push.wav', mix(0.66, [
+    kick(0.00, 0.10),
+    chirpNoise(0.00, 0.50, 920, 150, 0.32, 6401),
+    filteredNoise(0.02, 0.56, 0.18, 360, 6411),
+    filteredNoise(0.00, 0.18, 0.07, 1450, 6421),
+    noiseBurst(0.00, 0.026, 0.18, 6431),
+    rumble(0.00, 0.62, 48, 0.12, 6441),
+]))
+
 writeWav('death-stinger.wav', noteSequence(1.35, [
     { start: 0.00, end: 0.28, hz: 392, amp: 0.54 },
     { start: 0.24, end: 0.58, hz: 330, amp: 0.50 },

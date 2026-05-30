@@ -62,6 +62,10 @@ const expected = {
         bytes: 14156,
         sha256: '05f69126a89b281c6a49b1a1792c58fc07f2080039ba0f7ef4db3f0ac721098b',
     },
+    'air-push.wav': {
+        bytes: 14597,
+        sha256: '95fdf0c524998b1455f7fea6b791fd3aa72f488fcab40a173860ea162ddcf34b',
+    },
 
     // ── Music loops ───────────────────────────────────────────────
     'background-loop.wav': {

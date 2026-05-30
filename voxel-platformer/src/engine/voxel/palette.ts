@@ -51,7 +51,7 @@ export interface PaletteEntry {
      *  diagnose the shadow pipeline. */
     lightCastsShadow?: boolean
     /** Optional non-cube prop renderer for authored special blocks. */
-    renderAs?: 'torch' | 'torch-off' | 'rail'
+    renderAs?: 'torch' | 'torch-off' | 'rail' | 'fence'
     /** Optional animated liquid surface rendered on exposed top faces. */
     liquid?: 'water' | 'lava'
     /**
@@ -137,6 +137,7 @@ export const BLOCK = {
     autumnLeaf: 42,
     autumnLeafDark: 43,
     autumnLeafLight: 44,
+    fence: 45,
 } as const
 
 /**
@@ -339,6 +340,17 @@ export const DEFAULT_PALETTE: Palette = {
         { name: 'autumn leaf', color: [0.85, 0.46, 0.16], solid: true, textureKey: 'leaf' },
         { name: 'dark autumn leaf', color: [0.54, 0.19, 0.08], solid: true, textureKey: 'leaf' },
         { name: 'gold autumn leaf', color: [0.95, 0.68, 0.18], solid: true, textureKey: 'leaf' },
+        {
+            name: 'fence',
+            color: [0.38, 0.25, 0.13],
+            solid: true,
+            collidable: true,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0,
+            renderAs: 'fence',
+        },
     ],
 }
 
@@ -387,11 +399,23 @@ export function isRailBlock(palette: Palette, index: number): boolean {
     return paletteEntry(palette, index).renderAs === 'rail'
 }
 
+export function isFenceBlock(palette: Palette, index: number): boolean {
+    if (index === AIR) return false
+    return paletteEntry(palette, index).renderAs === 'fence'
+}
+
 export function railBlockIndex(palette: Palette): number {
     const direct = palette.entries[BLOCK.rail]
     if (direct?.renderAs === 'rail') return BLOCK.rail
     const found = palette.entries.findIndex((entry) => entry.renderAs === 'rail')
     return found > AIR ? found : BLOCK.rail
+}
+
+export function fenceBlockIndex(palette: Palette): number {
+    const direct = palette.entries[BLOCK.fence]
+    if (direct?.renderAs === 'fence') return BLOCK.fence
+    const found = palette.entries.findIndex((entry) => entry.renderAs === 'fence')
+    return found > AIR ? found : BLOCK.fence
 }
 
 export type TorchBlockState = 'lit' | 'unlit'
@@ -474,6 +498,7 @@ function clamp01(v: number): number {
 export function isRenderableVoxel(palette: Palette, index: number): boolean {
     if (isTorchBlock(palette, index)) return false
     if (isRailBlock(palette, index)) return false
+    if (isFenceBlock(palette, index)) return false
     return voxelOpacity(palette, index) > 0
 }
 
@@ -508,6 +533,7 @@ export function appendMissingDefaultPaletteEntries(palette: Palette): void {
     appendMissingLiquidBlock(palette, 'lava', BLOCK.lava)
     appendMissingStructureBlocks(palette)
     appendMissingSpecialBlock(palette, BLOCK.rail)
+    appendMissingSpecialBlock(palette, BLOCK.fence)
 }
 
 function normalizeNoWalkBlock(palette: Palette): void {

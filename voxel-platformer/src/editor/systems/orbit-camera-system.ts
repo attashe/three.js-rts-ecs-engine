@@ -48,20 +48,11 @@ export function createOrbitCameraSystem(
         input.clear()
     }
 
-    function clearEditorPointerState(): void {
-        if (!wasOrbit) return
-        input.clear()
-    }
-
     function drainOrbitWheel(): void {
         if (!wasOrbit) return
         input.consumeWheel()
     }
 
-    controls.addEventListener('start', clearEditorPointerState)
-    controls.addEventListener('end', clearEditorPointerState)
-    domElement.addEventListener('pointerdown', clearEditorPointerState)
-    domElement.addEventListener('pointerup', clearEditorPointerState)
     domElement.addEventListener('wheel', drainOrbitWheel)
 
     return {
@@ -81,10 +72,6 @@ export function createOrbitCameraSystem(
             input.consumeWheel()
         },
         dispose() {
-            controls.removeEventListener('start', clearEditorPointerState)
-            controls.removeEventListener('end', clearEditorPointerState)
-            domElement.removeEventListener('pointerdown', clearEditorPointerState)
-            domElement.removeEventListener('pointerup', clearEditorPointerState)
             domElement.removeEventListener('wheel', drainOrbitWheel)
             controls.dispose()
         },

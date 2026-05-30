@@ -24,6 +24,7 @@ export {
     isPathSurface,
     isRaycastTarget,
     isSolid,
+    isFenceBlock,
     isTorchBlock,
     liquidBlockKind,
     occludesFaces,
@@ -33,6 +34,7 @@ export {
     voxelEmissive,
     voxelLightSpec,
     blockMovementTraits,
+    fenceBlockIndex,
     appendMissingDefaultPaletteEntries,
     clonePalette,
 } from './palette'

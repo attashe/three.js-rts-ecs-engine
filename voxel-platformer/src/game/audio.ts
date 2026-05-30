@@ -65,6 +65,7 @@ export const GameAudio = {
     Jump: 'sfx.jump',
     Land: 'sfx.land',
     HighJump: 'sfx.high.jump',
+    AirPush: 'sfx.air.push',
 
     // ── Ambient loops (intended for `audio.playSpatial` with `loop: true`) ─
     AmbRain: 'sfx.amb.rain',
@@ -125,6 +126,7 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.Jump,      url: path('jump.wav'),       volume: 0.40, maxInstances: 3, priority: 2 },
         { id: GameAudio.Land,      url: path('land.wav'),       volume: 0.44, maxInstances: 3, priority: 2 },
         { id: GameAudio.HighJump,  url: path('high-jump.wav'),  volume: 0.72, maxInstances: 2, priority: 4 },
+        { id: GameAudio.AirPush,   url: path('air-push.wav'),   volume: 0.58, maxInstances: 3, priority: 4 },
 
         // Ambient loops — `loop: true` is the asset default; callers
         // can override via `playSpatial(id, pos, { loop: false })`.

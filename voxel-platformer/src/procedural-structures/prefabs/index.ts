@@ -3,8 +3,10 @@ import { PORTAL_GATE } from './portal-gate'
 import { CAMPFIRE } from './campfire'
 import { WELL } from './well'
 import { BANNER_ARCH } from './banner-arch'
+import { TRAIN_STATION } from './train-station'
+import { FORGE } from './forge'
 
-export type { StructurePrefab } from './prefab-types'
+export type { StructurePrefab, StructurePrefabProp } from './prefab-types'
 
 /**
  * Registry of hand-authored structures, keyed by stable id. Add a prefab
@@ -16,6 +18,8 @@ export const STRUCTURE_PREFABS: readonly StructurePrefab[] = [
     CAMPFIRE,
     WELL,
     BANNER_ARCH,
+    TRAIN_STATION,
+    FORGE,
 ]
 
 const BY_ID = new Map<string, StructurePrefab>(STRUCTURE_PREFABS.map((p) => [p.id, p]))

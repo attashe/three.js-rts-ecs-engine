@@ -9,13 +9,11 @@
 import type { ClipSource } from '../../engine/anim'
 import { loadGltfClipSource } from '../../engine/anim/runtime/gltf-clip-source'
 
-/** Character id → public glb URL. The `player.player` rig is the Blender
- *  reference character (built by `tools/build-reference-character.py`); other
- *  ids (e.g. `player.keeper`) fall through to the code reference rig, so both
- *  the glTF and code paths are exercised in-game. */
-export const CHARACTER_MODEL_URLS: Record<string, string> = {
-    'player.player': '/models/reference-character.glb',
-}
+/** Character id → public glb URL. Empty by default: the player uses the existing
+ *  procedural model (animated via the part-based clip source). Register an id
+ *  here (e.g. `'player.player': '/models/reference-character.glb'`) to override a
+ *  character with a Blender rig; it then wins in `playerProfile`. */
+export const CHARACTER_MODEL_URLS: Record<string, string> = {}
 
 const registry = new Map<string, ClipSource>()
 

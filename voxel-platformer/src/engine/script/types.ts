@@ -145,6 +145,18 @@ export interface CartsFacade {
     list(): string[]
 }
 
+export interface NpcFacade {
+    /** Play the NPC's attack swing. Returns false for unknown / dead ids. */
+    attack(id: string): boolean
+    /** Mark the NPC dead — it plays `die`, settles, then despawns. Returns
+     *  false for unknown ids or one already dying. */
+    die(id: string): boolean
+    /** True iff a live (not yet despawned) NPC with this id exists. */
+    exists(id: string): boolean
+    /** Snapshot of every live NPC id in this level. */
+    list(): string[]
+}
+
 export interface ZoneFacade {
     contains(zoneId: string, who: 'player' | VoxelCoord): boolean
     exists(zoneId: string): boolean
@@ -262,6 +274,7 @@ export interface ScriptContext {
     pistons: PistonsApi
     stones: StonesApi
     carts: CartsApi
+    npc: NpcApi
     flags: FlagsApi
     time: TimeApi
     zone: ZoneApi
@@ -431,6 +444,18 @@ export interface CartsApi {
     /** True while a player is mounted in this cart. */
     isOccupied(id: string): boolean
     /** Snapshot of every script-targetable rail cart id in this level. */
+    list(): string[]
+}
+
+export interface NpcApi {
+    /** Play the NPC's attack swing. Returns false for unknown / dead ids. */
+    attack(id: string): boolean
+    /** Kill the NPC — it plays `die`, settles on the ground, then despawns.
+     *  Returns false for unknown ids or one already dying. */
+    die(id: string): boolean
+    /** True iff a live (not yet despawned) NPC with this id exists. */
+    exists(id: string): boolean
+    /** Snapshot of every live NPC id in this level. */
     list(): string[]
 }
 

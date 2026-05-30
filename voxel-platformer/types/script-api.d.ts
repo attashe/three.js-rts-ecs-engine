@@ -372,6 +372,22 @@ interface StonesApi {
 
 declare const stones: StonesApi
 
+// ─── npc (combat: attack / die) ───────────────────────────────────────
+
+interface NpcApi {
+    /** Play the NPC's attack swing. Returns false for unknown / dead ids. */
+    attack(id: string): boolean
+    /** Kill the NPC — it plays `die`, settles on the ground, then despawns.
+     *  Returns false for unknown ids or one already dying. */
+    die(id: string): boolean
+    /** True iff a live (not yet despawned) NPC with this id exists. */
+    exists(id: string): boolean
+    /** Snapshot of every live NPC id in this level. */
+    list(): string[]
+}
+
+declare const npc: NpcApi
+
 // ─── flags (persistent level state) ───────────────────────────────────
 
 interface FlagsApi {

@@ -32,9 +32,9 @@ export function createRestartSystem(opts: RestartSystemOptions = {}): System {
             triggered = true
             pushLog(world as GameWorld, `${REASON_LABEL[reason]} — restarting level.`)
             overlay = mountOverlay(REASON_LABEL[reason])
-            // Slight delay so the overlay is visible — straight reload
-            // feels jarring because the user has no idea why the page
-            // suddenly blanked.
+            // Delay so the overlay is visible AND the player's death animation
+            // (~0.7s topple + a beat lying on the ground) reads before the
+            // level reloads — a straight reload feels jarring and hides the death.
             setTimeout(() => {
                 if (!opts.onRestart) {
                     window.location.reload()
@@ -51,7 +51,7 @@ export function createRestartSystem(opts: RestartSystemOptions = {}): System {
                         triggered = false
                         world.deathSignal = null
                     })
-            }, 650)
+            }, 1600)
         },
         dispose() {
             overlay?.remove()

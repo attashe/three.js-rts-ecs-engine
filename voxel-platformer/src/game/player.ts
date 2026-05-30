@@ -1,6 +1,6 @@
 import { Group, PointLight, type Object3D } from 'three'
 import { addComponents, query } from 'bitecs'
-import type { GameWorld } from '../engine/ecs/world'
+import type { GameWorld, WeaponStance } from '../engine/ecs/world'
 import {
     Animated,
     BoxCollider,
@@ -21,7 +21,7 @@ import {
 } from './assets'
 import { AnimationController } from '../engine/anim'
 import { playerProfile } from './anim/character-profiles'
-import { createEquipment, equipItem } from './anim/equipment'
+import { createEquipment, equip, equipItem, unequipSlot } from './anim/equipment'
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
 import { disposeObject3D } from '../engine/render/dispose-object'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerModelKind, type PlayerSettings } from './player-settings'
@@ -120,8 +120,27 @@ function buildAnimatedPlayerModel(world: GameWorld, eid: number, modelKind: Play
  *  the iso-important head slot. Re-run after a model swap (sockets are rebuilt). */
 function equipDefaultLoadout(world: GameWorld, eid: number): void {
     equipItem(world, eid, 'head', createEquipment('hat'))
-    equipItem(world, eid, 'handR', createEquipment('sword'))
-    equipItem(world, eid, 'handL', createEquipment('shield'))
+    applyWeaponStance(world, eid, world.weaponStance)
+}
+
+/**
+ * Swap the player's in-hand loadout to match the weapon stance:
+ *  - `melee`  — sword (right) + shield (left); the back bow shows (stowed).
+ *  - `ranged` — bow (left), hands otherwise empty; back bow hidden (it's in hand).
+ * The hat stays on across both. Safe to call repeatedly (re-equips in place).
+ */
+export function applyWeaponStance(world: GameWorld, eid: number, stance: WeaponStance): void {
+    if (stance === 'melee') {
+        equip(world, eid, 'handR', 'sword')
+        equip(world, eid, 'handL', 'shield')
+    } else {
+        unequipSlot(world, eid, 'handR')
+        equip(world, eid, 'handL', 'bow')
+    }
+    // Avoid showing two bows: hide the decorative back bow while it's in hand.
+    const root = world.object3DByEid.get(eid)
+    const backBow = root?.getObjectByName('BackBow')
+    if (backBow) backBow.visible = stance === 'melee'
 }
 
 export function syncPlayerVisuals(world: GameWorld): void {

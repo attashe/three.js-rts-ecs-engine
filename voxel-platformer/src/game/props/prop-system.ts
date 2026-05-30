@@ -104,12 +104,11 @@ export function createPropRenderSystem(scene: Scene, opts: PropRenderSystemOptio
         const model = getPropModel(kind)
         const mesh = new InstancedMesh(model.geometry, material, capacity)
         mesh.name = `Props:${kind}`
-        // Same reasoning as the torch InstancedMeshes — the geometry's
-        // bounding sphere sits at the model's local origin while
-        // instances are scattered across the world. Disable frustum
-        // culling at the mesh level; the renderer walks the instance
-        // list directly via the per-instance matrices.
-        mesh.frustumCulled = false
+        // InstancedMesh culling uses a mesh-level bounding sphere, not
+        // per-instance culling. We recompute that sphere after matrix uploads,
+        // which lets clustered props disappear when offscreen while keeping the
+        // one-draw-call-per-kind batching model.
+        mesh.frustumCulled = true
         mesh.castShadow = castShadows
         mesh.receiveShadow = true
         mesh.count = 0
@@ -238,6 +237,7 @@ export function createPropRenderSystem(scene: Scene, opts: PropRenderSystemOptio
         for (const bucket of buckets.values()) {
             if (!bucket.dirty) continue
             bucket.mesh.instanceMatrix.needsUpdate = true
+            bucket.mesh.computeBoundingSphere()
             bucket.dirty = false
         }
     }

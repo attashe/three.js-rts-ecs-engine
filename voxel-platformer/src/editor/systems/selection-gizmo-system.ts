@@ -117,9 +117,13 @@ export function createSelectionGizmoSystem(
 
     function onPointerDown(ev: PointerEvent): void {
         if (editorState.mode !== 'select' || ev.button !== 0) return
+        if (editorState.viewMode === 'orbit') return
         if (ev.target !== domElement || transform.dragging) return
-        setRayFromPointer(ev)
+        selectAtScreenPoint(ev.clientX, ev.clientY)
+    }
 
+    function selectAtScreenPoint(x: number, y: number): void {
+        setRayFromScreenPoint(x, y)
         syncProxies()
         const hits = raycaster.intersectObjects(proxyMeshes, false)
         if (hits.length === 0) {
@@ -130,10 +134,10 @@ export function createSelectionGizmoSystem(
         select(hit ? selectionFromMesh(hit) : null)
     }
 
-    function setRayFromPointer(ev: PointerEvent): void {
+    function setRayFromScreenPoint(x: number, y: number): void {
         const rect = domElement.getBoundingClientRect()
-        pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1
-        pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1
+        pointer.x = ((x - rect.left) / rect.width) * 2 - 1
+        pointer.y = -((y - rect.top) / rect.height) * 2 + 1
         raycaster.setFromCamera(pointer, iso.camera)
     }
 
@@ -275,7 +279,14 @@ export function createSelectionGizmoSystem(
             transform.addEventListener('dragging-changed', onDraggingChanged)
         },
         update() {
-            if (editorState.mode === 'select') input.consumeClicks()
+            if (editorState.mode === 'select') {
+                const clicks = input.consumeClicks()
+                if (editorState.viewMode === 'orbit') {
+                    for (const click of clicks) {
+                        if (click.button === 0) selectAtScreenPoint(click.x, click.y)
+                    }
+                }
+            }
             syncSelectionTarget()
             syncProxies()
         },

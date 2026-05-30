@@ -4,7 +4,7 @@ Status: **Slices 1, 1.5, 1.6, 2 implemented** on `feature/surface-improve`.
 Authors can now (a) load `.js` files or paste snippets into the editor's
 **Logic** tab, (b) react to zone enter/exit, pickup-taken, player-died,
 and input events, (c) call into world state via the host bindings
-(`chunks`, `audio`, `pickups`, `pistons`, `stones`, `player`, `flags`,
+(`chunks`, `audio`, `pickups`, `pistons`, `stones`, `npc`, `player`, `flags`,
 `ui`, `dayCycle`, `weather`, `zone`, `geom`). See `script-engine-slice-1-5-review.md`
 and the §11 implementation status below.
 
@@ -90,7 +90,7 @@ async function compileScript(entry: ScriptEntry, ctx: ScriptContext): Promise<vo
         "use strict";
         const { on, once, emit, wait, log,
                 player, chunks, pickups, pistons, stones, audio,
-                flags, time, zone, geom, ui,
+                npc, flags, time, zone, geom, ui,
                 dayCycle, weather, travel, level, random } = ctx;
         ${entry.source}
     `)
@@ -352,6 +352,13 @@ stones.setSpawnerEnabled(id: string, enabled: boolean): boolean
 stones.isSpawnerEnabled(id: string): boolean
 stones.triggerSpawner(id: string, count?: number): number
 stones.listSpawners(): string[]
+
+// NPC combat — drive an NPC's attack swing / death. `die` plays the topple,
+// the body settles on the ground, then it despawns (zone + collider freed).
+npc.attack(id: string): boolean   // false for unknown / dead ids
+npc.die(id: string): boolean      // false for unknown / already-dying ids
+npc.exists(id: string): boolean   // live (not yet despawned) NPCs only
+npc.list(): string[]
 
 // Audio — `fade` cross-fades over N seconds on play / stop.
 audio.play(soundId: string,
@@ -820,6 +827,7 @@ on('level-start', async () => {
 | `pistons.setEnabled/isEnabled/flip/list`      | — | ✅ | Slice 3 — `world.pistonsById`, `pendingFlip` force-flip path |
 | `stones.spawn/remove/exists`                  | — | ✅ | Direct physics stones with stable ids |
 | `stones.setSpawnerEnabled/triggerSpawner/listSpawners` | — | ✅ | Editor-authored falling-stone spawners |
+| `npc.attack/die/exists/list`                  | — | ✅ | NPC combat via `world.npcRuntimeById`; `die` topples + despawns |
 | `weather.setZoneEnabled` (toggle FX zones)    | — | ✅ | Slice 3 — controller tracks configs / live / enabled |
 | `weather.setZonePreset` (re-spawn with new preset) | — | ✅ | Slice 3 — pairs with setZoneEnabled |
 | `level.spawn / size / name` getters           | — | ✅ | Slice 3 — read-only snapshot of `LevelMeta` |

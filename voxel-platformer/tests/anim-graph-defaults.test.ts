@@ -8,7 +8,7 @@ import {
     validateAnimGraph,
     type LocomotionSignals,
 } from '../src/engine/anim/core'
-import { locomotionGraph } from '../src/game/anim/graph-defaults'
+import { combatLocomotionGraph, locomotionGraph } from '../src/game/anim/graph-defaults'
 
 test('the default locomotion graph is valid and self-consistent', () => {
     const g = locomotionGraph()
@@ -47,6 +47,62 @@ test('ground locomotion walks, runs, and settles from movement speed', () => {
     assert.equal(d.step(onGround(2)), 'walk')
     assert.equal(d.step(onGround(4)), 'run')
     assert.equal(d.step(onGround(0), 2), 'idle') // run → walk → idle across two ticks
+})
+
+test('combat graph is valid, with a one-shot attack and a terminal dead state', () => {
+    const g = combatLocomotionGraph()
+    assert.equal(validateAnimGraph(g).ok, true)
+
+    const stateIds = new Set(g.states.map((s) => s.id))
+    assert.ok(stateIds.has('attack') && stateIds.has('shoot') && stateIds.has('die') && stateIds.has('dead'))
+
+    // `shoot` is a one-shot trigger that returns to locomotion, like attack.
+    const shootParam = (g.params ?? []).find((p) => p.name === 'shoot')
+    assert.equal(shootParam?.trigger, true)
+
+    // `dead` is terminal — nothing transitions out of it.
+    assert.equal(g.transitions.some((t) => t.from === 'dead'), false)
+
+    // attack is a declared trigger param; dead latches (not a trigger).
+    const attackParam = (g.params ?? []).find((p) => p.name === 'attack')
+    const deadParam = (g.params ?? []).find((p) => p.name === 'dead')
+    assert.equal(attackParam?.trigger, true)
+    assert.notEqual(deadParam?.trigger, true)
+
+    // priority ordering: dead > attack > airborne(jump/fall).
+    const pri = (to: string) => Math.max(...g.transitions.filter((t) => t.to === to).map((t) => t.priority ?? 0))
+    assert.ok(pri('dead') > pri('attack'))
+    assert.ok(pri('attack') > pri('jump'))
+})
+
+test('combat graph: attack trigger plays once then returns, dead is absorbing', () => {
+    const sm = new AnimStateMachine(combatLocomotionGraph())
+    const idle = computeLocomotionParams({ speedXZ: 0, vy: 0, grounded: true, blocked: false, movementState: 0 })
+
+    sm.setParams(idle)
+    sm.setParam('attack', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'attack')
+    // After the swing reads (minTime ~0.42s) it returns to idle.
+    for (let i = 0; i < 12; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'idle')
+
+    // Bow shot is a separate one-shot that also returns to idle.
+    sm.setParam('shoot', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'shoot')
+    for (let i = 0; i < 14; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'idle')
+
+    // Death: first the `die` topple, then it settles into the absorbing `dead`.
+    sm.setParam('dead', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'die')
+    for (let i = 0; i < 16; i++) sm.tick(0.05) // past the topple (DIE_SECONDS)
+    assert.equal(sm.currentStateId, 'dead')
+    sm.setParams(computeLocomotionParams({ speedXZ: 4, vy: 0, grounded: true, blocked: false, movementState: 1 }))
+    for (let i = 0; i < 5; i++) sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'dead', 'stays dead regardless of other params')
 })
 
 test('airborne and landing sequence: jump → fall → land → idle', () => {

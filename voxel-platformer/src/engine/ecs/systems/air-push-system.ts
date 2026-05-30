@@ -30,6 +30,9 @@ export interface AirPushOptions {
     /** Extra upward kick added at the apex; falls off with proximity. Default 5.5. */
     verticalLift?: number
     actionId?: ActionId
+    /** Called when a valid Air Push cast is performed, even if no bodies
+     *  are caught by the cone. */
+    onAirPush?: (pushed: number) => void
 }
 
 /**
@@ -152,6 +155,7 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             pushLog(world, pushed > 0
                 ? `Air Push! ${pushed} object${pushed === 1 ? '' : 's'} sent flying.`
                 : 'Air Push! (nothing in range)')
+            opts.onAirPush?.(pushed)
         },
     }
 }

@@ -10,16 +10,20 @@ import {
     AnimationController,
     attachToSocket,
     detachFromSocket,
+    partRigSource,
     referenceRigSource,
     type ClipSet,
     type ClipSource,
     type EquipSlot,
 } from './engine/anim'
 import { computeLocomotionParams, type AnimGraphDef } from './engine/anim/core'
-import { locomotionGraph } from './game/anim/graph-defaults'
+import { combatLocomotionGraph, locomotionGraph } from './game/anim/graph-defaults'
 import { playerProfile } from './game/anim/character-profiles'
+import { partCharacterClips } from './game/anim/part-clips'
 import { preloadCharacterModels } from './game/anim/model-registry'
-import { createEquipment, type EquipmentKind } from './game/anim/equipment'
+import { createEquipment, equipmentOrient, type EquipmentKind } from './game/anim/equipment'
+import { createNpcModel } from './game/npcs/npc-models'
+import { NPC_MODEL_KINDS, NPC_MODEL_LABELS } from './game/npcs/npc-types'
 
 interface PreviewProfile {
     id: string
@@ -32,6 +36,14 @@ const EQUIP_BUTTONS: Array<{ slot: EquipSlot; kind: EquipmentKind; label: string
     { slot: 'head', kind: 'hat', label: 'Hat' },
     { slot: 'handR', kind: 'sword', label: 'Sword' },
     { slot: 'handL', kind: 'shield', label: 'Shield' },
+    // Bow shares the left hand with the shield (toggle one or the other) so the
+    // bow shot can be previewed with the bow actually in hand.
+    { slot: 'handL', kind: 'bow', label: 'Bow' },
+    // NPC hand items, selectable per hand (each slot holds one at a time).
+    { slot: 'handR', kind: 'staff', label: 'Staff R' },
+    { slot: 'handL', kind: 'staff', label: 'Staff L' },
+    { slot: 'handR', kind: 'book', label: 'Book R' },
+    { slot: 'handL', kind: 'book', label: 'Book L' },
 ]
 
 async function main(): Promise<void> {
@@ -86,21 +98,29 @@ async function main(): Promise<void> {
         function attach(slot: EquipSlot, kind: EquipmentKind): void {
             if (!controller) return
             const item = createEquipment(kind)
-            if (attachToSocket(controller.sockets, slot, item, { root: controller.root })) equipped.set(slot, item)
+            if (attachToSocket(controller.sockets, slot, item, { root: controller.root, orient: equipmentOrient(kind) })) equipped.set(slot, item)
         }
 
-        function toggleEquip(slot: EquipSlot, kind: EquipmentKind, btn: HTMLButtonElement): void {
-            if (equipState.has(slot)) {
-                const item = equipped.get(slot)
-                if (item) detachFromSocket(item)
-                equipped.delete(slot)
-                equipState.delete(slot)
-                btn.classList.remove('active')
-            } else {
+        const equipBtns: Array<{ slot: EquipSlot; kind: EquipmentKind; btn: HTMLButtonElement }> = []
+        function refreshEquipButtons(): void {
+            for (const e of equipBtns) e.btn.classList.toggle('active', equipState.get(e.slot) === e.kind)
+        }
+        function clearSlot(slot: EquipSlot): void {
+            const item = equipped.get(slot)
+            if (item) detachFromSocket(item)
+            equipped.delete(slot)
+            equipState.delete(slot)
+        }
+        function toggleEquip(slot: EquipSlot, kind: EquipmentKind): void {
+            // Clicking the equipped kind removes it; clicking a different kind in
+            // the same slot (e.g. bow over shield) replaces it.
+            const current = equipState.get(slot)
+            clearSlot(slot)
+            if (current !== kind) {
                 equipState.set(slot, kind)
                 attach(slot, kind)
-                btn.classList.add('active')
             }
+            refreshEquipButtons()
         }
 
         // ── UI wiring ───────────────────────────────────────────────────────
@@ -120,8 +140,9 @@ async function main(): Promise<void> {
         for (const { slot, kind, label } of EQUIP_BUTTONS) {
             const btn = document.createElement('button')
             btn.textContent = label
-            btn.addEventListener('click', () => toggleEquip(slot, kind, btn))
+            btn.addEventListener('click', () => toggleEquip(slot, kind))
             equipWrap.appendChild(btn)
+            equipBtns.push({ slot, kind, btn })
         }
 
         const driveEl = el('drive')
@@ -135,6 +156,10 @@ async function main(): Promise<void> {
             driveTab.classList.toggle('active', next === 'drive')
             clipsTab.classList.toggle('active', next === 'clips')
             if (next === 'clips' && controller && activeClip) controller.playStateImmediate(activeClip)
+            // Re-arm locomotion: clips mode may have parked the machine in a
+            // terminal state (die/dead) that the drive loop can't transition out
+            // of, which looked like "stuck falling/collapsed" on switch-back.
+            if (next === 'drive' && controller) controller.playStateImmediate('idle')
         }
         driveTab.addEventListener('click', () => setMode('drive'))
         clipsTab.addEventListener('click', () => setMode('clips'))
@@ -177,10 +202,14 @@ async function main(): Promise<void> {
             if (controller) {
                 if (mode === 'drive') {
                     const speed = Number(speedEl.value)
+                    const vy = Number(vyEl.value)
+                    // `grounded` is authoritative: checked → on the ground (vy is
+                    // ignored, so it never sticks in jump while grounded). Uncheck
+                    // it to go airborne, where vy selects jump (vy ≥ 0.5) vs fall.
                     const grounded = groundedEl.checked
                     controller.setParams(computeLocomotionParams({
                         speedXZ: speed,
-                        vy: Number(vyEl.value),
+                        vy,
                         grounded,
                         blocked: blockedEl.checked,
                         movementState: grounded ? (speed > 0.5 ? 1 : 0) : 2,
@@ -205,12 +234,23 @@ async function main(): Promise<void> {
 
 function buildProfiles(): PreviewProfile[] {
     const pp = playerProfile('player')
-    const kp = playerProfile('keeper')
-    return [
-        { id: 'player', label: 'Player (Blender glb)', graph: pp.graph, source: pp.clipSource },
-        { id: 'keeper', label: 'Keeper (code rig)', graph: kp.graph, source: kp.clipSource },
-        { id: 'reference', label: 'Reference rig (code)', graph: locomotionGraph(), source: referenceRigSource({}) },
+    const profiles: PreviewProfile[] = [
+        { id: 'player', label: 'Player', graph: pp.graph, source: pp.clipSource },
     ]
+    // Every authored NPC model (keeper, player-NPC, large troll), each driven by
+    // the part rig + combat graph — so the troll and the full keeper (staff,
+    // lantern, beard) preview here, not just the bare player silhouette.
+    for (const kind of NPC_MODEL_KINDS) {
+        if (kind === 'player') continue // identical to the Player profile above
+        profiles.push({
+            id: `npc:${kind}`,
+            label: NPC_MODEL_LABELS[kind],
+            graph: combatLocomotionGraph(),
+            source: partRigSource(() => createNpcModel(kind), partCharacterClips()),
+        })
+    }
+    profiles.push({ id: 'reference', label: 'Reference rig (code)', graph: locomotionGraph(), source: referenceRigSource({}) })
+    return profiles
 }
 
 function el(id: string): HTMLElement {

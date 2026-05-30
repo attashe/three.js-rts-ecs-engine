@@ -118,6 +118,29 @@ export function createVoxelPaintSystem(
         order: FixedOrder.input,
         update(world) {
             const inPaintLike = editorState.mode === 'paint' || editorState.mode === 'erase'
+            if (editorState.viewMode === 'orbit') {
+                if (strokeActive) endStroke()
+                if (!inPaintLike || !editorState.cursor) return
+                const clicks = input.consumeClicks()
+                if (clicks.length === 0) return
+                for (const click of clicks) {
+                    if (click.button !== LMB && click.button !== RMB) continue
+                    const erase = editorState.mode === 'erase' || click.button === RMB
+                    const value = erase ? AIR : editorState.activeBlock
+                    strokeActive = true
+                    strokeErase = erase
+                    strokeDrag = false
+                    strokeCells.clear()
+                    recordFootprint(
+                        world as GameWorld,
+                        brushFootprint(editorState.brush, editorState.cursor),
+                        value,
+                        erase,
+                    )
+                    endStroke()
+                }
+                return
+            }
             const lmb = input.isMouseButtonDown(LMB)
             const rmb = input.isMouseButtonDown(RMB)
             const anyDown = lmb || rmb

@@ -19,6 +19,8 @@ export interface ActiveLayer {
 export class AnimStateMachine {
     private readonly def: AnimGraphDef
     private readonly params: AnimParamBag = {}
+    /** name → default for one-shot trigger params, reset after each tick. */
+    private readonly triggerDefaults: ReadonlyArray<readonly [string, number]>
     private current: string
     private previous: string | null = null
     private timeInState = 0
@@ -29,6 +31,7 @@ export class AnimStateMachine {
         this.def = def
         this.current = def.initial
         for (const p of def.params ?? []) this.params[p.name] = p.default
+        this.triggerDefaults = (def.params ?? []).filter((p) => p.trigger).map((p) => [p.name, p.default] as const)
     }
 
     setParam(name: string, value: number): void {
@@ -63,6 +66,10 @@ export class AnimStateMachine {
             this.blendDuration = transitionBlend(next)
         }
 
+        // Triggers are consumed by this tick's transition pick; clear them so
+        // they fire exactly once per gameplay `setParam`.
+        for (const [name, dflt] of this.triggerDefaults) this.params[name] = dflt
+
         return this.layers()
     }
 
@@ -73,6 +80,7 @@ export class AnimStateMachine {
         this.timeInState = 0
         this.blendElapsed = 0
         this.blendDuration = 0
+        for (const [name, dflt] of this.triggerDefaults) this.params[name] = dflt
     }
 
     private pickTransition(): AnimTransitionDef | null {

@@ -1,14 +1,17 @@
 import {
     Group,
+    Matrix4,
     Mesh,
+    type Object3D,
 } from 'three'
 import {
     createMainCharacter,
     sharedBoxGeometry,
-    sharedCylinderGeometry,
-    sharedMaterial,
     sharedSphereGeometry,
+    sharedMaterial,
 } from '../assets'
+import type { EquipSlot } from '../../engine/anim'
+import type { EquipmentKind } from '../anim/equipment'
 import type { NpcModelKind } from './npc-types'
 
 export function createNpcModel(kind: NpcModelKind): Group {
@@ -19,6 +22,24 @@ export function createNpcModel(kind: NpcModelKind): Group {
             return createKeeperNpcModel()
         case 'large-troll':
             return createLargeTrollModel()
+    }
+}
+
+/**
+ * What each hand (and the head/back) holds for a given NPC. Items are real
+ * equipment attached to the rig's sockets by the npc-render system, so they
+ * animate with the limb and can be assigned to either hand independently.
+ */
+export type NpcLoadout = Partial<Record<EquipSlot, EquipmentKind>>
+
+export function npcLoadout(kind: NpcModelKind): NpcLoadout {
+    switch (kind) {
+        case 'keeper':
+            return { handR: 'staff' }
+        case 'large-troll':
+            return { handL: 'book' }
+        default:
+            return {}
     }
 }
 
@@ -44,49 +65,9 @@ function createKeeperNpcModel(): Group {
     })
     root.name = 'NpcModel:keeper'
 
-    const staff = shadowed(new Mesh(
-        sharedCylinderGeometry(0.018, 0.024, 1.18, 7),
-        sharedMaterial(0x4a2c12, 0.86),
-    ))
-    staff.name = 'KeeperStaff'
-    staff.position.set(0.42, 0.62, 0.18)
-    root.add(staff)
-
-    const staffCap = shadowed(new Mesh(
-        sharedSphereGeometry(0.052, 7, 5),
-        sharedMaterial(0xffc462, 0.38, 0.18),
-    ))
-    staffCap.name = 'KeeperStaffCap'
-    staffCap.position.set(0.42, 1.23, 0.18)
-    staffCap.scale.set(1, 0.78, 1)
-    root.add(staffCap)
-
-    const lanternGlow = shadowed(new Mesh(
-        sharedSphereGeometry(0.08, 8, 6),
-        sharedMaterial(0xffb54d, 0.42, 0.08),
-    ))
-    lanternGlow.name = 'KeeperLanternGlow'
-    lanternGlow.position.set(0.42, 0.36, 0.18)
-    lanternGlow.scale.set(0.78, 0.94, 0.78)
-    root.add(lanternGlow)
-
-    const darkMetal = sharedMaterial(0x17120d, 0.72, 0.1)
-    const lanternTop = shadowed(new Mesh(sharedBoxGeometry(0.16, 0.02, 0.16), darkMetal))
-    lanternTop.name = 'KeeperLanternTop'
-    lanternTop.position.set(0.42, 0.45, 0.18)
-    root.add(lanternTop)
-    const lanternBottom = shadowed(new Mesh(sharedBoxGeometry(0.16, 0.02, 0.16), darkMetal))
-    lanternBottom.name = 'KeeperLanternBottom'
-    lanternBottom.position.set(0.42, 0.27, 0.18)
-    root.add(lanternBottom)
-
-    for (const [x, z] of [[0.35, 0.11], [0.35, 0.25], [0.49, 0.11], [0.49, 0.25]] as const) {
-        const bar = shadowed(new Mesh(sharedBoxGeometry(0.018, 0.16, 0.018), darkMetal))
-        bar.name = 'KeeperLanternBar'
-        bar.position.set(x, 0.36, z)
-        root.add(bar)
-    }
-
+    // The staff + lantern are now the keeper's `staff` hand item (see npcLoadout).
+    // The beard is intrinsic: parent it to the torso so it rides the body's
+    // lean / death topple instead of hanging in mid-air.
     const beard = shadowed(new Mesh(
         sharedBoxGeometry(0.08, 0.22, 0.18),
         sharedMaterial(0xb6b09a, 0.9),
@@ -94,6 +75,7 @@ function createKeeperNpcModel(): Group {
     beard.name = 'KeeperBeard'
     beard.position.set(0, 1.23, 0.19)
     root.add(beard)
+    reparentInModel(root, 'Chest', beard)
 
     return root
 }
@@ -163,25 +145,39 @@ function createLargeTrollModel(): Group {
     bridge.position.set(0, 2.57, 0.38)
     root.add(bridge)
 
-    const book = shadowed(new Mesh(
-        sharedBoxGeometry(0.56, 0.08, 0.42),
-        sharedMaterial(0x6c2f34, 0.68),
-    ))
-    book.name = 'LargeTrollBook'
-    book.position.set(-0.58, 1.26, 0.36)
-    book.rotation.z = 0.2
-    root.add(book)
-
-    const pages = shadowed(new Mesh(
-        sharedBoxGeometry(0.48, 0.03, 0.34),
-        sharedMaterial(0xe6dcc3, 0.72),
-    ))
-    pages.name = 'LargeTrollBookPages'
-    pages.position.set(-0.58, 1.31, 0.36)
-    pages.rotation.z = 0.2
-    root.add(pages)
+    // The book + pages are now the troll's `book` hand item (see npcLoadout).
+    // Glasses, brow and sash are intrinsic: parent them into the (scaled) torso /
+    // head so they track the body — `reparentInModel` divides out the 1.85×
+    // figure scale so they keep their authored size and place. The robe hem rides
+    // the whole figure (tips on death, doesn't lean with the chest).
+    reparentInModel(root, 'Chest', brow)
+    reparentInModel(root, 'Chest', leftLens)
+    reparentInModel(root, 'Chest', rightLens)
+    reparentInModel(root, 'Chest', bridge)
+    reparentInModel(root, 'Chest', sash)
+    reparentInModel(root, 'Figure', robe)
 
     return root
+}
+
+const _reparentMatrix = new Matrix4()
+
+/**
+ * Move `child` (a descendant of `root`) under the named node while preserving its
+ * current world transform within the model. The model is at the origin during
+ * construction, so `matrixWorld` is the model-space transform; expressing the
+ * child relative to `node` keeps its rest pose pixel-identical while making it
+ * ride that node's animation. Handles scaled parents (the troll's 1.85× figure)
+ * automatically, so accessories keep their authored size.
+ */
+function reparentInModel(root: Object3D, nodeName: string, child: Object3D): void {
+    const node = root.getObjectByName(nodeName)
+    if (!node) return
+    root.updateMatrixWorld(true)
+    _reparentMatrix.copy(node.matrixWorld).invert().multiply(child.matrixWorld)
+    child.removeFromParent()
+    _reparentMatrix.decompose(child.position, child.quaternion, child.scale)
+    node.add(child)
 }
 
 function shadowed(mesh: Mesh): Mesh {

@@ -7,6 +7,7 @@ import {
     captureBeforeEdits,
     measureStructurePlacement,
     structurePlacementEdits,
+    structurePropPlacements,
 } from '../../procedural-structures/asset'
 import type { EditorState } from '../editor-state'
 import type { CommandStack } from '../history'
@@ -81,14 +82,43 @@ function place(world: GameWorld, chunks: ChunkManager, state: EditorState, histo
     }
     const transform = structureTransformFromState(state, cursor)
     const after = structurePlacementEdits(asset, transform)
+    const propPrefix = nextStructurePropPrefix(state, asset.label, cursor)
+    const afterProps = structurePropPlacements(asset, transform, propPrefix)
+    const afterPropIds = new Set(afterProps.map((p) => p.id))
     const before = captureBeforeEdits(chunks, after)
     history.push({
         label: `place ${asset.label}`,
-        apply: () => { chunks.applyBulk(after) },
-        revert: () => { chunks.applyBulk(before) },
+        apply: () => {
+            chunks.applyBulk(after)
+            for (const prop of afterProps) {
+                if (!state.props.some((existing) => existing.id === prop.id)) state.props.push({ ...prop, position: { ...prop.position } })
+            }
+        },
+        revert: () => {
+            chunks.applyBulk(before)
+            for (let i = state.props.length - 1; i >= 0; i--) {
+                if (afterPropIds.has(state.props[i]!.id)) state.props.splice(i, 1)
+            }
+        },
     })
     const m = measureStructurePlacement(asset, transform)
-    pushLog(world, `Placed ${asset.label} — ${m.bounds.width}×${m.bounds.height}×${m.bounds.depth}, ${after.length} voxels.`)
+    const propText = afterProps.length > 0 ? `, ${afterProps.length} props` : ''
+    pushLog(world, `Placed ${asset.label} — ${m.bounds.width}×${m.bounds.height}×${m.bounds.depth}, ${after.length} voxels${propText}.`)
+}
+
+function nextStructurePropPrefix(state: EditorState, label: string, cursor: { x: number; y: number; z: number }): string {
+    const root = `structure:${slug(label)}:${cursor.x}-${cursor.y}-${cursor.z}`
+    let prefix = root
+    let n = 2
+    while (state.props.some((p) => p.id.startsWith(prefix + ':'))) {
+        prefix = `${root}-${n}`
+        n++
+    }
+    return prefix
+}
+
+function slug(label: string): string {
+    return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'structure'
 }
 
 function placeWall(world: GameWorld, chunks: ChunkManager, state: EditorState, history: CommandStack): void {

@@ -19,6 +19,9 @@ import { createDebugOverlaySystem } from './engine/ecs/systems/debug-overlay-sys
 import { createRenderMetricsSystem } from './engine/ecs/systems/render-metrics-system'
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
+import { createMeleeAttackSystem } from './engine/ecs/systems/melee-attack-system'
+import { createWeaponStanceSystem } from './game/weapon-stance-system'
+import { createPlayerDeathAnimSystem } from './game/anim/player-death-anim-system'
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
@@ -43,6 +46,7 @@ import { disposeObject3D } from './engine/render/dispose-object'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { createTorchBlockRenderSystemV2 } from './game/torch-block-system-v2'
 import { createRailRenderSystem } from './game/rail/rail-render-system'
+import { createFenceRenderSystem } from './game/fence/fence-render-system'
 import { createRailCartSystem, nearestRailCartInteractionTarget } from './game/rail/rail-cart-system'
 import { getTorchSystem } from './engine/render/render-settings'
 import { spawnCoinPile } from './game/pickups'
@@ -177,6 +181,7 @@ async function main(): Promise<void> {
         indoorCut: createSystemSlot('indoorCut', false, RenderOrder.worldRender - 1),
         torchBlocks: createSystemSlot('torchBlocks', false, RenderOrder.worldRender + 2),
         railRender: createSystemSlot('railRender', false, RenderOrder.worldRender + 2),
+        fenceRender: createSystemSlot('fenceRender', false, RenderOrder.worldRender + 2),
         railCarts: createSystemSlot('railCarts', true, FixedOrder.input + 4),
     }
     const allSlots = Object.values(slots)
@@ -413,6 +418,7 @@ async function main(): Promise<void> {
                 }),
         )
         slots.railRender.set(createRailRenderSystem(renderer.scene, chunks))
+        slots.fenceRender.set(createFenceRenderSystem(renderer.scene, chunks))
     }
 
     function captureCurrentSnapshot(): void {
@@ -461,10 +467,16 @@ async function main(): Promise<void> {
             }),
         }), 'playerControl')
         .addSystem(createPlayerTorchSystem(), 'playerTorch')
+        .addSystem(createWeaponStanceSystem(actions, { actionId: GameAction.SwitchWeapon }), 'weaponStance')
         .addSystem(createProjectileLaunchSystem(actions, {
             actionId: GameAction.BowShot,
+            canUse: (world) => world.weaponStance === 'ranged',
             onLaunch: () => audio.play(GameAudio.Bow, { deferUntilUnlocked: true }),
         }), 'projectileLaunch')
+        .addSystem(createMeleeAttackSystem(actions, {
+            actionId: GameAction.Attack,
+            canUse: (world) => world.weaponStance === 'melee',
+        }), 'meleeAttack')
         .addSystem(createArrowHitSystem(chunks, {
             onArrowLand: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
         }), 'arrowHit')
@@ -473,7 +485,13 @@ async function main(): Promise<void> {
             chunks,
             onHighJump: () => audio.play(GameAudio.HighJump, { deferUntilUnlocked: true }),
         }), 'highJump')
-        .addSystem(createAirPushSystem(actions, { actionId: GameAction.AirPush }), 'airPush')
+        .addSystem(createAirPushSystem(actions, {
+            actionId: GameAction.AirPush,
+            onAirPush: () => audio.play(GameAudio.AirPush, {
+                deferUntilUnlocked: true,
+                rate: 0.96 + Math.random() * 0.08,
+            }),
+        }), 'airPush')
         .addSystem(createPickupSystem({
             onCollected: (kind) => audio.play(
                 kind === PickupKind.Arrow
@@ -519,12 +537,14 @@ async function main(): Promise<void> {
             },
         }), 'playerDeath')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
+        .addSystem(createPlayerDeathAnimSystem(), 'playerDeathAnim')
         .addSystem(createAnimationSystem(), 'animation')
         .addSystem(slots.blockLights.system, 'blockLights')
         .addSystem(slots.chunkRender.system, 'chunkRender')
         .addSystem(slots.indoorCut.system, 'indoorCut')
         .addSystem(slots.torchBlocks.system, 'torchBlocks')
         .addSystem(slots.railRender.system, 'railRender')
+        .addSystem(slots.fenceRender.system, 'fenceRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
             logPosition: { top: '48px', right: '8px', maxWidth: '320px' },
@@ -620,6 +640,7 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.scriptTriggerEvents.length = 0
     world.deathSignal = null
     world.lastCheckpoint = null
+    world.weaponStance = 'melee'
 }
 
 function replaceChunks(target: ChunkManager, source: ChunkManager): void {

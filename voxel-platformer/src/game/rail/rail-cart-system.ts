@@ -1,6 +1,7 @@
 import { addComponents, addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import {
     BoxGeometry,
+    ConeGeometry,
     Group,
     Mesh,
     MeshStandardMaterial,
@@ -316,7 +317,7 @@ function syncCartTransform(cart: RailCartRuntime): void {
     Position.x[cart.eid] = pos.x
     Position.y[cart.eid] = pos.y
     Position.z[cart.eid] = pos.z
-    Rotation.y[cart.eid] = yawForFacing(cart.front)
+    Rotation.y[cart.eid] = railCartYawForFacing(cart.front)
 }
 
 function syncRider(world: GameWorld, cart: RailCartRuntime): void {
@@ -562,9 +563,9 @@ function directionOffsetVector(dir: RailDir): { x: number; z: number } {
     }
 }
 
-function yawForFacing(facing: RailCartFacing): number {
+export function railCartYawForFacing(facing: RailCartFacing): number {
     const dir = directionOffsetVector(facingToDirection(facing))
-    return Math.atan2(dir.x, dir.z)
+    return Math.atan2(-dir.z, dir.x)
 }
 
 export function createRailCartModel(): Object3D {
@@ -574,6 +575,7 @@ export function createRailCartModel(): Object3D {
     const bodyMat = new MeshStandardMaterial({ color: 0x59616a, roughness: 0.72, metalness: 0.25, flatShading: true })
     const rimMat = new MeshStandardMaterial({ color: 0x30353a, roughness: 0.78, metalness: 0.35, flatShading: true })
     const wheelMat = new MeshStandardMaterial({ color: 0x1d2023, roughness: 0.82, metalness: 0.15, flatShading: true })
+    const pointerMat = new MeshStandardMaterial({ color: 0xffc247, roughness: 0.48, metalness: 0.05, flatShading: true })
 
     const tub = new Mesh(new BoxGeometry(0.78, 0.34, 0.68), bodyMat)
     tub.position.y = 0.28
@@ -588,10 +590,18 @@ export function createRailCartModel(): Object3D {
     root.add(rim)
 
     const nose = new Mesh(new BoxGeometry(0.18, 0.12, 0.16), rimMat)
-    nose.position.set(0, 0.54, 0.43)
+    nose.position.set(0.43, 0.54, 0)
     nose.castShadow = true
     nose.receiveShadow = true
     root.add(nose)
+
+    const pointer = new Mesh(new ConeGeometry(0.075, 0.24, 4), pointerMat)
+    pointer.name = 'CartDirectionPointer'
+    pointer.position.set(0.56, 0.58, 0)
+    pointer.rotation.z = -Math.PI * 0.5
+    pointer.castShadow = true
+    pointer.receiveShadow = true
+    root.add(pointer)
 
     for (const x of [-0.32, 0.32]) {
         for (const z of [-0.28, 0.28]) {

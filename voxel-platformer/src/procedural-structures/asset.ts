@@ -12,6 +12,7 @@ import { generateStructureScene } from './generator'
 import { getPrefab } from './prefabs'
 import { hash2 } from './math'
 import type { EditorProp, EditorPropKind } from '../game/props/prop-types'
+import type { StructurePrefabProp } from './prefabs'
 
 /**
  * Structure assets — a thin, engine-facing layer over the raw voxel
@@ -73,6 +74,8 @@ const MUSHROOM_PROP_KINDS = ['mushroom', 'mushroom-2', 'mushroom-3'] as const
 /** A planting recovered from a structure's decorative voxels, in the asset's
  *  origin-normalised local frame (same space as `voxels`). */
 export interface LocalPropPlacement {
+    /** Stable local id suffix. Falls back to kind + cell if omitted. */
+    id?: string
     kind: EditorPropKind
     x: number
     y: number
@@ -96,8 +99,9 @@ export interface StructureAsset {
     voxels: StructureVoxel[]
     /** Local bounds — always anchored at min (0, 0, 0). */
     bounds: StructureBounds
-    /** Ground plantings recovered as prop instances when `structuralOnly` was
-     *  requested (empty otherwise). Local frame matches `voxels`. */
+    /** Prop instances bundled with the asset: prefab-authored props always,
+     *  plus recovered ground plantings when `structuralOnly` is requested.
+     *  Local frame matches `voxels`. */
     decorationProps: LocalPropPlacement[]
     size: StructureSize
     footprint: Footprint
@@ -177,7 +181,10 @@ export function generateStructureAsset(
     const bounds = boundsOf(voxels)
     // Only recover plantings as props when their flat voxels were dropped;
     // otherwise they're still rendered as cubes and a prop would double them.
-    const decorationProps = options.structuralOnly ? plantingProps(raw.voxels, offset) : []
+    const decorationProps = [
+        ...prefabProps(raw.props ?? [], offset),
+        ...(options.structuralOnly ? plantingProps(raw.voxels, offset) : []),
+    ]
 
     const materialCounts: Record<number, number> = {}
     for (const v of voxels) materialCounts[v.block] = (materialCounts[v.block] ?? 0) + 1
@@ -242,10 +249,23 @@ function plantingProps(raw: readonly StructureVoxel[], offset: { x: number; y: n
     return props
 }
 
+function prefabProps(raw: readonly StructurePrefabProp[], offset: { x: number; y: number; z: number }): LocalPropPlacement[] {
+    return raw.map((p) => ({
+        id: p.id,
+        kind: p.kind,
+        x: p.x - offset.x,
+        y: p.y - offset.y,
+        z: p.z - offset.z,
+        yaw: p.yaw ?? 0,
+        scale: p.scale ?? 1,
+    }))
+}
+
 interface RawVoxels {
     voxels: StructureVoxel[]
     label: string
     names: Record<number, string>
+    props?: readonly StructurePrefabProp[]
 }
 
 function rawVoxels(source: StructureSource, palette?: Palette): RawVoxels {
@@ -254,7 +274,7 @@ function rawVoxels(source: StructureSource, palette?: Palette): RawVoxels {
         if (!prefab) throw new Error(`Unknown structure prefab: ${source.id}`)
         const buf = new VoxelBuffer()
         prefab.build(buf)
-        return { voxels: buf.toArray(), label: prefab.label, names: {} }
+        return { voxels: buf.toArray(), label: prefab.label, names: {}, props: prefab.props }
     }
     const result = generateStructureScene(source.options, palette)
     const kind = source.options.kind ?? 'house'
@@ -369,7 +389,7 @@ export function structurePropPlacements(asset: StructureAsset, transform: Struct
     return asset.decorationProps.map((p) => {
         const r = rotateCell(p.x, p.z, localSize.width, localSize.depth, transform.rotation)
         return {
-            id: `${idPrefix}:${p.kind}:${p.x}-${p.z}`,
+            id: `${idPrefix}:${p.id ?? `${p.kind}:${p.x}-${p.y}-${p.z}`}`,
             kind: p.kind,
             position: { x: baseX + r.x + 0.5, y: baseY + p.y, z: baseZ + r.z + 0.5 },
             yaw: p.yaw + spin,

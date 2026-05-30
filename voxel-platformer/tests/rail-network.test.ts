@@ -25,7 +25,9 @@ import {
 } from '../src/game/rail/rail-network'
 import {
     createRailCartSystem,
+    createRailCartModel,
     nearestRailCartInteractionTarget,
+    railCartYawForFacing,
 } from '../src/game/rail/rail-cart-system'
 import { spawnFallingStone } from '../src/game/moving-objects'
 
@@ -99,6 +101,20 @@ test('rail routing continues straight through crosses and refuses ambiguous fork
 
     const northEastWest = (1 << RailDirection.North) | (1 << RailDirection.East) | (1 << RailDirection.West)
     assert.equal(chooseRailExit(northEastWest, RailDirection.South), null)
+})
+
+test('rail cart visual yaw treats the authored model +X axis as forward', () => {
+    assertNear(railCartYawForFacing('east'), 0)
+    assertNear(railCartYawForFacing('north'), Math.PI * 0.5)
+    assertNear(railCartYawForFacing('south'), -Math.PI * 0.5)
+    assertNear(Math.abs(railCartYawForFacing('west')), Math.PI)
+})
+
+test('rail cart model includes a visible front direction pointer', () => {
+    const model = createRailCartModel()
+    const pointer = model.children.find((child) => child.name === 'CartDirectionPointer')
+    assert.ok(pointer, 'cart should expose a named direction marker')
+    assert.ok(pointer!.position.x > 0.5, 'direction marker sits on the authored +X front')
 })
 
 test('rail cart mounts through interaction and moves along rails with W/S actions', () => {
@@ -222,4 +238,8 @@ function heldActions(): ActionMap & { hold(id: string): void; release(id: string
         release(id: string) { held.delete(id) },
         isHeld(id: string) { return held.has(id) },
     } as ActionMap & { hold(id: string): void; release(id: string): void }
+}
+
+function assertNear(actual: number, expected: number): void {
+    assert.ok(Math.abs(actual - expected) < 1e-6, `expected ${expected}, got ${actual}`)
 }

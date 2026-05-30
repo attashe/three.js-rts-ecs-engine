@@ -1,12 +1,16 @@
 // Per-character animation profiles: which graph + which clip source drive a
-// given character. Phase 1 always uses the code reference rig; Phase 2 will
-// return a glTF source (with reference-rig fallback) for kinds backed by a
-// Blender .glb in public/models/.
+// given character. The player now uses the existing detailed procedural model
+// (createMainCharacter) animated via the part-based clip source + the combat
+// graph (idle/walk/run/jump/fall/land + attack/die). A registered Blender glb
+// still wins when present; the code reference rig stays available to the
+// animation page.
 
-import { referenceRigSource, type ClipSource } from '../../engine/anim'
+import { partRigSource, type ClipSource } from '../../engine/anim'
 import type { AnimGraphDef } from '../../engine/anim/core'
+import { createMainCharacter, type MainCharacterOptions } from '../assets'
 import type { PlayerModelKind } from '../player-settings'
-import { locomotionGraph } from './graph-defaults'
+import { combatLocomotionGraph } from './graph-defaults'
+import { partCharacterClips } from './part-clips'
 import { registeredCharacterSource } from './model-registry'
 
 export interface CharacterAnimProfile {
@@ -15,17 +19,19 @@ export interface CharacterAnimProfile {
     clipSource: ClipSource
 }
 
-const PLAYER_BODY_COLOR: Record<PlayerModelKind, number> = {
-    player: 0x3f6f9f,
-    keeper: 0x39324f,
+const PLAYER_COLORS: Record<PlayerModelKind, MainCharacterOptions> = {
+    player: {},
+    keeper: { tunicColor: 0x1f2c3f, cloakColor: 0x3f2818, skinColor: 0xc89461, metalColor: 0xffc462, bootColor: 0x17120d },
 }
 
 export function playerProfile(kind: PlayerModelKind): CharacterAnimProfile {
     const id = `player.${kind}`
+    const colors = PLAYER_COLORS[kind]
     return {
         id,
-        graph: locomotionGraph(),
-        // A preloaded Blender rig wins; otherwise the code reference rig.
-        clipSource: registeredCharacterSource(id) ?? referenceRigSource({ bodyColor: PLAYER_BODY_COLOR[kind] }),
+        graph: combatLocomotionGraph(),
+        // A preloaded Blender rig wins (none registered by default); otherwise the
+        // existing procedural model, animated via the part-based clip source.
+        clipSource: registeredCharacterSource(id) ?? partRigSource(() => createMainCharacter(colors), partCharacterClips()),
     }
 }

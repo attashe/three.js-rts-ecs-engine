@@ -12,6 +12,7 @@ import type {
     ChunksFacade,
     DayCycleFacade,
     LogFacade,
+    NpcFacade,
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
@@ -307,6 +308,30 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         },
     }
 
+    // NPC combat. Scripts set request flags on the runtime side-table; the
+    // npc-render system reads them to drive animation + despawn (glue only).
+    const npc: NpcFacade = {
+        attack(id) {
+            const runtime = opts.world.npcRuntimeById.get(id)
+            if (!runtime || runtime.dying) return false
+            runtime.requestAttack = true
+            return true
+        },
+        die(id) {
+            const runtime = opts.world.npcRuntimeById.get(id)
+            if (!runtime || runtime.dying) return false
+            runtime.requestDie = true
+            runtime.dying = true
+            return true
+        },
+        exists(id) {
+            return opts.world.npcRuntimeById.has(id)
+        },
+        list() {
+            return Array.from(opts.world.npcRuntimeById.keys())
+        },
+    }
+
     const zone: ZoneFacade = {
         contains(zoneId, who) {
             const z = opts.world.zones.get(zoneId)
@@ -372,6 +397,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         pistons,
         stones,
         carts,
+        npc,
         zone,
         log,
         ui: {

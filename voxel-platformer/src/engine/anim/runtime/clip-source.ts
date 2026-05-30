@@ -17,7 +17,7 @@ export interface ClipSet {
 }
 
 export interface ClipSource {
-    readonly kind: 'reference' | 'gltf'
+    readonly kind: 'reference' | 'gltf' | 'part'
     /** Build a fresh, independently-animatable instance (own skeleton + clips). */
     instantiate(): ClipSet
 }

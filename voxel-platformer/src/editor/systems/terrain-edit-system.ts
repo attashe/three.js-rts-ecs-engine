@@ -136,6 +136,22 @@ export function createTerrainEditSystem(
         order: FixedOrder.input + 1,
         update(_world, dt) {
             const inTerrain = editorState.mode === 'terrain'
+            if (editorState.viewMode === 'orbit') {
+                if (strokeActive) endStroke()
+                editorState.terrainDragAnchor = null
+                if (!inTerrain || !editorState.cursor) return
+                const clicks = input.consumeClicks()
+                if (clicks.length === 0) return
+                for (const click of clicks) {
+                    if (click.button !== LMB && click.button !== RMB) continue
+                    if (editorState.terrainTool === 'ramp') continue
+                    if (editorState.terrainTool !== 'sculpt' && click.button !== LMB) continue
+                    beginStroke(editorState.terrainTool === 'sculpt' && click.button === RMB ? -1 : 1)
+                    applyStamp(editorState.cursor)
+                    endStroke()
+                }
+                return
+            }
             const lmb = input.isMouseButtonDown(LMB)
             const rmb = input.isMouseButtonDown(RMB)
             const anyDown = lmb || rmb

@@ -1,4 +1,17 @@
 import type { VoxelBuffer } from '../buffer'
+import type { EditorPropKind } from '../../game/props/prop-types'
+
+export interface StructurePrefabProp {
+    /** Stable id suffix within this prefab. */
+    id: string
+    kind: EditorPropKind
+    /** Prefab-local position. The asset layer normalises this with the voxels. */
+    x: number
+    y: number
+    z: number
+    yaw?: number
+    scale?: number
+}
 
 /**
  * A hand-authored, deterministic structure. Unlike the procedural
@@ -22,4 +35,6 @@ export interface StructurePrefab {
     description: string
     /** Paint the prefab's voxels into `buf`. */
     build(buf: VoxelBuffer): void
+    /** Optional prefab-local prop meshes placed alongside the baked voxels. */
+    props?: readonly StructurePrefabProp[]
 }

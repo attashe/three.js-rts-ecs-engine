@@ -6,6 +6,7 @@ import { EngineMetrics } from '../metrics'
 import type { Zone, ZoneTriggerEvent, ZoneTriggerSource } from './zones'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../../game/player-settings'
 import type { InventoryItemMap, InventoryItemOptions } from '../../game/inventory'
+import type { NpcRuntimeState } from '../../game/npcs/npc-types'
 
 export interface VoxelCoord {
     x: number
@@ -165,6 +166,9 @@ export type DeathReason =
     | 'killed-by-zone-script'
     | 'burned-by-lava'
 
+/** Which weapon set the player is wielding. */
+export type WeaponStance = 'melee' | 'ranged'
+
 const MAX_LOG_ENTRIES = 12
 const MAX_ZONE_EVENTS = 64
 
@@ -178,6 +182,9 @@ export interface GameContext {
     animControllerByEid: Map<number, AnimationController>
     /** Per-entity equipment: equip slot socket name -> attached Object3D. */
     equipmentByEid: Map<number, Map<string, Object3D>>
+    /** Per-NPC combat/animation runtime (NPCs aren't ECS entities). Melee +
+     *  scripts write request flags; npc-render reads them. */
+    npcRuntimeById: Map<string, NpcRuntimeState>
     /** AABBs of settled rigid bodies the voxel-sweep treats as solid. */
     obstacles: ObstacleRegistry
     inventory: PickupInventory
@@ -235,6 +242,10 @@ export interface GameContext {
      *  death-triggered reload) to override `meta.spawn`. Mirrored to
      *  a session-scoped store so the value survives `location.reload()`. */
     lastCheckpoint: VoxelCoord | null
+    /** Active weapon stance. `melee` carries sword + shield (swipe on attack);
+     *  `ranged` carries the bow (draw + shot). Toggled by the weapon-stance
+     *  system, which swaps the player's in-hand loadout to match. */
+    weaponStance: WeaponStance
     /** Queue of trigger events for the script engine to drain each
      *  fixed tick. Producer systems (zone trigger, pickup, death) push
      *  events here; `script-engine-system` consumes + emits via
@@ -292,6 +303,7 @@ export function createGameWorld(): GameWorld {
         object3DByEid: new Map<number, Object3D>(),
         animControllerByEid: new Map<number, AnimationController>(),
         equipmentByEid: new Map<number, Map<string, Object3D>>(),
+        npcRuntimeById: new Map<string, NpcRuntimeState>(),
         obstacles: new ObstacleRegistry(),
         inventory: { gold: 0, arrows: 0, items: {} },
         pickupMetaByEid: new Map<number, PickupScriptMeta>(),
@@ -313,6 +325,7 @@ export function createGameWorld(): GameWorld {
         playerSettings: copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
         deathSignal: null,
         lastCheckpoint: null,
+        weaponStance: 'melee',
         scriptTriggerEvents: [],
     })
 }

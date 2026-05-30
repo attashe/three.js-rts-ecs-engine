@@ -43,6 +43,7 @@ export class ChunkManager {
     private readonly dirty: Set<ChunkKey> = new Set()
     private bulkDepth = 0
     private bulkDirty: Set<ChunkKey> | null = null
+    private revisionValue = 0
 
     constructor(palette: Palette) {
         this.palette = clonePalette(palette)
@@ -68,6 +69,7 @@ export class ChunkManager {
         if (!c) {
             c = new Chunk(cx, cy, cz)
             this.chunks.set(key, c)
+            this.revisionValue++
             // Newly-created chunk is implicitly "dirty" — the renderer needs to
             // produce its first geometry even though no setVoxel has been called.
             this.addDirty(cx, cy, cz)
@@ -99,6 +101,7 @@ export class ChunkManager {
         const changed = c.setLocal(lx, ly, lz, value)
         if (!changed) return false
 
+        this.revisionValue++
         this.addDirty(cx, cy, cz)
         // Boundary writes can re-expose a face on the neighbour chunk.
         if (lx === 0)               this.markChunkDirty(cx - 1, cy, cz)
@@ -157,6 +160,7 @@ export class ChunkManager {
     /** Remove every chunk and dirty marker. Used by level hot-swap paths
      *  that dispose the current renderer before loading a new location. */
     clear(): void {
+        if (this.chunks.size > 0 || this.dirty.size > 0) this.revisionValue++
         this.chunks.clear()
         this.dirty.clear()
         this.bulkDirty?.clear()
@@ -178,6 +182,10 @@ export class ChunkManager {
         return this.chunks.size
     }
 
+    revision(): number {
+        return this.revisionValue
+    }
+
     markAllDirty(): void {
         // Bump every chunk's version too. ChunkRenderer + BlockLightSystem
         // both skip work when their cached version matches `chunk.version`
@@ -189,5 +197,6 @@ export class ChunkManager {
             c.version++
             this.addDirty(c.cx, c.cy, c.cz)
         }
+        this.revisionValue++
     }
 }

@@ -2,8 +2,7 @@ import { Group, type Scene } from 'three'
 import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
 import { disposeObject3D } from '../../engine/render/dispose-object'
-import type { RailCartFacing } from '../../engine/ecs/world'
-import { createRailCartModel } from '../../game/rail/rail-cart-system'
+import { createRailCartModel, railCartYawForFacing } from '../../game/rail/rail-cart-system'
 import type { EditorState } from '../editor-state'
 
 export function createRailCartRenderSystem(scene: Scene, editorState: EditorState): System {
@@ -34,7 +33,7 @@ export function createRailCartRenderSystem(scene: Scene, editorState: EditorStat
             const model = createRailCartModel()
             model.name = `EditorRailCart:${cart.id}`
             model.position.set(cart.railCell.x + 0.5, cart.railCell.y + 0.06, cart.railCell.z + 0.5)
-            model.rotation.y = yawForFacing(cart.front)
+            model.rotation.y = railCartYawForFacing(cart.front)
             if (cart.id === editorState.selectedRailCartId) model.scale.setScalar(1.08)
             root.add(model)
         }
@@ -45,15 +44,6 @@ function clearRoot(root: Group): void {
     for (const child of [...root.children]) {
         root.remove(child)
         disposeObject3D(child)
-    }
-}
-
-function yawForFacing(facing: RailCartFacing): number {
-    switch (facing) {
-        case 'north': return Math.PI
-        case 'east': return Math.PI * 0.5
-        case 'south': return 0
-        case 'west': return -Math.PI * 0.5
     }
 }
 

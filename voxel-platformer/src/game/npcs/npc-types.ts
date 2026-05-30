@@ -34,6 +34,25 @@ export interface NpcConfig {
     scriptSource: string
 }
 
+/** Per-NPC gameplay/animation runtime state, keyed by NPC id in
+ *  `world.npcRuntimeById`. NPCs aren't ECS entities, so this is their combat
+ *  state: the melee system + scripts write the request flags; the npc-render
+ *  system reads them to drive the AnimationController and despawn on death. */
+export interface NpcRuntimeState {
+    id: string
+    position: { x: number; y: number; z: number }
+    hp: number
+    requestAttack: boolean
+    requestDie: boolean
+    dying: boolean
+    /** Registration handles, so a despawning NPC can free exactly its own zone +
+     *  obstacle (see `disposeNpc`). */
+    zoneId: string | null
+    obstacleId: number | null
+}
+
+export const NPC_DEFAULT_HP = 2
+
 export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     name: 'NPC',
     model: 'keeper',

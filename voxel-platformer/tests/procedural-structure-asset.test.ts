@@ -65,6 +65,24 @@ test('every prefab generates voxels and resolves a label', () => {
     }
 })
 
+test('station and forge prefabs bundle deterministic prop placements', () => {
+    for (const id of ['train-station', 'forge'] as const) {
+        const asset = generateStructureAsset(prefabSource(id), { palette: DEFAULT_PALETTE })
+        assert.ok(asset.decorationProps.length > 0, `${id} should include mesh props`)
+        assert.ok(asset.voxels.some((v) => v.block === BLOCK.fence), `${id} should use adaptive fence blocks`)
+        const props = structurePropPlacements(asset, { origin: { x: 30, y: 4, z: 40 }, rotation: 0, anchor: 'bottom-center' }, `test:${id}`)
+        assert.equal(props.length, asset.decorationProps.length)
+        assert.equal(new Set(props.map((p) => p.id)).size, props.length)
+        assert.ok(props.every((p) => p.id.startsWith(`test:${id}:`)))
+    }
+
+    const station = generateStructureAsset(prefabSource('train-station'), { palette: DEFAULT_PALETTE })
+    assert.ok(station.voxels.some((v) => v.block === BLOCK.rail), 'station should include a rail line')
+
+    const forge = generateStructureAsset(prefabSource('forge'), { palette: DEFAULT_PALETTE })
+    assert.ok(forge.voxels.some((v) => v.tag === 'forge-fire'), 'forge should include an active hearth')
+})
+
 test('portal gate prefab has a stable footprint and an emissive keystone', () => {
     const asset = generateStructureAsset(prefabSource(DEFAULT_PREFAB_ID))
     assert.equal(asset.footprint.width, 9) // pillars ±3 + base steps ±4 ⇒ 9 wide

@@ -49,6 +49,7 @@ import { createSunFollowSystem } from './engine/render/sun-follow-system'
 import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/render-layers'
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { createRailRenderSystem } from './game/rail/rail-render-system'
+import { createFenceRenderSystem } from './game/fence/fence-render-system'
 import { mountEditorPanel } from './editor/editor-ui'
 import { consumePlaytestLevel } from './editor/playtest'
 import { loadLevelFromBuffer } from './editor/save-load'
@@ -164,6 +165,9 @@ async function main(): Promise<void> {
         .addSystem(createRailRenderSystem(renderer.scene, chunks, {
             cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
         }), 'railRender')
+        .addSystem(createFenceRenderSystem(renderer.scene, chunks, {
+            cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
+        }), 'fenceRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
         .addSystem(createTerrainPreviewSystem(renderer.scene, chunks, editorState), 'terrainPreview')
         .addSystem(createWorkingPlaneSystem(renderer.scene, engine.input, renderer.iso, editorState), 'workingPlane')

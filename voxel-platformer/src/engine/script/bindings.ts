@@ -24,6 +24,7 @@ import type {
     GeomApi,
     LevelMetaFacade,
     LogFacade,
+    NpcFacade,
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
@@ -55,6 +56,7 @@ export interface BindingsDeps {
     pistons: PistonsFacade
     stones?: StonesFacade
     carts?: CartsFacade
+    npc?: NpcFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -78,6 +80,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const level = deps.level ?? NOOP_LEVEL
     const stones = deps.stones ?? NOOP_STONES
     const carts = deps.carts ?? NOOP_CARTS
+    const npc = deps.npc ?? NOOP_NPC
 
     // `on(...)` has two shapes: with filter object, or without (for
     // string-named custom events). Detect by checking arg 2's type —
@@ -210,6 +213,13 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             list: () => carts.list(),
         },
 
+        npc: {
+            attack: (id) => npc.attack(id),
+            die: (id) => npc.die(id),
+            exists: (id) => npc.exists(id),
+            list: () => npc.list(),
+        },
+
         flags: flagsApi,
 
         time: {
@@ -328,6 +338,13 @@ const NOOP_CARTS: CartsFacade = {
     setEnabled() { return false },
     isEnabled() { return false },
     isOccupied() { return false },
+    list() { return [] },
+}
+
+const NOOP_NPC: NpcFacade = {
+    attack() { return false },
+    die() { return false },
+    exists() { return false },
     list() { return [] },
 }
 

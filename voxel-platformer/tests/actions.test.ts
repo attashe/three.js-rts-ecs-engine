@@ -133,6 +133,8 @@ test('game actions expose the platformer command hint set in order', () => {
         { keys: ['H'], label: 'High jump' },
         { keys: ['G'], label: 'Air push' },
         { keys: ['F'], label: 'Bow' },
+        { keys: ['V'], label: 'Attack' },
+        { keys: ['X'], label: 'Switch weapon' },
         { keys: ['E'], label: 'Interaction' },
         { keys: ['Tab'], label: 'Inventory' },
     ])

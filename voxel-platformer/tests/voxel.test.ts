@@ -27,8 +27,11 @@ test('ChunkManager maps negative world coordinates to stable chunk/local storage
 
 test('bulk edits summarize changed voxels and dirty chunk keys', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const emptyRevision = chunks.revision()
     chunks.getOrCreate(1, 0, 0)
+    assert.ok(chunks.revision() > emptyRevision, 'creating a chunk bumps the global revision')
     chunks.drainDirty()
+    const beforeEditRevision = chunks.revision()
 
     const result = chunks.applyBulk([
         { x: CHUNK_DIM - 1, y: 0, z: 0, value: BLOCK.stone },
@@ -36,6 +39,10 @@ test('bulk edits summarize changed voxels and dirty chunk keys', () => {
     ])
 
     assert.equal(result.changedVoxels, 1)
+    assert.ok(chunks.revision() > beforeEditRevision, 'changed voxels bump the global revision once or more')
+    const afterEditRevision = chunks.revision()
+    chunks.setVoxel(CHUNK_DIM - 1, 0, 0, BLOCK.stone)
+    assert.equal(chunks.revision(), afterEditRevision, 'no-op writes do not wake dependent render systems')
     const dirty = chunks.drainDirty().map((chunk) => chunkKey(chunk.cx, chunk.cy, chunk.cz)).sort()
     assert.deepEqual(dirty, ['0,0,0', '1,0,0'])
 })

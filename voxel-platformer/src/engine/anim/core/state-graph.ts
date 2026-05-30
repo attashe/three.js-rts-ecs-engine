@@ -58,6 +58,11 @@ export interface AnimTransitionDef {
 export interface AnimParamDef {
     name: string
     default: number
+    /** A one-shot trigger: gameplay sets it (e.g. to 1), it's visible to exactly
+     *  one `tick()`'s transition evaluation, then the state machine resets it to
+     *  `default`. Use for attack/cast-style events; leave off for latched/level
+     *  params (speed, grounded, dead). */
+    trigger?: boolean
 }
 
 /** A complete, serialisable animation graph. */

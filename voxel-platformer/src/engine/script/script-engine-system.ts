@@ -35,6 +35,7 @@ import type {
     FlagValue,
     LevelMetaFacade,
     LogFacade,
+    NpcFacade,
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
@@ -56,6 +57,7 @@ export interface ScriptEngineSystemOptions {
     pistons: PistonsFacade
     stones?: StonesFacade
     carts?: CartsFacade
+    npc?: NpcFacade
     zone: ZoneFacade
     log: LogFacade
     ui?: UiFacade
@@ -126,6 +128,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         pistons: opts.pistons,
         stones: opts.stones,
         carts: opts.carts,
+        npc: opts.npc,
         zone: opts.zone,
         log: opts.log,
         ui: opts.ui,

@@ -37,6 +37,7 @@
     "src/sound-demo/local-assets.ts",
     "src/sound-demo/waveform.ts",
     "src/engine/ecs/components.ts",
+    "src/engine/ecs/collider-bounds.ts",
     "src/engine/ecs/obstacle-registry.ts",
     "src/engine/ecs/world.ts",
     "src/engine/ecs/zones.ts",

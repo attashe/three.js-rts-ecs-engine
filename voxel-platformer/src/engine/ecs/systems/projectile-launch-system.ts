@@ -57,6 +57,9 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
                     z: forwardZ * arrowSpeed,
                 },
             )
+            // Play the bow draw + release on the player's rig (weapon-specific
+            // attack: bow → `shoot`, melee → `attack`).
+            world.animControllerByEid.get(player)?.machine.setParam('shoot', 1)
             pushLog(world, 'Arrow loosed.')
             opts.onLaunch?.()
         },
