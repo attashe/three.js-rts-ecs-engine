@@ -107,7 +107,12 @@ export function createVoxelCursorSystem(
             // `place-structure` resolves the cursor cell (so the structure
             // preview can follow it) but draws no brush outline / ghost —
             // the structure-preview system owns that visual.
-            if (editorState.mode === 'select' || editorState.mode === 'place-structure' || editorState.mode === 'terrain') {
+            if (
+                editorState.mode === 'select' ||
+                editorState.mode === 'place-structure' ||
+                editorState.mode === 'place-weather' ||
+                editorState.mode === 'terrain'
+            ) {
                 lines.visible = false
                 ghost.visible = false
                 return

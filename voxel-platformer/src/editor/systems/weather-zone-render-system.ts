@@ -55,6 +55,7 @@ export function createWeatherZoneRenderSystem(scene: Scene, editorState: EditorS
 
     interface Entry { mesh: LineSegments<BufferGeometry, LineBasicMaterial>; fingerprint: string }
     const entries: Entry[] = []
+    let preview: Entry | null = null
 
     function fingerprint(zone: EditorWeatherZone): string {
         const sel = zone.id === editorState.selectedWeatherZoneId ? '1' : '0'
@@ -74,6 +75,48 @@ export function createWeatherZoneRenderSystem(scene: Scene, editorState: EditorS
         mesh.renderOrder = 995
         mesh.frustumCulled = false
         return { mesh, fingerprint: fingerprint(zone) }
+    }
+
+    function previewZone(): EditorWeatherZone | null {
+        if (editorState.mode !== 'place-weather' || !editorState.cursor) return null
+        const sizeXZ = Math.max(1, Math.floor(editorState.weatherZoneSize))
+        const sizeY = Math.max(1, Math.floor(editorState.weatherZoneHeight))
+        return {
+            id: '__effect-zone-preview__',
+            label: editorState.weatherZoneLabel.trim() || undefined,
+            presetId: editorState.weatherPresetId,
+            position: {
+                x: editorState.cursor.x + 0.5,
+                y: editorState.workingPlaneY + sizeY / 2,
+                z: editorState.cursor.z + 0.5,
+            },
+            size: { x: sizeXZ, y: sizeY, z: sizeXZ },
+            addSound: editorState.weatherZoneAddSound,
+            soundId: editorState.weatherZoneSoundId.trim() || undefined,
+            soundVolume: editorState.weatherZoneSoundVolume,
+        }
+    }
+
+    function syncPreview(): void {
+        const zone = previewZone()
+        if (!zone) {
+            if (preview) {
+                group.remove(preview.mesh)
+                preview.mesh.geometry.dispose()
+                preview = null
+            }
+            return
+        }
+
+        const fp = fingerprint(zone)
+        if (preview?.fingerprint === fp) return
+        if (preview) {
+            group.remove(preview.mesh)
+            preview.mesh.geometry.dispose()
+        }
+        preview = build(zone)
+        preview.mesh.renderOrder = 997
+        group.add(preview.mesh)
     }
 
     return {
@@ -102,6 +145,7 @@ export function createWeatherZoneRenderSystem(scene: Scene, editorState: EditorS
                 group.add(replacement.mesh)
                 entries[i] = replacement
             }
+            syncPreview()
         },
         dispose() {
             for (const entry of entries) {
@@ -109,6 +153,11 @@ export function createWeatherZoneRenderSystem(scene: Scene, editorState: EditorS
                 entry.mesh.geometry.dispose()
             }
             entries.length = 0
+            if (preview) {
+                group.remove(preview.mesh)
+                preview.mesh.geometry.dispose()
+                preview = null
+            }
             scene.remove(group)
             for (const mat of materials.values()) mat.dispose()
             materials.clear()
