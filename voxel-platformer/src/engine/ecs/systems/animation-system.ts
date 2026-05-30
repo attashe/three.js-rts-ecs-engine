@@ -8,11 +8,16 @@
 // the root, before worldRender draws it).
 
 import { hasComponent, observe, onRemove, query } from 'bitecs'
-import { Animated, Grounded, HorizontalBlocked, MovementState, Velocity } from '../components'
+import { Animated, Grounded, HorizontalBlocked, MovementState, Rotation, Velocity } from '../components'
 import { computeLocomotionParams } from '../../anim/core'
+import type { Object3D } from 'three'
 import type { GameWorld } from '../world'
 import type { System } from './system'
 import { RenderOrder } from './orders'
+
+// How quickly the visual model turns to face its travel direction (exp smoothing).
+const FACE_TURN_RATE = 14
+const FACE_MOVE_MIN_SPEED = 0.6
 
 export function createAnimationSystem(): System {
     let unsubscribeRemove: (() => void) | null = null
@@ -46,7 +51,15 @@ export function createAnimationSystem(): System {
                     blocked: hasComponent(world, eid, HorizontalBlocked),
                     movementState: MovementState.value[eid]!,
                 }))
+                controller.setLocomotionSpeed(speedXZ)
                 controller.update(dt)
+
+                // Turn the visual model toward its travel direction while moving
+                // (the entity's Rotation.y stays on the aim/look direction, so
+                // gameplay aiming is unaffected). This keeps the walk cycle
+                // aligned with motion instead of moonwalking when the player
+                // strafes or backs up relative to where they're looking.
+                faceTravelDirection(controller.root, eid, speedXZ, dt)
 
                 Animated.currentState[eid] = controller.currentStateIndex
                 Animated.prevState[eid] = controller.previousStateIndex
@@ -66,4 +79,20 @@ export function createAnimationSystem(): System {
             activeWorld = null
         },
     }
+}
+
+/** Smoothly turn `model.rotation.y` toward the entity's travel direction (in the
+ *  entity root's local frame) while moving, easing back to the look direction
+ *  when idle. `Velocity` is world-space; the root already carries Rotation.y, so
+ *  the model's local yaw is `travelYaw - lookYaw`. */
+function faceTravelDirection(model: Object3D, eid: number, speedXZ: number, dt: number): void {
+    const target = speedXZ > FACE_MOVE_MIN_SPEED
+        ? wrapAngle(Math.atan2(Velocity.x[eid]!, Velocity.z[eid]!) - Rotation.y[eid]!)
+        : 0
+    const t = 1 - Math.exp(-FACE_TURN_RATE * dt)
+    model.rotation.y += wrapAngle(target - model.rotation.y) * t
+}
+
+function wrapAngle(a: number): number {
+    return Math.atan2(Math.sin(a), Math.cos(a))
 }

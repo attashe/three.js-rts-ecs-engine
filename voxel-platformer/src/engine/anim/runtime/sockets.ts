@@ -1,6 +1,25 @@
 // Equipment socket resolution + attachment.
-import type { Object3D } from 'three'
+import { Euler, Quaternion, type Object3D } from 'three'
 import { SLOT_TO_SOCKET, SOCKET_NAMES, type EquipSlot } from '../core/convention'
+
+/** How to orient an attached item, independent of the socket bone's arbitrary
+ *  rest frame. Different rigs orient their hand bones differently (the code rig
+ *  is world-aligned; a Blender rig's hand bone is rolled ~180° along the limb),
+ *  so attaching with the raw bone frame tilts the item. Supplying a frame
+ *  cancels the bone's rest rotation relative to `root` (the rig model), so the
+ *  item starts in the model's frame (then follows the animation). */
+export interface SocketFrame {
+    /** The rig model the orientation is expressed relative to (controller.root). */
+    root: Object3D
+    /** Desired item orientation in the model frame, Euler XYZ radians.
+     *  Default = identity (item axis-aligned to the model: +Y up, +Z forward). */
+    orient?: readonly [number, number, number]
+}
+
+const _boneQ = new Quaternion()
+const _rootQ = new Quaternion()
+const _desired = new Quaternion()
+const _euler = new Euler()
 
 /** Find every canonical socket node by name under `root`. Missing sockets are
  *  simply absent from the map (that slot is disabled). */
@@ -18,12 +37,30 @@ export function socketNode(sockets: Map<string, Object3D>, slot: EquipSlot): Obj
 }
 
 /** Parent `item` to the slot's socket so it inherits the bone's animated
- *  transform. Returns false if the slot's socket is missing. */
-export function attachToSocket(sockets: Map<string, Object3D>, slot: EquipSlot, item: Object3D): boolean {
+ *  transform. Returns false if the slot's socket is missing. With a `frame`, the
+ *  item is canonicalised into the model's frame so its orientation is consistent
+ *  across rigs with differently-oriented socket bones. */
+export function attachToSocket(
+    sockets: Map<string, Object3D>,
+    slot: EquipSlot,
+    item: Object3D,
+    frame?: SocketFrame,
+): boolean {
     const node = socketNode(sockets, slot)
     if (!node) return false
     item.position.set(0, 0, 0)
-    item.quaternion.identity()
+    if (frame) {
+        // item.local = inv(boneRelModel) * desired, where
+        // boneRelModel = inv(rootWorld) * boneWorld.
+        node.getWorldQuaternion(_boneQ)
+        frame.root.getWorldQuaternion(_rootQ)
+        const boneRelModel = _rootQ.invert().multiply(_boneQ)
+        const o = frame.orient
+        _desired.setFromEuler(o ? _euler.set(o[0], o[1], o[2], 'XYZ') : _euler.set(0, 0, 0))
+        item.quaternion.copy(boneRelModel.invert().multiply(_desired))
+    } else {
+        item.quaternion.identity()
+    }
     node.add(item)
     return true
 }

@@ -11,6 +11,7 @@ import {
     stateClip,
     stateLoop,
     stateSpeed,
+    stateSyncRefSpeed,
     type AnimGraphDef,
     type AnimParamBag,
     type AnimStateDef,
@@ -28,6 +29,7 @@ export class AnimationController {
     private readonly stateIndex = new Map<string, number>()
     private readonly actions = new Map<string, AnimationAction>()
     private activeStates = new Set<string>()
+    private locomotionSpeed = 0
 
     constructor(clipSet: ClipSet, graph: AnimGraphDef) {
         this.clipSet = clipSet
@@ -43,6 +45,12 @@ export class AnimationController {
 
     setParams(bag: AnimParamBag): void {
         this.machine.setParams(bag)
+    }
+
+    /** Current horizontal movement speed, used to time-scale `syncToSpeed`
+     *  clips (walk/run) so the feet track the ground. */
+    setLocomotionSpeed(speed: number): void {
+        this.locomotionSpeed = speed
     }
 
     /** Index of the active state within its graph (for the debug mirror). */
@@ -65,12 +73,19 @@ export class AnimationController {
             action.enabled = true
             if (!this.activeStates.has(layer.stateId)) action.play()
             action.setEffectiveWeight(layer.weight)
+            this.applyTimeScale(layer.stateId, action)
             next.add(layer.stateId)
         }
         for (const id of this.activeStates) {
             if (!next.has(id)) this.actions.get(id)?.stop()
         }
         this.activeStates = next
+        this.mixer.update(dt)
+    }
+
+    /** Advance only the mixer, without ticking the state machine. For previewing
+     *  a single clip set up via `playStateImmediate` (no transitions fire). */
+    advance(dt: number): void {
         this.mixer.update(dt)
     }
 
@@ -112,6 +127,14 @@ export class AnimationController {
         this.activeStates.clear()
     }
 
+    private applyTimeScale(stateId: string, action: AnimationAction): void {
+        const def = this.stateDefs.get(stateId)
+        if (!def) return
+        if (!def.syncToSpeed) return
+        const rate = clamp(this.locomotionSpeed / stateSyncRefSpeed(def), 0.45, 2.2)
+        action.timeScale = stateSpeed(def) * rate
+    }
+
     private actionFor(stateId: string): AnimationAction | undefined {
         const existing = this.actions.get(stateId)
         if (existing) return existing
@@ -127,4 +150,8 @@ export class AnimationController {
         this.actions.set(stateId, action)
         return action
     }
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+    return v < lo ? lo : v > hi ? hi : v
 }

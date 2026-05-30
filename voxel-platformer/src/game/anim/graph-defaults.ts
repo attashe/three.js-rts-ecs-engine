@@ -32,8 +32,8 @@ export function locomotionGraph(): AnimGraphDef {
         ],
         states: [
             { id: 'idle', loop: 'loop' },
-            { id: 'walk', loop: 'loop' },
-            { id: 'run', loop: 'loop', speed: 1.1 },
+            { id: 'walk', loop: 'loop', syncToSpeed: true, syncRefSpeed: 1.8 },
+            { id: 'run', loop: 'loop', syncToSpeed: true, syncRefSpeed: 4.6 },
             { id: 'jump', loop: 'clamp' },
             { id: 'fall', loop: 'loop' },
             { id: 'land', loop: 'once' },

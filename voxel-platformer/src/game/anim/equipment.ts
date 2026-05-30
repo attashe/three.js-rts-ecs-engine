@@ -40,7 +40,7 @@ export function equipItem(world: GameWorld, eid: number, slot: EquipSlot, item: 
     const socketName = SLOT_TO_SOCKET[slot]
     const prev = slots.get(socketName)
     if (prev) detachFromSocket(prev)
-    if (!attachToSocket(controller.sockets, slot, item)) return false
+    if (!attachToSocket(controller.sockets, slot, item, { root: controller.root })) return false
     slots.set(socketName, item)
     return true
 }
@@ -76,13 +76,15 @@ function buildHat(): Group {
 function buildSword(): Group {
     const g = new Group()
     g.name = 'equip:sword'
-    // Grip at the socket origin; blade points along the hand's local -Y (down
-    // the forearm), so it reads as held when the arm hangs.
+    // Authored in the model's canonical frame (+Y up): grip at the origin,
+    // blade pointing up. The socket attach cancels the hand bone's rest tilt, so
+    // it reads as held upright regardless of the rig.
     const grip = new Mesh(new CylinderGeometry(0.022, 0.022, 0.14, 6), mat(0x3a2616))
+    grip.position.y = 0.07
     const guard = new Mesh(new BoxGeometry(0.16, 0.03, 0.04), mat(0xb8902f, 0.4, 0.4))
-    guard.position.y = -0.08
+    guard.position.y = 0.15
     const blade = new Mesh(new BoxGeometry(0.05, 0.6, 0.02), mat(0xc9d2dc, 0.3, 0.7))
-    blade.position.y = -0.4
+    blade.position.y = 0.46
     for (const m of [grip, guard, blade]) { m.castShadow = true; g.add(m) }
     return g
 }
@@ -90,10 +92,12 @@ function buildSword(): Group {
 function buildShield(): Group {
     const g = new Group()
     g.name = 'equip:shield'
-    const face = new Mesh(new BoxGeometry(0.04, 0.4, 0.32), mat(0x5a3a22))
-    const boss = new Mesh(new CylinderGeometry(0.06, 0.06, 0.05, 10), mat(0xb8902f, 0.4, 0.4))
-    boss.rotation.z = Math.PI / 2
-    boss.position.x = 0.03
-    for (const m of [face, boss]) { m.castShadow = true; g.add(m) }
+    // Canonical frame: face normal points forward (+Z), height +Y, width +X.
+    const face = new Mesh(new BoxGeometry(0.32, 0.42, 0.045), mat(0x5a3a22))
+    const rim = new Mesh(new BoxGeometry(0.34, 0.1, 0.05), mat(0x442c1a))
+    const boss = new Mesh(new CylinderGeometry(0.06, 0.06, 0.05, 12), mat(0xb8902f, 0.4, 0.4))
+    boss.rotation.x = Math.PI / 2
+    boss.position.z = 0.04
+    for (const m of [face, rim, boss]) { m.castShadow = true; g.add(m) }
     return g
 }

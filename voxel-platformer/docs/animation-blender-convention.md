@@ -95,6 +95,24 @@ Extra clips are allowed (the validator only warns). The default
 state graph + thresholds live in `src/game/anim/graph-defaults.ts`; a custom
 graph can reference any clip names your model provides.
 
+## Previewing
+
+A standalone **Animation** page (`animation.html`, `npm run dev` → `/animation.html`)
+loads any rig and lets you drive its state machine live (speed / vy / grounded
+sliders), scrub individual clips, and try equipment on the sockets — handy for
+checking a freshly exported `.glb` without launching the game. (It's a separate
+page on purpose; the editor is already dense.)
+
+Two runtime behaviours worth knowing when authoring locomotion clips:
+- **Speed-synced playback** — clips flagged `syncToSpeed` (walk, run) are
+  time-scaled by the character's actual speed (`syncRefSpeed` is the speed at
+  which they play at 1×), so author them at a natural cadence and the engine
+  matches the feet to the ground.
+- **Face-travel** — the visual model turns to face its movement direction while
+  moving (the entity's look/aim direction is separate), so author locomotion as
+  straight-ahead motion; strafing/backpedalling is handled by the turn, not by
+  separate directional clips.
+
 ## Validation summary
 
 Hard **errors** (asset rejected): no skinned mesh; no bones; a missing required

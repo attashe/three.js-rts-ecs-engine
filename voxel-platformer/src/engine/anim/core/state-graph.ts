@@ -29,6 +29,12 @@ export interface AnimStateDef {
     loop?: LoopMode
     /** Playback-speed multiplier. Defaults to 1. */
     speed?: number
+    /** When true, the controller scales this clip's playback by the character's
+     *  movement speed (reduces foot-sliding on locomotion clips). */
+    syncToSpeed?: boolean
+    /** Movement speed (world units/s) at which a sync'd clip plays at its base
+     *  `speed`. Faster movement speeds the clip up, slower slows it. */
+    syncRefSpeed?: number
 }
 
 /** A directed, conditional transition between states. */
@@ -83,6 +89,10 @@ export function stateLoop(state: AnimStateDef): LoopMode {
 
 export function stateSpeed(state: AnimStateDef): number {
     return Number.isFinite(state.speed) ? state.speed! : 1
+}
+
+export function stateSyncRefSpeed(state: AnimStateDef): number {
+    return Number.isFinite(state.syncRefSpeed) && state.syncRefSpeed! > 0 ? state.syncRefSpeed! : 1
 }
 
 export function transitionBlend(t: AnimTransitionDef): number {
