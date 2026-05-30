@@ -2,31 +2,42 @@ import type { Palette } from '../engine/voxel/palette'
 import type { PartialStructureGenerationOptions, StructureGenerationOptions, StructureGenerationResult, StructureKind } from './types'
 import { boundsOf, VoxelBuffer } from './buffer'
 import { composeHouse } from './house'
+import { composeChurch, composeMarket, composeStable, composeTemple } from './landmarks'
 import { makeRng, type Rng } from './math'
 import { normalizeStructureOptions } from './options'
 import { addTerrain, cleanupLooseVoxels, variantSpots } from './terrain'
 import { composeTower } from './tower'
 import { composeTree } from './tree'
+import { composeWall } from './wall'
 
 export type {
     HouseParams,
     HouseStyle,
+    LandmarkParams,
     PartialStructureGenerationOptions,
     RoofStyle,
     StructureBounds,
     StructureGenerationOptions,
     StructureGenerationResult,
     StructureKind,
+    StructureScale,
     StructureVoxel,
     TowerParams,
     TowerStyle,
     TreeParams,
+    TreeSeason,
     TreeStyle,
+    WallGateMode,
+    WallParams,
+    WallPath,
+    WallPathPoint,
+    WallStyle,
+    WallTerrainMode,
 } from './types'
 export { STRUCTURE_MATERIALS } from './materials'
 export { DEFAULT_STRUCTURE_OPTIONS, normalizeStructureOptions } from './options'
+export { composeWallPath, generateWallSegment, normalizeWallParams, towerWallSocket, wallPathCells, wallPlacementEdits } from './wall'
 
-type ConcreteStructureKind = Exclude<StructureKind, 'mixed'>
 type StructureComposer = (
     buf: VoxelBuffer,
     ox: number,
@@ -36,11 +47,15 @@ type StructureComposer = (
     rng: Rng,
 ) => void
 
-const STRUCTURE_KIND_SEQUENCE: readonly ConcreteStructureKind[] = ['house', 'tree', 'tower']
-const STRUCTURE_COMPOSERS: Record<ConcreteStructureKind, StructureComposer> = {
+const STRUCTURE_COMPOSERS: Record<StructureKind, StructureComposer> = {
     house: composeHouse,
+    market: composeMarket,
+    stable: composeStable,
+    church: composeChurch,
+    temple: composeTemple,
     tree: composeTree,
     tower: composeTower,
+    wall: composeWall,
 }
 
 export function generateStructureScene(
@@ -55,8 +70,7 @@ export function generateStructureScene(
 
     for (const spot of variantSpots(opts)) {
         const local = makeRng(String(opts.seed) + ':' + spot.i + ':' + opts.kind)
-        const kind = resolveStructureKind(opts.kind, spot.i)
-        STRUCTURE_COMPOSERS[kind](buf, spot.x, baseY, spot.z, opts, local)
+        STRUCTURE_COMPOSERS[opts.kind](buf, spot.x, baseY, spot.z, opts, local)
     }
 
     if (opts.cleanLoose) cleanupLooseVoxels(buf)
@@ -78,10 +92,4 @@ export function generateStructureScene(
         materialCounts,
         materialNames,
     }
-}
-
-function resolveStructureKind(kind: StructureKind, variantIndex: number): ConcreteStructureKind {
-    return kind === 'mixed'
-        ? STRUCTURE_KIND_SEQUENCE[variantIndex % STRUCTURE_KIND_SEQUENCE.length]!
-        : kind
 }

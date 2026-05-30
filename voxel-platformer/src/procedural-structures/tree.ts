@@ -1,5 +1,5 @@
 import { BLOCK } from '../engine/voxel/palette'
-import type { StructureGenerationOptions, TreeStyle } from './types'
+import type { StructureGenerationOptions, TreeSeason, TreeStyle } from './types'
 import { VoxelBuffer } from './buffer'
 import type { Rng } from './math'
 import { choose, clamp, lerp, randFloat, randInt } from './math'
@@ -21,6 +21,14 @@ const TREE_STYLE_MATERIALS: Record<Exclude<TreeStyle, 'mixed'>, TreeMats> = {
     dead: { trunk: BLOCK.barkDark, bark: BLOCK.woodDark, leaf: BLOCK.bark, leaf2: BLOCK.barkDark, dark: BLOCK.barkDark },
 }
 
+const AUTUMN_TREE_STYLE_MATERIALS: Record<Exclude<TreeStyle, 'mixed'>, TreeMats> = {
+    oak: { trunk: BLOCK.bark, bark: BLOCK.barkDark, leaf: BLOCK.autumnLeaf, leaf2: BLOCK.autumnLeafLight, dark: BLOCK.autumnLeafDark },
+    pine: TREE_STYLE_MATERIALS.pine,
+    birch: { trunk: BLOCK.barkLight, bark: BLOCK.barkDark, leaf: BLOCK.autumnLeafLight, leaf2: BLOCK.autumnLeaf, dark: BLOCK.autumnLeafDark },
+    willow: { trunk: BLOCK.bark, bark: BLOCK.barkDark, leaf: BLOCK.autumnLeafLight, leaf2: BLOCK.autumnLeaf, dark: BLOCK.autumnLeafDark },
+    dead: TREE_STYLE_MATERIALS.dead,
+}
+
 export function composeTree(buf: VoxelBuffer, ox: number, oy: number, oz: number, opts: StructureGenerationOptions, rng: Rng): void {
     const p = opts.tree
     const style = choose(p.style, ['oak', 'pine', 'birch', 'willow', 'dead'], rng)
@@ -37,12 +45,12 @@ export function composeTree(buf: VoxelBuffer, ox: number, oy: number, oz: number
     treeFruitAndGroundDetails(buf, ox, oy, oz, crownR, style, rng, opts)
 }
 
-function treeStyleMats(style: Exclude<TreeStyle, 'mixed'>): TreeMats {
-    return TREE_STYLE_MATERIALS[style]
+function treeStyleMats(style: Exclude<TreeStyle, 'mixed'>, season: TreeSeason): TreeMats {
+    return season === 'autumn' ? AUTUMN_TREE_STYLE_MATERIALS[style] : TREE_STYLE_MATERIALS[style]
 }
 
 function treeTrunk(buf: VoxelBuffer, ox: number, oy: number, oz: number, height: number, radius: number, style: Exclude<TreeStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions): void {
-    const mats = treeStyleMats(style)
+    const mats = treeStyleMats(style, opts.tree.season)
     const taper = Math.max(0, radius - 1)
     for (let y = 0; y < height; y++) {
         const t = y / Math.max(1, height - 1)
@@ -62,7 +70,7 @@ function treeTrunk(buf: VoxelBuffer, ox: number, oy: number, oz: number, height:
 }
 
 function treeRoots(buf: VoxelBuffer, ox: number, oy: number, oz: number, radius: number, style: Exclude<TreeStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions): void {
-    const mats = treeStyleMats(style)
+    const mats = treeStyleMats(style, opts.tree.season)
     const rootCount = clamp(Math.round(5 + opts.detail * 5 + radius), 5, 12)
     for (let i = 0; i < rootCount; i++) {
         const a = (i / rootCount) * Math.PI * 2 + randFloat(rng, -0.25, 0.25) * opts.variation
@@ -85,7 +93,7 @@ function treeBranches(
     rng: Rng,
     opts: StructureGenerationOptions,
 ): Array<{ x: number; y: number; z: number }> {
-    const mats = treeStyleMats(style)
+    const mats = treeStyleMats(style, opts.tree.season)
     const endpoints: Array<{ x: number; y: number; z: number }> = []
     if (style === 'pine') {
         const levels = Math.max(4, Math.round(trunkHeight / 3))
@@ -122,7 +130,7 @@ function treeBranches(
     return endpoints
 }
 
-function treeLeafBlob(buf: VoxelBuffer, cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, mats: ReturnType<typeof treeStyleMats>, rng: Rng, opts: StructureGenerationOptions, tag = 'leaf-blob'): void {
+function treeLeafBlob(buf: VoxelBuffer, cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, mats: TreeMats, rng: Rng, opts: StructureGenerationOptions, tag = 'leaf-blob'): void {
     const density = clamp(0.92 - opts.tree.leafNoise * 0.2, 0.68, 0.96)
     for (let x = -rx; x <= rx; x++) {
         for (let y = -ry; y <= ry; y++) {
@@ -139,7 +147,7 @@ function treeLeafBlob(buf: VoxelBuffer, cx: number, cy: number, cz: number, rx: 
 }
 
 function treeCrownOak(buf: VoxelBuffer, ox: number, oy: number, oz: number, trunkHeight: number, crownRadius: number, endpoints: Array<{ x: number; y: number; z: number }>, style: Exclude<TreeStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions): void {
-    const mats = treeStyleMats(style)
+    const mats = treeStyleMats(style, opts.tree.season)
     const centerY = oy + trunkHeight + Math.round(crownRadius * 0.35)
     treeLeafBlob(buf, ox, centerY, oz, crownRadius, Math.round(crownRadius * 0.75), crownRadius, mats, rng, opts, 'oak-crown-core')
     if (opts.detail <= 0.45) return
@@ -150,7 +158,7 @@ function treeCrownOak(buf: VoxelBuffer, ox: number, oy: number, oz: number, trun
 }
 
 function treeCrownPine(buf: VoxelBuffer, ox: number, oy: number, oz: number, trunkHeight: number, crownRadius: number, style: Exclude<TreeStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions): void {
-    const mats = treeStyleMats(style)
+    const mats = treeStyleMats(style, opts.tree.season)
     const baseY = oy + Math.round(trunkHeight * 0.50)
     const topY = oy + trunkHeight + Math.round(crownRadius * 0.55)
     const layers = Math.max(6, Math.round((topY - baseY) / 2))
@@ -173,7 +181,7 @@ function treeCrownPine(buf: VoxelBuffer, ox: number, oy: number, oz: number, tru
 }
 
 function treeCrownWillow(buf: VoxelBuffer, ox: number, oy: number, oz: number, trunkHeight: number, crownRadius: number, rng: Rng, opts: StructureGenerationOptions): void {
-    const mats = treeStyleMats('willow')
+    const mats = treeStyleMats('willow', opts.tree.season)
     const centerY = oy + trunkHeight + Math.round(crownRadius * 0.15)
     treeLeafBlob(buf, ox, centerY, oz, crownRadius, Math.round(crownRadius * 0.55), crownRadius, mats, rng, opts, 'willow-dome')
     const strands = Math.round(10 + opts.detail * 20)

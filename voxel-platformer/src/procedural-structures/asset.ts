@@ -26,7 +26,7 @@ import type { EditorProp, EditorPropKind } from '../game/props/prop-types'
  *   placeStructureAsset(chunks, asset, xf)→ stamp + return undo edits
  *
  * Two source kinds are supported, behind one uniform API:
- *   - `procedural` — a seeded tree / house / tower / mixed generator.
+ *   - `procedural` — a seeded tree / building / tower / wall generator.
  *   - `prefab`     — a hand-authored set-piece (portal gate, well, ...).
  */
 
@@ -257,7 +257,7 @@ function rawVoxels(source: StructureSource, palette?: Palette): RawVoxels {
         return { voxels: buf.toArray(), label: prefab.label, names: {} }
     }
     const result = generateStructureScene(source.options, palette)
-    const kind = source.options.kind ?? 'mixed'
+    const kind = source.options.kind ?? 'house'
     return {
         voxels: result.voxels,
         label: kind.charAt(0).toUpperCase() + kind.slice(1),

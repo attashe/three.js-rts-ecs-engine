@@ -21,6 +21,34 @@ test('spawnScriptPickup + scriptPickupExists round-trip a stable id', () => {
     assert.equal(scriptPickupExists(world, 'shard.B'), false)
 })
 
+test('spawnScriptPickup stores durable inventory metadata for custom pickups', () => {
+    const world = createGameWorld()
+    spawnScriptPickup(world, {
+        kind: 'sun-shard',
+        position: { x: 1, y: 2, z: 3 },
+        id: 'shard.meta',
+        amount: 2,
+        label: 'Bright Shard',
+        inventoryItem: {
+            id: 'bright-shard',
+            description: 'A warm splinter of light.',
+            category: 'quest',
+            icon: 'quest-shard',
+        },
+    })
+    const eid = world.pickupEntityByScriptId.get('shard.meta')!
+    assert.deepEqual(world.pickupMetaByEid.get(eid)?.inventoryItem, {
+        id: 'bright-shard',
+        quantity: 2,
+        options: {
+            name: 'Bright Shard',
+            description: 'A warm splinter of light.',
+            category: 'quest',
+            icon: 'quest-shard',
+        },
+    })
+})
+
 test('despawnScriptPickup removes the live entity, clears both maps, and is idempotent', () => {
     const world = createGameWorld()
     spawnScriptPickup(world, { kind: 'coin', position: { x: 0, y: 0, z: 0 }, id: 'coin.A' })

@@ -67,7 +67,7 @@ function makeHarness(initialGold: number): Harness {
         getPosition: () => ({ x: 4.3, y: 5, z: 19.8 }),
         getGold: () => gold,
         getArrows: () => 0,
-        getSettings: () => copyPlayerSettings({ ...DEFAULT_PLAYER_SETTINGS, inventory: { gold, arrows: 0 } }),
+        getSettings: () => copyPlayerSettings({ ...DEFAULT_PLAYER_SETTINGS, inventory: { gold, arrows: 0, items: {} } }),
         setSettings: () => copyPlayerSettings(DEFAULT_PLAYER_SETTINGS),
         setAbility() {},
         setGold(amount) { gold = amount },

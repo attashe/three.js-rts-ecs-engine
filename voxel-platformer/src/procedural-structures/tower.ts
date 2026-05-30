@@ -1,41 +1,94 @@
 import { BLOCK } from '../engine/voxel/palette'
-import type { StructureGenerationOptions, TowerStyle } from './types'
+import type { StructureGenerationOptions, StructureScale, TowerStyle } from './types'
 import { VoxelBuffer } from './buffer'
 import type { Rng } from './math'
 import { choose, clamp, hash2, randFloat, randInt } from './math'
 
-const TOWER_FLOOR_INTERVAL = 6
-// Wall-hugging spiral runs on a fixed ring just inside the walls. A radius-3
-// ring gives ~24 cells per revolution: at rise-1-per-cell that is the gentlest
-// pitch the player's free 1-voxel step-up can climb, with room for a 2-wide
-// tread and a clear 2-cell-tall stairwell carved above it.
-const TOWER_STAIR_RADIUS = 3
+interface TowerProfile {
+    scale: StructureScale
+    minRadius: number
+    minHeight: number
+    minOuterRadius: number
+    floorInterval: number
+    stairRadius: number
+    doorWidth: number
+    doorHeight: number
+    entryPathLength: number
+    entryPathHalfWidth: number
+    windowStart: number
+    windowWidth: number
+    windowHeight: number
+    bannerHeight: number
+    torchY: number
+}
+
+const TOWER_PROFILES: Record<StructureScale, TowerProfile> = {
+    troll: {
+        scale: 'troll',
+        minRadius: 5,
+        minHeight: 18,
+        minOuterRadius: 5,
+        floorInterval: 6,
+        stairRadius: 3,
+        doorWidth: 3,
+        doorHeight: 5,
+        entryPathLength: 6,
+        entryPathHalfWidth: 2,
+        windowStart: 8,
+        windowWidth: 1,
+        windowHeight: 3,
+        bannerHeight: 4,
+        torchY: 4,
+    },
+    folk: {
+        scale: 'folk',
+        minRadius: 4,
+        minHeight: 12,
+        minOuterRadius: 4,
+        floorInterval: 4,
+        stairRadius: 2,
+        doorWidth: 2,
+        doorHeight: 3,
+        entryPathLength: 4,
+        entryPathHalfWidth: 1,
+        windowStart: 5,
+        windowWidth: 1,
+        windowHeight: 2,
+        bannerHeight: 2,
+        torchY: 2,
+    },
+}
 
 export function composeTower(buf: VoxelBuffer, ox: number, oy: number, oz: number, opts: StructureGenerationOptions, rng: Rng): void {
     const p = opts.tower
+    const profile = towerProfile(p.scale)
     const style = choose(p.style, ['round', 'square', 'lighthouse', 'ruined'], rng)
-    const r = Math.max(5, p.radius + Math.round(randInt(rng, -1, 1) * opts.variation))
-    const h = Math.max(18, p.height + Math.round(randInt(rng, -2, 2) * opts.variation))
+    const r = Math.max(profile.minRadius, p.radius + Math.round(randInt(rng, -1, 1) * opts.variation))
+    const h = Math.max(profile.minHeight, p.height + Math.round(randInt(rng, -2, 2) * opts.variation))
     const thick = Math.max(1, p.wallThickness)
-    towerShell(buf, ox, oy, oz, r, h, thick, style, opts)
-    towerDoorArch(buf, ox, oy, oz, r, thick)
-    towerWindowsAndSlits(buf, ox, oy, oz, r, h, thick, p.windowEvery, style, opts)
-    towerInterior(buf, ox, oy, oz, r, h, thick, style, opts)
+    towerShell(buf, ox, oy, oz, r, h, thick, style, opts, profile)
+    towerDoorArch(buf, ox, oy, oz, r, thick, profile)
+    towerWindowsAndSlits(buf, ox, oy, oz, r, h, thick, p.windowEvery, style, opts, profile)
+    towerInterior(buf, ox, oy, oz, r, h, thick, style, opts, profile)
     towerControlledRuin(buf, ox, oy, oz, r, h, style, rng, opts)
-    towerButtresses(buf, ox, oy, oz, r, h, style, opts)
-    towerExteriorStairs(buf, ox, oy, oz, r, h, thick, style, opts)
-    const crownR = towerOuterRadiusAt(oy, r, h, oy + h - 1, opts)
+    towerButtresses(buf, ox, oy, oz, r, h, style, opts, profile)
+    towerExteriorStairs(buf, ox, oy, oz, r, h, thick, style, opts, profile)
+    const crownR = towerOuterRadiusAt(oy, r, h, oy + h - 1, opts, profile)
     towerCrown(buf, ox, oy, oz, crownR, h, style, opts.tower.spire)
     towerRoof(buf, ox, oy, oz, crownR, h, style, rng, opts)
-    towerBannersMossTorches(buf, ox, oy, oz, r, h, style, rng, opts)
+    towerBannersMossTorches(buf, ox, oy, oz, r, h, style, rng, opts, profile)
 }
 
-function towerShell(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+function towerProfile(scale: StructureScale): TowerProfile {
+    return TOWER_PROFILES[scale]
+}
+
+function towerShell(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
     const square = style === 'square'
     const shade = opts.detail > 0.3
     for (let y = 0; y < h; y++) {
         const wy = oy + y
-        const ro = towerOuterRadiusAt(oy, r, h, wy, opts)
+        const ro = towerOuterRadiusAt(oy, r, h, wy, opts, profile)
         const ri = Math.max(0, ro - thick)
         const plinth = y < 2
         const tag = square ? 'tower-wall-square' : 'tower-wall-round'
@@ -64,17 +117,17 @@ function towerStoneBlock(x: number, y: number, z: number, plinth: boolean, shade
     return BLOCK.stone
 }
 
-function towerOuterRadiusAt(oy: number, r: number, h: number, y: number, opts: StructureGenerationOptions): number {
+function towerOuterRadiusAt(oy: number, r: number, h: number, y: number, opts: StructureGenerationOptions, profile: TowerProfile): number {
     const t = clamp((y - oy) / Math.max(1, h - 1), 0, 1)
-    return Math.max(5, Math.round(r * (1 - opts.tower.taper * t)))
+    return Math.max(profile.minOuterRadius, Math.round(r * (1 - opts.tower.taper * t)))
 }
 
-function towerDoorArch(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, thick: number): void {
+function towerDoorArch(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, thick: number, profile: TowerProfile): void {
     const outerZ = oz - r
     const outsideZ = outerZ - 1
     const insideZ = outerZ + Math.max(1, thick) + 1
-    const w = 3
-    const h = 5
+    const w = profile.doorWidth
+    const h = profile.doorHeight
     const left = ox - Math.floor(w / 2)
     const right = left + w - 1
     for (let z = outsideZ; z <= insideZ; z++) {
@@ -87,19 +140,19 @@ function towerDoorArch(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: 
     buf.fillBox(left - 1, oy + h + 1, outerZ, right + 1, oy + h + 1, outerZ, BLOCK.darkStone, 'tower-door-arch')
     buf.fillBox(left - 1, oy + h + 1, insideZ, right + 1, oy + h + 1, insideZ, BLOCK.stone2, 'tower-door-inner-arch')
     buf.fillBox(left - 1, oy, outsideZ, right + 1, oy, insideZ, BLOCK.stone2, 'tower-entry-threshold')
-    towerEntryApproach(buf, ox, oy, outsideZ)
+    towerEntryApproach(buf, ox, oy, outsideZ, profile)
 }
 
-function towerWindowsAndSlits(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, interval: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+function towerWindowsAndSlits(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, interval: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
     const directions: Array<readonly [number, number]> = [[0, -1], [-1, 0], [1, 0], [0, 1]]
-    for (let y = oy + 8; y < oy + h - 4; y += Math.max(5, interval)) {
+    for (let y = oy + profile.windowStart; y < oy + h - Math.max(3, profile.windowHeight + 1); y += Math.max(profile.scale === 'folk' ? 4 : 5, interval)) {
         const t = clamp((y - oy) / Math.max(1, h - 1), 0, 1)
-        const surfaceR = Math.max(5, Math.round(r * (1 - opts.tower.taper * t)))
+        const surfaceR = Math.max(profile.minOuterRadius, Math.round(r * (1 - opts.tower.taper * t)))
         for (const [dx, dz] of directions) {
-            if (dx === 0 && dz === -1 && y <= oy + 8) continue
+            if (dx === 0 && dz === -1 && y <= oy + profile.windowStart) continue
             const x = ox + dx * surfaceR
             const z = oz + dz * surfaceR
-            towerWindowHole(buf, x, y, z, [dx, dz], thick, style === 'lighthouse' ? 2 : 1, style === 'lighthouse' ? 3 : 3)
+            towerWindowHole(buf, x, y, z, [dx, dz], thick, style === 'lighthouse' && profile.scale === 'troll' ? 2 : profile.windowWidth, profile.windowHeight)
         }
     }
 }
@@ -134,15 +187,15 @@ function towerWindowHole(buf: VoxelBuffer, x: number, y: number, z: number, norm
     }
 }
 
-function towerEntryApproach(buf: VoxelBuffer, ox: number, oy: number, outsideZ: number): void {
+function towerEntryApproach(buf: VoxelBuffer, ox: number, oy: number, outsideZ: number, profile: TowerProfile): void {
     const groundY = Math.max(0, oy - 1)
-    buf.fillBox(ox - 2, groundY, outsideZ - 6, ox + 2, groundY, outsideZ - 3, BLOCK.sand, 'tower-entry-path')
+    buf.fillBox(ox - profile.entryPathHalfWidth, groundY, outsideZ - profile.entryPathLength, ox + profile.entryPathHalfWidth, groundY, outsideZ - 3, BLOCK.sand, 'tower-entry-path')
     if (groundY < oy) {
-        buf.fillBox(ox - 2, groundY, outsideZ - 2, ox + 2, groundY, outsideZ - 2, BLOCK.stone2, 'tower-entry-lower-step')
-        buf.fillBox(ox - 2, oy, outsideZ - 1, ox + 2, oy, outsideZ - 1, BLOCK.stone, 'tower-entry-upper-step')
+        buf.fillBox(ox - profile.entryPathHalfWidth, groundY, outsideZ - 2, ox + profile.entryPathHalfWidth, groundY, outsideZ - 2, BLOCK.stone2, 'tower-entry-lower-step')
+        buf.fillBox(ox - profile.entryPathHalfWidth, oy, outsideZ - 1, ox + profile.entryPathHalfWidth, oy, outsideZ - 1, BLOCK.stone, 'tower-entry-upper-step')
         return
     }
-    buf.fillBox(ox - 2, oy, outsideZ - 2, ox + 2, oy, outsideZ - 1, BLOCK.stone2, 'tower-entry-landing')
+    buf.fillBox(ox - profile.entryPathHalfWidth, oy, outsideZ - 2, ox + profile.entryPathHalfWidth, oy, outsideZ - 1, BLOCK.stone2, 'tower-entry-landing')
 }
 
 /**
@@ -155,15 +208,15 @@ function towerEntryApproach(buf: VoxelBuffer, ox: number, oy: number, outsideZ: 
  * 2-cell-tall stairwell is carved above the spiral (last, see below) so nothing
  * — neither the decks it passes through nor the wall — ever blocks the climb.
  */
-function towerInterior(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+function towerInterior(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
     const firstStep = oy + 1
     const topStep = oy + h - 1
-    const path = towerStairLoopPath(TOWER_STAIR_RADIUS)
-    const storeys = towerStoreyLevels(oy, h)
+    const path = towerStairLoopPath(profile.stairRadius)
+    const storeys = towerStoreyLevels(oy, h, profile)
 
-    towerGroundFloor(buf, ox, oy, oz, r, h, thick, style, opts)
-    for (const y of storeys) towerStoreyDeck(buf, ox, oy, oz, r, h, thick, y, style, opts)
-    towerSpiralStair(buf, ox, oy, oz, r, h, thick, firstStep, topStep, path, storeys, style, opts)
+    towerGroundFloor(buf, ox, oy, oz, r, h, thick, style, opts, profile)
+    for (const y of storeys) towerStoreyDeck(buf, ox, oy, oz, r, h, thick, y, style, opts, profile)
+    towerSpiralStair(buf, ox, oy, oz, r, h, thick, firstStep, topStep, path, storeys, style, opts, profile)
     // Carve last so the punch clears the body-space directly above every tread
     // (otherwise the storey deck a tread tucks under would block standing on
     // it). The carve only ever touches cells above treads, never treads
@@ -175,9 +228,8 @@ interface TowerInteriorSlice {
     inner: number
 }
 
-function towerInteriorSlice(oy: number, r: number, h: number, thick: number, y: number, opts: StructureGenerationOptions): TowerInteriorSlice {
-    const t = clamp((y - oy) / Math.max(1, h - 1), 0, 1)
-    const outer = Math.max(5, Math.round(r * (1 - opts.tower.taper * t)))
+function towerInteriorSlice(oy: number, r: number, h: number, thick: number, y: number, opts: StructureGenerationOptions, profile: TowerProfile): TowerInteriorSlice {
+    const outer = towerOuterRadiusAt(oy, r, h, y, opts, profile)
     const inner = Math.max(2, outer - Math.max(1, thick))
     return { inner }
 }
@@ -188,14 +240,14 @@ function towerInteriorContains(style: Exclude<TowerStyle, 'mixed'>, x: number, z
         : x * x + z * z < inner * inner
 }
 
-function towerStoreyLevels(oy: number, h: number): number[] {
+function towerStoreyLevels(oy: number, h: number, profile: TowerProfile): number[] {
     const levels: number[] = []
-    for (let y = oy + TOWER_FLOOR_INTERVAL; y <= oy + h - 4; y += TOWER_FLOOR_INTERVAL) levels.push(y)
+    for (let y = oy + profile.floorInterval; y <= oy + h - 4; y += profile.floorInterval) levels.push(y)
     return levels
 }
 
-function towerGroundFloor(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
-    const { inner } = towerInteriorSlice(oy, r, h, thick, oy, opts)
+function towerGroundFloor(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
+    const { inner } = towerInteriorSlice(oy, r, h, thick, oy, opts, profile)
     for (let x = -inner; x <= inner; x++) {
         for (let z = -inner; z <= inner; z++) {
             if (!towerInteriorContains(style, x, z, inner)) continue
@@ -205,8 +257,8 @@ function towerGroundFloor(buf: VoxelBuffer, ox: number, oy: number, oz: number, 
     }
 }
 
-function towerStoreyDeck(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, y: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
-    const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts)
+function towerStoreyDeck(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, y: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
+    const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts, profile)
     for (let x = -inner; x <= inner; x++) {
         for (let z = -inner; z <= inner; z++) {
             if (!towerInteriorContains(style, x, z, inner)) continue
@@ -221,14 +273,14 @@ function towerStoreyDeck(buf: VoxelBuffer, ox: number, oy: number, oz: number, r
     }
 }
 
-function towerSpiralStair(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, firstStep: number, topStep: number, path: Array<readonly [number, number]>, storeys: number[], style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
+function towerSpiralStair(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, firstStep: number, topStep: number, path: Array<readonly [number, number]>, storeys: number[], style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
     const storeySet = new Set(storeys)
     const period = path.length
     for (let y = firstStep; y <= topStep; y++) {
         const i = y - firstStep
         const [cx, cz] = path[i % period]!
         const [ix, iz] = towerStairInnerCell(cx, cz)
-        const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts)
+        const { inner } = towerInteriorSlice(oy, r, h, thick, y, opts, profile)
         // Central newel the spiral wraps around.
         buf.set(ox, y, oz, BLOCK.darkStone, 'tower-spiral-pillar')
         // 2-wide tread: the ring cell plus its inward neighbour, so the player
@@ -293,12 +345,12 @@ function towerStairLanding(buf: VoxelBuffer, ox: number, y: number, oz: number, 
     }
 }
 
-function towerExteriorStairs(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
-    if (opts.detail < 0.45 || style === 'lighthouse') return
-    const targetY = oy + TOWER_FLOOR_INTERVAL
+function towerExteriorStairs(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, thick: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
+    if (opts.detail < 0.45 || style === 'lighthouse' || profile.scale === 'folk') return
+    const targetY = oy + profile.floorInterval
     if (targetY >= oy + h - 5) return
     const side = 1
-    const targetR = towerOuterRadiusAt(oy, r, h, targetY, opts)
+    const targetR = towerOuterRadiusAt(oy, r, h, targetY, opts, profile)
     const wallX = ox + side * targetR
     const outsideX = wallX + side * 2
     const startZ = oz - Math.max(3, Math.round(targetR * 0.65))
@@ -320,7 +372,7 @@ function towerExteriorStairs(buf: VoxelBuffer, ox: number, oy: number, oz: numbe
     buf.fillBox(landingX1, targetY, landingZ - 2, landingX2, targetY, landingZ + 2, BLOCK.stone2, 'tower-outer-landing')
     buf.fillBox(outsideX + side * 2, targetY + 1, landingZ - 2, outsideX + side * 2, targetY + 1, landingZ + 2, BLOCK.woodDark, 'tower-outer-landing-rail')
     towerClearOuterLandingHeadroom(buf, landingX1, landingX2, targetY, landingZ)
-    towerSideDoor(buf, ox, targetY, oz, targetR, thick, side)
+    towerSideDoor(buf, ox, targetY, oz, targetR, thick, side, profile)
 }
 
 function towerClearOuterLandingHeadroom(buf: VoxelBuffer, x1: number, x2: number, floorY: number, z: number): void {
@@ -331,24 +383,25 @@ function towerClearOuterLandingHeadroom(buf: VoxelBuffer, x1: number, x2: number
     }
 }
 
-function towerSideDoor(buf: VoxelBuffer, ox: number, floorY: number, oz: number, r: number, thick: number, side: -1 | 1): void {
+function towerSideDoor(buf: VoxelBuffer, ox: number, floorY: number, oz: number, r: number, thick: number, side: -1 | 1, profile: TowerProfile): void {
     const wallX = ox + side * r
     const outsideX = wallX + side
     const insideX = wallX - side * Math.max(1, thick)
     const x1 = Math.min(outsideX, insideX)
     const x2 = Math.max(outsideX, insideX)
+    const h = profile.doorHeight
     for (let x = x1; x <= x2; x++) {
         for (let z = oz - 1; z <= oz + 1; z++) {
-            for (let y = floorY + 1; y <= floorY + 4; y++) buf.del(x, y, z)
+            for (let y = floorY + 1; y <= floorY + h; y++) buf.del(x, y, z)
         }
     }
-    buf.fillBox(wallX, floorY + 1, oz - 2, wallX, floorY + 4, oz - 2, BLOCK.darkStone, 'tower-outer-door-jamb')
-    buf.fillBox(wallX, floorY + 1, oz + 2, wallX, floorY + 4, oz + 2, BLOCK.darkStone, 'tower-outer-door-jamb')
-    buf.fillBox(wallX, floorY + 5, oz - 2, wallX, floorY + 5, oz + 2, BLOCK.darkStone, 'tower-outer-door-arch')
+    buf.fillBox(wallX, floorY + 1, oz - 2, wallX, floorY + h, oz - 2, BLOCK.darkStone, 'tower-outer-door-jamb')
+    buf.fillBox(wallX, floorY + 1, oz + 2, wallX, floorY + h, oz + 2, BLOCK.darkStone, 'tower-outer-door-jamb')
+    buf.fillBox(wallX, floorY + h + 1, oz - 2, wallX, floorY + h + 1, oz + 2, BLOCK.darkStone, 'tower-outer-door-arch')
 }
 
-function towerButtresses(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions): void {
-    if (opts.detail < 0.35 || style === 'lighthouse') return
+function towerButtresses(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, style: Exclude<TowerStyle, 'mixed'>, opts: StructureGenerationOptions, profile: TowerProfile): void {
+    if (opts.detail < 0.35 || style === 'lighthouse' || profile.scale === 'folk') return
     const height = Math.min(h - 2, 10)
     for (const [dx, dz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
         if (dx === 0 && dz === -1) continue
@@ -512,22 +565,22 @@ function towerRuinedRoof(buf: VoxelBuffer, ox: number, baseY: number, oz: number
     }
 }
 
-function towerBannersMossTorches(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, style: Exclude<TowerStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions): void {
+function towerBannersMossTorches(buf: VoxelBuffer, ox: number, oy: number, oz: number, r: number, h: number, style: Exclude<TowerStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions, profile: TowerProfile): void {
     if (opts.detail < 0.55) return
     const y0 = oy + Math.round(h * 0.55)
     const faceX = ox + r
     const outX = ox + r + 1
     if (buf.has(faceX, y0, oz)) {
-        for (let y = y0; y <= y0 + 4; y++) for (let z = oz - 1; z <= oz + 1; z++) buf.set(outX, y, z, BLOCK.banner, 'tower-banner')
-        buf.set(outX, y0 + 5, oz, BLOCK.metal, 'banner-hook')
-        buf.set(faceX, y0 + 5, oz, BLOCK.metal, 'banner-wall-pin')
+        for (let y = y0; y <= y0 + profile.bannerHeight; y++) for (let z = oz - 1; z <= oz + 1; z++) buf.set(outX, y, z, BLOCK.banner, 'tower-banner')
+        buf.set(outX, y0 + profile.bannerHeight + 1, oz, BLOCK.metal, 'banner-hook')
+        buf.set(faceX, y0 + profile.bannerHeight + 1, oz, BLOCK.metal, 'banner-wall-pin')
     }
     for (const [dx, dz] of [[0, -1], [1, 0]]) {
         const wallX = ox + dx * r
         const wallZ = oz + dz * r
         const outX2 = ox + dx * (r + 1)
         const outZ2 = oz + dz * (r + 1)
-        const ty = oy + 4
+        const ty = oy + profile.torchY
         if (buf.has(wallX, ty, wallZ)) {
             buf.set(outX2, ty, outZ2, BLOCK.metal, 'torch-bracket')
             buf.set(outX2, ty + 1, outZ2, BLOCK.fire, 'torch-fire')

@@ -1,7 +1,7 @@
 import type { System } from '../engine/ecs/systems/system'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { Input } from '../engine/input/input'
-import type { DialogueSpeaker, TradeInventorySnapshot, TradeMode } from '../engine/script/types'
+import type { DialogueSpeaker, TradeInventorySnapshot, TradeMode, TradeResource } from '../engine/script/types'
 import { dialogueAvatarImageUrl } from './dialogue-system'
 import {
     resourceLabel,
@@ -48,6 +48,7 @@ interface TradeDom {
     itemList: HTMLDivElement
     buyMode: HTMLButtonElement
     sellMode: HTMLButtonElement
+    itemIcon: HTMLDivElement
     itemName: HTMLDivElement
     itemDescription: HTMLDivElement
     itemMeta: HTMLDivElement
@@ -260,6 +261,7 @@ export function createTradeController(opts: TradeControllerOptions): TradeContro
             paintModeButton(d.buyMode, false, false)
             paintModeButton(d.sellMode, false, false)
             d.itemName.textContent = 'No items'
+            paintResourceIcon(d.itemIcon, null)
             d.itemDescription.textContent = ''
             d.itemMeta.textContent = ''
             d.quantity.textContent = '0'
@@ -276,6 +278,7 @@ export function createTradeController(opts: TradeControllerOptions): TradeContro
         paintModeButton(d.buyMode, active.mode === 'buy', modeSupported(item, 'buy'))
         paintModeButton(d.sellMode, active.mode === 'sell', modeSupported(item, 'sell'))
 
+        paintResourceIcon(d.itemIcon, item.resource)
         d.itemName.textContent = item.name
         d.itemDescription.textContent = item.description ?? ''
         d.itemMeta.textContent = `${item.unitSize} ${resourceLabel(item.resource)} per trade`
@@ -457,6 +460,27 @@ function buildTradeDom(): TradeDom {
     modes.append(buyMode, sellMode)
     detail.appendChild(modes)
 
+    const itemHeader = document.createElement('div')
+    Object.assign(itemHeader.style, {
+        display: 'grid',
+        gridTemplateColumns: '54px minmax(0, 1fr)',
+        alignItems: 'center',
+        gap: '12px',
+        minWidth: '0',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const itemIcon = document.createElement('div')
+    Object.assign(itemIcon.style, {
+        width: '54px',
+        height: '54px',
+        display: 'grid',
+        placeItems: 'center',
+        borderRadius: '8px',
+        border: '1px solid rgba(255, 224, 131, 0.24)',
+        background: 'rgba(71, 54, 25, 0.40)',
+        boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+    } satisfies Partial<CSSStyleDeclaration>)
+
     const itemName = document.createElement('div')
     Object.assign(itemName.style, {
         font: '800 20px ui-sans-serif, system-ui, sans-serif',
@@ -464,7 +488,8 @@ function buildTradeDom(): TradeDom {
         minWidth: '0',
         overflowWrap: 'anywhere',
     } satisfies Partial<CSSStyleDeclaration>)
-    detail.appendChild(itemName)
+    itemHeader.append(itemIcon, itemName)
+    detail.appendChild(itemHeader)
 
     const itemDescription = document.createElement('div')
     Object.assign(itemDescription.style, {
@@ -542,6 +567,7 @@ function buildTradeDom(): TradeDom {
         itemList,
         buyMode,
         sellMode,
+        itemIcon,
         itemName,
         itemDescription,
         itemMeta,
@@ -572,6 +598,9 @@ function itemButton(item: NormalizedTradeItem, index: number, selected: boolean)
     const sell = item.sellPrice !== undefined ? `${item.sellPrice}g` : '--'
     button.innerHTML = ''
 
+    const icon = resourceIcon(item.resource, 'small')
+    icon.style.opacity = item.disabled ? '0.36' : '1'
+
     const name = document.createElement('span')
     name.textContent = item.name
     name.style.minWidth = '0'
@@ -585,10 +614,10 @@ function itemButton(item: NormalizedTradeItem, index: number, selected: boolean)
         whiteSpace: 'nowrap',
     } satisfies Partial<CSSStyleDeclaration>)
 
-    button.append(name, prices)
+    button.append(icon, name, prices)
     Object.assign(button.style, {
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) auto',
+        gridTemplateColumns: '28px minmax(0, 1fr) auto',
         alignItems: 'center',
         gap: '8px',
         minHeight: '40px',
@@ -602,6 +631,78 @@ function itemButton(item: NormalizedTradeItem, index: number, selected: boolean)
         cursor: 'pointer',
     } satisfies Partial<CSSStyleDeclaration>)
     return button
+}
+
+function paintResourceIcon(root: HTMLElement, resource: TradeResource | null): void {
+    root.innerHTML = ''
+    root.style.visibility = resource ? 'visible' : 'hidden'
+    if (!resource) return
+    root.appendChild(resourceIcon(resource, 'large'))
+}
+
+function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLElement {
+    switch (resource) {
+        case 'arrows':
+            return arrowBundleIcon(size)
+    }
+}
+
+function arrowBundleIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '34px' : '22px',
+        height: isLarge ? '28px' : '18px',
+        display: 'grid',
+        placeItems: 'center',
+        position: 'relative',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const offsets = isLarge ? [-8, 0, 8] : [-5, 0, 5]
+    for (let i = 0; i < offsets.length; i++) {
+        const arrow = document.createElement('span')
+        Object.assign(arrow.style, {
+            position: 'absolute',
+            left: isLarge ? '3px' : '2px',
+            top: `calc(50% + ${offsets[i]}px)`,
+            width: isLarge ? '25px' : '16px',
+            height: isLarge ? '2px' : '1.5px',
+            borderRadius: '999px',
+            background: '#f5d891',
+            transform: 'translateY(-50%) rotate(-16deg)',
+            boxShadow: '0 0 6px rgba(255, 224, 131, 0.20)',
+        } satisfies Partial<CSSStyleDeclaration>)
+
+        const head = document.createElement('span')
+        Object.assign(head.style, {
+            position: 'absolute',
+            right: '-1px',
+            top: '50%',
+            width: '0',
+            height: '0',
+            borderTop: isLarge ? '4px solid transparent' : '3px solid transparent',
+            borderBottom: isLarge ? '4px solid transparent' : '3px solid transparent',
+            borderLeft: isLarge ? '8px solid #f5d891' : '6px solid #f5d891',
+            transform: 'translateY(-50%)',
+        } satisfies Partial<CSSStyleDeclaration>)
+
+        const fletching = document.createElement('span')
+        Object.assign(fletching.style, {
+            position: 'absolute',
+            left: '-1px',
+            top: '50%',
+            width: isLarge ? '7px' : '5px',
+            height: isLarge ? '7px' : '5px',
+            borderLeft: '2px solid #87c6d8',
+            borderTop: '2px solid #87c6d8',
+            transform: 'translateY(-50%) rotate(-45deg)',
+        } satisfies Partial<CSSStyleDeclaration>)
+
+        arrow.append(head, fletching)
+        root.appendChild(arrow)
+    }
+    return root
 }
 
 function modeButton(label: string, mode: TradeMode): HTMLButtonElement {

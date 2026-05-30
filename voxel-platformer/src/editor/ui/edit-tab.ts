@@ -288,7 +288,7 @@ function buildStructureModePanel(): RefreshableElement {
     const section = sectionEl('Structures')
     const hint = document.createElement('div')
     hint.className = 'vpe-hint'
-    hint.textContent = 'Switch to the Structures tab to pick a prefab or procedural structure, rotation, and seed. The cursor preview shows the bounding box.'
+    hint.textContent = 'Switch to the Structures tab to pick a prefab or procedural structure. Walls use two clicks: start point, then end point.'
     section.appendChild(hint)
     return { element: section, refresh() {} }
 }

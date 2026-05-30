@@ -11,6 +11,7 @@ import {
 import { createEntity, despawnEntity } from '../engine/ecs/entity'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import { createCoinPile, createQuestShard, mergeGroupByMaterial } from './assets'
+import type { InventoryCategoryId, InventoryIconId } from './inventory'
 
 export interface CoinPileOptions {
     /** World-space position; the pile's base sits at this Y. */
@@ -28,10 +29,19 @@ export interface ScriptPickupOptions {
     kind: string
     /** Stable script id. Reusing it returns the existing live pickup. */
     id?: string
-    /** Stack amount for coin pickups. Ignored by custom quest items. */
+    /** Stack amount for coin pickups, or durable item quantity for custom pickups. */
     amount?: number
     /** Human-readable item name used in pickup log lines. */
     label?: string
+    /** Durable inventory item written when a custom pickup is collected.
+     *  Omit to use `kind` as the item id and `label` as the item name. */
+    inventoryItem?: {
+        id?: string
+        name?: string
+        description?: string
+        category?: InventoryCategoryId
+        icon?: InventoryIconId
+    }
 }
 
 let nextScriptPickupId = 1
@@ -65,14 +75,28 @@ export function spawnScriptPickup(world: GameWorld, opts: ScriptPickupOptions): 
     if (existing !== undefined) world.pickupEntityByScriptId.delete(scriptId)
 
     const kind = normalizeScriptKind(opts.kind)
+    const coinAmount = opts.amount === undefined ? undefined : safePickupAmount(opts.amount)
+    const itemAmount = safePickupAmount(opts.amount)
     const eid = kind === 'coin'
-        ? spawnCoinPile(world, { position: opts.position, amount: opts.amount })
-        : spawnQuestItem(world, opts.position)
+        ? spawnCoinPile(world, { position: opts.position, amount: coinAmount })
+        : spawnQuestItem(world, opts.position, itemAmount)
 
     world.pickupMetaByEid.set(eid, {
         kind,
         pickupId: scriptId,
         label: opts.label ?? defaultPickupLabel(kind),
+        inventoryItem: kind === 'coin'
+            ? undefined
+            : {
+                id: opts.inventoryItem?.id ?? kind,
+                quantity: itemAmount,
+                options: {
+                    name: opts.inventoryItem?.name ?? opts.label ?? defaultPickupLabel(kind),
+                    description: opts.inventoryItem?.description,
+                    category: opts.inventoryItem?.category ?? 'quest',
+                    icon: opts.inventoryItem?.icon ?? 'quest-shard',
+                },
+            },
     })
     world.pickupEntityByScriptId.set(scriptId, eid)
     return scriptId
@@ -107,7 +131,7 @@ export function scriptPickupExists(world: GameWorld, scriptId: string): boolean 
     return hasComponent(world, eid, Pickup)
 }
 
-function spawnQuestItem(world: GameWorld, position: { x: number; y: number; z: number }): number {
+function spawnQuestItem(world: GameWorld, position: { x: number; y: number; z: number }, amount = 1): number {
     const eid = createEntity(world)
     addComponents(world, eid, [Position, Rotation, Renderable, StaticRenderable, Pickup, PickupValue])
     Position.x[eid] = position.x
@@ -116,7 +140,7 @@ function spawnQuestItem(world: GameWorld, position: { x: number; y: number; z: n
     Rotation.y[eid] = 0
 
     PickupValue.kind[eid] = PickupKind.ScriptItem
-    PickupValue.amount[eid] = 1
+    PickupValue.amount[eid] = safePickupAmount(amount)
 
     world.object3DByEid.set(eid, mergeGroupByMaterial(createQuestShard()))
     return eid
@@ -135,4 +159,10 @@ function defaultPickupLabel(kind: string): string | undefined {
         .filter(Boolean)
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ')
+}
+
+function safePickupAmount(amount: unknown): number {
+    const n = Number(amount)
+    if (!Number.isFinite(n)) return 1
+    return Math.max(1, Math.floor(n))
 }

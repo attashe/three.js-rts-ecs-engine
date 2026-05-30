@@ -46,3 +46,16 @@ export type { TerrainMask, TerrainPoint, TerrainValue, FbmNoiseOptions } from '.
 
 export { defineLevel, outdoorDay, zoneBox, interactZone } from './meta'
 export type { LevelSpec, InteractZoneSpec } from './meta'
+
+export { castleWall, towerWallSocket } from './structures'
+export type {
+    CastleWallOptions,
+    CastleWallPoint,
+    CastleWallResult,
+    StructureScale as CastleWallScale,
+    WallGateMode as CastleWallGateMode,
+    WallParams as CastleWallParams,
+    WallPathPoint,
+    WallStyle as CastleWallStyle,
+    WallTerrainMode as CastleWallTerrainMode,
+} from './structures'

@@ -25,6 +25,14 @@ import {
     type PlayerSettings,
     type PlayerSettingsPatch,
 } from '../src/game/player-settings'
+import {
+    addInventoryItem,
+    inventoryItemCount,
+    listInventoryItems,
+    removeInventoryItem,
+    type InventoryItemMap,
+    type InventoryItemOptions,
+} from '../src/game/inventory'
 
 // VoxelCoord is re-exported from world.ts via types.ts; the test imports
 // it through that surface so the binding facade matches the real types.
@@ -35,6 +43,7 @@ function stubs() {
         chunksSet: [], chunksFill: [], chunksGet: [],
         playerTeleport: [], playerKill: [],
         playerSettings: [], playerAbility: [], playerGold: [], playerArrows: [],
+        playerItemAdd: [], playerItemRemove: [],
         pickupSpawn: [], pickupDespawn: [], pickupExists: [],
         pistonSetEnabled: [], pistonIsEnabled: [], pistonFlip: [], pistonList: [],
         uiSay: [],
@@ -51,6 +60,8 @@ function stubs() {
     let playerPos: VoxelCoord | null = { x: 1, y: 2, z: 3 }
     let gold = 7
     let arrows = 3
+    let items: InventoryItemMap = {}
+    addInventoryItem(items, 'sun-shard', 2, { name: 'Sun Shard', category: 'quest' })
     let playerSettings: PlayerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
     let savedCheckpoint: VoxelCoord | null = null
 
@@ -67,6 +78,18 @@ function stubs() {
         getPosition() { return playerPos },
         getGold() { return gold },
         getArrows() { return arrows },
+        getInventoryItemCount(itemId) { return inventoryItemCount(items, itemId) },
+        getInventoryItems(category) { return listInventoryItems(items, category) },
+        addInventoryItem(itemId: string, quantity?: number, opts?: InventoryItemOptions) {
+            const changed = addInventoryItem(items, itemId, quantity, opts)
+            calls.playerItemAdd.push({ itemId, quantity, opts, changed })
+            return changed
+        },
+        removeInventoryItem(itemId: string, quantity?: number) {
+            const changed = removeInventoryItem(items, itemId, quantity)
+            calls.playerItemRemove.push({ itemId, quantity, changed })
+            return changed
+        },
         getSettings() { return copyPlayerSettings(playerSettings) },
         setSettings(patch: PlayerSettingsPatch) {
             playerSettings = applyPlayerSettingsPatch(playerSettings, patch)
@@ -231,6 +254,13 @@ test('player bindings: position is live, teleport/kill forward', () => {
     s.setArrows(11)
     assert.equal(ctx.player.inventory.gold, 42)
     assert.equal(ctx.player.inventory.arrows, 11)
+    assert.equal(ctx.player.inventory.count('sun-shard'), 2)
+    assert.equal(ctx.player.inventory.has('sun-shard', 2), true)
+    assert.deepEqual(ctx.player.inventory.list('quest').map((item) => item.id), ['sun-shard'])
+    assert.equal(ctx.player.addInventoryItem('moon-key', 1, { name: 'Moon Key', category: 'tools' }), true)
+    assert.equal(ctx.player.inventory.count('moon-key'), 1)
+    assert.equal(ctx.player.removeInventoryItem('sun-shard'), true)
+    assert.equal(ctx.player.inventory.count('sun-shard'), 1)
     ctx.player.teleport(5, 5, 5)
     ctx.player.kill('test')
     assert.deepEqual(s.calls.playerTeleport, [{ x: 5, y: 5, z: 5 }])

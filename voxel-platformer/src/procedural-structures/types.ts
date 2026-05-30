@@ -1,8 +1,13 @@
-export type StructureKind = 'tree' | 'house' | 'tower' | 'mixed'
+export type StructureKind = 'tree' | 'house' | 'market' | 'stable' | 'church' | 'temple' | 'tower' | 'wall'
 export type TreeStyle = 'mixed' | 'oak' | 'pine' | 'birch' | 'willow' | 'dead'
+export type TreeSeason = 'summer' | 'autumn'
 export type HouseStyle = 'mixed' | 'cottage' | 'timber' | 'stone' | 'workshop'
 export type RoofStyle = 'mixed' | 'gable' | 'hip' | 'flat' | 'shed'
 export type TowerStyle = 'mixed' | 'round' | 'square' | 'lighthouse' | 'ruined'
+export type WallStyle = 'curtain' | 'stone' | 'timber' | 'ruined'
+export type WallGateMode = 'none' | 'center' | 'auto'
+export type WallTerrainMode = 'flat' | 'stepped'
+export type StructureScale = 'troll' | 'folk'
 
 export interface StructureVoxel {
     x: number
@@ -24,8 +29,19 @@ export interface StructureBounds {
     depth: number
 }
 
+export interface WallPathPoint {
+    x: number
+    y: number
+    z: number
+}
+
+export interface WallPath {
+    points: WallPathPoint[]
+}
+
 export interface TreeParams {
     style: TreeStyle
+    season: TreeSeason
     trunkHeight: number
     trunkRadius: number
     crownRadius: number
@@ -35,6 +51,7 @@ export interface TreeParams {
 }
 
 export interface HouseParams {
+    scale: StructureScale
     style: HouseStyle
     width: number
     depth: number
@@ -47,6 +64,7 @@ export interface HouseParams {
 }
 
 export interface TowerParams {
+    scale: StructureScale
     style: TowerStyle
     radius: number
     height: number
@@ -55,6 +73,24 @@ export interface TowerParams {
     windowEvery: number
     ruinAmount: number
     spire: boolean
+}
+
+export interface WallParams {
+    scale: StructureScale
+    style: WallStyle
+    length: number
+    height: number
+    thickness: number
+    foundationDepth: number
+    battlements: boolean
+    walkway: boolean
+    gate: WallGateMode
+    terrainMode: WallTerrainMode
+    ruinAmount: number
+}
+
+export interface LandmarkParams {
+    scale: StructureScale
 }
 
 export interface StructureGenerationOptions {
@@ -70,7 +106,9 @@ export interface StructureGenerationOptions {
     terrainNoise: number
     tree: TreeParams
     house: HouseParams
+    landmark: LandmarkParams
     tower: TowerParams
+    wall: WallParams
 }
 
 export interface StructureGenerationResult {
@@ -82,9 +120,11 @@ export interface StructureGenerationResult {
 }
 
 export type PartialStructureGenerationOptions =
-    Partial<Omit<StructureGenerationOptions, 'tree' | 'house' | 'tower'>>
+    Partial<Omit<StructureGenerationOptions, 'tree' | 'house' | 'landmark' | 'tower' | 'wall'>>
     & {
         tree?: Partial<TreeParams>
         house?: Partial<HouseParams>
+        landmark?: Partial<LandmarkParams>
         tower?: Partial<TowerParams>
+        wall?: Partial<WallParams>
     }

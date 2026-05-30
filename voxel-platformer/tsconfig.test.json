@@ -53,6 +53,14 @@
     "src/engine/fx/presets/weather-presets.ts",
     "src/engine/fx/lights/light-budget.ts",
     "src/game/weather-config.ts",
+    "src/engine/anim/core/state-graph.ts",
+    "src/engine/anim/core/conditions.ts",
+    "src/engine/anim/core/state-machine.ts",
+    "src/engine/anim/core/signals.ts",
+    "src/engine/anim/core/convention.ts",
+    "src/engine/anim/core/graph-serialization.ts",
+    "src/engine/anim/core/index.ts",
+    "src/game/anim/graph-defaults.ts",
     "scripts/export-procedural-levels.ts",
     "tests/**/*.ts"
   ]

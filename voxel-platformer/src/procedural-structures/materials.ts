@@ -17,6 +17,9 @@ export const STRUCTURE_MATERIALS = {
     leafDark: BLOCK.leafDark,
     leafLight: BLOCK.leafLight,
     deepLeaf: BLOCK.deepLeaf,
+    autumnLeaf: BLOCK.autumnLeaf,
+    autumnLeafDark: BLOCK.autumnLeafDark,
+    autumnLeafLight: BLOCK.autumnLeafLight,
     fruit: BLOCK.fruit,
     flower: BLOCK.flower,
     mushroom: BLOCK.mushroom,
@@ -63,4 +66,7 @@ export const LEAF_BLOCKS = new Set<number>([
     STRUCTURE_MATERIALS.leafDark,
     STRUCTURE_MATERIALS.leafLight,
     STRUCTURE_MATERIALS.deepLeaf,
+    STRUCTURE_MATERIALS.autumnLeaf,
+    STRUCTURE_MATERIALS.autumnLeafDark,
+    STRUCTURE_MATERIALS.autumnLeafLight,
 ])

@@ -13,6 +13,7 @@
 import type { VoxelCoord } from '../ecs/world'
 import type { PlayerAbilityKey, PlayerSettings, PlayerSettingsPatch } from '../../game/player-settings'
 import type { StoneSpawnOptions, StoneTierId } from '../../game/moving-objects'
+import type { InventoryCategoryId, InventoryItemOptions, InventorySnapshotItem } from '../../game/inventory'
 
 export type { VoxelCoord }
 
@@ -84,6 +85,10 @@ export interface PlayerFacade {
     getPosition(): VoxelCoord | null
     getGold(): number
     getArrows(): number
+    getInventoryItemCount?(itemId: string): number
+    getInventoryItems?(category?: InventoryCategoryId): InventorySnapshotItem[]
+    addInventoryItem?(itemId: string, quantity?: number, opts?: InventoryItemOptions): boolean
+    removeInventoryItem?(itemId: string, quantity?: number): boolean
     getSettings(): PlayerSettings
     setSettings(patch: PlayerSettingsPatch): PlayerSettings
     setAbility(ability: PlayerAbilityKey, enabled: boolean): void
@@ -323,7 +328,7 @@ export interface PlayerApi {
     /** True iff there's a live player entity. Use for explicit
      *  "skip while dead" gates: `if (!player.alive) return`. */
     readonly alive: boolean
-    readonly inventory: { readonly gold: number; readonly arrows: number }
+    readonly inventory: PlayerInventoryApi
     readonly settings: PlayerSettings
     /** Current respawn point set via `setCheckpoint`, or `null` when none
      *  is set this session. Survives a death-triggered reload but not a
@@ -343,6 +348,16 @@ export interface PlayerApi {
     setAbility(ability: PlayerAbilityKey, enabled: boolean): void
     setGold(amount: number): void
     setArrows(amount: number): void
+    addInventoryItem(itemId: string, quantity?: number, opts?: InventoryItemOptions): boolean
+    removeInventoryItem(itemId: string, quantity?: number): boolean
+}
+
+export interface PlayerInventoryApi {
+    readonly gold: number
+    readonly arrows: number
+    count(itemId: string): number
+    has(itemId: string, quantity?: number): boolean
+    list(category?: InventoryCategoryId): readonly InventorySnapshotItem[]
 }
 
 export interface ChunksApi {
@@ -426,6 +441,8 @@ export interface PickupSpawnOptions {
     id?: string
     /** Human-readable item name for pickup logs. */
     label?: string
+    /** Durable inventory metadata for custom pickups. Coins keep using gold. */
+    inventoryItem?: InventoryItemOptions & { id?: string }
 }
 
 export type FlagValue = number | string | boolean

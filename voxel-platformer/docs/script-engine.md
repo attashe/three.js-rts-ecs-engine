@@ -300,11 +300,16 @@ player.setCheckpoint(pos?: VoxelCoord)  // pos omitted ⇒ current player positi
 player.clearCheckpoint()    // forget the saved checkpoint
 player.inventory.gold       // number — getter
 player.inventory.arrows     // number — getter
+player.inventory.count(id)  // durable item count, e.g. 'sun-shard'
+player.inventory.has(id, n) // true when at least n items are held
+player.inventory.list(category?) // snapshot of visible durable items
 player.settings             // PlayerSettings snapshot — mutate via setters below
 player.setSettings(patch)   // patch movement, inventory, torch, model, abilities
 player.setAbility(name, on) // e.g. player.setAbility('bow', false)
 player.setGold(amount)
 player.setArrows(amount)
+player.addInventoryItem(id, quantity?, opts?)
+player.removeInventoryItem(id, quantity?)
 
 // Voxel grid
 chunks.getBlock(x, y, z): number
@@ -313,7 +318,14 @@ chunks.fillBlocks(min: VoxelCoord, max: VoxelCoord, block: number)
 
 // Pickups — spawn returns a stable id you can pass to despawn.
 pickups.spawn(kind: string, pos: VoxelCoord,
-              opts?: { amount?: number; id?: string; label?: string }): PickupId
+              opts?: {
+                amount?: number; id?: string; label?: string;
+                inventoryItem?: {
+                  id?: string; name?: string; description?: string;
+                  category?: 'quest' | 'consumables' | 'accessories' | 'tools' | 'resources';
+                  icon?: 'quest-shard' | 'item' | 'gold' | 'arrows' | 'consumable' | 'accessory' | 'tool'
+                }
+              }): PickupId
 pickups.despawn(id: PickupId): boolean  // true on success, false if not live
 pickups.exists(id: PickupId): boolean
 

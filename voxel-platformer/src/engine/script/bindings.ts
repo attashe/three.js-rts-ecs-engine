@@ -37,6 +37,7 @@ import type {
     ZoneFacade,
 } from './types'
 import type { ScriptRuntime } from './runtime'
+import type { InventoryCategoryId } from '../../game/inventory'
 
 /** Returned by `player.position` when the player entity doesn't
  *  exist. Every AABB / distance check using these coords yields false
@@ -137,6 +138,12 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
                 return {
                     get gold() { return player.getGold() },
                     get arrows() { return player.getArrows() },
+                    count(itemId: string) { return player.getInventoryItemCount?.(itemId) ?? 0 },
+                    has(itemId: string, quantity = 1) {
+                        const needed = Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : 1
+                        return (player.getInventoryItemCount?.(itemId) ?? 0) >= needed
+                    },
+                    list(category?: InventoryCategoryId) { return player.getInventoryItems?.(category) ?? [] },
                 }
             },
             get settings() { return player.getSettings() },
@@ -154,6 +161,12 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             setAbility(ability, enabled) { player.setAbility(ability, enabled) },
             setGold(amount) { player.setGold(amount) },
             setArrows(amount) { player.setArrows(amount) },
+            addInventoryItem(itemId, quantity, opts) {
+                return player.addInventoryItem?.(itemId, quantity, opts) ?? false
+            },
+            removeInventoryItem(itemId, quantity) {
+                return player.removeInventoryItem?.(itemId, quantity) ?? false
+            },
         },
 
         chunks: {

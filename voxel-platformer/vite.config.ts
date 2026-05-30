@@ -24,7 +24,7 @@ export default defineConfig({
   },
   server: {
     port: 8001,
-    open: '/index.html',
+    open: process.env.VISUAL_TEST ? false : '/index.html',
   },
   worker: {
     format: 'es',

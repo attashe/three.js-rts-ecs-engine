@@ -1,0 +1,9 @@
+// Public surface of the animation engine.
+export * from './core'
+export * from './runtime/clip-source'
+export * from './runtime/animation-controller'
+export * from './runtime/proc-clip-builder'
+export * from './runtime/sockets'
+export * from './runtime/reference-rig'
+export * from './runtime/blender-validator'
+export * from './runtime/gltf-clip-source'

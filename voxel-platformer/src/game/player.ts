@@ -1,7 +1,8 @@
-import { Group, PointLight } from 'three'
+import { Group, PointLight, type Object3D } from 'three'
 import { addComponents, query } from 'bitecs'
 import type { GameWorld } from '../engine/ecs/world'
 import {
+    Animated,
     BoxCollider,
     CameraTarget,
     PlayerControlled,
@@ -13,13 +14,16 @@ import {
 import { createEntity } from '../engine/ecs/entity'
 import {
     createBow,
-    createMainCharacter,
     createPlayerTorch,
     createQuiver,
     MAIN_CHARACTER_COLLIDER_HALF_HEIGHT,
     MAIN_CHARACTER_COLLIDER_RADIUS,
 } from './assets'
+import { AnimationController } from '../engine/anim'
+import { playerProfile } from './anim/character-profiles'
+import { createEquipment, equipItem } from './anim/equipment'
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
+import { disposeObject3D } from '../engine/render/dispose-object'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerModelKind, type PlayerSettings } from './player-settings'
 
 export interface PlayerOptions {
@@ -34,18 +38,21 @@ export const PLAYER_MODEL_KIND_USER_DATA = 'playerModelKind'
 /**
  * Spawn the player entity. Returns its EID.
  *
- * The mesh is a capsule wrapped in a `Group` so the entity's `Position` is
- * the player's *feet*, not the centre of the capsule. The visual offset lives
- * entirely in the Group, so all gameplay code (physics, AABB collider, camera
- * target) deals with foot-space coordinates.
+ * The visual rig is a `Group` whose origin is at the player's *feet*, so the
+ * entity's `Position` is foot-space (matching the AABB collider and camera
+ * target). The player model is a skeletal rig driven by the animation engine:
+ * its AnimationController lives in `world.animControllerByEid` and the
+ * animation-system ticks it each render frame from movement signals. Equipment
+ * (hat / weapons) is parented to the rig's socket bones so it follows the
+ * animation.
  *
  * Components attached:
  *   Position, Rotation, Velocity     — kinematic state.
  *   BoxCollider                      — half-extents (X, Z) and half-height (Y).
- *                                      AABB spans [pos.y, pos.y + 2*half.y].
  *   PlayerControlled                 — opts the entity into PlayerControlSystem.
  *   CameraTarget                     — the camera follows this entity.
  *   Renderable                       — RenderSyncSystem mirrors Position/Rotation onto the Group.
+ *   Animated                         — AnimationSystem drives its controller.
  *
  * The `Grounded` tag is added/removed by the physics system as it sweeps.
  */
@@ -60,6 +67,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
         PlayerControlled,
         Renderable,
         CameraTarget,
+        Animated,
     ])
     Position.x[eid] = opts.spawn.x
     Position.y[eid] = opts.spawn.y
@@ -71,88 +79,84 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
 
     const root = new Group()
     root.name = 'PlayerRoot'
-    root.add(createPlayerModel(settings.model, opts))
+    root.add(buildAnimatedPlayerModel(world, eid, settings.model))
     root.add(createBackBow())
     root.add(createBackQuiver())
     root.add(createHeldTorch(settings))
+    equipDefaultLoadout(world, eid)
 
-    // Move the entire player rig to the PLAYER layer. Cameras + lights
-    // that should still see/illuminate the player must opt into this
-    // layer via `enablePlayerVisibility()`; otherwise the player goes
-    // dark or invisible. The point of this isolation is so the
-    // player-held torch's shadow camera (which stays on the WORLD
-    // layer only) does not project the player's own body into its
-    // shadow map.
+    // Move the entire player rig (incl. socket equipment) to the PLAYER layer so
+    // the held torch's shadow camera (WORLD layer only) doesn't project the
+    // player's own body into its shadow map.
     setLayerRecursive(root, RENDER_LAYER.PLAYER)
-    // The held torch's PointLight is now on the PLAYER layer only,
-    // which would stop it lighting the world. Re-broaden every light
-    // descendant to also include the WORLD layer — they need to
-    // illuminate both. (The light's `shadow.camera.layers` is a
-    // separate mask and stays at the default WORLD-only, so the
-    // shadow render still excludes the player body.)
+    // The held torch's PointLight must still light the WORLD layer; re-broaden
+    // every light descendant (their shadow.camera.layers stays WORLD-only).
     root.traverse((obj) => {
-        if (!(obj instanceof PointLight)) return
-        obj.layers.enable(RENDER_LAYER.WORLD)
+        if (obj instanceof PointLight) obj.layers.enable(RENDER_LAYER.WORLD)
     })
 
     world.object3DByEid.set(eid, root)
     return eid
 }
 
-interface PlayerVisualOptions {
-    bodyColor?: number
-    rimColor?: number
-}
-
-function createPlayerModel(modelKind: PlayerModelKind, opts: PlayerVisualOptions): Group {
-    let model: Group
-    if (modelKind === 'keeper') {
-        model = createMainCharacter({
-            tunicColor: opts.bodyColor ?? 0x1f2c3f,
-            cloakColor: opts.rimColor ?? 0x3f2818,
-            skinColor: 0xc89461,
-            metalColor: 0xffc462,
-            bootColor: 0x17120d,
-        })
-    } else {
-        model = createMainCharacter({
-            tunicColor: opts.bodyColor ?? 0x2f5e8f,
-            cloakColor: opts.rimColor ?? 0x7a2430,
-        })
-    }
+/**
+ * Build the player's animated rig from its profile, register the
+ * AnimationController in the world side-table, and return the model Group.
+ */
+function buildAnimatedPlayerModel(world: GameWorld, eid: number, modelKind: PlayerModelKind): Object3D {
+    const profile = playerProfile(modelKind)
+    const clipSet = profile.clipSource.instantiate()
+    const model = clipSet.root
     model.name = 'PlayerModel'
     model.userData[PLAYER_MODEL_KIND_USER_DATA] = modelKind
+
+    const controller = new AnimationController(clipSet, profile.graph)
+    world.animControllerByEid.get(eid)?.dispose()
+    world.animControllerByEid.set(eid, controller)
     return model
+}
+
+/** Hat on the head, a weapon in each hand — demonstrates the socket system and
+ *  the iso-important head slot. Re-run after a model swap (sockets are rebuilt). */
+function equipDefaultLoadout(world: GameWorld, eid: number): void {
+    equipItem(world, eid, 'head', createEquipment('hat'))
+    equipItem(world, eid, 'handR', createEquipment('sword'))
+    equipItem(world, eid, 'handL', createEquipment('shield'))
 }
 
 export function syncPlayerVisuals(world: GameWorld): void {
     const players = query(world, [PlayerControlled, Renderable])
     for (let i = 0; i < players.length; i++) {
-        const root = world.object3DByEid.get(players[i]!)
-        if (!(root instanceof Group)) continue
-        syncPlayerModel(root, world.playerSettings.model)
+        const eid = players[i]!
+        const root = world.object3DByEid.get(eid)
+        if (root instanceof Group) syncPlayerModel(world, eid, root, world.playerSettings.model)
     }
 }
 
-function syncPlayerModel(root: Group, modelKind: PlayerModelKind): void {
+function syncPlayerModel(world: GameWorld, eid: number, root: Group, modelKind: PlayerModelKind): void {
     const current = root.children.find((child) => child.userData[PLAYER_MODEL_KIND_USER_DATA] !== undefined)
     if (current?.userData[PLAYER_MODEL_KIND_USER_DATA] === modelKind) return
 
-    const next = createPlayerModel(modelKind, {})
-    setLayerRecursive(next, RENDER_LAYER.PLAYER)
-    if (!current) {
-        root.add(next)
-        return
+    world.equipmentByEid.delete(eid)
+    const next = buildAnimatedPlayerModel(world, eid, modelKind)
+
+    let index = -1
+    if (current) {
+        index = root.children.indexOf(current)
+        root.remove(current)
+        disposeObject3D(current)
+    }
+    root.add(next)
+    if (index >= 0) {
+        const appendedIndex = root.children.indexOf(next)
+        if (appendedIndex >= 0 && index < appendedIndex) {
+            root.children.splice(appendedIndex, 1)
+            root.children.splice(index, 0, next)
+        }
     }
 
-    const index = root.children.indexOf(current)
-    root.remove(current)
-    root.add(next)
-    const appendedIndex = root.children.indexOf(next)
-    if (index >= 0 && appendedIndex >= 0 && index < appendedIndex) {
-        root.children.splice(appendedIndex, 1)
-        root.children.splice(index, 0, next)
-    }
+    equipDefaultLoadout(world, eid)
+    setLayerRecursive(next, RENDER_LAYER.PLAYER)
 }
 
 function createHeldTorch(settings: PlayerSettings): Group {

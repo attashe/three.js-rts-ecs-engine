@@ -1,5 +1,5 @@
 import { BLOCK } from '../engine/voxel/palette'
-import type { HouseStyle, StructureGenerationOptions } from './types'
+import type { HouseStyle, StructureGenerationOptions, StructureScale } from './types'
 import { VoxelBuffer } from './buffer'
 import type { Rng } from './math'
 import { choose, lerp, randInt } from './math'
@@ -20,27 +20,102 @@ const HOUSE_STYLE_MATERIALS: Record<Exclude<HouseStyle, 'mixed'>, HouseMats> = {
     workshop: { wall: BLOCK.wood, wall2: BLOCK.wall, trim: BLOCK.metal, roof: BLOCK.roofDark, roof2: BLOCK.roof, foundation: BLOCK.stone },
 }
 
+interface HouseProfile {
+    scale: StructureScale
+    minWidth: number
+    minDepth: number
+    doorWidth: number
+    doorHeight: number
+    windowWidth: number
+    windowHeightMin: number
+    foundationMargin: number
+    plinth: boolean
+    porchEnabled: boolean
+    porchDeckHalfWidth: number
+    porchDeckDepth: number
+    porchPostTop: number
+    porchAwningY: number
+    pathLength: number
+    pathHalfWidth: number
+    gardenWidth: number
+    gardenDepth: number
+    chimneyHeight: number
+    smokeCount: number
+}
+
+const HOUSE_PROFILES: Record<StructureScale, HouseProfile> = {
+    troll: {
+        scale: 'troll',
+        minWidth: 10,
+        minDepth: 10,
+        doorWidth: 3,
+        doorHeight: 4,
+        windowWidth: 2,
+        windowHeightMin: 2,
+        foundationMargin: 1,
+        plinth: true,
+        porchEnabled: true,
+        porchDeckHalfWidth: 3,
+        porchDeckDepth: 3,
+        porchPostTop: 4,
+        porchAwningY: 5,
+        pathLength: 20,
+        pathHalfWidth: 1,
+        gardenWidth: 6,
+        gardenDepth: 8,
+        chimneyHeight: 5,
+        smokeCount: 4,
+    },
+    folk: {
+        scale: 'folk',
+        minWidth: 6,
+        minDepth: 6,
+        doorWidth: 2,
+        doorHeight: 3,
+        windowWidth: 2,
+        windowHeightMin: 2,
+        foundationMargin: 0,
+        plinth: false,
+        porchEnabled: false,
+        porchDeckHalfWidth: 2,
+        porchDeckDepth: 2,
+        porchPostTop: 3,
+        porchAwningY: 4,
+        pathLength: 9,
+        pathHalfWidth: 0,
+        gardenWidth: 4,
+        gardenDepth: 5,
+        chimneyHeight: 3,
+        smokeCount: 2,
+    },
+}
+
 export function composeHouse(buf: VoxelBuffer, ox: number, oy: number, oz: number, opts: StructureGenerationOptions, rng: Rng): void {
     const p = opts.house
+    const profile = houseProfile(p.scale)
     const style = choose(p.style, ['cottage', 'timber', 'stone', 'workshop'], rng)
     const mats = houseMaterials(style)
-    const w = Math.max(10, p.width + Math.round(randInt(rng, -2, 2) * opts.variation))
-    const d = Math.max(10, p.depth + Math.round(randInt(rng, -2, 2) * opts.variation))
+    const w = Math.max(profile.minWidth, p.width + Math.round(randInt(rng, -2, 2) * opts.variation))
+    const d = Math.max(profile.minDepth, p.depth + Math.round(randInt(rng, -2, 2) * opts.variation))
     const floors = p.floors | 0
     const floorH = p.floorHeight
-    houseFoundation(buf, ox, oy, oz, w, d, mats)
+    houseFoundation(buf, ox, oy, oz, w, d, mats, profile)
     const box = houseWallShell(buf, ox, oy, oz, w, d, floors, floorH, mats, style)
-    const door = houseDoor(buf, box, oy, mats)
-    houseWindows(buf, box, oy, floors, floorH, mats, rng, opts)
+    const door = houseDoor(buf, box, oy, mats, profile)
+    houseWindows(buf, box, oy, floors, floorH, mats, rng, opts, profile)
     houseRoof(buf, box, mats, opts, rng)
-    housePorchGardenPath(buf, door, box, oy, mats, rng, opts)
-    houseSideWing(buf, ox, oy, oz, w, d, floors, floorH, mats, style, rng, opts)
-    houseChimneySmoke(buf, box, mats, rng, opts)
+    housePorchGardenPath(buf, door, box, oy, mats, rng, opts, profile)
+    houseSideWing(buf, ox, oy, oz, w, d, floors, floorH, mats, style, rng, opts, profile)
+    houseChimneySmoke(buf, box, mats, rng, opts, profile)
     houseWallProps(buf, box, oy, mats, style, opts)
 }
 
 function houseMaterials(style: Exclude<HouseStyle, 'mixed'>): HouseMats {
     return HOUSE_STYLE_MATERIALS[style]
+}
+
+function houseProfile(scale: StructureScale): HouseProfile {
+    return HOUSE_PROFILES[scale]
 }
 
 interface HouseBox {
@@ -52,12 +127,14 @@ interface HouseBox {
     topY: number
 }
 
-function houseFoundation(buf: VoxelBuffer, cx: number, cy: number, cz: number, w: number, d: number, mats: HouseMats): void {
-    const x1 = cx - Math.floor(w / 2) - 1
-    const x2 = cx + Math.ceil(w / 2)
-    const z1 = cz - Math.floor(d / 2) - 1
-    const z2 = cz + Math.ceil(d / 2)
+function houseFoundation(buf: VoxelBuffer, cx: number, cy: number, cz: number, w: number, d: number, mats: HouseMats, profile: HouseProfile): void {
+    const margin = profile.foundationMargin
+    const x1 = cx - Math.floor(w / 2) - margin
+    const x2 = cx + Math.ceil(w / 2) - 1 + margin
+    const z1 = cz - Math.floor(d / 2) - margin
+    const z2 = cz + Math.ceil(d / 2) - 1 + margin
     buf.fillBox(x1, cy, z1, x2, cy, z2, mats.foundation, 'house-foundation')
+    if (!profile.plinth) return
     buf.fillBox(x1, cy + 1, z1, x2, cy + 1, z1, mats.foundation, 'house-plinth')
     buf.fillBox(x1, cy + 1, z2, x2, cy + 1, z2, mats.foundation, 'house-plinth')
     buf.fillBox(x1, cy + 1, z1, x1, cy + 1, z2, mats.foundation, 'house-plinth')
@@ -90,9 +167,9 @@ function houseWallShell(buf: VoxelBuffer, cx: number, cy: number, cz: number, w:
     return { x1, x2, z1, z2, wallH, topY: cy + wallH }
 }
 
-function houseDoor(buf: VoxelBuffer, box: HouseBox, cy: number, mats: HouseMats): { x: number; y: number; z: number } {
-    const doorW = 3
-    const doorH = 4
+function houseDoor(buf: VoxelBuffer, box: HouseBox, cy: number, mats: HouseMats, profile: HouseProfile): { x: number; y: number; z: number } {
+    const doorW = profile.doorWidth
+    const doorH = profile.doorHeight
     const cx = Math.round((box.x1 + box.x2) / 2)
     const z = box.z1
     const left = cx - Math.floor(doorW / 2)
@@ -100,37 +177,52 @@ function houseDoor(buf: VoxelBuffer, box: HouseBox, cy: number, mats: HouseMats)
     for (let x = left; x <= right; x++) {
         for (let y = cy + 1; y <= cy + doorH; y++) buf.set(x, y, z, BLOCK.door, 'house-door')
     }
-    buf.fillBox(left - 1, cy + 1, z, right + 1, cy + 1, z, mats.trim, 'door-threshold')
+    buf.fillBox(left - 1, cy, z, right + 1, cy, z, mats.trim, 'door-threshold')
     buf.fillBox(left - 1, cy + doorH + 1, z, right + 1, cy + doorH + 1, z, mats.trim, 'door-arch')
     buf.fillBox(left - 1, cy + 1, z, left - 1, cy + doorH, z, mats.trim, 'door-side-trim')
     buf.fillBox(right + 1, cy + 1, z, right + 1, cy + doorH, z, mats.trim, 'door-side-trim')
     return { x: cx, y: cy + 1, z }
 }
 
-function houseWindows(buf: VoxelBuffer, box: HouseBox, cy: number, floors: number, floorH: number, mats: HouseMats, rng: Rng, opts: StructureGenerationOptions): void {
-    const winW = 2
-    const winH = Math.max(2, Math.round(floorH * 0.34))
-    const frontSlots = [Math.round(lerp(box.x1 + 2, box.x2 - 2, 0.25)), Math.round(lerp(box.x1 + 2, box.x2 - 2, 0.75))]
-    const backSlots = [Math.round(lerp(box.x1 + 2, box.x2 - 2, 0.33)), Math.round(lerp(box.x1 + 2, box.x2 - 2, 0.67))]
+function houseWindows(buf: VoxelBuffer, box: HouseBox, cy: number, floors: number, floorH: number, mats: HouseMats, rng: Rng, opts: StructureGenerationOptions, profile: HouseProfile): void {
+    const winW = profile.windowWidth
+    const winH = Math.max(profile.windowHeightMin, Math.round(floorH * 0.34))
+    const frontSlots = houseWallSlots(box.x1, box.x2, profile)
+    const backSlots = houseWallSlots(box.x1, box.x2, profile)
+    const doorAvoidance = Math.ceil(profile.doorWidth / 2) + (profile.scale === 'folk' ? 1 : 2)
     for (let f = 0; f < floors; f++) {
         const base = cy + f * floorH + Math.max(2, Math.round(floorH * 0.42))
-        for (const x of frontSlots) if (Math.abs(x - Math.round((box.x1 + box.x2) / 2)) > 3 || f > 0) addRectWindow(buf, x, base, box.z1, [0, -1], winW, winH)
+        for (const x of frontSlots) if (Math.abs(x - Math.round((box.x1 + box.x2) / 2)) > doorAvoidance || f > 0) addRectWindow(buf, x, base, box.z1, [0, -1], winW, winH)
         for (const x of backSlots) addRectWindow(buf, x, base, box.z2, [0, 1], winW, winH)
-        const zSlots = [Math.round(lerp(box.z1 + 2, box.z2 - 2, 0.38)), Math.round(lerp(box.z1 + 2, box.z2 - 2, 0.68))]
+        const zSlots = houseWallSlots(box.z1, box.z2, profile)
         for (const z of zSlots) {
             if (rng() < 0.65 + opts.detail * 0.25) addRectWindow(buf, box.x1, base, z, [-1, 0], winW, winH)
             if (rng() < 0.65 + opts.detail * 0.25) addRectWindow(buf, box.x2, base, z, [1, 0], winW, winH)
         }
     }
-    if (opts.detail > 0.55) {
+    if (opts.detail > 0.55 && profile.scale === 'troll') {
         for (const x of frontSlots) {
             const y = cy + Math.max(2, Math.round(floorH * 0.42))
-            if (Math.abs(x - Math.round((box.x1 + box.x2) / 2)) > 3) {
+            if (Math.abs(x - Math.round((box.x1 + box.x2) / 2)) > doorAvoidance) {
                 buf.fillBox(x - winW - 2, y, box.z1, x - winW - 2, y + winH - 1, box.z1, mats.trim, 'shutter')
                 buf.fillBox(x + winW + 1, y, box.z1, x + winW + 1, y + winH - 1, box.z1, mats.trim, 'shutter')
             }
         }
     }
+}
+
+function houseWallSlots(min: number, max: number, profile: HouseProfile): number[] {
+    const span = max - min + 1
+    if (span <= 7) return [Math.round((min + max) / 2)]
+    if (span <= 11) return uniqueSorted([min + 1, max - 1])
+    return [
+        Math.round(lerp(min + 2, max - 2, profile.scale === 'folk' ? 0.28 : 0.25)),
+        Math.round(lerp(min + 2, max - 2, profile.scale === 'folk' ? 0.72 : 0.75)),
+    ]
+}
+
+function uniqueSorted(values: number[]): number[] {
+    return [...new Set(values)].sort((a, b) => a - b)
 }
 
 function addRectWindow(buf: VoxelBuffer, x: number, y: number, z: number, normal: readonly [number, number], w: number, h: number): void {
@@ -279,23 +371,23 @@ function roofShed(buf: VoxelBuffer, box: HouseBox, mats: HouseMats): void {
     buf.fillBox(box.x1 - 2, y0 + 4, box.z2 + 2, box.x2 + 2, y0 + 4, box.z2 + 2, mats.trim, 'shed-ridge')
 }
 
-function housePorchGardenPath(buf: VoxelBuffer, door: { x: number; z: number }, box: HouseBox, cy: number, mats: HouseMats, rng: Rng, opts: StructureGenerationOptions): void {
-    if (!opts.house.porch) return
+function housePorchGardenPath(buf: VoxelBuffer, door: { x: number; z: number }, box: HouseBox, cy: number, mats: HouseMats, rng: Rng, opts: StructureGenerationOptions, profile: HouseProfile): void {
+    if (!opts.house.porch || !profile.porchEnabled) return
     const cx = door.x
-    const porch = housePorchLayout(cx, box.z1)
-    housePorchDeck(buf, porch, cy, mats)
+    const porch = housePorchLayout(cx, box.z1, profile)
+    housePorchDeck(buf, porch, cy, mats, profile)
     housePorchSteps(buf, porch, cy)
-    buf.fillBox(cx - 1, cy, porch.pathStartZ, cx + 1, cy, porch.pathEndZ, BLOCK.sand, 'door-path')
+    buf.fillBox(cx - profile.pathHalfWidth, cy, porch.pathStartZ, cx + profile.pathHalfWidth, cy, porch.pathEndZ, BLOCK.sand, 'door-path')
     if (opts.detail > 0.55) {
         for (let z = porch.pathEndZ; z >= porch.pathStartZ; z -= 3) {
-            buf.set(cx - 2, cy, z, rng() < 0.5 ? BLOCK.stone2 : BLOCK.dirt, 'door-path-edge')
-            if (z - 1 >= porch.pathStartZ) buf.set(cx + 2, cy, z - 1, rng() < 0.5 ? BLOCK.stone2 : BLOCK.dirt, 'door-path-edge')
+            buf.set(cx - profile.pathHalfWidth - 1, cy, z, rng() < 0.5 ? BLOCK.stone2 : BLOCK.dirt, 'door-path-edge')
+            if (z - 1 >= porch.pathStartZ) buf.set(cx + profile.pathHalfWidth + 1, cy, z - 1, rng() < 0.5 ? BLOCK.stone2 : BLOCK.dirt, 'door-path-edge')
         }
     }
     if (opts.detail <= 0.45) return
-    const gx1 = box.x1 - 8
+    const gx1 = box.x1 - profile.gardenWidth - 2
     const gx2 = box.x1 - 3
-    const gz1 = box.z1 - 10
+    const gz1 = box.z1 - profile.gardenDepth - 2
     const gz2 = box.z1 - 3
     buf.fillBox(gx1, cy, gz1, gx2, cy, gz2, BLOCK.dirt, 'garden-bed')
     for (let x = gx1; x <= gx2; x += 2) {
@@ -318,67 +410,75 @@ interface HousePorchLayout {
     pathEndZ: number
 }
 
-function housePorchLayout(cx: number, doorZ: number): HousePorchLayout {
-    const deckFrontZ = doorZ - 3
+function housePorchLayout(cx: number, doorZ: number, profile: HouseProfile): HousePorchLayout {
+    const deckBackZ = doorZ - 1
+    const deckFrontZ = deckBackZ - profile.porchDeckDepth + 1
     return {
         cx,
-        deckHalfWidth: 3,
+        deckHalfWidth: profile.porchDeckHalfWidth,
         deckFrontZ,
-        deckBackZ: doorZ - 1,
+        deckBackZ,
         lowerStepZ: deckFrontZ - 2,
         upperStepZ: deckFrontZ - 1,
-        pathStartZ: doorZ - 20,
+        pathStartZ: doorZ - profile.pathLength,
         pathEndZ: deckFrontZ - 3,
     }
 }
 
-function housePorchDeck(buf: VoxelBuffer, porch: HousePorchLayout, cy: number, mats: HouseMats): void {
+function housePorchDeck(buf: VoxelBuffer, porch: HousePorchLayout, cy: number, mats: HouseMats, profile: HouseProfile): void {
     const x1 = porch.cx - porch.deckHalfWidth
     const x2 = porch.cx + porch.deckHalfWidth
     buf.fillBox(x1, cy + 1, porch.deckFrontZ, x2, cy + 1, porch.deckBackZ, BLOCK.wood, 'porch-floor')
     for (const x of [x1, x2]) {
-        buf.fillBox(x, cy + 2, porch.deckFrontZ, x, cy + 4, porch.deckFrontZ, BLOCK.woodDark, 'porch-post')
-        buf.fillBox(x, cy + 2, porch.deckBackZ, x, cy + 4, porch.deckBackZ, BLOCK.woodDark, 'porch-post')
+        buf.fillBox(x, cy + 2, porch.deckFrontZ, x, cy + profile.porchPostTop, porch.deckFrontZ, BLOCK.woodDark, 'porch-post')
+        buf.fillBox(x, cy + 2, porch.deckBackZ, x, cy + profile.porchPostTop, porch.deckBackZ, BLOCK.woodDark, 'porch-post')
         buf.fillBox(x, cy + 2, porch.deckFrontZ + 1, x, cy + 2, porch.deckBackZ, BLOCK.woodDark, 'porch-rail')
     }
     buf.fillBox(x1, cy + 2, porch.deckFrontZ, porch.cx - 2, cy + 2, porch.deckFrontZ, BLOCK.woodDark, 'porch-front-rail')
     buf.fillBox(porch.cx + 2, cy + 2, porch.deckFrontZ, x2, cy + 2, porch.deckFrontZ, BLOCK.woodDark, 'porch-front-rail')
-    buf.fillBox(x1 - 1, cy + 5, porch.deckFrontZ, x2 + 1, cy + 5, porch.deckBackZ, mats.roof, 'porch-awning')
-    buf.fillBox(x1 - 1, cy + 4, porch.deckFrontZ, x2 + 1, cy + 4, porch.deckFrontZ, mats.trim, 'porch-awning-trim')
-    buf.fillBox(x1 - 1, cy + 4, porch.deckBackZ, x2 + 1, cy + 4, porch.deckBackZ, mats.trim, 'porch-awning-trim')
+    buf.fillBox(x1 - 1, cy + profile.porchAwningY, porch.deckFrontZ, x2 + 1, cy + profile.porchAwningY, porch.deckBackZ, mats.roof, 'porch-awning')
+    buf.fillBox(x1 - 1, cy + profile.porchAwningY - 1, porch.deckFrontZ, x2 + 1, cy + profile.porchAwningY - 1, porch.deckFrontZ, mats.trim, 'porch-awning-trim')
+    buf.fillBox(x1 - 1, cy + profile.porchAwningY - 1, porch.deckBackZ, x2 + 1, cy + profile.porchAwningY - 1, porch.deckBackZ, mats.trim, 'porch-awning-trim')
 }
 
 function housePorchSteps(buf: VoxelBuffer, porch: HousePorchLayout, cy: number): void {
-    buf.fillBox(porch.cx - 2, cy, porch.lowerStepZ, porch.cx + 2, cy, porch.lowerStepZ, BLOCK.stone2, 'porch-step-lower')
-    buf.fillBox(porch.cx - 3, cy, porch.upperStepZ, porch.cx + 3, cy, porch.upperStepZ, BLOCK.darkStone, 'porch-step-support')
-    buf.fillBox(porch.cx - 3, cy + 1, porch.upperStepZ, porch.cx + 3, cy + 1, porch.upperStepZ, BLOCK.stone, 'porch-step-upper')
-    buf.set(porch.cx - 3, cy, porch.lowerStepZ, BLOCK.darkStone, 'porch-step-side')
-    buf.set(porch.cx + 3, cy, porch.lowerStepZ, BLOCK.darkStone, 'porch-step-side')
+    const upperHalf = porch.deckHalfWidth
+    const lowerHalf = Math.max(1, upperHalf - 1)
+    buf.fillBox(porch.cx - lowerHalf, cy, porch.lowerStepZ, porch.cx + lowerHalf, cy, porch.lowerStepZ, BLOCK.stone2, 'porch-step-lower')
+    buf.fillBox(porch.cx - upperHalf, cy, porch.upperStepZ, porch.cx + upperHalf, cy, porch.upperStepZ, BLOCK.darkStone, 'porch-step-support')
+    buf.fillBox(porch.cx - upperHalf, cy + 1, porch.upperStepZ, porch.cx + upperHalf, cy + 1, porch.upperStepZ, BLOCK.stone, 'porch-step-upper')
+    buf.set(porch.cx - upperHalf, cy, porch.lowerStepZ, BLOCK.darkStone, 'porch-step-side')
+    buf.set(porch.cx + upperHalf, cy, porch.lowerStepZ, BLOCK.darkStone, 'porch-step-side')
 }
 
-function houseSideWing(buf: VoxelBuffer, cx: number, cy: number, cz: number, mainW: number, mainD: number, floors: number, floorH: number, mats: HouseMats, style: Exclude<HouseStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions): void {
+function houseSideWing(buf: VoxelBuffer, cx: number, cy: number, cz: number, mainW: number, mainD: number, floors: number, floorH: number, mats: HouseMats, style: Exclude<HouseStyle, 'mixed'>, rng: Rng, opts: StructureGenerationOptions, profile: HouseProfile): void {
     if (!opts.house.sideWing || opts.detail < 0.35) return
-    const wingW = Math.max(6, Math.round(mainW * 0.42))
-    const wingD = Math.max(6, Math.round(mainD * 0.55))
+    const wingW = Math.max(profile.scale === 'folk' ? 4 : 6, Math.round(mainW * 0.42))
+    const wingD = Math.max(profile.scale === 'folk' ? 4 : 6, Math.round(mainD * 0.55))
     const side = rng() < 0.5 ? -1 : 1
     const wx = cx + side * (Math.floor(mainW / 2) + Math.floor(wingW / 2))
     const wz = cz + randInt(rng, -Math.floor(mainD * 0.12), Math.floor(mainD * 0.12))
-    houseFoundation(buf, wx, cy, wz, wingW, wingD, mats)
+    houseFoundation(buf, wx, cy, wz, wingW, wingD, mats, profile)
     const box = houseWallShell(buf, wx, cy, wz, wingW, wingD, Math.max(1, Math.min(floors, 1)), floorH, mats, style)
-    houseWindows(buf, box, cy, 1, floorH, mats, rng, opts)
+    houseWindows(buf, box, cy, 1, floorH, mats, rng, opts, profile)
     roofGable(buf, box, mats, 'z')
     const seamX = side < 0 ? Math.max(box.x2, cx - Math.floor(mainW / 2)) : Math.min(box.x1, cx + Math.ceil(mainW / 2) - 1)
     buf.fillBox(seamX, cy + 2, box.z1, seamX, cy + Math.round(floorH * 0.7), box.z2, mats.trim, 'wing-connection-seam')
 }
 
-function houseChimneySmoke(buf: VoxelBuffer, box: HouseBox, mats: HouseMats, rng: Rng, opts: StructureGenerationOptions): void {
+function houseChimneySmoke(buf: VoxelBuffer, box: HouseBox, mats: HouseMats, rng: Rng, opts: StructureGenerationOptions, profile: HouseProfile): void {
     if (!opts.house.chimney) return
     const x = box.x2 - randInt(rng, 2, Math.max(3, Math.round((box.x2 - box.x1) * 0.3)))
     const z = box.z2 - randInt(rng, 2, Math.max(3, Math.round((box.z2 - box.z1) * 0.35)))
     const baseY = box.topY + 2
-    buf.fillBox(x, baseY, z, x + 1, baseY + 5, z + 1, BLOCK.darkStone, 'chimney')
-    buf.fillBox(x - 1, baseY + 5, z - 1, x + 2, baseY + 5, z + 2, mats.foundation, 'chimney-cap')
-    if (opts.detail > 0.55) for (let i = 0; i < 4; i++) buf.set(x + randInt(rng, -1, 2), baseY + 7 + i * 2, z + randInt(rng, -1, 2), BLOCK.smoke, 'smoke-attached-column')
+    if (profile.scale === 'folk') {
+        buf.fillBox(x, baseY, z, x, baseY + profile.chimneyHeight, z, BLOCK.darkStone, 'chimney')
+        buf.fillBox(x - 1, baseY + profile.chimneyHeight, z - 1, x + 1, baseY + profile.chimneyHeight, z + 1, mats.foundation, 'chimney-cap')
+    } else {
+        buf.fillBox(x, baseY, z, x + 1, baseY + profile.chimneyHeight, z + 1, BLOCK.darkStone, 'chimney')
+        buf.fillBox(x - 1, baseY + profile.chimneyHeight, z - 1, x + 2, baseY + profile.chimneyHeight, z + 2, mats.foundation, 'chimney-cap')
+    }
+    if (opts.detail > 0.55) for (let i = 0; i < profile.smokeCount; i++) buf.set(x + randInt(rng, -1, 2), baseY + profile.chimneyHeight + 2 + i * 2, z + randInt(rng, -1, 2), BLOCK.smoke, 'smoke-attached-column')
 }
 
 function houseWallProps(buf: VoxelBuffer, box: HouseBox, cy: number, mats: HouseMats, style: Exclude<HouseStyle, 'mixed'>, opts: StructureGenerationOptions): void {

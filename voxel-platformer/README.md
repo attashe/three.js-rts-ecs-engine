@@ -97,6 +97,15 @@ Pure-logic changes (script bindings, level metadata serialisation,
 pickup lifecycle helpers) are covered by `npm test` and do not require
 a browser pass on every commit.
 
+### Archived Playwright visual harness
+
+The attempted Playwright screenshot harness is archived, not active. Headless
+Chromium exposed `navigator.gpu`, but `navigator.gpu.requestAdapter()` returned
+`null` in the current environment, so screenshots could not be trusted as
+WebGPU rendering evidence. The archived files live in
+`archive/visual-test-harness/`; details and revival notes are in
+`docs/archived-visual-testing.md`.
+
 ## Layout
 
 ```

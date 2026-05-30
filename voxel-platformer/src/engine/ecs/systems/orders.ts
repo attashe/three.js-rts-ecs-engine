@@ -17,6 +17,9 @@ export const FixedOrder = {
 
 export const RenderOrder = {
     renderSync: 100,
+    /** Drives per-entity AnimationMixers. Runs after renderSync has positioned
+     *  the entity root, before worldRender draws it. */
+    animation: 150,
     /** Per-block emissive PointLight pool. Runs just before worldRender so
      *  the fixed light pool is positioned before the chunk meshes render. */
     blockLights: 195,

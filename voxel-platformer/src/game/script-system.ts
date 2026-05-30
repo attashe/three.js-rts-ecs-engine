@@ -48,6 +48,13 @@ import {
     sanitizeTradeInventory,
     type TradeSelection,
 } from './trade'
+import {
+    addInventoryItem as addInventoryItemToMap,
+    copyInventoryItems,
+    inventoryItemCount,
+    listInventoryItems,
+    removeInventoryItem as removeInventoryItemFromMap,
+} from './inventory'
 
 export interface GameScriptSystemOptions {
     world: GameWorld
@@ -143,6 +150,18 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         getPosition: () => playerPosition(opts.world),
         getGold: () => opts.world.inventory.gold,
         getArrows: () => opts.world.inventory.arrows,
+        getInventoryItemCount: (itemId) => inventoryItemCount(opts.world.inventory.items, itemId),
+        getInventoryItems: (category) => listInventoryItems(opts.world.inventory.items, category),
+        addInventoryItem(itemId, quantity, itemOpts) {
+            const changed = addInventoryItemToMap(opts.world.inventory.items, itemId, quantity, itemOpts)
+            if (changed) syncInventoryItems(opts.world)
+            return changed
+        },
+        removeInventoryItem(itemId, quantity) {
+            const changed = removeInventoryItemFromMap(opts.world.inventory.items, itemId, quantity)
+            if (changed) syncInventoryItems(opts.world)
+            return changed
+        },
         getSettings: () => copyPlayerSettings(opts.world.playerSettings),
         setSettings(patch) {
             opts.world.playerSettings = applyPlayerPatch(opts.world, patch)
@@ -203,6 +222,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                 amount: spawnOpts?.amount,
                 id: spawnOpts?.id,
                 label: spawnOpts?.label,
+                inventoryItem: spawnOpts?.inventoryItem,
             })
         },
         despawn(id) { return despawnScriptPickup(opts.world, id) },
@@ -410,6 +430,7 @@ function applyPlayerPatch(world: GameWorld, patch: PlayerSettingsPatch) {
     const next = applyPlayerSettingsPatch(world.playerSettings, patch)
     world.inventory.gold = next.inventory.gold
     world.inventory.arrows = next.inventory.arrows
+    world.inventory.items = copyInventoryItems(next.inventory.items)
     return next
 }
 
@@ -425,6 +446,10 @@ function applyTradeInventory(world: GameWorld, inventory: { gold: number; arrows
     world.inventory.arrows = inventory.arrows
     world.playerSettings.inventory.gold = inventory.gold
     world.playerSettings.inventory.arrows = inventory.arrows
+}
+
+function syncInventoryItems(world: GameWorld): void {
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
 }
 
 function safeInventoryAmount(value: number, fallback: number, max: number): number {

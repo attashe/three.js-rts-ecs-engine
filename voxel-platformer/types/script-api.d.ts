@@ -167,6 +167,8 @@ declare function random(min: number, max: number): number
 
 type PlayerAbilityKey = 'movement' | 'jump' | 'bow' | 'highJump' | 'airPush' | 'interact' | 'torch'
 type PlayerModelKind = 'player' | 'keeper'
+type InventoryCategoryId = 'resources' | 'quest' | 'consumables' | 'accessories' | 'tools'
+type InventoryIconId = 'gold' | 'arrows' | 'quest-shard' | 'consumable' | 'accessory' | 'tool' | 'item'
 
 interface PlayerAbilitySettings {
     movement: boolean
@@ -181,6 +183,31 @@ interface PlayerAbilitySettings {
 interface PlayerInventorySettings {
     gold: number
     arrows: number
+    items: Record<string, InventoryItemRecord>
+}
+
+interface InventoryItemRecord {
+    quantity: number
+    name?: string
+    description?: string
+    category?: InventoryCategoryId
+    icon?: InventoryIconId
+}
+
+interface InventoryItemOptions {
+    name?: string
+    description?: string
+    category?: InventoryCategoryId
+    icon?: InventoryIconId
+}
+
+interface InventorySnapshotItem {
+    id: string
+    quantity: number
+    name: string
+    description?: string
+    category: InventoryCategoryId
+    icon: InventoryIconId
 }
 
 interface PlayerTorchSettings {
@@ -217,7 +244,7 @@ interface PlayerApi {
     readonly position: VoxelCoord
     /** True iff a live player entity exists. */
     readonly alive: boolean
-    readonly inventory: { readonly gold: number; readonly arrows: number }
+    readonly inventory: PlayerInventoryApi
     readonly settings: PlayerSettings
     /** Current respawn point, or null when unset this session. */
     readonly checkpoint: VoxelCoord | null
@@ -231,6 +258,16 @@ interface PlayerApi {
     setAbility(ability: PlayerAbilityKey, enabled: boolean): void
     setGold(amount: number): void
     setArrows(amount: number): void
+    addInventoryItem(itemId: string, quantity?: number, opts?: InventoryItemOptions): boolean
+    removeInventoryItem(itemId: string, quantity?: number): boolean
+}
+
+interface PlayerInventoryApi {
+    readonly gold: number
+    readonly arrows: number
+    count(itemId: string): number
+    has(itemId: string, quantity?: number): boolean
+    list(category?: InventoryCategoryId): readonly InventorySnapshotItem[]
 }
 
 declare const player: PlayerApi
@@ -265,6 +302,8 @@ interface PickupSpawnOptions {
      *  existing live pickup instead of duplicating. */
     id?: string
     label?: string
+    /** Durable item metadata for custom pickups. Coins keep using gold. */
+    inventoryItem?: InventoryItemOptions & { id?: string }
 }
 
 interface PickupsApi {

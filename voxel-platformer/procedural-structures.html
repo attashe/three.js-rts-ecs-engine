@@ -185,17 +185,21 @@
 <body>
     <div id="panel">
         <h1>Procedural Structures</h1>
-        <p class="hint">Generate predictable voxel houses, trees, and towers with deterministic seeds. Rendered through the project chunk renderer.</p>
+        <p class="hint">Generate predictable voxel houses, civic buildings, trees, towers, and walls with deterministic seeds. Rendered through the project chunk renderer.</p>
 
         <section>
             <h2>Generator</h2>
             <div class="field">
                 <label for="kind">Type</label>
                 <select id="kind">
-                    <option value="mixed">Mixed</option>
                     <option value="tree">Tree</option>
                     <option value="house">House</option>
+                    <option value="market">Market</option>
+                    <option value="stable">Stable</option>
+                    <option value="church">Church</option>
+                    <option value="temple">Temple</option>
                     <option value="tower">Tower</option>
+                    <option value="wall">Wall</option>
                 </select>
                 <span></span>
             </div>
@@ -245,6 +249,14 @@
                 </select>
                 <span></span>
             </div>
+            <div class="field">
+                <label for="treeSeason">Season</label>
+                <select id="treeSeason">
+                    <option value="summer">Summer</option>
+                    <option value="autumn">Autumn</option>
+                </select>
+                <span></span>
+            </div>
             <div class="field"><label for="trunkHeight">Trunk H</label><input id="trunkHeight" type="range" min="6" max="36" step="1" value="16" /><span id="trunkHeightVal" class="value"></span></div>
             <div class="field"><label for="trunkRadius">Trunk R</label><input id="trunkRadius" type="range" min="1" max="6" step="1" value="2" /><span id="trunkRadiusVal" class="value"></span></div>
             <div class="field"><label for="crownRadius">Crown R</label><input id="crownRadius" type="range" min="3" max="18" step="1" value="8" /><span id="crownRadiusVal" class="value"></span></div>
@@ -256,6 +268,14 @@
         <section id="houseSection">
             <h2>House</h2>
             <div class="field">
+                <label for="houseScale">Scale</label>
+                <select id="houseScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
                 <label for="houseStyle">Style</label>
                 <select id="houseStyle">
                     <option value="mixed">Mixed</option>
@@ -266,10 +286,10 @@
                 </select>
                 <span></span>
             </div>
-            <div class="field"><label for="houseWidth">Width</label><input id="houseWidth" type="range" min="10" max="38" step="1" value="20" /><span id="houseWidthVal" class="value"></span></div>
-            <div class="field"><label for="houseDepth">Depth</label><input id="houseDepth" type="range" min="10" max="34" step="1" value="16" /><span id="houseDepthVal" class="value"></span></div>
+            <div class="field"><label for="houseWidth">Width</label><input id="houseWidth" type="range" min="6" max="38" step="1" value="20" /><span id="houseWidthVal" class="value"></span></div>
+            <div class="field"><label for="houseDepth">Depth</label><input id="houseDepth" type="range" min="6" max="34" step="1" value="16" /><span id="houseDepthVal" class="value"></span></div>
             <div class="field"><label for="floors">Floors</label><input id="floors" type="range" min="1" max="3" step="1" value="1" /><span id="floorsVal" class="value"></span></div>
-            <div class="field"><label for="floorHeight">Floor H</label><input id="floorHeight" type="range" min="5" max="9" step="1" value="6" /><span id="floorHeightVal" class="value"></span></div>
+            <div class="field"><label for="floorHeight">Floor H</label><input id="floorHeight" type="range" min="3" max="9" step="1" value="6" /><span id="floorHeightVal" class="value"></span></div>
             <div class="field">
                 <label for="roofStyle">Roof</label>
                 <select id="roofStyle">
@@ -286,8 +306,29 @@
             <label class="check-field" for="chimney"><span>Chimney smoke</span><input id="chimney" type="checkbox" checked /></label>
         </section>
 
+        <section id="landmarkSection" class="hidden">
+            <h2>Building</h2>
+            <div id="landmarkScaleField" class="field">
+                <label for="landmarkScale">Scale</label>
+                <select id="landmarkScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
+            <p class="hint">Market, stable, and church can be troll-town or small-folk scale. Temple is always a large troll-town civic structure.</p>
+        </section>
+
         <section id="towerSection">
             <h2>Tower</h2>
+            <div class="field">
+                <label for="towerScale">Scale</label>
+                <select id="towerScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
             <div class="field">
                 <label for="towerStyle">Style</label>
                 <select id="towerStyle">
@@ -299,13 +340,59 @@
                 </select>
                 <span></span>
             </div>
-            <div class="field"><label for="towerRadius">Radius</label><input id="towerRadius" type="range" min="5" max="18" step="1" value="10" /><span id="towerRadiusVal" class="value"></span></div>
-            <div class="field"><label for="towerHeight">Height</label><input id="towerHeight" type="range" min="18" max="72" step="1" value="36" /><span id="towerHeightVal" class="value"></span></div>
+            <div class="field"><label for="towerRadius">Radius</label><input id="towerRadius" type="range" min="4" max="18" step="1" value="10" /><span id="towerRadiusVal" class="value"></span></div>
+            <div class="field"><label for="towerHeight">Height</label><input id="towerHeight" type="range" min="12" max="72" step="1" value="36" /><span id="towerHeightVal" class="value"></span></div>
             <div class="field"><label for="wallThickness">Wall</label><input id="wallThickness" type="range" min="1" max="5" step="1" value="2" /><span id="wallThicknessVal" class="value"></span></div>
             <div class="field"><label for="taper">Taper</label><input id="taper" type="range" min="0" max="0.35" step="0.01" value="0.10" /><span id="taperVal" class="value"></span></div>
-            <div class="field"><label for="windowEvery">Windows</label><input id="windowEvery" type="range" min="5" max="18" step="1" value="8" /><span id="windowEveryVal" class="value"></span></div>
+            <div class="field"><label for="windowEvery">Windows</label><input id="windowEvery" type="range" min="4" max="18" step="1" value="8" /><span id="windowEveryVal" class="value"></span></div>
             <div class="field"><label for="ruinAmount">Ruin</label><input id="ruinAmount" type="range" min="0" max="0.65" step="0.01" value="0.06" /><span id="ruinAmountVal" class="value"></span></div>
             <label class="check-field" for="spire"><span>Spire</span><input id="spire" type="checkbox" checked /></label>
+        </section>
+
+        <section id="wallSection" class="hidden">
+            <h2>Wall</h2>
+            <div class="field">
+                <label for="wallScale">Scale</label>
+                <select id="wallScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="wallStyle">Style</label>
+                <select id="wallStyle">
+                    <option value="curtain">Curtain</option>
+                    <option value="stone">Stone</option>
+                    <option value="timber">Timber</option>
+                    <option value="ruined">Ruined</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field"><label for="wallLength">Length</label><input id="wallLength" type="range" min="6" max="120" step="1" value="30" /><span id="wallLengthVal" class="value"></span></div>
+            <div class="field"><label for="castleWallHeight">Height</label><input id="castleWallHeight" type="range" min="3" max="32" step="1" value="8" /><span id="castleWallHeightVal" class="value"></span></div>
+            <div class="field"><label for="castleWallThickness">Thick</label><input id="castleWallThickness" type="range" min="1" max="8" step="1" value="3" /><span id="castleWallThicknessVal" class="value"></span></div>
+            <div class="field"><label for="wallFoundation">Foundation</label><input id="wallFoundation" type="range" min="0" max="8" step="1" value="2" /><span id="wallFoundationVal" class="value"></span></div>
+            <div class="field">
+                <label for="wallGate">Gate</label>
+                <select id="wallGate">
+                    <option value="none">None</option>
+                    <option value="center">Center</option>
+                    <option value="auto">Auto</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="wallTerrainMode">Terrain</label>
+                <select id="wallTerrainMode">
+                    <option value="flat">Flat</option>
+                    <option value="stepped">Stepped</option>
+                </select>
+                <span></span>
+            </div>
+            <label class="check-field" for="wallBattlements"><span>Battlements</span><input id="wallBattlements" type="checkbox" checked /></label>
+            <label class="check-field" for="wallWalkway"><span>Walkway</span><input id="wallWalkway" type="checkbox" checked /></label>
+            <div class="field"><label for="wallRuinAmount">Ruin</label><input id="wallRuinAmount" type="range" min="0" max="0.85" step="0.01" value="0" /><span id="wallRuinAmountVal" class="value"></span></div>
         </section>
 
         <section>

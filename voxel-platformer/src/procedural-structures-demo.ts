@@ -10,10 +10,17 @@ import {
     type RoofStyle,
     type StructureBounds,
     type StructureGenerationResult,
+    type StructureGenerationOptions,
     type StructureKind,
+    type StructureScale,
     type TowerStyle,
+    type TreeSeason,
     type TreeStyle,
+    type WallGateMode,
+    type WallStyle,
+    type WallTerrainMode,
 } from './procedural-structures/generator'
+import { HOUSE_SCALE_DEFAULTS, TOWER_SCALE_DEFAULTS, WALL_SCALE_DEFAULTS } from './procedural-structures/options'
 
 const RANGE_IDS = [
     'variants',
@@ -36,6 +43,11 @@ const RANGE_IDS = [
     'taper',
     'windowEvery',
     'ruinAmount',
+    'wallLength',
+    'castleWallHeight',
+    'castleWallThickness',
+    'wallFoundation',
+    'wallRuinAmount',
     'terrainSize',
     'terrainNoise',
 ] as const
@@ -45,17 +57,54 @@ const ALL_INPUT_IDS = [
     'seed',
     'cleanLoose',
     'treeStyle',
+    'treeSeason',
+    'houseScale',
     'houseStyle',
     'roofStyle',
     'sideWing',
     'porch',
     'chimney',
+    'landmarkScale',
+    'towerScale',
     'towerStyle',
     'spire',
+    'wallScale',
+    'wallStyle',
+    'wallGate',
+    'wallTerrainMode',
+    'wallBattlements',
+    'wallWalkway',
     'showTerrain',
     'showGrid',
     ...RANGE_IDS,
 ] as const
+
+type VisualStructureScenario = 'house-troll' | 'house-folk' | 'market-troll' | 'stable-troll' | 'church-troll' | 'temple-troll' | 'tower-troll' | 'tower-folk' | 'wall-troll'
+
+interface ProceduralStructuresVisualState {
+    scenario: string
+    kind: StructureKind
+    seed: number
+    scale?: StructureScale
+    bounds: StructureBounds
+    voxelCount: number
+    removed: number
+    topMaterials: string[]
+    statsText: string
+}
+
+interface ProceduralStructuresVisualTestApi {
+    ready(): Promise<ProceduralStructuresVisualState>
+    scenario(): string
+    state(): ProceduralStructuresVisualState
+    run(command: string, payload?: unknown): Promise<ProceduralStructuresVisualState>
+}
+
+declare global {
+    interface Window {
+        __visualTest?: ProceduralStructuresVisualTestApi
+    }
+}
 
 async function main(): Promise<void> {
     const errorEl = el('error')
@@ -101,6 +150,8 @@ async function main(): Promise<void> {
 
         let grid: GridHelper | null = null
         let currentVoxels = new Set<string>()
+        let lastVisualState: ProceduralStructuresVisualState | null = null
+        let frameCount = 0
 
         function setGrid(size: number, visible: boolean): void {
             if (grid) {
@@ -144,6 +195,7 @@ async function main(): Promise<void> {
                 replaceVoxels(result)
                 setGrid(normalized.terrainSize, checked('showGrid'))
                 updateStats(result)
+                lastVisualState = visualState(normalized, result)
                 if (reframe) frameCamera(renderer, controls, result.bounds)
             } catch (err) {
                 console.error(err)
@@ -153,6 +205,8 @@ async function main(): Promise<void> {
         }
 
         mountUi(regenerate)
+        const urlScenario = visualScenarioFromUrl()
+        if (urlScenario) setVisualScenario(urlScenario)
         regenerate()
 
         await renderer.init()
@@ -174,9 +228,25 @@ async function main(): Promise<void> {
             chunkRenderer.update()
             renderer.update(dt)
             renderer.render()
+            frameCount++
             requestAnimationFrame(frame)
         }
         requestAnimationFrame(frame)
+        window.__visualTest = {
+            ready: async () => {
+                await waitForVisualSettle(() => frameCount, 2)
+                return requireVisualState(lastVisualState)
+            },
+            scenario: () => visualScenarioLabel(),
+            state: () => requireVisualState(lastVisualState),
+            run: async (command: string, payload?: unknown) => {
+                if (command !== 'setScenario') throw new Error(`Unknown visual test command: ${command}`)
+                setVisualScenario(readScenarioPayload(payload))
+                regenerate(true)
+                await waitForVisualSettle(() => frameCount, 4)
+                return requireVisualState(lastVisualState)
+            },
+        }
     } catch (err) {
         if (err instanceof WebGPUUnavailableError) {
             document.body.innerHTML = `<p style="margin:24px;color:#ff9090">${err.message}</p>`
@@ -194,6 +264,18 @@ function mountUi(regenerate: (reframe?: boolean) => void): void {
         node.addEventListener('change', debounced)
     }
     el('kind').addEventListener('change', () => regenerate(true))
+    el('houseScale').addEventListener('change', () => {
+        applyHouseScaleDefaults(select('houseScale') as StructureScale)
+        regenerate(true)
+    })
+    el('towerScale').addEventListener('change', () => {
+        applyTowerScaleDefaults(select('towerScale') as StructureScale)
+        regenerate(true)
+    })
+    el('wallScale').addEventListener('change', () => {
+        applyWallScaleDefaults(select('wallScale') as StructureScale)
+        regenerate(true)
+    })
     el('regen').addEventListener('click', () => regenerate(true))
     el('randomSeed').addEventListener('click', () => {
         input('seed').value = String(Math.floor(Math.random() * 999999))
@@ -217,6 +299,7 @@ function readOptions(): PartialStructureGenerationOptions {
         terrainNoise: numberValue('terrainNoise'),
         tree: {
             style: select('treeStyle') as TreeStyle,
+            season: select('treeSeason') as TreeSeason,
             trunkHeight: numberValue('trunkHeight'),
             trunkRadius: numberValue('trunkRadius'),
             crownRadius: numberValue('crownRadius'),
@@ -225,6 +308,7 @@ function readOptions(): PartialStructureGenerationOptions {
             fruitChance: numberValue('fruitChance'),
         },
         house: {
+            scale: select('houseScale') as StructureScale,
             style: select('houseStyle') as HouseStyle,
             width: numberValue('houseWidth'),
             depth: numberValue('houseDepth'),
@@ -235,7 +319,11 @@ function readOptions(): PartialStructureGenerationOptions {
             porch: checked('porch'),
             chimney: checked('chimney'),
         },
+        landmark: {
+            scale: select('landmarkScale') as StructureScale,
+        },
         tower: {
+            scale: select('towerScale') as StructureScale,
             style: select('towerStyle') as TowerStyle,
             radius: numberValue('towerRadius'),
             height: numberValue('towerHeight'),
@@ -245,7 +333,163 @@ function readOptions(): PartialStructureGenerationOptions {
             ruinAmount: numberValue('ruinAmount'),
             spire: checked('spire'),
         },
+        wall: {
+            scale: select('wallScale') as StructureScale,
+            style: select('wallStyle') as WallStyle,
+            length: numberValue('wallLength'),
+            height: numberValue('castleWallHeight'),
+            thickness: numberValue('castleWallThickness'),
+            foundationDepth: numberValue('wallFoundation'),
+            battlements: checked('wallBattlements'),
+            walkway: checked('wallWalkway'),
+            gate: select('wallGate') as WallGateMode,
+            terrainMode: select('wallTerrainMode') as WallTerrainMode,
+            ruinAmount: numberValue('wallRuinAmount'),
+        },
     }
+}
+
+function visualState(options: StructureGenerationOptions, result: StructureGenerationResult): ProceduralStructuresVisualState {
+    return {
+        scenario: visualScenarioLabel(),
+        kind: options.kind,
+        seed: options.seed,
+        scale: options.kind === 'house' ? options.house.scale : isScalableLandmarkKind(options.kind) ? options.landmark.scale : options.kind === 'temple' ? 'troll' : options.kind === 'tower' ? options.tower.scale : options.kind === 'wall' ? options.wall.scale : undefined,
+        bounds: result.bounds,
+        voxelCount: result.voxels.length,
+        removed: result.removed,
+        topMaterials: Object.entries(result.materialCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([block, count]) => `${result.materialNames[Number(block)] ?? block}:${count}`),
+        statsText: el('stats').textContent ?? '',
+    }
+}
+
+function visualScenarioLabel(): string {
+    const kind = select('kind') as StructureKind
+    if (kind === 'house') return `house-${select('houseScale')}`
+    if (isScalableLandmarkKind(kind)) return `${kind}-${select('landmarkScale')}`
+    if (kind === 'temple') return 'temple-troll'
+    if (kind === 'tower') return `tower-${select('towerScale')}`
+    if (kind === 'wall') return `wall-${select('wallScale')}`
+    return kind
+}
+
+function requireVisualState(state: ProceduralStructuresVisualState | null): ProceduralStructuresVisualState {
+    if (!state) throw new Error('Procedural structures visual state is not ready')
+    return state
+}
+
+function waitForFrames(frame: () => number, count: number): Promise<void> {
+    const start = frame()
+    return new Promise((resolve) => {
+        const tick = () => {
+            if (frame() - start >= count) {
+                resolve()
+                return
+            }
+            requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+    })
+}
+
+function waitForVisualSettle(frame: () => number, count: number): Promise<void> {
+    return Promise.race([
+        waitForFrames(frame, count),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 180)),
+    ])
+}
+
+function visualScenarioFromUrl(): VisualStructureScenario | null {
+    const value = new URLSearchParams(window.location.search).get('visualTest')
+    if (!value) return null
+    if (value === 'procedural-structures') return null
+    const scenario = value.replace(/^structure-/, '')
+    return isVisualScenario(scenario) ? scenario : null
+}
+
+function readScenarioPayload(payload: unknown): VisualStructureScenario {
+    const value = typeof payload === 'string'
+        ? payload
+        : typeof payload === 'object' && payload !== null && 'id' in payload && typeof payload.id === 'string'
+            ? payload.id
+            : ''
+    if (isVisualScenario(value)) return value
+    throw new Error(`Unknown procedural structure visual scenario: ${value}`)
+}
+
+function isVisualScenario(value: string): value is VisualStructureScenario {
+    return value === 'house-troll'
+        || value === 'house-folk'
+        || value === 'market-troll'
+        || value === 'stable-troll'
+        || value === 'church-troll'
+        || value === 'temple-troll'
+        || value === 'tower-troll'
+        || value === 'tower-folk'
+        || value === 'wall-troll'
+}
+
+function setVisualScenario(scenario: VisualStructureScenario): void {
+    setNumber('seed', scenario.startsWith('house') ? 2024 : 2025)
+    setNumber('variants', 1)
+    setNumber('spacing', 34)
+    setNumber('detail', 0.78)
+    setNumber('variation', 0)
+    setBoolean('cleanLoose', true)
+    setBoolean('showTerrain', false)
+    setBoolean('showGrid', true)
+    setNumber('terrainSize', 48)
+    setNumber('terrainNoise', 0)
+    if (scenario.startsWith('house')) {
+        const scale: StructureScale = scenario === 'house-folk' ? 'folk' : 'troll'
+        setSelectValue('kind', 'house')
+        setSelectValue('houseScale', scale)
+        applyHouseScaleDefaults(scale)
+        setSelectValue('houseStyle', 'cottage')
+        setSelectValue('roofStyle', 'gable')
+        setBoolean('sideWing', false)
+        setBoolean('porch', true)
+        setBoolean('chimney', true)
+        return
+    }
+    if (scenario.startsWith('wall')) {
+        setSelectValue('kind', 'wall')
+        setSelectValue('wallScale', 'troll')
+        applyWallScaleDefaults('troll')
+        setSelectValue('wallStyle', 'curtain')
+        setSelectValue('wallGate', 'center')
+        setSelectValue('wallTerrainMode', 'flat')
+        setBoolean('wallBattlements', true)
+        setBoolean('wallWalkway', true)
+        setNumber('wallRuinAmount', 0)
+        return
+    }
+    if (scenario.startsWith('temple')) {
+        setSelectValue('kind', 'temple')
+        setSelectValue('landmarkScale', 'troll')
+        setNumber('detail', 0.9)
+        setNumber('spacing', 56)
+        return
+    }
+    if (scenario.startsWith('market') || scenario.startsWith('stable') || scenario.startsWith('church')) {
+        const kind = scenario.split('-')[0] as StructureKind
+        setSelectValue('kind', kind)
+        setSelectValue('landmarkScale', scenario.endsWith('folk') ? 'folk' : 'troll')
+        setNumber('detail', 0.85)
+        setNumber('spacing', 44)
+        return
+    }
+    const scale: StructureScale = scenario === 'tower-folk' ? 'folk' : 'troll'
+    setSelectValue('kind', 'tower')
+    setSelectValue('towerScale', scale)
+    applyTowerScaleDefaults(scale)
+    setSelectValue('towerStyle', 'round')
+    setNumber('taper', 0)
+    setNumber('ruinAmount', 0)
+    setBoolean('spire', false)
 }
 
 function updateValueLabels(): void {
@@ -254,16 +498,55 @@ function updateValueLabels(): void {
         if (!out) continue
         const node = input(id)
         const value = Number(node.value)
-        const isFloat = node.step.includes('.') || ['detail', 'variation', 'branchDensity', 'leafNoise', 'fruitChance', 'taper', 'ruinAmount', 'terrainNoise'].includes(id)
-        out.textContent = isFloat ? value.toFixed(id === 'fruitChance' || id === 'ruinAmount' || id === 'terrainNoise' || id === 'taper' ? 2 : 1) : String(value)
+        const isFloat = node.step.includes('.') || ['detail', 'variation', 'branchDensity', 'leafNoise', 'fruitChance', 'taper', 'ruinAmount', 'wallRuinAmount', 'terrainNoise'].includes(id)
+        out.textContent = isFloat ? value.toFixed(id === 'fruitChance' || id === 'ruinAmount' || id === 'wallRuinAmount' || id === 'terrainNoise' || id === 'taper' ? 2 : 1) : String(value)
     }
+}
+
+function applyHouseScaleDefaults(scale: StructureScale): void {
+    const d = HOUSE_SCALE_DEFAULTS[scale]
+    input('houseWidth').value = String(d.width)
+    input('houseDepth').value = String(d.depth)
+    input('floors').value = String(d.floors)
+    input('floorHeight').value = String(d.floorHeight)
+    updateValueLabels()
+}
+
+function applyTowerScaleDefaults(scale: StructureScale): void {
+    const d = TOWER_SCALE_DEFAULTS[scale]
+    input('towerRadius').value = String(d.radius)
+    input('towerHeight').value = String(d.height)
+    input('wallThickness').value = String(d.wallThickness)
+    input('windowEvery').value = String(d.windowEvery)
+    input('spire').checked = d.spire
+    updateValueLabels()
+}
+
+function applyWallScaleDefaults(scale: StructureScale): void {
+    const d = WALL_SCALE_DEFAULTS[scale]
+    input('wallLength').value = String(d.length)
+    input('castleWallHeight').value = String(d.height)
+    input('castleWallThickness').value = String(d.thickness)
+    input('wallFoundation').value = String(d.foundationDepth)
+    updateValueLabels()
 }
 
 function updateSectionVisibility(): void {
     const kind = select('kind') as StructureKind
-    el('treeSection').classList.toggle('hidden', !(kind === 'tree' || kind === 'mixed'))
-    el('houseSection').classList.toggle('hidden', !(kind === 'house' || kind === 'mixed'))
-    el('towerSection').classList.toggle('hidden', !(kind === 'tower' || kind === 'mixed'))
+    el('treeSection').classList.toggle('hidden', kind !== 'tree')
+    el('houseSection').classList.toggle('hidden', kind !== 'house')
+    el('landmarkSection').classList.toggle('hidden', !hasBuildingParams(kind))
+    el('landmarkScaleField').classList.toggle('hidden', !isScalableLandmarkKind(kind))
+    el('towerSection').classList.toggle('hidden', kind !== 'tower')
+    el('wallSection').classList.toggle('hidden', kind !== 'wall')
+}
+
+function hasBuildingParams(kind: StructureKind): boolean {
+    return isScalableLandmarkKind(kind) || kind === 'temple'
+}
+
+function isScalableLandmarkKind(kind: StructureKind): boolean {
+    return kind === 'market' || kind === 'stable' || kind === 'church'
 }
 
 function updateStats(result: StructureGenerationResult): void {
@@ -324,6 +607,18 @@ function checked(id: string): boolean {
 
 function select(id: string): string {
     return (el(id) as HTMLSelectElement).value
+}
+
+function setNumber(id: string, value: number): void {
+    input(id).value = String(value)
+}
+
+function setBoolean(id: string, value: boolean): void {
+    input(id).checked = value
+}
+
+function setSelectValue(id: string, value: string): void {
+    ;(el(id) as HTMLSelectElement).value = value
 }
 
 function input(id: string): HTMLInputElement {

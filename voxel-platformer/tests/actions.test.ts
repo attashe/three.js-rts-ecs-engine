@@ -134,9 +134,11 @@ test('game actions expose the platformer command hint set in order', () => {
         { keys: ['G'], label: 'Air push' },
         { keys: ['F'], label: 'Bow' },
         { keys: ['E'], label: 'Interaction' },
+        { keys: ['Tab'], label: 'Inventory' },
     ])
     assert.equal(actions.get(GameAction.BowShot).bindings?.[0]?.keys[0], 'KeyF')
     assert.equal(actions.get(GameAction.Interact).bindings?.[0]?.keys[0], 'KeyE')
+    assert.equal(actions.get(GameAction.Inventory).bindings?.[0]?.keys[0], 'Tab')
 })
 
 test('action binding overrides clone definitions without mutating defaults', () => {

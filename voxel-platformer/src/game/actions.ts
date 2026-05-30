@@ -19,6 +19,7 @@ export const GameAction = {
     AirPush: 'spell.airPush',
     BowShot: 'weapon.bowShot',
     Interact: 'interact',
+    Inventory: 'inventory.open',
     CameraRotateLeft: 'camera.rotateLeft',
     CameraRotateRight: 'camera.rotateRight',
     CameraZoom: 'camera.zoom',
@@ -108,6 +109,13 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
         bufferMs: 160,
         hint: { group: 'interact', label: 'Interaction', keys: ['E'], order: 55 },
     },
+    {
+        id: GameAction.Inventory,
+        label: 'Inventory',
+        bindings: [{ keys: ['Tab'] }],
+        bufferMs: 160,
+        hint: { group: 'inventory', label: 'Inventory', keys: ['Tab'], order: 56 },
+    },
 ]
 
 export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
@@ -118,6 +126,7 @@ export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
     GameAction.AirPush,
     GameAction.BowShot,
     GameAction.Interact,
+    GameAction.Inventory,
     GameAction.CameraRotateLeft,
 ]
 

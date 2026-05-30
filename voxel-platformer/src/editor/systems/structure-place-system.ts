@@ -10,7 +10,7 @@ import {
 } from '../../procedural-structures/asset'
 import type { EditorState } from '../editor-state'
 import type { CommandStack } from '../history'
-import { resolveStructureAsset, structureTransformFromState } from '../structure-asset-cache'
+import { resolveStructureAsset, structureTransformFromState, wallEndpointsFromState, wallPlacementEditsFromState } from '../structure-asset-cache'
 
 /**
  * Click-to-place multi-block structures. Active only in `place-structure`
@@ -44,14 +44,24 @@ export function createStructurePlaceSystem(
 
             for (const click of clicks) {
                 if (click.button === 2) {
+                    if (isWallPlacement(editorState) && editorState.structureWallStart) {
+                        editorState.structureWallStart = null
+                        pushLog(world as GameWorld, 'Wall start cleared.')
+                        continue
+                    }
                     rerollSeed(world as GameWorld, editorState)
                     continue
                 }
                 if (click.button !== 0) continue
-                place(world as GameWorld, chunks, editorState, history)
+                if (isWallPlacement(editorState)) placeWall(world as GameWorld, chunks, editorState, history)
+                else place(world as GameWorld, chunks, editorState, history)
             }
         },
     }
+}
+
+function isWallPlacement(state: EditorState): boolean {
+    return state.structureSourceKind === 'procedural' && state.structureKind === 'wall'
 }
 
 function rerollSeed(world: GameWorld, state: EditorState): void {
@@ -79,4 +89,36 @@ function place(world: GameWorld, chunks: ChunkManager, state: EditorState, histo
     })
     const m = measureStructurePlacement(asset, transform)
     pushLog(world, `Placed ${asset.label} — ${m.bounds.width}×${m.bounds.height}×${m.bounds.depth}, ${after.length} voxels.`)
+}
+
+function placeWall(world: GameWorld, chunks: ChunkManager, state: EditorState, history: CommandStack): void {
+    const cursor = state.cursor
+    if (!cursor) return
+    if (!state.structureWallStart) {
+        state.structureWallStart = { ...cursor }
+        const label = state.structureWallEndpointMode === 'tower-socket' ? 'tower center' : 'wall start'
+        pushLog(world, `${label} set at ${cursor.x}, ${cursor.y}, ${cursor.z}.`)
+        return
+    }
+    const start = state.structureWallStart
+    if (start.x === cursor.x && start.y === cursor.y && start.z === cursor.z) {
+        pushLog(world, 'Move the cursor to a different cell to finish the wall.')
+        return
+    }
+    const after = wallPlacementEditsFromState(state, start, cursor)
+    if (after.length === 0) {
+        pushLog(world, 'Wall is empty — nothing to place.')
+        return
+    }
+    const before = captureBeforeEdits(chunks, after)
+    history.push({
+        label: 'place wall',
+        apply: () => { chunks.applyBulk(after) },
+        revert: () => { chunks.applyBulk(before) },
+    })
+    state.structureWallStart = null
+    const [from, to] = wallEndpointsFromState(state, start, cursor)
+    const width = Math.abs(to.x - from.x) + 1
+    const depth = Math.abs(to.z - from.z) + 1
+    pushLog(world, `Placed wall — ${width}×${depth} path span, ${after.length} voxels.`)
 }

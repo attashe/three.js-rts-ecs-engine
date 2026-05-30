@@ -1,3 +1,9 @@
+import {
+    copyInventoryItems,
+    normalizeInventoryItems,
+    type InventoryItemMap,
+} from './inventory'
+
 export const PLAYER_MODEL_KINDS = [
     'player',
     'keeper',
@@ -62,6 +68,7 @@ export interface PlayerAbilitySettings {
 export interface PlayerInventorySettings {
     gold: number
     arrows: number
+    items: InventoryItemMap
 }
 
 export interface PlayerTorchSettings {
@@ -110,6 +117,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
     inventory: {
         gold: 0,
         arrows: 0,
+        items: {},
     },
     moveSpeed: 5,
     jumpVelocity: 8,
@@ -132,7 +140,7 @@ export function copyPlayerSettings(settings: PlayerSettings): PlayerSettings {
     return {
         ...settings,
         abilities: { ...settings.abilities },
-        inventory: { ...settings.inventory },
+        inventory: { ...settings.inventory, items: copyInventoryItems(settings.inventory.items) },
         torch: { ...settings.torch },
     }
 }
@@ -156,6 +164,7 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
         inventory: {
             gold: clampInt(input?.inventory?.gold, 0, PLAYER_INVENTORY_LIMITS.gold, base.inventory.gold),
             arrows: clampInt(input?.inventory?.arrows, 0, PLAYER_INVENTORY_LIMITS.arrows, base.inventory.arrows),
+            items: normalizeInventoryItems(input?.inventory?.items),
         },
         moveSpeed: clampNumber(input?.moveSpeed, 0, 30, base.moveSpeed),
         jumpVelocity: clampNumber(input?.jumpVelocity, 0, 40, base.jumpVelocity),
@@ -182,7 +191,13 @@ export function applyPlayerSettingsPatch(settings: PlayerSettings, patch: Player
         ...settings,
         ...patch,
         abilities: { ...settings.abilities, ...patch.abilities },
-        inventory: { ...settings.inventory, ...patch.inventory },
+        inventory: {
+            ...settings.inventory,
+            ...patch.inventory,
+            items: patch.inventory?.items !== undefined
+                ? copyInventoryItems(patch.inventory.items)
+                : copyInventoryItems(settings.inventory.items),
+        },
         torch: { ...settings.torch, ...patch.torch },
     })
 }

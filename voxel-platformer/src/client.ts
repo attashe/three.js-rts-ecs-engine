@@ -5,6 +5,8 @@ import { ChunkManager, ChunkRenderer, DEFAULT_PALETTE, createBlockLightSystem } 
 import type { System } from './engine/ecs/systems/system'
 import { FixedOrder, RenderOrder } from './engine/ecs/systems/orders'
 import { createRenderSyncSystem } from './engine/ecs/systems/render-sync-system'
+import { createAnimationSystem } from './engine/ecs/systems/animation-system'
+import { preloadCharacterModels } from './game/anim/model-registry'
 import { createCameraControlSystem } from './engine/ecs/systems/camera-control-system'
 import { createCameraFollowSystem } from './engine/ecs/systems/camera-follow-system'
 import { createPlayerControlSystem } from './engine/ecs/systems/player-control-system'
@@ -60,6 +62,7 @@ import { checkpointStorageKey, createSessionCheckpointStore, resolveSpawn, type 
 import { defineZone, type Zone } from './engine/ecs/zones'
 import { createGameActionMap, GameAction } from './game/actions'
 import { createGameMenuSystem } from './game/game-menu-system'
+import { createInventorySystem } from './game/inventory-system'
 import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
 import { copyPlayerSettings, type PlayerSettings } from './game/player-settings'
 import { deserializeLevel, serializeLevel } from './engine/voxel/level-serializer'
@@ -70,6 +73,7 @@ import { loadLevelBufferById, normalizeLevelId } from './game/level-library'
 import type { EditorLevelMeta } from './editor/editor-state'
 import { levelMetaWithSpawn, type LevelMeta } from './game/level'
 import { pushLog, type GameWorld } from './engine/ecs/world'
+import { copyInventoryItems } from './game/inventory'
 import type { ScriptEngineSystem } from './engine/script/script-engine-system'
 import type { FlagValue, ScriptEntry, TravelFacade } from './engine/script/types'
 import demoQuestSource from '../examples/scripts/demo-quest.js?raw'
@@ -127,6 +131,10 @@ async function main(): Promise<void> {
     const audio = new AudioEngine()
     const audioReady = audio.loadManifest(GAME_AUDIO_MANIFEST)
     void audioReady.catch((err) => console.warn('Game audio failed to load:', err))
+
+    // Load any configured Blender character rigs before the first spawn. No-op
+    // (no network) until a model is registered in CHARACTER_MODEL_URLS.
+    await preloadCharacterModels()
 
     const defaultAmbient = new AmbientLight(0xffffff, 0.45)
     enablePlayerVisibility(defaultAmbient)
@@ -255,6 +263,7 @@ async function main(): Promise<void> {
         world.playerSettings = copyPlayerSettings(opts.playerSettings)
         world.inventory.gold = world.playerSettings.inventory.gold
         world.inventory.arrows = world.playerSettings.inventory.arrows
+        world.inventory.items = copyInventoryItems(world.playerSettings.inventory.items)
 
         spawnPlayer(world, { spawn: effectiveSpawn, settings: world.playerSettings })
         for (const stone of meta.stones) spawnLevelStone(world, stone)
@@ -510,6 +519,7 @@ async function main(): Promise<void> {
             },
         }), 'playerDeath')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
+        .addSystem(createAnimationSystem(), 'animation')
         .addSystem(slots.blockLights.system, 'blockLights')
         .addSystem(slots.chunkRender.system, 'chunkRender')
         .addSystem(slots.indoorCut.system, 'indoorCut')
@@ -521,6 +531,7 @@ async function main(): Promise<void> {
             cameraProvider: () => renderer.iso.camera,
             renderElement: renderer.webgpu.domElement,
         }), 'debugOverlay')
+        .addSystem(createInventorySystem(engine.input, actions), 'inventory')
         .addSystem(createGameMenuSystem(engine.input, actions, audio, {
             renderElement: renderer.webgpu.domElement,
             exitHref: './editor.html',
@@ -636,6 +647,7 @@ function currentPlayerSettings(world: GameWorld): PlayerSettings {
     const settings = copyPlayerSettings(world.playerSettings)
     settings.inventory.gold = world.inventory.gold
     settings.inventory.arrows = world.inventory.arrows
+    settings.inventory.items = copyInventoryItems(world.inventory.items)
     return settings
 }
 

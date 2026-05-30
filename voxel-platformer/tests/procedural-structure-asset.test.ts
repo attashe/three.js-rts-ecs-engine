@@ -34,6 +34,20 @@ test('procedural asset is deterministic and normalised to a (0,0,0) min corner',
     assert.ok(a.stats.voxelCount > 0)
 })
 
+test('procedural wall asset uses sample length but stays normalised for editor readouts', () => {
+    const asset = generateStructureAsset(proceduralSource('wall', 12, {
+        wall: { length: 18, height: 5, thickness: 3, gate: 'center' },
+    }), { palette: DEFAULT_PALETTE })
+
+    assert.equal(asset.bounds.minX, 0)
+    assert.equal(asset.bounds.minY, 0)
+    assert.equal(asset.bounds.minZ, 0)
+    assert.equal(asset.size.width, 18)
+    assert.equal(asset.size.depth, 3)
+    assert.ok(asset.voxels.some((v) => v.tag === 'wall-crenel'))
+    assert.ok(asset.voxels.some((v) => v.tag === 'wall-gate-lintel'))
+})
+
 test('structuralOnly drops decorative voxels but keeps the structure', () => {
     const source = proceduralSource('tree', 24, { tree: { style: 'oak', fruitChance: 0.35 } })
     const full = generateStructureAsset(source)

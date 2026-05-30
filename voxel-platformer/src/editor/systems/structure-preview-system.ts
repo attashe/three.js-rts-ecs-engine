@@ -13,6 +13,7 @@ import {
 import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
+import type { VoxelEdit } from '../../engine/voxel/chunk-manager'
 import {
     anchorOffset,
     rotatedSize,
@@ -20,8 +21,9 @@ import {
     type StructureAsset,
     type StructureSize,
 } from '../../procedural-structures/asset'
+import { boundsOf } from '../../procedural-structures/buffer'
 import type { EditorState } from '../editor-state'
-import { resolveStructureAsset, structurePreviewKey } from '../structure-asset-cache'
+import { resolveStructureAsset, structurePreviewKey, wallPlacementEditsFromState, wallPreviewKey } from '../structure-asset-cache'
 
 const PREVIEW_OPACITY = 0.5
 const AABB_COLOUR = 0x9be0ff
@@ -123,6 +125,45 @@ export function createStructurePreviewSystem(
         group.add(aabb)
     }
 
+    function rebuildWall(cells: VoxelEdit[]): void {
+        clearBuilt()
+        const count = Math.min(cells.length, MAX_PREVIEW_VOXELS)
+        if (count > 0) {
+            ghost = new InstancedMesh(cubeGeometry, ghostMaterial, count)
+            ghost.frustumCulled = false
+            ghost.renderOrder = 997
+            const palette = chunks.palette
+            for (let i = 0; i < count; i++) {
+                const c = cells[i]!
+                matrix.makeTranslation(c.x + 0.5, c.y + 0.5, c.z + 0.5)
+                ghost.setMatrixAt(i, matrix)
+                const entry = palette.entries[c.value]
+                if (entry) colour.setRGB(entry.color[0], entry.color[1], entry.color[2])
+                else colour.setRGB(1, 1, 1)
+                ghost.setColorAt(i, colour)
+            }
+            ghost.instanceMatrix.needsUpdate = true
+            if (ghost.instanceColor) ghost.instanceColor.needsUpdate = true
+            group.add(ghost)
+        }
+
+        const bounds = boundsOf(cells.map((c) => ({ x: c.x, y: c.y, z: c.z, block: c.value, tag: 'wall-preview' })))
+        if (bounds.width > 0 && bounds.height > 0 && bounds.depth > 0) {
+            const box = new BoxGeometry(bounds.width, bounds.height, bounds.depth)
+            const edges = new EdgesGeometry(box)
+            box.dispose()
+            aabb = new LineSegments(edges, aabbMaterial)
+            aabb.frustumCulled = false
+            aabb.renderOrder = 999
+            aabb.position.set(
+                bounds.minX + bounds.width / 2,
+                bounds.minY + bounds.height / 2,
+                bounds.minZ + bounds.depth / 2,
+            )
+            group.add(aabb)
+        }
+    }
+
     return {
         order: RenderOrder.debug + 4,
         init() {
@@ -131,6 +172,21 @@ export function createStructurePreviewSystem(
         update() {
             if (editorState.mode !== 'place-structure' || !editorState.cursor) {
                 group.visible = false
+                return
+            }
+            if (editorState.structureSourceKind === 'procedural' && editorState.structureKind === 'wall') {
+                const start = editorState.structureWallStart
+                if (!start) {
+                    group.visible = false
+                    return
+                }
+                const key = wallPreviewKey(editorState, start, editorState.cursor)
+                if (key !== builtKey || (!ghost && !aabb)) {
+                    rebuildWall(wallPlacementEditsFromState(editorState, start, editorState.cursor))
+                    builtKey = key
+                }
+                group.position.set(0, 0, 0)
+                group.visible = true
                 return
             }
             const asset = resolveStructureAsset(editorState, chunks.palette)

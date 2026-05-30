@@ -20,8 +20,20 @@ import {
     type StoneTierId,
 } from '../game/moving-objects'
 import type { StructureAnchor, StructureRotation, StructureSourceKind } from '../procedural-structures/asset'
-import type { StructureKind } from '../procedural-structures/types'
+import type {
+    HouseStyle,
+    RoofStyle,
+    StructureKind,
+    StructureScale,
+    TowerStyle,
+    TreeSeason,
+    TreeStyle,
+    WallGateMode,
+    WallStyle,
+    WallTerrainMode,
+} from '../procedural-structures/types'
 import { DEFAULT_PREFAB_ID } from '../procedural-structures/prefabs'
+import { DEFAULT_STRUCTURE_OPTIONS } from '../procedural-structures/options'
 
 export type EditorMode =
     | 'select'
@@ -49,6 +61,7 @@ export type EditorViewMode = 'iso' | 'top-down' | 'orbit'
 export type EditorPistonMotion = 'teleport' | 'physical'
 export type EditorZoneTriggerMode = ZoneTriggerSource | 'both'
 export type PropScatterShape = 'square' | 'circle'
+export type EditorWallEndpointMode = 'free' | 'tower-socket'
 
 export interface EditorPickup {
     /** World-space pickup position (foot of the visual). Stored in editor
@@ -476,6 +489,55 @@ export interface EditorState {
     structureKind: StructureKind
     /** Seed for the procedural generator. */
     structureSeed: number
+    structureDetail: number
+    structureVariation: number
+    structureCleanLoose: boolean
+    structureTreeStyle: TreeStyle
+    structureTreeSeason: TreeSeason
+    structureTreeTrunkHeight: number
+    structureTreeTrunkRadius: number
+    structureTreeCrownRadius: number
+    structureTreeBranchDensity: number
+    structureTreeLeafNoise: number
+    structureTreeFruitChance: number
+    structureHouseScale: StructureScale
+    structureHouseStyle: HouseStyle
+    structureHouseWidth: number
+    structureHouseDepth: number
+    structureHouseFloors: number
+    structureHouseFloorHeight: number
+    structureHouseRoofStyle: RoofStyle
+    structureHouseSideWing: boolean
+    structureHousePorch: boolean
+    structureHouseChimney: boolean
+    structureLandmarkScale: StructureScale
+    structureTowerScale: StructureScale
+    structureTowerStyle: TowerStyle
+    structureTowerRadius: number
+    structureTowerHeight: number
+    structureTowerWallThickness: number
+    structureTowerTaper: number
+    structureTowerWindowEvery: number
+    structureTowerRuinAmount: number
+    structureTowerSpire: boolean
+    structureWallScale: StructureScale
+    structureWallStyle: WallStyle
+    structureWallLength: number
+    structureWallHeight: number
+    structureWallThickness: number
+    structureWallFoundationDepth: number
+    structureWallBattlements: boolean
+    structureWallWalkway: boolean
+    structureWallGate: WallGateMode
+    structureWallTerrainMode: WallTerrainMode
+    structureWallRuinAmount: number
+    /** Free endpoints place exactly where clicked. Tower socket mode treats
+     *  clicks as tower centres and offsets endpoints to the facing tower edge. */
+    structureWallEndpointMode: EditorWallEndpointMode
+    structureWallTowerRadius: number
+    /** First endpoint for the path-based wall placement tool. Second LMB
+     *  commits a wall from this point to the live cursor. */
+    structureWallStart: VoxelCoord | null
     /** Y-axis rotation applied to the next placed structure. */
     structureRotation: StructureRotation
     /** Anchor cell the cursor maps onto (default bottom-center). */
@@ -660,6 +722,51 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         structurePrefabId: DEFAULT_PREFAB_ID,
         structureKind: 'house',
         structureSeed: 1337,
+        structureDetail: DEFAULT_STRUCTURE_OPTIONS.detail,
+        structureVariation: DEFAULT_STRUCTURE_OPTIONS.variation,
+        structureCleanLoose: DEFAULT_STRUCTURE_OPTIONS.cleanLoose,
+        structureTreeStyle: DEFAULT_STRUCTURE_OPTIONS.tree.style,
+        structureTreeSeason: DEFAULT_STRUCTURE_OPTIONS.tree.season,
+        structureTreeTrunkHeight: DEFAULT_STRUCTURE_OPTIONS.tree.trunkHeight,
+        structureTreeTrunkRadius: DEFAULT_STRUCTURE_OPTIONS.tree.trunkRadius,
+        structureTreeCrownRadius: DEFAULT_STRUCTURE_OPTIONS.tree.crownRadius,
+        structureTreeBranchDensity: DEFAULT_STRUCTURE_OPTIONS.tree.branchDensity,
+        structureTreeLeafNoise: DEFAULT_STRUCTURE_OPTIONS.tree.leafNoise,
+        structureTreeFruitChance: DEFAULT_STRUCTURE_OPTIONS.tree.fruitChance,
+        structureHouseScale: DEFAULT_STRUCTURE_OPTIONS.house.scale,
+        structureHouseStyle: DEFAULT_STRUCTURE_OPTIONS.house.style,
+        structureHouseWidth: DEFAULT_STRUCTURE_OPTIONS.house.width,
+        structureHouseDepth: DEFAULT_STRUCTURE_OPTIONS.house.depth,
+        structureHouseFloors: DEFAULT_STRUCTURE_OPTIONS.house.floors,
+        structureHouseFloorHeight: DEFAULT_STRUCTURE_OPTIONS.house.floorHeight,
+        structureHouseRoofStyle: DEFAULT_STRUCTURE_OPTIONS.house.roofStyle,
+        structureHouseSideWing: DEFAULT_STRUCTURE_OPTIONS.house.sideWing,
+        structureHousePorch: DEFAULT_STRUCTURE_OPTIONS.house.porch,
+        structureHouseChimney: DEFAULT_STRUCTURE_OPTIONS.house.chimney,
+        structureLandmarkScale: DEFAULT_STRUCTURE_OPTIONS.landmark.scale,
+        structureTowerScale: DEFAULT_STRUCTURE_OPTIONS.tower.scale,
+        structureTowerStyle: DEFAULT_STRUCTURE_OPTIONS.tower.style,
+        structureTowerRadius: DEFAULT_STRUCTURE_OPTIONS.tower.radius,
+        structureTowerHeight: DEFAULT_STRUCTURE_OPTIONS.tower.height,
+        structureTowerWallThickness: DEFAULT_STRUCTURE_OPTIONS.tower.wallThickness,
+        structureTowerTaper: DEFAULT_STRUCTURE_OPTIONS.tower.taper,
+        structureTowerWindowEvery: DEFAULT_STRUCTURE_OPTIONS.tower.windowEvery,
+        structureTowerRuinAmount: DEFAULT_STRUCTURE_OPTIONS.tower.ruinAmount,
+        structureTowerSpire: DEFAULT_STRUCTURE_OPTIONS.tower.spire,
+        structureWallScale: DEFAULT_STRUCTURE_OPTIONS.wall.scale,
+        structureWallStyle: DEFAULT_STRUCTURE_OPTIONS.wall.style,
+        structureWallLength: DEFAULT_STRUCTURE_OPTIONS.wall.length,
+        structureWallHeight: DEFAULT_STRUCTURE_OPTIONS.wall.height,
+        structureWallThickness: DEFAULT_STRUCTURE_OPTIONS.wall.thickness,
+        structureWallFoundationDepth: DEFAULT_STRUCTURE_OPTIONS.wall.foundationDepth,
+        structureWallBattlements: DEFAULT_STRUCTURE_OPTIONS.wall.battlements,
+        structureWallWalkway: DEFAULT_STRUCTURE_OPTIONS.wall.walkway,
+        structureWallGate: DEFAULT_STRUCTURE_OPTIONS.wall.gate,
+        structureWallTerrainMode: DEFAULT_STRUCTURE_OPTIONS.wall.terrainMode,
+        structureWallRuinAmount: DEFAULT_STRUCTURE_OPTIONS.wall.ruinAmount,
+        structureWallEndpointMode: 'free',
+        structureWallTowerRadius: DEFAULT_STRUCTURE_OPTIONS.tower.radius,
+        structureWallStart: null,
         structureRotation: 0,
         structureAnchor: 'bottom-center',
         structureStructuralOnly: false,

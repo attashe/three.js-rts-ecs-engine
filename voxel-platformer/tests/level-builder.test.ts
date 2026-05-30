@@ -4,6 +4,7 @@ import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { DEFAULT_PALETTE, BLOCK } from '../src/engine/voxel/palette'
 import { terrain } from '../src/game/level-builder/terrain'
 import { defineLevel, outdoorDay, zoneBox, interactZone } from '../src/game/level-builder/meta'
+import { castleWall } from '../src/game/level-builder/structures'
 import { anyMask, circle, fbmNoise2D, pathMask, rect, subtractMask, valueNoise2D } from '../src/game/level-builder/masks'
 import { DEFAULT_PLAYER_SETTINGS } from '../src/game/player-settings'
 import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from '../src/game/weather-config'
@@ -160,6 +161,29 @@ test('fillWater skips bed writes below the world floor', () => {
 
     assert.equal(chunks.getVoxel(1, -1, 1), BLOCK.air)
     assert.equal(chunks.getVoxel(1, 0, 1), BLOCK.water)
+})
+
+test('castleWall helper writes the same path-based wall API used by the editor', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const result = castleWall(chunks, {
+        from: [2, 5, 2],
+        to: [10, 5, 2],
+        seed: 5,
+        style: 'stone',
+        height: 4,
+        thickness: 3,
+        foundationDepth: 1,
+        battlements: true,
+    })
+
+    assert.ok(result.voxelCount > 0)
+    assert.equal(result.bounds.width, 9)
+    assert.equal(result.bounds.depth, 3)
+    assert.notEqual(chunks.getVoxel(2, 5, 2), BLOCK.air)
+    assert.notEqual(chunks.getVoxel(10, 5, 2), BLOCK.air)
+    assert.equal(chunks.getVoxel(6, 4, 2), BLOCK.air, 'wall should not write below the requested base level')
+    assert.notEqual(chunks.getVoxel(6, 5, 2), BLOCK.air, 'foundation starts at the requested base level')
+    assert.notEqual(chunks.getVoxel(6, 6, 2), BLOCK.air, 'wall body is written above the foundation')
 })
 
 test('defineLevel fills empty defaults and keeps required fields', () => {

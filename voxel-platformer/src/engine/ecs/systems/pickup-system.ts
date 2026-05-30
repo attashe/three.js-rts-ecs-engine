@@ -1,9 +1,10 @@
 import { hasComponent, query } from 'bitecs'
 import { Pickup, PickupValue, PlayerControlled, Position } from '../components'
 import { despawnEntity } from '../entity'
-import { pushLog, pushScriptTriggerEvent } from '../world'
+import { pushLog, pushScriptTriggerEvent, type PickupScriptMeta } from '../world'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+import { addInventoryItem, copyInventoryItems } from '../../../game/inventory'
 
 /** Numeric kind codes stored in PickupValue.kind. Keep these stable —
  *  pickup-system + asset spawners + consumers all reference the same ids. */
@@ -26,9 +27,9 @@ export interface PickupSystemOptions {
  * AABB centre against every entity with `Pickup + Position` and, if within
  * `radius`, debit the entity into `world.inventory` and despawn it.
  *
- * Kind dispatch is intentionally small: gold and arrows mutate inventory;
- * script-owned quest items emit `pickup-taken` metadata without entering a
- * general inventory registry.
+ * Kind dispatch is intentionally small: gold and arrows mutate legacy
+ * counters; script-owned quest items enter the durable item registry and
+ * emit `pickup-taken` metadata.
  */
 export function createPickupSystem(opts: PickupSystemOptions = {}): System {
     const radius = opts.radius ?? 0.9
@@ -55,10 +56,10 @@ export function createPickupSystem(opts: PickupSystemOptions = {}): System {
 
                 const kind = hasComponent(world, eid, PickupValue) ? PickupValue.kind[eid] : 0
                 const amount = hasComponent(world, eid, PickupValue) ? PickupValue.amount[eid] : 0
-                const safeAmount = Math.max(1, amount)
+                const safeAmount = safePickupAmount(amount)
                 const meta = world.pickupMetaByEid.get(eid)
                 const scriptKind = meta?.kind ?? scriptPickupKind(kind)
-                applyPickup(world, kind, amount)
+                applyPickup(world, kind, amount, meta)
                 pushLog(world, formatPickupLog(kind, safeAmount, meta?.label))
                 opts.onCollected?.(kind, amount)
                 // Snapshot the pickup's position before despawn — the
@@ -89,15 +90,32 @@ export function createPickupSystem(opts: PickupSystemOptions = {}): System {
     }
 }
 
-function applyPickup(world: Parameters<System['update']>[0], kind: number, amount: number): void {
-    const safeAmount = Math.max(1, amount)
+function applyPickup(
+    world: Parameters<System['update']>[0],
+    kind: number,
+    amount: number,
+    meta?: PickupScriptMeta,
+): void {
+    const safeAmount = safePickupAmount(amount)
     if (kind === PickupKind.Gold) {
         world.inventory.gold += safeAmount
         world.playerSettings.inventory.gold = world.inventory.gold
     } else if (kind === PickupKind.Arrow) {
         world.inventory.arrows += safeAmount
         world.playerSettings.inventory.arrows = world.inventory.arrows
+    } else if (kind === PickupKind.ScriptItem && meta?.kind) {
+        const item = meta.inventoryItem ?? {
+            id: meta.kind,
+            quantity: safeAmount,
+            options: { name: meta.label, category: 'quest', icon: 'quest-shard' } as const,
+        }
+        addInventoryItem(world.inventory.items, item.id, item.quantity ?? safeAmount, item.options)
+        world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
     }
+}
+
+function safePickupAmount(amount: number): number {
+    return Number.isFinite(amount) ? Math.max(1, Math.floor(amount)) : 1
 }
 
 /** Translate the numeric `PickupKind` code into the string form

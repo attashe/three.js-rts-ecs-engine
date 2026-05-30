@@ -134,6 +134,9 @@ export const BLOCK = {
     smoke: 39,
     fire: 40,
     rail: 41,
+    autumnLeaf: 42,
+    autumnLeafDark: 43,
+    autumnLeafLight: 44,
 } as const
 
 /**
@@ -333,6 +336,9 @@ export const DEFAULT_PALETTE: Palette = {
             opacity: 0,
             renderAs: 'rail',
         },
+        { name: 'autumn leaf', color: [0.85, 0.46, 0.16], solid: true, textureKey: 'leaf' },
+        { name: 'dark autumn leaf', color: [0.54, 0.19, 0.08], solid: true, textureKey: 'leaf' },
+        { name: 'gold autumn leaf', color: [0.95, 0.68, 0.18], solid: true, textureKey: 'leaf' },
     ],
 }
 
@@ -550,6 +556,9 @@ const DEFAULT_STRUCTURE_BLOCKS = [
     BLOCK.leafDark,
     BLOCK.leafLight,
     BLOCK.deepLeaf,
+    BLOCK.autumnLeaf,
+    BLOCK.autumnLeafDark,
+    BLOCK.autumnLeafLight,
     BLOCK.fruit,
     BLOCK.flower,
     BLOCK.mushroom,

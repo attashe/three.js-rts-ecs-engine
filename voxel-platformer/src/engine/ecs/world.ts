@@ -1,9 +1,11 @@
 import { createWorld, type World } from 'bitecs'
 import type { Object3D } from 'three'
+import type { AnimationController } from '../anim/runtime/animation-controller'
 import { ObstacleRegistry } from './obstacle-registry'
 import { EngineMetrics } from '../metrics'
 import type { Zone, ZoneTriggerEvent, ZoneTriggerSource } from './zones'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../../game/player-settings'
+import type { InventoryItemMap, InventoryItemOptions } from '../../game/inventory'
 
 export interface VoxelCoord {
     x: number
@@ -16,6 +18,7 @@ export interface VoxelCoord {
 export interface PickupInventory {
     gold: number
     arrows: number
+    items: InventoryItemMap
 }
 
 export interface PickupScriptMeta {
@@ -25,6 +28,13 @@ export interface PickupScriptMeta {
     pickupId?: string
     /** Human-readable item name for pickup log lines. */
     label?: string
+    /** Optional durable inventory item granted when this script pickup is
+     *  collected. Coins/arrows keep using their legacy counters. */
+    inventoryItem?: {
+        id: string
+        quantity?: number
+        options?: InventoryItemOptions
+    }
 }
 
 export interface PopupMessage {
@@ -163,6 +173,11 @@ const MAX_ZONE_EVENTS = 64
 export interface GameContext {
     metrics: EngineMetrics
     object3DByEid: Map<number, Object3D>
+    /** Per-entity animation controllers (mixer + state machine). `import type`
+     *  keeps this side table's three dependency out of the test build's runtime. */
+    animControllerByEid: Map<number, AnimationController>
+    /** Per-entity equipment: equip slot socket name -> attached Object3D. */
+    equipmentByEid: Map<number, Map<string, Object3D>>
     /** AABBs of settled rigid bodies the voxel-sweep treats as solid. */
     obstacles: ObstacleRegistry
     inventory: PickupInventory
@@ -275,8 +290,10 @@ export function createGameWorld(): GameWorld {
     return createWorld<GameContext>({
         metrics: new EngineMetrics(),
         object3DByEid: new Map<number, Object3D>(),
+        animControllerByEid: new Map<number, AnimationController>(),
+        equipmentByEid: new Map<number, Map<string, Object3D>>(),
         obstacles: new ObstacleRegistry(),
-        inventory: { gold: 0, arrows: 0 },
+        inventory: { gold: 0, arrows: 0, items: {} },
         pickupMetaByEid: new Map<number, PickupScriptMeta>(),
         pickupEntityByScriptId: new Map<string, number>(),
         pistons: [],

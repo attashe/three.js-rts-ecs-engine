@@ -87,6 +87,23 @@ export const RigidBody = {
     centerAnchored: new Uint8Array(MAX_ENTITIES),
 }
 
+/**
+ * Marks an entity whose render Object3D is animated. The authoritative state
+ * (mixer + state machine) lives in `GameWorld.animControllerByEid`; these arrays
+ * are a numeric mirror for the debug overlay / future serialization.
+ */
+export const Animated = {
+    /** Interned animation graph id (0 = default locomotion). */
+    graphId: new Uint16Array(MAX_ENTITIES),
+    /** Index of the active state within its graph's `states`. */
+    currentState: new Uint8Array(MAX_ENTITIES),
+    prevState: new Uint8Array(MAX_ENTITIES),
+    /** 0..1 crossfade progress into the active state. */
+    blendAlpha: new Float32Array(MAX_ENTITIES),
+    /** Seconds spent in the active state. */
+    time: new Float32Array(MAX_ENTITIES),
+}
+
 // Tag components — empty objects, used purely as identity in queries.
 export const Renderable = {}
 /** Renderable that doesn't move once placed. RenderSync syncs its transform

@@ -4,7 +4,9 @@ import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, paletteTileIndex, voxelLightSpec } from '../src/engine/voxel/palette'
 import {
     generateStructureScene,
+    generateWallSegment,
     normalizeStructureOptions,
+    towerWallSocket,
     type StructureVoxel,
 } from '../src/procedural-structures/generator'
 
@@ -17,7 +19,7 @@ function signature(voxels: StructureVoxel[]): string {
 
 test('procedural structures are deterministic for identical options', () => {
     const opts = normalizeStructureOptions({
-        kind: 'mixed',
+        kind: 'house',
         seed: 42,
         variants: 4,
         terrainSize: 64,
@@ -215,6 +217,145 @@ test('shed roof closes side panels under the raised roof plane', () => {
     assert.ok(result.voxels.filter((v) => v.tag === 'shed-roof-high-panel').length > 4)
 })
 
+test('small-folk house profile generates compact player-scale architecture', () => {
+    const troll = generateStructureScene({
+        kind: 'house',
+        seed: 18,
+        variants: 1,
+        variation: 0,
+        showTerrain: false,
+        house: {
+            scale: 'troll',
+            style: 'cottage',
+            roofStyle: 'gable',
+            sideWing: false,
+            porch: false,
+            chimney: false,
+        },
+    }, DEFAULT_PALETTE)
+    const folk = generateStructureScene({
+        kind: 'house',
+        seed: 18,
+        variants: 1,
+        variation: 0,
+        showTerrain: false,
+        house: {
+            scale: 'folk',
+            style: 'cottage',
+            roofStyle: 'gable',
+            sideWing: false,
+            porch: true,
+            chimney: false,
+        },
+    }, DEFAULT_PALETTE)
+
+    assert.ok(folk.bounds.width < troll.bounds.width)
+    assert.ok(folk.bounds.depth < troll.bounds.depth)
+    assert.ok(folk.bounds.height < troll.bounds.height)
+    assert.ok(folk.bounds.width <= 14)
+    assert.ok(folk.bounds.depth <= 12)
+
+    const door = folk.voxels.filter((v) => v.tag === 'house-door')
+    assert.ok(door.length > 0)
+    assert.equal(Math.max(...door.map((v) => v.y)) - Math.min(...door.map((v) => v.y)) + 1, 3)
+    assert.equal(new Set(door.map((v) => v.x)).size, 2)
+
+    assert.equal(folk.voxels.some((v) => v.tag.startsWith('porch-') || v.tag === 'door-path' || v.tag === 'garden-bed'), false)
+    assert.equal(folk.voxels.some((v) => v.tag === 'house-plinth'), false)
+
+    const glass = folk.voxels.filter((v) => v.tag === 'window-glass')
+    assert.ok(glass.length >= 12)
+    assert.ok(new Set(glass.map((v) => v.y)).size >= 2)
+})
+
+test('procedural landmark buildings generate distinct readable silhouettes', () => {
+    const cases = [
+        { kind: 'market' as const, tags: ['market-striped-canopy', 'market-counter', 'market-goods'] },
+        { kind: 'stable' as const, tags: ['stable-thatch-roof', 'stable-stall-divider', 'stable-fence-rail'] },
+        { kind: 'church' as const, tags: ['church-tower-wall', 'church-nave-roof', 'church-cross'] },
+        { kind: 'temple' as const, tags: ['temple-column', 'temple-frieze-painted', 'temple-pediment-painted'] },
+    ]
+
+    for (const c of cases) {
+        const result = generateStructureScene({
+            kind: c.kind,
+            seed: 91,
+            variants: 1,
+            detail: 0.85,
+            variation: 0,
+            showTerrain: false,
+            cleanLoose: true,
+            landmark: { scale: 'troll' },
+        }, DEFAULT_PALETTE)
+
+        assert.ok(result.voxels.length > 250, `${c.kind} should emit a substantial landmark`)
+        assert.ok(result.bounds.width > 8, `${c.kind} should have meaningful width`)
+        assert.ok(result.bounds.depth > 8, `${c.kind} should have meaningful depth`)
+        assert.ok(result.bounds.height > 6, `${c.kind} should have meaningful height`)
+        for (const tag of c.tags) assert.ok(result.voxels.some((v) => v.tag === tag), `${c.kind} missing ${tag}`)
+    }
+})
+
+test('greek temple stays troll-scale and mixes marble with painted accents', () => {
+    const troll = generateStructureScene({
+        kind: 'temple',
+        seed: 51,
+        variants: 1,
+        detail: 0.9,
+        variation: 0,
+        showTerrain: false,
+        cleanLoose: true,
+        landmark: { scale: 'troll' },
+    }, DEFAULT_PALETTE)
+    const folkRequest = generateStructureScene({
+        kind: 'temple',
+        seed: 51,
+        variants: 1,
+        detail: 0.9,
+        variation: 0,
+        showTerrain: false,
+        cleanLoose: true,
+        landmark: { scale: 'folk' },
+    }, DEFAULT_PALETTE)
+
+    assert.deepEqual(folkRequest.bounds, troll.bounds, 'temple ignores small-folk scale and remains troll-sized')
+    assert.ok(troll.bounds.width >= 45)
+    assert.ok(troll.bounds.depth >= 60)
+    assert.ok(troll.bounds.height >= 22)
+    assert.ok(troll.voxels.filter((v) => v.tag === 'temple-column').length > 260)
+    assert.ok(troll.voxels.some((v) => v.tag === 'temple-cella-wall'))
+    assert.ok(troll.voxels.some((v) => v.tag === 'temple-painted-roof'))
+    assert.ok(troll.voxels.some((v) => v.tag === 'temple-altar-fire'))
+    assert.ok((troll.materialCounts[BLOCK.plaster] ?? 0) > 900, 'marble/plaster should dominate the temple')
+    assert.ok((troll.materialCounts[BLOCK.banner] ?? 0) > 80, 'painted red accents should be present')
+    assert.ok((troll.materialCounts[BLOCK.roof] ?? 0) > 100, 'painted terracotta roof should be present')
+})
+
+test('small-folk landmark buildings stay smaller than troll-town variants', () => {
+    for (const kind of ['market', 'stable', 'church'] as const) {
+        const troll = generateStructureScene({
+            kind,
+            seed: 19,
+            variants: 1,
+            variation: 0,
+            showTerrain: false,
+            landmark: { scale: 'troll' },
+        }, DEFAULT_PALETTE)
+        const folk = generateStructureScene({
+            kind,
+            seed: 19,
+            variants: 1,
+            variation: 0,
+            showTerrain: false,
+            landmark: { scale: 'folk' },
+        }, DEFAULT_PALETTE)
+
+        assert.ok(folk.bounds.width < troll.bounds.width, `${kind} folk width should be smaller`)
+        assert.ok(folk.bounds.depth < troll.bounds.depth, `${kind} folk depth should be smaller`)
+        assert.ok(folk.bounds.height < troll.bounds.height, `${kind} folk height should be smaller`)
+    }
+})
+
 test('tower styles generate valid coordinates and expected marker details', () => {
     for (const style of ['round', 'square', 'lighthouse', 'ruined'] as const) {
         const result = generateStructureScene({
@@ -237,6 +378,40 @@ test('tower styles generate valid coordinates and expected marker details', () =
         if (style === 'square') assert.ok(result.voxels.some((v) => v.tag === 'tower-roof-pyramid'))
         if (style === 'ruined') assert.ok(result.voxels.some((v) => v.tag === 'ruin-rubble-base'))
         if (style === 'ruined') assert.ok(result.voxels.some((v) => v.tag === 'tower-roof-ruin'))
+    }
+})
+
+test('small-folk tower profile uses compact floors and tighter spiral scale', () => {
+    const troll = generateStructureScene({
+        kind: 'tower',
+        seed: 23,
+        variants: 1,
+        variation: 0,
+        showTerrain: false,
+        tower: { scale: 'troll', style: 'round', spire: false, taper: 0 },
+    }, DEFAULT_PALETTE)
+    const folk = generateStructureScene({
+        kind: 'tower',
+        seed: 23,
+        variants: 1,
+        variation: 0,
+        showTerrain: false,
+        tower: { scale: 'folk', style: 'round', spire: false, taper: 0 },
+    }, DEFAULT_PALETTE)
+
+    assert.ok(folk.bounds.width < troll.bounds.width)
+    assert.ok(folk.bounds.height < troll.bounds.height)
+    assert.ok(folk.bounds.width <= 13)
+    assert.ok(folk.bounds.height <= 22)
+    assert.ok(folk.voxels.some((v) => v.tag === 'tower-entry-threshold'))
+    assert.ok(folk.voxels.some((v) => v.tag === 'tower-window-trim'))
+
+    const treadYs = new Set(folk.voxels
+        .filter((v) => v.tag === 'tower-spiral-step' || v.tag === 'tower-stair-landing' || v.tag === 'tower-top-landing')
+        .map((v) => v.y))
+    for (let y = 1; y <= 17; y++) assert.equal(treadYs.has(y), true, `missing small tower tread at y=${y}`)
+    for (const step of folk.voxels.filter((v) => v.tag === 'tower-spiral-step')) {
+        assert.ok(Math.max(Math.abs(step.x), Math.abs(step.z)) <= 2, `small spiral step too wide at ${step.x},${step.y},${step.z}`)
     }
 })
 
@@ -527,6 +702,69 @@ test('tower shell starts on the build plane instead of floating above terrain', 
     assert.ok(result.voxels.some((v) => v.tag.startsWith('tower-wall') && v.y === 1))
 })
 
+test('wall generator creates a continuous gated curtain between endpoints', () => {
+    const result = generateWallSegment({
+        path: [{ x: 0, y: 2, z: 0 }, { x: 14, y: 2, z: 0 }],
+        seed: 41,
+        params: {
+            scale: 'troll',
+            style: 'curtain',
+            height: 6,
+            thickness: 3,
+            foundationDepth: 1,
+            battlements: true,
+            walkway: true,
+            gate: 'center',
+        },
+    }, DEFAULT_PALETTE)
+    const cells = new Set(result.voxels.map((v) => `${v.x},${v.y},${v.z}`))
+
+    assert.ok(result.voxels.some((v) => v.tag === 'wall-foundation'))
+    assert.ok(result.voxels.some((v) => v.tag === 'wall-crenel'))
+    assert.ok(result.voxels.some((v) => v.tag === 'wall-gate-lintel'))
+    assert.equal(result.bounds.minY, 2, 'wall footprint starts at the requested editing level')
+    assert.equal(result.bounds.width, 15)
+    assert.equal(result.bounds.depth, 3)
+    for (let x = 0; x <= 14; x++) {
+        if (x >= 6 && x <= 8) continue
+        assert.equal(cells.has(`${x},2,0`), true, `wall body missing at x=${x}`)
+    }
+    for (let x = 6; x <= 8; x++) {
+        for (let y = 2; y <= 5; y++) {
+            assert.equal(cells.has(`${x},${y},0`), false, `gate opening blocked at x=${x}, y=${y}`)
+        }
+    }
+})
+
+test('wall generator supports free point-to-point diagonal spans deterministically', () => {
+    const input = {
+        path: [{ x: -3, y: 1, z: 4 }, { x: 6, y: 1, z: 10 }],
+        seed: 77,
+        params: { style: 'stone' as const, height: 5, thickness: 2, battlements: false },
+    }
+    const a = generateWallSegment(input, DEFAULT_PALETTE)
+    const b = generateWallSegment(input, DEFAULT_PALETTE)
+
+    assert.equal(signature(a.voxels), signature(b.voxels))
+    assert.ok(a.voxels.some((v) => v.x === -3 && v.z === 4))
+    assert.ok(a.voxels.some((v) => v.x === 6 && v.z === 10))
+    assert.ok(a.bounds.width >= 10)
+    assert.ok(a.bounds.depth >= 7)
+})
+
+test('tower wall socket snaps to the tower side facing the target point', () => {
+    assert.deepEqual(towerWallSocket({
+        center: { x: 10, y: 5, z: 10 },
+        radius: 4,
+        toward: { x: 30, z: 12 },
+    }), { x: 14, y: 5, z: 10 })
+    assert.deepEqual(towerWallSocket({
+        center: { x: 10, y: 5, z: 10 },
+        radius: 4,
+        toward: { x: 8, z: -20 },
+    }), { x: 10, y: 5, z: 6 })
+})
+
 test('tree cleanup leaves no isolated decorative leaf voxels', () => {
     const result = generateStructureScene({
         kind: 'tree',
@@ -537,7 +775,15 @@ test('tree cleanup leaves no isolated decorative leaf voxels', () => {
         tree: { style: 'oak', leafNoise: 1, fruitChance: 0.35 },
     }, DEFAULT_PALETTE)
     const cells = new Set(result.voxels.map((v) => `${v.x},${v.y},${v.z}`))
-    const leafBlocks = new Set<number>([BLOCK.leaf, BLOCK.leafDark, BLOCK.leafLight, BLOCK.deepLeaf])
+    const leafBlocks = new Set<number>([
+        BLOCK.leaf,
+        BLOCK.leafDark,
+        BLOCK.leafLight,
+        BLOCK.deepLeaf,
+        BLOCK.autumnLeaf,
+        BLOCK.autumnLeafDark,
+        BLOCK.autumnLeafLight,
+    ])
 
     for (const v of result.voxels) {
         if (!leafBlocks.has(v.block)) continue
@@ -553,11 +799,34 @@ test('tree cleanup leaves no isolated decorative leaf voxels', () => {
     }
 })
 
+test('autumn tree season uses autumn leaf materials', () => {
+    const summer = generateStructureScene({
+        kind: 'tree',
+        seed: 31,
+        variants: 1,
+        showTerrain: false,
+        tree: { style: 'oak', season: 'summer' },
+    }, DEFAULT_PALETTE)
+    const autumn = generateStructureScene({
+        kind: 'tree',
+        seed: 31,
+        variants: 1,
+        showTerrain: false,
+        tree: { style: 'oak', season: 'autumn' },
+    }, DEFAULT_PALETTE)
+
+    assert.equal(summer.voxels.some((v) => v.block === BLOCK.autumnLeaf || v.block === BLOCK.autumnLeafLight || v.block === BLOCK.autumnLeafDark), false)
+    assert.equal(autumn.voxels.some((v) => v.block === BLOCK.autumnLeaf || v.block === BLOCK.autumnLeafLight || v.block === BLOCK.autumnLeafDark), true)
+})
+
 test('structure palette entries append after existing stable block ids', () => {
     assert.equal(BLOCK.lava, 16)
     assert.equal(BLOCK.woodDark, 17)
+    assert.equal(BLOCK.rail, 41)
+    assert.equal(BLOCK.autumnLeaf, 42)
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.woodDark]?.name, 'dark wood')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.fire]?.name, 'fire')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.autumnLeaf]?.name, 'autumn leaf')
     assert.ok(paletteTileIndex(DEFAULT_PALETTE, BLOCK.roof) > 0)
     assert.ok(paletteTileIndex(DEFAULT_PALETTE, BLOCK.glass) > 0)
     assert.ok(paletteTileIndex(DEFAULT_PALETTE, BLOCK.metal) > 0)
