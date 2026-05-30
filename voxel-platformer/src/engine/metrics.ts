@@ -19,6 +19,15 @@ export interface MetricsSummaryOptions {
     counterCount?: number
 }
 
+export interface MetricsSnapshot {
+    fps: number
+    fixedHz: number
+    lastRenderMs: number
+    timings: TimingSnapshot[]
+    gauges: Array<[string, number]>
+    counters: Array<[string, number]>
+}
+
 const DEFAULT_SYSTEM_COUNT = 7
 const DEFAULT_GAUGE_COUNT = 5
 const DEFAULT_COUNTER_COUNT = 5
@@ -85,6 +94,17 @@ export class EngineMetrics {
             avgMs: stat.avgMs,
             maxMs: stat.maxMs,
         }))
+    }
+
+    snapshot(): MetricsSnapshot {
+        return {
+            fps: this.fps,
+            fixedHz: this.fixedHz,
+            lastRenderMs: this.lastRenderMs,
+            timings: this.timingSnapshot(),
+            gauges: Array.from(this.gauges),
+            counters: Array.from(this.counters),
+        }
     }
 
     summaryLines(opts: MetricsSummaryOptions = {}): string[] {

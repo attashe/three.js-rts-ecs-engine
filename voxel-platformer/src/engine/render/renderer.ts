@@ -62,6 +62,10 @@ export class Renderer {
         this.webgpu.toneMappingExposure = 1.0
         this.webgpu.shadowMap.enabled = true
         this.webgpu.shadowMap.type = PCFSoftShadowMap
+        // We drive rendering from our own Scheduler instead of
+        // WebGPURenderer.setAnimationLoop(), so Three will not reset
+        // per-frame info for us. Reset once at the start of render().
+        this.webgpu.info.autoReset = false
         document.body.appendChild(this.webgpu.domElement)
 
         this.stats = new StatsHUD()
@@ -95,6 +99,7 @@ export class Renderer {
     }
 
     render(): void {
+        this.webgpu.info.reset()
         const bp = this.backdrop
         if (bp) {
             // Pass 1: backdrop (clears colour to its sky + depth).

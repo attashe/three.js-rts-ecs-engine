@@ -12,9 +12,12 @@ import { query } from 'bitecs'
 import { BoxCollider, Position } from '../components'
 import type { System } from './system'
 import { RenderOrder } from './orders'
+import { DebugPerfPanel } from './debug-perf-panel'
 import type { Input } from '../../input/input'
 import { getDebugInfoEnabled, setDebugInfoEnabled, subscribeDebugInfo } from '../../render/render-settings'
 import { isTriggerZone, isZoneActive, type Zone } from '../zones'
+import { colliderAabbForEntity } from '../collider-bounds'
+import type { AABB } from '../../voxel/voxel-collide'
 
 /** CSS positioning hints for the floating panels. Each accepts any subset of
  *  the standard offset properties (top / bottom / left / right) so callers
@@ -54,7 +57,7 @@ interface ColoredBoxBatchState extends BoxBatchState {}
  * Minimal debug overlay for the platformer foundation:
  *  - Backtick toggles a Box3 outline for every entity with Position + BoxCollider
  *    (player, stones, arrows, anything physical).
- *  - A small DOM panel in the top-left shows the metric summary lines.
+ *  - A DOM perf panel shows stable metric cells plus rolling plots.
  *
  * Re-add visualisation layers (paths, zones, etc) as the project grows.
  */
@@ -63,7 +66,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     // player AABB and the metric/log panels visible right away. Backquote
     // toggles when you want a clean view.
     let enabled = opts.enabled ?? getDebugInfoEnabled()
-    const updateDt = 1 / (opts.updateHz ?? 6)
+    const updateDt = 1 / (opts.updateHz ?? 4)
     const root = new Group()
     root.name = 'DebugOverlay'
     const boxMaterial = new LineBasicMaterial({ color: 0x9cff57 })
@@ -78,7 +81,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     const zoneBatch = createColoredBoxBatch(zoneMaterial)
     const zoneLabels = new Map<string, HTMLDivElement>()
     const labelWorldPos = new Vector3()
-    let metricsPanel: HTMLDivElement | null = null
+    let metricsPanel: DebugPerfPanel | null = null
     let logPanel: HTMLDivElement | null = null
     let accumulator = 0
     let lastLogLength = -1
@@ -86,7 +89,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
 
     function applyVisibility(): void {
         root.visible = enabled
-        if (metricsPanel) metricsPanel.style.display = enabled ? 'block' : 'none'
+        metricsPanel?.setVisible(enabled)
         if (logPanel) logPanel.style.display = enabled ? 'block' : 'none'
         for (const label of zoneLabels.values()) label.style.display = enabled ? 'block' : 'none'
     }
@@ -98,8 +101,8 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             root.add(boxBatch.lines)
             root.add(zoneBatch.lines)
 
-            metricsPanel = makePanel('voxel-platformer-debug', opts.metricsPosition ?? { top: '8px', left: '8px' })
-            document.body.appendChild(metricsPanel)
+            metricsPanel = new DebugPerfPanel(opts.metricsPosition ?? { top: '8px', left: '8px' })
+            document.body.appendChild(metricsPanel.element)
 
             logPanel = makePanel('voxel-platformer-log', opts.logPosition ?? { top: '8px', right: '8px', maxWidth: '320px' })
             document.body.appendChild(logPanel)
@@ -116,7 +119,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
 
             if (enabled) {
                 const eids = query(world, [Position, BoxCollider])
-                updateBoxes(boxBatch, eids)
+                updateBoxes(boxBatch, world, eids)
                 updateZoneBoxes(zoneBatch, world.zones.values())
                 updateZoneLabels(zoneLabels, world.zones.values(), opts, labelWorldPos)
             }
@@ -129,14 +132,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             }
             accumulator %= updateDt
 
-            if (enabled && metricsPanel) {
-                const inv = `inventory  gold:${world.inventory.gold}  arrows:${world.inventory.arrows}`
-                const metrics = world.metrics.summaryLines({
-                    systemCount: 6,
-                    gaugeCount: 10,
-                })
-                metricsPanel.textContent = [inv, ...metrics].join('\n')
-            }
+            if (enabled && metricsPanel) metricsPanel.update(world.metrics.snapshot(), world.inventory.gold, world.inventory.arrows)
             if (world.log.length !== lastLogLength) renderLog(logPanel, world.log)
             lastLogLength = world.log.length
         },
@@ -148,7 +144,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             zoneMaterial.dispose()
             for (const label of zoneLabels.values()) label.remove()
             zoneLabels.clear()
-            metricsPanel?.remove()
+            metricsPanel?.dispose()
             logPanel?.remove()
             unsubscribeDebug?.()
             metricsPanel = null
@@ -275,7 +271,9 @@ function createColoredBoxBatch(material: LineBasicMaterial): ColoredBoxBatchStat
     return { lines, capacity: 0, count: 0 }
 }
 
-function updateBoxes(batch: BoxBatchState, eids: ArrayLike<number>): void {
+const tmpEntityAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+
+function updateBoxes(batch: BoxBatchState, world: Parameters<System['update']>[0], eids: ArrayLike<number>): void {
     const count = eids.length
     ensureBoxCapacity(batch, count)
     batch.count = count
@@ -284,7 +282,7 @@ function updateBoxes(batch: BoxBatchState, eids: ArrayLike<number>): void {
     if (!attribute) return
     const coords = attribute.array as Float32Array
     for (let i = 0; i < count; i++) {
-        writeEntityBox(coords, i * 72, eids[i]!)
+        writeEntityBox(coords, i * 72, world, eids[i]!)
     }
     attribute.needsUpdate = true
 }
@@ -337,15 +335,9 @@ function ensureColoredBoxCapacity(batch: ColoredBoxBatchState, count: number): v
     batch.capacity = capacity
 }
 
-function writeEntityBox(coords: Float32Array, offset: number, eid: number): void {
-    const minX = Position.x[eid] - BoxCollider.x[eid]
-    const minY = Position.y[eid]
-    const minZ = Position.z[eid] - BoxCollider.z[eid]
-    const maxX = Position.x[eid] + BoxCollider.x[eid]
-    const maxY = Position.y[eid] + BoxCollider.y[eid] * 2
-    const maxZ = Position.z[eid] + BoxCollider.z[eid]
-
-    writeBoxEdges(coords, offset, minX, minY, minZ, maxX, maxY, maxZ)
+function writeEntityBox(coords: Float32Array, offset: number, world: Parameters<System['update']>[0], eid: number): void {
+    const aabb = colliderAabbForEntity(world, eid, tmpEntityAabb)
+    writeBoxEdges(coords, offset, aabb.minX, aabb.minY, aabb.minZ, aabb.maxX, aabb.maxY, aabb.maxZ)
 }
 
 function writeBoxEdges(
