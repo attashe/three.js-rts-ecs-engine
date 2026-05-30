@@ -15,6 +15,7 @@ import {
     type ProceduralScriptSources,
 } from '../game/procedural-levels'
 import type { LevelMeta } from '../game/level'
+import { copyNpcConfig } from '../game/npcs/npc-types'
 import { copyPlayerSettings } from '../game/player-settings'
 
 export interface ProceduralEditorLevel {
@@ -141,10 +142,7 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             scale: prop.scale,
             gridAligned: prop.gridAligned,
         })),
-        npcs: meta.npcs.map((npc) => ({
-            ...npc,
-            position: { ...npc.position },
-        })),
+        npcs: meta.npcs.map(copyNpcConfig),
         ambientWeather: meta.ambientWeather ? {
             enabled: true,
             presetId: meta.ambientWeather.presetId ?? 'clear',

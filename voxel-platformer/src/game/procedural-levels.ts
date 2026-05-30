@@ -366,6 +366,7 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
             interactionEnabled: true,
             interactionRadius: 3.4,
             interactionPrompt: 'Greet',
+            equipment: { handR: null, handL: 'book' },
             scriptEnabled: true,
             scriptSource: [
                 `on('input', { action: 'interact', targetId: NPC_INTERACTION }, () => {`,

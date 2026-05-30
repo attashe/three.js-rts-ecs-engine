@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Group, LineSegments, Scene } from 'three'
+import { Group, LineSegments, Scene, type Object3D } from 'three'
 import { createGameWorld } from '../src/engine/ecs/world'
 import { createNpcModel } from '../src/game/npcs/npc-models'
 import { createNpcRenderSystem } from '../src/game/npcs/npc-render-system'
@@ -8,6 +8,7 @@ import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 import {
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
+    defaultNpcEquipment,
     normalizeNpcConfig,
     npcInteractionZoneId,
     npcObstacleId,
@@ -36,6 +37,30 @@ test('NPC model registry exposes keeper and player models', () => {
         assert.equal(model.name, `NpcModel:${kind}`)
         assert.ok(model.children.length > 0, `${kind} model should contain visible parts`)
     }
+})
+
+test('NPC equipment normalizes from model defaults and custom hand choices', () => {
+    const keeper = normalizeNpcConfig({
+        id: 'keeper',
+        model: 'keeper',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.deepEqual(keeper.equipment, defaultNpcEquipment('keeper'))
+
+    const troll = normalizeNpcConfig({
+        id: 'troll',
+        model: 'large-troll',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.deepEqual(troll.equipment, { handR: null, handL: 'book' })
+
+    const custom = normalizeNpcConfig({
+        id: 'custom',
+        model: 'keeper',
+        position: { x: 0, y: 0, z: 0 },
+        equipment: { handR: 'sword', handL: 'bogus' } as never,
+    })
+    assert.deepEqual(custom.equipment, { handR: 'sword', handL: null })
 })
 
 test('registerRuntimeNpcs adds interaction zones, collision obstacles, and scripts', () => {
@@ -95,6 +120,29 @@ test('NPC renderer tracks add, move, and remove changes', () => {
     assert.equal(scene.children.includes(group!), false)
 })
 
+test('NPC renderer rebuilds visuals when hand equipment changes', () => {
+    const scene = new Scene()
+    const config = npc('equipped')
+    const npcs = [config]
+    const system = createNpcRenderSystem(scene, { getNpcs: () => npcs })
+    const world = createGameWorld()
+
+    system.init?.(world)
+    const group = scene.children.find((child) => child.name === 'NPCs') as Group | undefined
+    assert.ok(group)
+    assert.ok(findByName(group!, 'equip:staff'), 'keeper starts with staff equipment')
+    const firstRoot = group!.children[0]!
+
+    config.equipment = { handR: null, handL: 'book' }
+    system.update(world, 1 / 60)
+
+    assert.notEqual(group!.children[0], firstRoot, 'equipment change rebuilds socket attachments')
+    assert.equal(findByName(group!, 'equip:staff'), null)
+    assert.ok(findByName(group!, 'equip:book'))
+
+    system.dispose?.()
+})
+
 test('NPC renderer draws debug collider boxes for collidable NPCs only', () => {
     const scene = new Scene()
     const collidable = npc('solid')
@@ -113,3 +161,11 @@ test('NPC renderer draws debug collider boxes for collidable NPCs only', () => {
     system.dispose?.()
     assert.equal(scene.children.includes(lines!), false)
 })
+
+function findByName(root: Object3D, name: string): Object3D | null {
+    let found: Object3D | null = null
+    root.traverse((obj) => {
+        if (!found && obj.name === name) found = obj
+    })
+    return found
+}

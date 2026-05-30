@@ -167,6 +167,7 @@ declare function random(min: number, max: number): number
 
 type PlayerAbilityKey = 'movement' | 'jump' | 'bow' | 'highJump' | 'airPush' | 'interact' | 'torch'
 type PlayerModelKind = 'player' | 'keeper'
+type HandEquipmentKind = 'sword' | 'shield' | 'bow' | 'staff' | 'book'
 type InventoryCategoryId = 'resources' | 'quest' | 'consumables' | 'accessories' | 'tools'
 type InventoryIconId = 'gold' | 'arrows' | 'quest-shard' | 'consumable' | 'accessory' | 'tool' | 'item'
 
@@ -184,6 +185,16 @@ interface PlayerInventorySettings {
     gold: number
     arrows: number
     items: Record<string, InventoryItemRecord>
+}
+
+interface EquipmentHandLoadout {
+    handR: HandEquipmentKind | null
+    handL: HandEquipmentKind | null
+}
+
+interface PlayerEquipmentSettings {
+    melee: EquipmentHandLoadout
+    ranged: EquipmentHandLoadout
 }
 
 interface InventoryItemRecord {
@@ -220,6 +231,7 @@ interface PlayerSettings {
     model: PlayerModelKind
     abilities: PlayerAbilitySettings
     inventory: PlayerInventorySettings
+    equipment: PlayerEquipmentSettings
     moveSpeed: number
     jumpVelocity: number
     highJumpVelocity: number
@@ -229,11 +241,17 @@ interface PlayerSettings {
     airPushPower: number
     airPushLift: number
     torch: PlayerTorchSettings
+    indoorCutEnabled: boolean
+    indoorCutMode: 'corridor' | 'ybox'
 }
 
-type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'torch'>> & {
+type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'equipment' | 'torch'>> & {
     abilities?: Partial<PlayerAbilitySettings>
     inventory?: Partial<PlayerInventorySettings>
+    equipment?: {
+        melee?: Partial<EquipmentHandLoadout>
+        ranged?: Partial<EquipmentHandLoadout>
+    }
     torch?: Partial<PlayerTorchSettings>
 }
 

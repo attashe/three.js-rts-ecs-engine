@@ -10,8 +10,6 @@ import {
     sharedSphereGeometry,
     sharedMaterial,
 } from '../assets'
-import type { EquipSlot } from '../../engine/anim'
-import type { EquipmentKind } from '../anim/equipment'
 import type { NpcModelKind } from './npc-types'
 
 export function createNpcModel(kind: NpcModelKind): Group {
@@ -22,24 +20,6 @@ export function createNpcModel(kind: NpcModelKind): Group {
             return createKeeperNpcModel()
         case 'large-troll':
             return createLargeTrollModel()
-    }
-}
-
-/**
- * What each hand (and the head/back) holds for a given NPC. Items are real
- * equipment attached to the rig's sockets by the npc-render system, so they
- * animate with the limb and can be assigned to either hand independently.
- */
-export type NpcLoadout = Partial<Record<EquipSlot, EquipmentKind>>
-
-export function npcLoadout(kind: NpcModelKind): NpcLoadout {
-    switch (kind) {
-        case 'keeper':
-            return { handR: 'staff' }
-        case 'large-troll':
-            return { handL: 'book' }
-        default:
-            return {}
     }
 }
 
@@ -65,7 +45,7 @@ function createKeeperNpcModel(): Group {
     })
     root.name = 'NpcModel:keeper'
 
-    // The staff + lantern are now the keeper's `staff` hand item (see npcLoadout).
+    // The staff + lantern are now configured as an NPC hand item.
     // The beard is intrinsic: parent it to the torso so it rides the body's
     // lean / death topple instead of hanging in mid-air.
     const beard = shadowed(new Mesh(
@@ -145,7 +125,7 @@ function createLargeTrollModel(): Group {
     bridge.position.set(0, 2.57, 0.38)
     root.add(bridge)
 
-    // The book + pages are now the troll's `book` hand item (see npcLoadout).
+    // The book + pages are now configured as an NPC hand item.
     // Glasses, brow and sash are intrinsic: parent them into the (scaled) torso /
     // head so they track the body — `reparentInModel` divides out the 1.85×
     // figure scale so they keep their authored size and place. The robe hem rides

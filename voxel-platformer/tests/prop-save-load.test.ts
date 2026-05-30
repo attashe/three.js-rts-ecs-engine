@@ -128,6 +128,7 @@ test('NPCs survive a save -> load round-trip through metadata', () => {
         interactionEnabled: true,
         interactionRadius: 2.6,
         interactionPrompt: 'Interaction',
+        equipment: { handR: 'staff', handL: null },
         scriptEnabled: true,
         scriptSource: `on('input', { action: 'interact', targetId: NPC_INTERACTION }, () => log(NPC_NAME))`,
     })
@@ -150,6 +151,9 @@ test('player defaults survive a save -> load round-trip through metadata', () =>
     state.player.abilities.highJump = false
     state.player.inventory.gold = 77
     state.player.inventory.arrows = 5
+    state.player.equipment.melee.handR = 'staff'
+    state.player.equipment.melee.handL = null
+    state.player.equipment.ranged.handL = 'bow'
     state.player.moveSpeed = 6.5
     state.player.jumpVelocity = 9.25
     state.player.torch.intensity = 4.5

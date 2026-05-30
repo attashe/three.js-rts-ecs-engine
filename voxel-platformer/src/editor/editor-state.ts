@@ -8,7 +8,8 @@ import type { BrushKind } from './brush'
 import type { TerrainBrushShape, TerrainFalloff, TerrainTool } from './terrain-brush'
 import type { PistonDirection } from './piston-direction'
 import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
-import { DEFAULT_NPC, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
+import { DEFAULT_NPC, copyNpcConfig, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
+import type { EquipmentHandLoadout } from '../game/anim/equipment-types'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../game/player-settings'
 import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from '../game/weather-config'
 import {
@@ -446,6 +447,7 @@ export interface EditorState {
     npcInteractionEnabled: boolean
     npcInteractionRadius: number
     npcInteractionPrompt: string
+    npcEquipment: EquipmentHandLoadout
     npcScriptEnabled: boolean
     npcScriptSource: string
 
@@ -694,6 +696,7 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         npcInteractionEnabled: DEFAULT_NPC.interactionEnabled,
         npcInteractionRadius: DEFAULT_NPC.interactionRadius,
         npcInteractionPrompt: DEFAULT_NPC.interactionPrompt,
+        npcEquipment: { ...DEFAULT_NPC.equipment },
         npcScriptEnabled: DEFAULT_NPC.scriptEnabled,
         npcScriptSource: DEFAULT_NPC.scriptSource,
         stones: [],
@@ -917,10 +920,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             scale: p.scale,
             gridAligned: p.gridAligned,
         })),
-        npcs: state.npcs.length === 0 ? undefined : state.npcs.map((npc) => ({
-            ...npc,
-            position: { ...npc.position },
-        })),
+        npcs: state.npcs.length === 0 ? undefined : state.npcs.map(copyNpcConfig),
         scripts: state.scripts.length === 0 ? undefined : state.scripts.map(copyScriptEntry),
         ambientWeather: state.ambientWeather.enabled
             ? {

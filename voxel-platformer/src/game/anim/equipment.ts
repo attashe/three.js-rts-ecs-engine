@@ -16,8 +16,23 @@ import {
 import { SLOT_TO_SOCKET, attachToSocket, detachFromSocket, type EquipSlot } from '../../engine/anim'
 import type { GameWorld } from '../../engine/ecs/world'
 import { createBow } from '../assets'
+import {
+    EQUIPMENT_KINDS,
+    EQUIPMENT_LABELS,
+    HAND_EQUIPMENT_KINDS,
+    type EquipmentKind,
+} from './equipment-types'
 
-export type EquipmentKind = 'hat' | 'sword' | 'shield' | 'bow' | 'staff' | 'book'
+export {
+    EQUIPMENT_KINDS,
+    EQUIPMENT_LABELS,
+    HAND_EQUIPMENT_KINDS,
+    type EquipmentKind,
+    type EquipmentHandLoadout,
+    type HandEquipmentKind,
+    type HandEquipmentSlot,
+    type PlayerEquipmentSettings,
+} from './equipment-types'
 
 export function createEquipment(kind: EquipmentKind): Group {
     switch (kind) {
@@ -30,45 +45,69 @@ export function createEquipment(kind: EquipmentKind): Group {
     }
 }
 
-/** Held orientation per equipment kind (Euler XYZ radians, in the rig's model
- *  frame). The socket attach cancels the hand bone's rest tilt, so these read
- *  consistently regardless of how a given rig orients its hand bones. */
-const EQUIP_ORIENT: Partial<Record<EquipmentKind, readonly [number, number, number]>> = {
-    // Blade up, tipped forward and canted outward so it clears the arm/shoulder
-    // instead of spearing straight up through the pauldron.
-    sword: [-0.45, 0, -0.4],
-    // Broad face forward (+Z), turned slightly outward across the body.
-    shield: [0, 0.3, 0],
-    // Bow authored in its XY plane (height +Y, draws along +X). The socket
-    // orient is fixed at the arm's REST pose, but the bow is only used while the
-    // draw arm is raised ~90° forward — which would tip a rest-vertical bow flat.
-    // Pre-rotate +π/2 about X so that, once the aiming arm rotates it back, the
-    // bow stands vertical with the arrow firing forward (+Z).
-    bow: [Math.PI / 2, -Math.PI / 2, 0],
-    // Lantern-staff stands upright in the hand.
-    staff: [0, 0, 0],
-    // Book held tilted up, faces turned slightly inward to read.
-    book: [-0.55, 0, 0],
+export interface EquipmentSocketFrame {
+    orient?: readonly [number, number, number]
+    offset?: readonly [number, number, number]
 }
 
-/** Held orientation (Euler XYZ, model frame) for an equipment kind, or undefined
- *  for the identity default. Shared by the game loadout and the preview page so
- *  both orient items the same way. */
+/** Held transform per equipment kind and hand. Items are authored with a logical
+ *  grip near the origin; these frames give each hand a small art-directed grip
+ *  offset so shields/books don't sit through the wrist and staff/sword handles
+ *  are visibly held instead of floating at the socket point. */
+const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, EquipmentSocketFrame>>>> = {
+    sword: {
+        handR: { orient: [0.28, 0, -0.34], offset: [0.015, -0.035, 0.055] },
+        handL: { orient: [0.28, 0, 0.34], offset: [-0.015, -0.035, 0.055] },
+    },
+    shield: {
+        handR: { orient: [0, Math.PI / 2 - 0.28, 0], offset: [0.19, -0.12, 0.025] },
+        handL: { orient: [0, -Math.PI / 2 + 0.28, 0], offset: [-0.19, -0.12, 0.025] },
+    },
+    bow: {
+        // Bow authored in its XY plane (height +Y, draws along +X). The shot
+        // clip raises the bow arm; this pre-rotation keeps the bow vertical once
+        // the arm aims forward.
+        handR: { orient: [Math.PI / 2, Math.PI / 2, 0], offset: [0.02, -0.04, 0.03] },
+        handL: { orient: [Math.PI / 2, -Math.PI / 2, 0], offset: [-0.02, -0.04, 0.03] },
+    },
+    staff: {
+        handR: { orient: [0.08, 0, -0.12], offset: [0.03, -0.2, 0.03] },
+        handL: { orient: [0.08, 0, 0.12], offset: [-0.03, -0.2, 0.03] },
+    },
+    book: {
+        handR: { orient: [-0.72, -0.22, 0.28], offset: [0.08, -0.08, 0.11] },
+        handL: { orient: [-0.72, 0.22, -0.28], offset: [-0.08, -0.08, 0.11] },
+    },
+    hat: {
+        head: { offset: [0, -0.03, 0] },
+    },
+}
+
+/** Held orientation (Euler XYZ, model frame) for an equipment kind. Kept for
+ *  older call sites; prefer `equipmentSocketFrame` so grip offsets travel with
+ *  the item too. */
 export function equipmentOrient(kind: EquipmentKind): readonly [number, number, number] | undefined {
-    return EQUIP_ORIENT[kind]
+    return equipmentSocketFrame(kind).orient
+}
+
+export function equipmentSocketFrame(kind: EquipmentKind, slot?: EquipSlot): EquipmentSocketFrame {
+    const bySlot = EQUIP_FRAMES[kind]
+    if (!bySlot) return {}
+    if (slot && bySlot[slot]) return bySlot[slot]!
+    return bySlot.handR ?? bySlot.handL ?? bySlot.head ?? bySlot.back ?? {}
 }
 
 /**
  * Attach `item` to the entity's slot socket. Replaces whatever was in that slot.
  * Returns false if the entity has no controller or the rig lacks that socket.
- * `orient` overrides the held orientation (Euler XYZ, model frame).
+ * `frame` overrides the held orientation and grip offset.
  */
 export function equipItem(
     world: GameWorld,
     eid: number,
     slot: EquipSlot,
     item: Object3D,
-    orient?: readonly [number, number, number],
+    frame?: EquipmentSocketFrame,
 ): boolean {
     const controller = world.animControllerByEid.get(eid)
     if (!controller) return false
@@ -80,14 +119,19 @@ export function equipItem(
     const socketName = SLOT_TO_SOCKET[slot]
     const prev = slots.get(socketName)
     if (prev) detachFromSocket(prev)
-    if (!attachToSocket(controller.sockets, slot, item, { root: controller.root, orient })) return false
+    slots.delete(socketName)
+    if (!attachToSocket(controller.sockets, slot, item, {
+        root: controller.root,
+        orient: frame?.orient,
+        offset: frame?.offset,
+    })) return false
     slots.set(socketName, item)
     return true
 }
 
 /** Build + attach a piece of equipment with its default held orientation. */
 export function equip(world: GameWorld, eid: number, slot: EquipSlot, kind: EquipmentKind): boolean {
-    return equipItem(world, eid, slot, createEquipment(kind), EQUIP_ORIENT[kind])
+    return equipItem(world, eid, slot, createEquipment(kind), equipmentSocketFrame(kind, slot))
 }
 
 export function unequipSlot(world: GameWorld, eid: number, slot: EquipSlot): void {

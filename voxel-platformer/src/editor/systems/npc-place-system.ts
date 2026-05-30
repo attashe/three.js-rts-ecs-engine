@@ -89,6 +89,7 @@ export function createNpcPlaceSystem(
             interactionEnabled: state.npcInteractionEnabled,
             interactionRadius: state.npcInteractionRadius,
             interactionPrompt: state.npcInteractionPrompt,
+            equipment: { ...state.npcEquipment },
             scriptEnabled: state.npcScriptEnabled,
             scriptSource: state.npcScriptSource,
         })

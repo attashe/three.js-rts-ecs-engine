@@ -11,6 +11,7 @@ import {
     type PlayerModelKind,
 } from '../../game/player-settings'
 import { sectionEl, type RefreshableElement } from './common'
+import { equipmentSelect, syncEquipmentSelect } from './equipment-field'
 
 export interface PlayerTabOptions {
     editorState: EditorState
@@ -56,6 +57,14 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
     modelRow.append(modelLabel, modelSelect)
     modelSection.appendChild(modelRow)
     root.appendChild(modelSection)
+
+    const equipmentSection = sectionEl('Equipment')
+    const meleeRight = equipmentSelect('Melee right', (value) => { state.player.equipment.melee.handR = value })
+    const meleeLeft = equipmentSelect('Melee left', (value) => { state.player.equipment.melee.handL = value })
+    const rangedRight = equipmentSelect('Ranged right', (value) => { state.player.equipment.ranged.handR = value })
+    const rangedLeft = equipmentSelect('Ranged left', (value) => { state.player.equipment.ranged.handL = value })
+    equipmentSection.append(meleeRight.row, meleeLeft.row, rangedRight.row, rangedLeft.row)
+    root.appendChild(equipmentSection)
 
     const abilitiesSection = sectionEl('Abilities')
     const abilityInputs = new Map<PlayerAbilityKey, HTMLInputElement>()
@@ -151,6 +160,10 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
         spawnReadout.textContent = `Spawn: ${state.spawn.x.toFixed(1)}, ${state.spawn.y.toFixed(1)}, ${state.spawn.z.toFixed(1)}`
         placeSpawnBtn.classList.toggle('active', state.mode === 'place-spawn')
         if (document.activeElement !== modelSelect) modelSelect.value = state.player.model
+        syncEquipmentSelect(meleeRight.input, state.player.equipment.melee.handR)
+        syncEquipmentSelect(meleeLeft.input, state.player.equipment.melee.handL)
+        syncEquipmentSelect(rangedRight.input, state.player.equipment.ranged.handR)
+        syncEquipmentSelect(rangedLeft.input, state.player.equipment.ranged.handL)
         for (const ability of PLAYER_ABILITY_KEYS) {
             const input = abilityInputs.get(ability)
             if (input && input.checked !== state.player.abilities[ability]) input.checked = state.player.abilities[ability]

@@ -1,5 +1,5 @@
 // Equipment socket resolution + attachment.
-import { Euler, Quaternion, type Object3D } from 'three'
+import { Euler, Quaternion, Vector3, type Object3D } from 'three'
 import { SLOT_TO_SOCKET, SOCKET_NAMES, type EquipSlot } from '../core/convention'
 
 /** How to orient an attached item, independent of the socket bone's arbitrary
@@ -14,12 +14,15 @@ export interface SocketFrame {
     /** Desired item orientation in the model frame, Euler XYZ radians.
      *  Default = identity (item axis-aligned to the model: +Y up, +Z forward). */
     orient?: readonly [number, number, number]
+    /** Desired grip offset from the socket, expressed in the model frame. */
+    offset?: readonly [number, number, number]
 }
 
 const _boneQ = new Quaternion()
 const _rootQ = new Quaternion()
 const _desired = new Quaternion()
 const _euler = new Euler()
+const _offset = new Vector3()
 
 /** Find every canonical socket node by name under `root`. Missing sockets are
  *  simply absent from the map (that slot is disabled). */
@@ -57,7 +60,11 @@ export function attachToSocket(
         const boneRelModel = _rootQ.invert().multiply(_boneQ)
         const o = frame.orient
         _desired.setFromEuler(o ? _euler.set(o[0], o[1], o[2], 'XYZ') : _euler.set(0, 0, 0))
-        item.quaternion.copy(boneRelModel.invert().multiply(_desired))
+        const invBoneRelModel = boneRelModel.invert()
+        item.quaternion.copy(invBoneRelModel.clone().multiply(_desired))
+        if (frame.offset) {
+            item.position.copy(_offset.set(frame.offset[0], frame.offset[1], frame.offset[2]).applyQuaternion(invBoneRelModel))
+        }
     } else {
         item.quaternion.identity()
     }

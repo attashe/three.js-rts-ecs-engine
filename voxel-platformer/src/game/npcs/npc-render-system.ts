@@ -10,14 +10,13 @@ import {
 import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
 import type { GameWorld } from '../../engine/ecs/world'
-import type { NpcConfig } from './npc-types'
-import { createNpcModel, npcLoadout } from './npc-models'
-import { npcCollisionAabb } from './npc-types'
+import { createNpcModel } from './npc-models'
+import { npcCollisionAabb, npcEquipmentKey, type NpcConfig } from './npc-types'
 import { disposeNpc } from './npc-runtime'
 import type { AABB } from '../../engine/voxel/voxel-collide'
 import { getDebugInfoEnabled, subscribeDebugInfo } from '../../engine/render/render-settings'
 import { AnimationController, attachToSocket, partRigSource } from '../../engine/anim'
-import { createEquipment, equipmentOrient } from '../anim/equipment'
+import { createEquipment, equipmentSocketFrame } from '../anim/equipment'
 import { computeLocomotionParams } from '../../engine/anim/core'
 import { combatLocomotionGraph } from '../anim/graph-defaults'
 import { partCharacterClips } from '../anim/part-clips'
@@ -30,6 +29,7 @@ export interface NpcRenderSystemOptions {
 interface RenderedNpc {
     root: Object3D
     model: NpcConfig['model']
+    equipmentKey: string
     controller: AnimationController
 }
 
@@ -63,14 +63,10 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         root.name = `NPC:${npc.id}`
         // Hold the model's items in its hands (per-hand loadout). Each socket is
         // inside its arm pivot, so the item animates with that arm.
-        const loadout = npcLoadout(npc.model)
-        for (const slot of Object.keys(loadout) as (keyof typeof loadout)[]) {
-            const kind = loadout[slot]
-            if (kind) attachToSocket(controller.sockets, slot, createEquipment(kind), { root, orient: equipmentOrient(kind) })
-        }
+        attachNpcEquipment(controller, root, npc)
         applyTransform(root, npc)
         group.add(root)
-        return { root, model: npc.model, controller }
+        return { root, model: npc.model, equipmentKey: npcEquipmentKey(npc), controller }
     }
 
     function removeNpc(id: string, entry: RenderedNpc): void {
@@ -93,7 +89,10 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         for (const npc of npcs) {
             if (despawned.has(npc.id)) continue
             const existing = rendered.get(npc.id)
-            if (existing && existing.model !== npc.model) removeNpc(npc.id, existing)
+            if (existing && (
+                existing.model !== npc.model ||
+                existing.equipmentKey !== npcEquipmentKey(npc)
+            )) removeNpc(npc.id, existing)
             const liveEntry = rendered.get(npc.id)
             if (liveEntry) {
                 applyTransform(liveEntry.root, npc)
@@ -155,6 +154,19 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             unsubscribeDebugInfo?.()
             unsubscribeDebugInfo = null
         },
+    }
+}
+
+function attachNpcEquipment(controller: AnimationController, root: Object3D, npc: NpcConfig): void {
+    for (const slot of ['handR', 'handL'] as const) {
+        const kind = npc.equipment[slot]
+        if (!kind) continue
+        const frame = equipmentSocketFrame(kind, slot)
+        attachToSocket(controller.sockets, slot, createEquipment(kind), {
+            root,
+            orient: frame.orient,
+            offset: frame.offset,
+        })
     }
 }
 

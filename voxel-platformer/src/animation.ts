@@ -21,7 +21,7 @@ import { combatLocomotionGraph, locomotionGraph } from './game/anim/graph-defaul
 import { playerProfile } from './game/anim/character-profiles'
 import { partCharacterClips } from './game/anim/part-clips'
 import { preloadCharacterModels } from './game/anim/model-registry'
-import { createEquipment, equipmentOrient, type EquipmentKind } from './game/anim/equipment'
+import { createEquipment, equipmentSocketFrame, type EquipmentKind } from './game/anim/equipment'
 import { createNpcModel } from './game/npcs/npc-models'
 import { NPC_MODEL_KINDS, NPC_MODEL_LABELS } from './game/npcs/npc-types'
 
@@ -98,7 +98,12 @@ async function main(): Promise<void> {
         function attach(slot: EquipSlot, kind: EquipmentKind): void {
             if (!controller) return
             const item = createEquipment(kind)
-            if (attachToSocket(controller.sockets, slot, item, { root: controller.root, orient: equipmentOrient(kind) })) equipped.set(slot, item)
+            const frame = equipmentSocketFrame(kind, slot)
+            if (attachToSocket(controller.sockets, slot, item, {
+                root: controller.root,
+                orient: frame.orient,
+                offset: frame.offset,
+            })) equipped.set(slot, item)
         }
 
         const equipBtns: Array<{ slot: EquipSlot; kind: EquipmentKind; btn: HTMLButtonElement }> = []

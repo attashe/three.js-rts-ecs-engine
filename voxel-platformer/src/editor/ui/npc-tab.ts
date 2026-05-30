@@ -7,12 +7,19 @@ import {
     DEFAULT_NPC,
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
+    defaultNpcEquipment,
+    npcEquipmentKey,
     npcInteractionZoneId,
     sanitizeNpcId,
     type NpcConfig,
     type NpcModelKind,
 } from '../../game/npcs/npc-types'
+import {
+    copyHandLoadout,
+    handLoadoutKey,
+} from '../../game/anim/equipment-types'
 import { sectionEl, trimForList, type RefreshableElement } from './common'
+import { equipmentSelect, syncEquipmentSelect } from './equipment-field'
 
 export interface NpcTabOptions {
     world: GameWorld
@@ -78,7 +85,20 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     }
     modelSelect.onchange = () => {
         const model = modelSelect.value as NpcModelKind
-        updateDraftOrSelected((npc) => { npc.model = model }, () => { state.npcModel = model })
+        updateDraftOrSelected(
+            (npc) => {
+                const previousDefault = defaultNpcEquipment(npc.model)
+                const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(previousDefault)
+                npc.model = model
+                if (wasDefaultEquipment) npc.equipment = defaultNpcEquipment(model)
+            },
+            () => {
+                const previousDefault = defaultNpcEquipment(state.npcModel)
+                const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(previousDefault)
+                state.npcModel = model
+                if (wasDefaultEquipment) state.npcEquipment = defaultNpcEquipment(model)
+            },
+        )
     }
     modelRow.append(modelLabel, modelSelect)
     identitySection.appendChild(modelRow)
@@ -113,6 +133,31 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     })
     collisionSection.append(collisionEnabled.row, radiusField.row, heightField.row)
     root.appendChild(collisionSection)
+
+    const equipmentSection = sectionEl('Held Items')
+    const handRSelect = equipmentSelect('Right hand', (value) => {
+        updateDraftOrSelected(
+            (npc) => { npc.equipment.handR = value },
+            () => { state.npcEquipment.handR = value },
+        )
+    })
+    const handLSelect = equipmentSelect('Left hand', (value) => {
+        updateDraftOrSelected(
+            (npc) => { npc.equipment.handL = value },
+            () => { state.npcEquipment.handL = value },
+        )
+    })
+    const resetEquipmentBtn = document.createElement('button')
+    resetEquipmentBtn.className = 'vpe-button'
+    resetEquipmentBtn.textContent = 'Model defaults'
+    resetEquipmentBtn.onclick = () => {
+        updateDraftOrSelected(
+            (npc) => { npc.equipment = defaultNpcEquipment(npc.model) },
+            () => { state.npcEquipment = defaultNpcEquipment(state.npcModel) },
+        )
+    }
+    equipmentSection.append(handRSelect.row, handLSelect.row, resetEquipmentBtn)
+    root.appendChild(equipmentSection)
 
     const interactionSection = sectionEl('Interaction')
     const interactionEnabled = checkboxInput('Interaction zone', true, (checked) => {
@@ -223,7 +268,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     function rebuildList(): void {
         const fp = [
             `selected:${state.selectedNpcId ?? ''}`,
-            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npc.scriptSource.length}`),
+            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npc.scriptSource.length}`),
         ].join('|')
         if (fp === lastListFingerprint) return
         lastListFingerprint = fp
@@ -293,6 +338,8 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         collisionEnabled.input.checked = source.collisionEnabled
         syncInputValue(radiusField.input, String(roundForInput(source.colliderRadius)))
         syncInputValue(heightField.input, String(roundForInput(source.colliderHeight)))
+        syncEquipmentSelect(handRSelect.input, source.equipment.handR)
+        syncEquipmentSelect(handLSelect.input, source.equipment.handL)
         interactionEnabled.input.checked = source.interactionEnabled
         syncInputValue(promptField.input, source.interactionPrompt)
         syncInputValue(interactionRadius.input, String(roundForInput(source.interactionRadius)))
@@ -319,6 +366,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             interactionEnabled: state.npcInteractionEnabled,
             interactionRadius: state.npcInteractionRadius,
             interactionPrompt: state.npcInteractionPrompt,
+            equipment: copyHandLoadout(state.npcEquipment),
             scriptEnabled: state.npcScriptEnabled,
             scriptSource: state.npcScriptSource,
         }

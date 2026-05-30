@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { query } from 'bitecs'
-import { Mesh, MeshBasicMaterial, PointLight, type Object3D } from 'three'
+import { Euler, Mesh, MeshBasicMaterial, PointLight, Vector3, type Object3D } from 'three'
 import { MovingObject } from '../src/engine/ecs/components'
 import { createProjectileLaunchSystem } from '../src/engine/ecs/systems/projectile-launch-system'
 import { createGameWorld } from '../src/engine/ecs/world'
@@ -9,7 +9,8 @@ import type { ActionMap } from '../src/engine/input/actions'
 import { PLAYER_TORCH_FLAME, PLAYER_TORCH_LIGHT } from '../src/game/assets'
 import { MovingObjectKind } from '../src/game/moving-objects'
 import { createPlayerTorchSystem } from '../src/game/player-torch-system'
-import { PLAYER_MODEL_KIND_USER_DATA, spawnPlayer, syncPlayerVisuals } from '../src/game/player'
+import { equipmentSocketFrame } from '../src/game/anim/equipment'
+import { PLAYER_MODEL_KIND_USER_DATA, applyWeaponStance, spawnPlayer, syncPlayerVisuals } from '../src/game/player'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 
 function onePressAction(): ActionMap {
@@ -66,6 +67,65 @@ test('player settings normalization keeps saved/script booleans boolean', () => 
     assert.equal(settings.abilities.airPush, true)
     assert.equal(settings.torch.castsShadow, false)
 })
+
+test('player equipment settings normalize, copy, and drive visible hand loadouts', () => {
+    const settings = normalizePlayerSettings({
+        equipment: {
+            melee: { handR: 'staff', handL: 'book' },
+            ranged: { handR: 'bogus', handL: 'bow' },
+        },
+    } as never)
+
+    assert.deepEqual(settings.equipment.melee, { handR: 'staff', handL: 'book' })
+    assert.deepEqual(settings.equipment.ranged, { handR: null, handL: 'bow' })
+
+    const copied = copyPlayerSettings(settings)
+    copied.equipment.melee.handR = 'sword'
+    assert.equal(settings.equipment.melee.handR, 'staff')
+
+    const world = createGameWorld()
+    world.playerSettings = settings
+    const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings })
+    const root = world.object3DByEid.get(eid)!
+    assert.ok(findObjectByName(root, 'equip:staff'))
+    assert.ok(findObjectByName(root, 'equip:book'))
+
+    world.weaponStance = 'ranged'
+    applyWeaponStance(world, eid, 'ranged')
+    assert.equal(findObjectByName(root, 'equip:staff'), null)
+    assert.ok(findObjectByName(root, 'equip:bow'))
+})
+
+test('syncPlayerVisuals applies live equipment changes without model swaps', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const root = world.object3DByEid.get(eid)!
+
+    assert.ok(findObjectByName(root, 'equip:sword'))
+    world.playerSettings.equipment.melee = { handR: 'staff', handL: null }
+    syncPlayerVisuals(world)
+
+    assert.equal(findObjectByName(root, 'equip:sword'), null)
+    assert.ok(findObjectByName(root, 'equip:staff'))
+})
+
+test('default melee equipment frames point sword forward and shield to the left side', () => {
+    const sword = equipmentSocketFrame('sword', 'handR')
+    const shield = equipmentSocketFrame('shield', 'handL')
+
+    const bladeDir = new Vector3(0, 1, 0).applyEuler(toEuler(sword.orient))
+    assert.ok(bladeDir.z > 0.2, 'right-hand sword should lean toward the character front')
+    assert.ok(bladeDir.y > 0.8, 'right-hand sword should stay mostly upright')
+
+    const shieldNormal = new Vector3(0, 0, 1).applyEuler(toEuler(shield.orient))
+    assert.ok(shieldNormal.x < -0.85, 'left-hand shield should guard the left side')
+    assert.ok(shieldNormal.z > 0.1, 'left-hand shield should stay slightly readable from the front')
+})
+
+function toEuler(value: readonly [number, number, number] | undefined): Euler {
+    return new Euler(value?.[0] ?? 0, value?.[1] ?? 0, value?.[2] ?? 0, 'XYZ')
+}
 
 test('indoorCutEnabled defaults on and round-trips through normalization', () => {
     assert.equal(DEFAULT_PLAYER_SETTINGS.indoorCutEnabled, true)
@@ -145,4 +205,12 @@ function findPlayerTorchLight(root: Object3D): PointLight | null {
         if (!light && obj instanceof PointLight && obj.userData[PLAYER_TORCH_LIGHT]) light = obj
     })
     return light
+}
+
+function findObjectByName(root: Object3D, name: string): Object3D | null {
+    let found: Object3D | null = null
+    root.traverse((obj) => {
+        if (!found && obj.name === name) found = obj
+    })
+    return found
 }

@@ -1,6 +1,12 @@
 import type { ScriptEntry } from '../../engine/script/types'
 import type { Zone } from '../../engine/ecs/zones'
 import type { AABB } from '../../engine/voxel/voxel-collide'
+import {
+    copyHandLoadout,
+    handLoadoutKey,
+    normalizeHandLoadout,
+    type EquipmentHandLoadout,
+} from '../anim/equipment-types'
 
 export const NPC_MODEL_KINDS = [
     'keeper',
@@ -30,6 +36,7 @@ export interface NpcConfig {
     interactionEnabled: boolean
     interactionRadius: number
     interactionPrompt: string
+    equipment: EquipmentHandLoadout
     scriptEnabled: boolean
     scriptSource: string
 }
@@ -65,8 +72,20 @@ export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     interactionEnabled: true,
     interactionRadius: 2.2,
     interactionPrompt: 'Interaction',
+    equipment: defaultNpcEquipment('keeper'),
     scriptEnabled: true,
     scriptSource: '',
+}
+
+export function defaultNpcEquipment(model: NpcModelKind): EquipmentHandLoadout {
+    switch (model) {
+        case 'keeper':
+            return { handR: 'staff', handL: null }
+        case 'large-troll':
+            return { handR: null, handL: 'book' }
+        case 'player':
+            return { handR: null, handL: null }
+    }
 }
 
 export function npcInteractionZoneId(npc: Pick<NpcConfig, 'id'>): string {
@@ -152,6 +171,7 @@ export function copyNpcConfig(npc: NpcConfig): NpcConfig {
     return {
         ...npc,
         position: { ...npc.position },
+        equipment: copyHandLoadout(npc.equipment),
     }
 }
 
@@ -173,9 +193,14 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         interactionEnabled: input.interactionEnabled ?? DEFAULT_NPC.interactionEnabled,
         interactionRadius: safePositive(input.interactionRadius, DEFAULT_NPC.interactionRadius),
         interactionPrompt: input.interactionPrompt || DEFAULT_NPC.interactionPrompt,
+        equipment: normalizeHandLoadout(input.equipment, defaultNpcEquipment(model)),
         scriptEnabled: input.scriptEnabled ?? DEFAULT_NPC.scriptEnabled,
         scriptSource: input.scriptSource ?? DEFAULT_NPC.scriptSource,
     }
+}
+
+export function npcEquipmentKey(npc: Pick<NpcConfig, 'equipment'>): string {
+    return handLoadoutKey(npc.equipment)
 }
 
 export function sanitizeNpcId(value: string): string {

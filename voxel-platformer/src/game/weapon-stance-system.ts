@@ -10,6 +10,7 @@ import type { System } from '../engine/ecs/systems/system'
 import { FixedOrder } from '../engine/ecs/systems/orders'
 import { pushLog } from '../engine/ecs/world'
 import { applyWeaponStance } from './player'
+import { describeHandLoadout } from './anim/equipment-types'
 
 export interface WeaponStanceOptions {
     actionId?: ActionId
@@ -29,7 +30,7 @@ export function createWeaponStanceSystem(actions: ActionMap, opts: WeaponStanceO
             if (!actions.consumePressed(actionId, player)) return
             world.weaponStance = world.weaponStance === 'melee' ? 'ranged' : 'melee'
             applyWeaponStance(world, player, world.weaponStance)
-            pushLog(world, world.weaponStance === 'melee' ? 'Drew sword & shield.' : 'Drew bow.')
+            pushLog(world, `Drew ${describeHandLoadout(world.playerSettings.equipment[world.weaponStance])}.`)
         },
     }
 }

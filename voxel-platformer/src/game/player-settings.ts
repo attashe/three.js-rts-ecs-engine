@@ -3,6 +3,12 @@ import {
     normalizeInventoryItems,
     type InventoryItemMap,
 } from './inventory'
+import {
+    copyPlayerEquipment,
+    normalizePlayerEquipment,
+    type EquipmentHandLoadout,
+    type PlayerEquipmentSettings,
+} from './anim/equipment-types'
 
 export const PLAYER_MODEL_KINDS = [
     'player',
@@ -81,6 +87,7 @@ export interface PlayerSettings {
     model: PlayerModelKind
     abilities: PlayerAbilitySettings
     inventory: PlayerInventorySettings
+    equipment: PlayerEquipmentSettings
     moveSpeed: number
     jumpVelocity: number
     highJumpVelocity: number
@@ -97,9 +104,15 @@ export interface PlayerSettings {
     indoorCutMode: IndoorCutMode
 }
 
-export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'torch'>> & {
+export interface PlayerEquipmentSettingsPatch {
+    melee?: Partial<EquipmentHandLoadout>
+    ranged?: Partial<EquipmentHandLoadout>
+}
+
+export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'equipment' | 'torch'>> & {
     abilities?: Partial<PlayerAbilitySettings>
     inventory?: Partial<PlayerInventorySettings>
+    equipment?: PlayerEquipmentSettingsPatch
     torch?: Partial<PlayerTorchSettings>
 }
 
@@ -119,6 +132,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
         arrows: 0,
         items: {},
     },
+    equipment: normalizePlayerEquipment(),
     moveSpeed: 5,
     jumpVelocity: 8,
     highJumpVelocity: 14.5,
@@ -141,6 +155,7 @@ export function copyPlayerSettings(settings: PlayerSettings): PlayerSettings {
         ...settings,
         abilities: { ...settings.abilities },
         inventory: { ...settings.inventory, items: copyInventoryItems(settings.inventory.items) },
+        equipment: copyPlayerEquipment(settings.equipment),
         torch: { ...settings.torch },
     }
 }
@@ -166,6 +181,7 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
             arrows: clampInt(input?.inventory?.arrows, 0, PLAYER_INVENTORY_LIMITS.arrows, base.inventory.arrows),
             items: normalizeInventoryItems(input?.inventory?.items),
         },
+        equipment: normalizePlayerEquipment(input?.equipment),
         moveSpeed: clampNumber(input?.moveSpeed, 0, 30, base.moveSpeed),
         jumpVelocity: clampNumber(input?.jumpVelocity, 0, 40, base.jumpVelocity),
         highJumpVelocity: clampNumber(input?.highJumpVelocity, 0, 60, base.highJumpVelocity),
@@ -187,6 +203,7 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
 }
 
 export function applyPlayerSettingsPatch(settings: PlayerSettings, patch: PlayerSettingsPatch): PlayerSettings {
+    const currentEquipment = copyPlayerEquipment(settings.equipment)
     return normalizePlayerSettings({
         ...settings,
         ...patch,
@@ -198,6 +215,12 @@ export function applyPlayerSettingsPatch(settings: PlayerSettings, patch: Player
                 ? copyInventoryItems(patch.inventory.items)
                 : copyInventoryItems(settings.inventory.items),
         },
+        equipment: patch.equipment !== undefined
+            ? {
+                melee: { ...currentEquipment.melee, ...patch.equipment.melee },
+                ranged: { ...currentEquipment.ranged, ...patch.equipment.ranged },
+            }
+            : currentEquipment,
         torch: { ...settings.torch, ...patch.torch },
     })
 }

@@ -21,7 +21,8 @@ import {
 } from './assets'
 import { AnimationController } from '../engine/anim'
 import { playerProfile } from './anim/character-profiles'
-import { createEquipment, equip, equipItem, unequipSlot } from './anim/equipment'
+import { equip, unequipSlot } from './anim/equipment'
+import { handLoadoutKey, type EquipmentHandLoadout } from './anim/equipment-types'
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
 import { disposeObject3D } from '../engine/render/dispose-object'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerModelKind, type PlayerSettings } from './player-settings'
@@ -34,6 +35,7 @@ export interface PlayerOptions {
 }
 
 export const PLAYER_MODEL_KIND_USER_DATA = 'playerModelKind'
+const PLAYER_EQUIPMENT_KEY_USER_DATA = 'playerEquipmentKey'
 
 /**
  * Spawn the player entity. Returns its EID.
@@ -83,6 +85,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     root.add(createBackBow())
     root.add(createBackQuiver())
     root.add(createHeldTorch(settings))
+    world.object3DByEid.set(eid, root)
     equipDefaultLoadout(world, eid)
 
     // Move the entire player rig (incl. socket equipment) to the PLAYER layer so
@@ -95,7 +98,6 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
         if (obj instanceof PointLight) obj.layers.enable(RENDER_LAYER.WORLD)
     })
 
-    world.object3DByEid.set(eid, root)
     return eid
 }
 
@@ -119,7 +121,7 @@ function buildAnimatedPlayerModel(world: GameWorld, eid: number, modelKind: Play
 /** Hat on the head, a weapon in each hand — demonstrates the socket system and
  *  the iso-important head slot. Re-run after a model swap (sockets are rebuilt). */
 function equipDefaultLoadout(world: GameWorld, eid: number): void {
-    equipItem(world, eid, 'head', createEquipment('hat'))
+    equip(world, eid, 'head', 'hat')
     applyWeaponStance(world, eid, world.weaponStance)
 }
 
@@ -130,17 +132,13 @@ function equipDefaultLoadout(world: GameWorld, eid: number): void {
  * The hat stays on across both. Safe to call repeatedly (re-equips in place).
  */
 export function applyWeaponStance(world: GameWorld, eid: number, stance: WeaponStance): void {
-    if (stance === 'melee') {
-        equip(world, eid, 'handR', 'sword')
-        equip(world, eid, 'handL', 'shield')
-    } else {
-        unequipSlot(world, eid, 'handR')
-        equip(world, eid, 'handL', 'bow')
-    }
+    const loadout = world.playerSettings.equipment[stance]
+    applyHandLoadout(world, eid, loadout)
     // Avoid showing two bows: hide the decorative back bow while it's in hand.
     const root = world.object3DByEid.get(eid)
     const backBow = root?.getObjectByName('BackBow')
-    if (backBow) backBow.visible = stance === 'melee'
+    if (backBow) backBow.visible = !loadoutHasBow(loadout)
+    if (root) root.userData[PLAYER_EQUIPMENT_KEY_USER_DATA] = playerEquipmentRuntimeKey(world)
 }
 
 export function syncPlayerVisuals(world: GameWorld): void {
@@ -154,7 +152,12 @@ export function syncPlayerVisuals(world: GameWorld): void {
 
 function syncPlayerModel(world: GameWorld, eid: number, root: Group, modelKind: PlayerModelKind): void {
     const current = root.children.find((child) => child.userData[PLAYER_MODEL_KIND_USER_DATA] !== undefined)
-    if (current?.userData[PLAYER_MODEL_KIND_USER_DATA] === modelKind) return
+    if (current?.userData[PLAYER_MODEL_KIND_USER_DATA] === modelKind) {
+        if (root.userData[PLAYER_EQUIPMENT_KEY_USER_DATA] !== playerEquipmentRuntimeKey(world)) {
+            equipDefaultLoadout(world, eid)
+        }
+        return
+    }
 
     world.equipmentByEid.delete(eid)
     const next = buildAnimatedPlayerModel(world, eid, modelKind)
@@ -176,6 +179,22 @@ function syncPlayerModel(world: GameWorld, eid: number, root: Group, modelKind: 
 
     equipDefaultLoadout(world, eid)
     setLayerRecursive(next, RENDER_LAYER.PLAYER)
+}
+
+function applyHandLoadout(world: GameWorld, eid: number, loadout: EquipmentHandLoadout): void {
+    if (loadout.handR) equip(world, eid, 'handR', loadout.handR)
+    else unequipSlot(world, eid, 'handR')
+
+    if (loadout.handL) equip(world, eid, 'handL', loadout.handL)
+    else unequipSlot(world, eid, 'handL')
+}
+
+function loadoutHasBow(loadout: EquipmentHandLoadout): boolean {
+    return loadout.handR === 'bow' || loadout.handL === 'bow'
+}
+
+function playerEquipmentRuntimeKey(world: GameWorld): string {
+    return `${world.weaponStance}:${handLoadoutKey(world.playerSettings.equipment[world.weaponStance])}`
 }
 
 function createHeldTorch(settings: PlayerSettings): Group {
