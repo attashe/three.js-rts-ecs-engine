@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { query } from 'bitecs'
+import { addComponent, query } from 'bitecs'
 import { Euler, Mesh, MeshBasicMaterial, PointLight, Vector3, type Object3D } from 'three'
-import { MovingObject } from '../src/engine/ecs/components'
+import { Grounded, MovingObject } from '../src/engine/ecs/components'
+import { computeLocomotionParams } from '../src/engine/anim/core'
+import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
 import { createProjectileLaunchSystem } from '../src/engine/ecs/systems/projectile-launch-system'
 import { createGameWorld } from '../src/engine/ecs/world'
 import type { ActionMap } from '../src/engine/input/actions'
@@ -24,11 +26,35 @@ function onePressAction(): ActionMap {
     } as unknown as ActionMap
 }
 
+function trackingPressAction(): { actions: ActionMap; calls: () => number } {
+    let calls = 0
+    return {
+        actions: {
+            consumePressed() {
+                calls++
+                return true
+            },
+        } as unknown as ActionMap,
+        calls: () => calls,
+    }
+}
+
+function queuedPressAction(count: number): ActionMap {
+    return {
+        consumePressed() {
+            if (count <= 0) return null
+            count--
+            return { actionId: 'weapon.attack', phase: 'pressed', source: 'player', key: 'test', timeMs: 0 }
+        },
+    } as unknown as ActionMap
+}
+
 test('projectile launch consumes starting arrow inventory and spawns an arrow', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
     world.inventory.arrows = 2
-    spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
 
     createProjectileLaunchSystem(onePressAction()).update(world, 1 / 60)
 
@@ -43,10 +69,26 @@ test('projectile launch respects disabled bow ability', () => {
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
     world.playerSettings.abilities.bow = false
     world.inventory.arrows = 2
-    spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
 
     createProjectileLaunchSystem(onePressAction()).update(world, 1 / 60)
 
+    assert.equal(world.inventory.arrows, 2)
+    const arrows = query(world, [MovingObject]).filter((eid) => MovingObject.kind[eid] === MovingObjectKind.Arrow)
+    assert.equal(arrows.length, 0)
+})
+
+test('projectile launch requires grounded state before consuming shot input', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.inventory.arrows = 2
+    spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const input = trackingPressAction()
+
+    createProjectileLaunchSystem(input.actions).update(world, 1 / 60)
+
+    assert.equal(input.calls(), 0)
     assert.equal(world.inventory.arrows, 2)
     const arrows = query(world, [MovingObject]).filter((eid) => MovingObject.kind[eid] === MovingObjectKind.Arrow)
     assert.equal(arrows.length, 0)
@@ -77,7 +119,7 @@ test('player equipment settings normalize, copy, and drive visible hand loadouts
     } as never)
 
     assert.deepEqual(settings.equipment.melee, { handR: 'staff', handL: 'book' })
-    assert.deepEqual(settings.equipment.ranged, { handR: null, handL: 'bow' })
+    assert.deepEqual(settings.equipment.ranged, { handR: 'arrow', handL: 'bow' })
 
     const copied = copyPlayerSettings(settings)
     copied.equipment.melee.handR = 'sword'
@@ -94,6 +136,7 @@ test('player equipment settings normalize, copy, and drive visible hand loadouts
     applyWeaponStance(world, eid, 'ranged')
     assert.equal(findObjectByName(root, 'equip:staff'), null)
     assert.ok(findObjectByName(root, 'equip:bow'))
+    assert.ok(findObjectByName(root, 'equip:arrow'))
 })
 
 test('syncPlayerVisuals applies live equipment changes without model swaps', () => {
@@ -110,17 +153,67 @@ test('syncPlayerVisuals applies live equipment changes without model swaps', () 
     assert.ok(findObjectByName(root, 'equip:staff'))
 })
 
-test('default melee equipment frames point sword forward and shield to the left side', () => {
+test('player beard setting normalizes and rebuilds the procedural model', () => {
+    assert.equal(DEFAULT_PLAYER_SETTINGS.beard, 'none')
+    assert.equal(normalizePlayerSettings({ beard: 'pointed' }).beard, 'pointed')
+    assert.equal(normalizePlayerSettings({ beard: 'bogus' } as never).beard, 'none')
+
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const root = world.object3DByEid.get(eid)!
+
+    assert.equal(findObjectByName(root, 'CharacterBeardFull'), null)
+    world.playerSettings.beard = 'full'
+    syncPlayerVisuals(world)
+    assert.ok(findObjectByName(root, 'CharacterBeardFull'))
+})
+
+test('melee attack alternates thrust and wide swing animations', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    const controller = world.animControllerByEid.get(player)!
+    const idleParams = computeLocomotionParams({ speedXZ: 0, vy: 0, grounded: true, blocked: false, movementState: 0 })
+    const system = createMeleeAttackSystem(queuedPressAction(2))
+
+    system.update(world, 1 / 60)
+    controller.setParams(idleParams)
+    controller.update(0.05)
+    assert.equal(controller.machine.currentStateId, 'attack')
+
+    for (let i = 0; i < 12; i++) {
+        controller.setParams(idleParams)
+        controller.update(0.05)
+    }
+    assert.equal(controller.machine.currentStateId, 'idle')
+
+    system.update(world, 0.6)
+    controller.setParams(idleParams)
+    controller.update(0.05)
+    assert.equal(controller.machine.currentStateId, 'attackWide')
+})
+
+test('default hand equipment frames point sword forward, nock arrow, and keep shield on the hand', () => {
     const sword = equipmentSocketFrame('sword', 'handR')
     const shield = equipmentSocketFrame('shield', 'handL')
+    const arrow = equipmentSocketFrame('arrow', 'handR')
 
     const bladeDir = new Vector3(0, 1, 0).applyEuler(toEuler(sword.orient))
-    assert.ok(bladeDir.z > 0.2, 'right-hand sword should lean toward the character front')
-    assert.ok(bladeDir.y > 0.8, 'right-hand sword should stay mostly upright')
+    assert.ok(bladeDir.z > 0.9, 'right-hand sword should point toward the character front')
+    assert.ok(bladeDir.y > 0.03, 'right-hand sword should keep a slight upward lift')
+
+    const drawArmPose = new Euler(-1.26, 1.02, -0.08, 'XYZ')
+    const arrowDirAtDraw = new Vector3(0, 1, 0).applyEuler(toEuler(arrow.orient)).applyEuler(drawArmPose)
+    assert.ok(arrowDirAtDraw.x > 0.96, 'right-hand arrow should line up across the bow at full draw')
+    assert.ok(Math.abs(arrowDirAtDraw.y) < 0.08, 'right-hand arrow should stay level at full draw')
+    assert.ok(Math.abs(arrow.offset?.[0] ?? 1) < 0.04, 'right-hand arrow nock should stay close to the fingers')
 
     const shieldNormal = new Vector3(0, 0, 1).applyEuler(toEuler(shield.orient))
     assert.ok(shieldNormal.x < -0.85, 'left-hand shield should guard the left side')
     assert.ok(shieldNormal.z > 0.1, 'left-hand shield should stay slightly readable from the front')
+    assert.ok(Math.abs((shield.offset?.[0] ?? 0)) < 0.16, 'shield grip should stay close enough to touch the hand')
 })
 
 function toEuler(value: readonly [number, number, number] | undefined): Euler {

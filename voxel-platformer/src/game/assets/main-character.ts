@@ -11,6 +11,7 @@ import {
     sharedMaterial,
     sharedSphereGeometry,
 } from './shared-primitives'
+import type { CharacterBeardKind } from '../character-appearance'
 
 export const MAIN_CHARACTER_COLLIDER_RADIUS = 0.35
 export const MAIN_CHARACTER_COLLIDER_HEIGHT = 1.6
@@ -59,6 +60,8 @@ export interface MainCharacterOptions {
     skinColor?: number
     metalColor?: number
     bootColor?: number
+    beard?: CharacterBeardKind
+    beardColor?: number
 }
 
 const BODY_HEIGHT = 0.74
@@ -85,6 +88,7 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
     const leather = material(opts.bootColor ?? 0x2b211d, 0.74)
     const metal = material(opts.metalColor ?? 0xc8b56f, 0.36, 0.25)
     const dark = material(0x151820, 0.72)
+    const beard = material(opts.beardColor ?? 0x2c241f, 0.86)
 
     const J = MAIN_CHARACTER_JOINTS
 
@@ -177,12 +181,65 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
     nose.rotation.x = Math.PI * 0.5
     chest.add(nose)
 
+    addBeard(chest, cy, opts.beard ?? 'none', beard)
+
     // Equipment sockets (empty, identity-oriented). Hand sockets are added inside
     // the arm pivots; head/back ride the chest so they follow the torso.
     chest.add(socket('socket_head', 0, cy(1.56), 0.02))
     chest.add(socket('socket_back', 0, cy(1.1), -0.18))
 
     return root
+}
+
+function addBeard(
+    chest: Group,
+    cy: (worldY: number) => number,
+    kind: CharacterBeardKind,
+    mat: MeshStandardMaterial,
+): void {
+    if (kind === 'none') return
+
+    const moustacheL = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.035, 0.035), mat))
+    moustacheL.name = 'CharacterMoustacheL'
+    moustacheL.position.set(-0.045, cy(1.32), 0.183)
+    moustacheL.rotation.z = -0.08
+
+    const moustacheR = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.035, 0.035), mat))
+    moustacheR.name = 'CharacterMoustacheR'
+    moustacheR.position.set(0.045, cy(1.32), 0.183)
+    moustacheR.rotation.z = 0.08
+
+    chest.add(moustacheL, moustacheR)
+
+    if (kind === 'short') {
+        const chin = setShadow(new Mesh(sharedBoxGeometry(0.16, 0.105, 0.065), mat))
+        chin.name = 'CharacterBeardShort'
+        chin.position.set(0, cy(1.255), 0.17)
+        chest.add(chin)
+        return
+    }
+
+    if (kind === 'full') {
+        const chin = setShadow(new Mesh(sharedBoxGeometry(0.18, 0.17, 0.07), mat))
+        chin.name = 'CharacterBeardFull'
+        chin.position.set(0, cy(1.23), 0.168)
+        const left = setShadow(new Mesh(sharedBoxGeometry(0.055, 0.13, 0.05), mat))
+        left.name = 'CharacterBeardSideL'
+        left.position.set(-0.105, cy(1.27), 0.145)
+        const right = setShadow(new Mesh(sharedBoxGeometry(0.055, 0.13, 0.05), mat))
+        right.name = 'CharacterBeardSideR'
+        right.position.set(0.105, cy(1.27), 0.145)
+        chest.add(chin, left, right)
+        return
+    }
+
+    const point = setShadow(new Mesh(sharedConeGeometry(0.105, 0.23, 4), mat))
+    point.name = 'CharacterBeardPointed'
+    point.position.set(0, cy(1.235), 0.17)
+    point.rotation.z = Math.PI
+    point.rotation.y = Math.PI * 0.25
+    point.scale.z = 0.72
+    chest.add(point)
 }
 
 function socket(name: string, x: number, y: number, z: number): Group {

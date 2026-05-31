@@ -8,6 +8,7 @@
 import { partRigSource, type ClipSource } from '../../engine/anim'
 import type { AnimGraphDef } from '../../engine/anim/core'
 import { createMainCharacter, type MainCharacterOptions } from '../assets'
+import type { CharacterBeardKind } from '../character-appearance'
 import type { PlayerModelKind } from '../player-settings'
 import { combatLocomotionGraph } from './graph-defaults'
 import { partCharacterClips } from './part-clips'
@@ -19,12 +20,16 @@ export interface CharacterAnimProfile {
     clipSource: ClipSource
 }
 
+export interface CharacterAppearanceOptions {
+    beard?: CharacterBeardKind
+}
+
 const PLAYER_COLORS: Record<PlayerModelKind, MainCharacterOptions> = {
     player: {},
     keeper: { tunicColor: 0x1f2c3f, cloakColor: 0x3f2818, skinColor: 0xc89461, metalColor: 0xffc462, bootColor: 0x17120d },
 }
 
-export function playerProfile(kind: PlayerModelKind): CharacterAnimProfile {
+export function playerProfile(kind: PlayerModelKind, appearance: CharacterAppearanceOptions = {}): CharacterAnimProfile {
     const id = `player.${kind}`
     const colors = PLAYER_COLORS[kind]
     return {
@@ -32,6 +37,9 @@ export function playerProfile(kind: PlayerModelKind): CharacterAnimProfile {
         graph: combatLocomotionGraph(),
         // A preloaded Blender rig wins (none registered by default); otherwise the
         // existing procedural model, animated via the part-based clip source.
-        clipSource: registeredCharacterSource(id) ?? partRigSource(() => createMainCharacter(colors), partCharacterClips()),
+        clipSource: registeredCharacterSource(id) ?? partRigSource(
+            () => createMainCharacter({ ...colors, beard: appearance.beard ?? 'none' }),
+            partCharacterClips(),
+        ),
     }
 }

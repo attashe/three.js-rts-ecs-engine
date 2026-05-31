@@ -304,7 +304,7 @@ player.inventory.count(id)  // durable item count, e.g. 'sun-shard'
 player.inventory.has(id, n) // true when at least n items are held
 player.inventory.list(category?) // snapshot of visible durable items
 player.settings             // PlayerSettings snapshot — mutate via setters below
-player.setSettings(patch)   // patch movement, inventory, torch, model, abilities,
+player.setSettings(patch)   // patch movement, inventory, torch, model/beard, abilities,
                             //   equipment.melee/ranged hand loadouts
 player.setAbility(name, on) // e.g. player.setAbility('bow', false)
 player.setGold(amount)

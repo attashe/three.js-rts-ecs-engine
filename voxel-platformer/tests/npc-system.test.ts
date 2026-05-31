@@ -37,14 +37,17 @@ test('NPC model registry exposes keeper and player models', () => {
         assert.equal(model.name, `NpcModel:${kind}`)
         assert.ok(model.children.length > 0, `${kind} model should contain visible parts`)
     }
+    assert.ok(findByName(createNpcModel('keeper'), 'CharacterBeardFull'), 'keeper defaults to a full beard')
+    assert.ok(findByName(createNpcModel('player', { beard: 'pointed' }), 'CharacterBeardPointed'), 'player NPC can opt into a beard')
 })
 
-test('NPC equipment normalizes from model defaults and custom hand choices', () => {
+test('NPC appearance and equipment normalize from model defaults and custom choices', () => {
     const keeper = normalizeNpcConfig({
         id: 'keeper',
         model: 'keeper',
         position: { x: 0, y: 0, z: 0 },
     })
+    assert.equal(keeper.beard, 'full')
     assert.deepEqual(keeper.equipment, defaultNpcEquipment('keeper'))
 
     const troll = normalizeNpcConfig({
@@ -52,14 +55,17 @@ test('NPC equipment normalizes from model defaults and custom hand choices', () 
         model: 'large-troll',
         position: { x: 0, y: 0, z: 0 },
     })
+    assert.equal(troll.beard, 'pointed')
     assert.deepEqual(troll.equipment, { handR: null, handL: 'book' })
 
     const custom = normalizeNpcConfig({
         id: 'custom',
         model: 'keeper',
         position: { x: 0, y: 0, z: 0 },
+        beard: 'short',
         equipment: { handR: 'sword', handL: 'bogus' } as never,
     })
+    assert.equal(custom.beard, 'short')
     assert.deepEqual(custom.equipment, { handR: 'sword', handL: null })
 })
 
@@ -139,6 +145,13 @@ test('NPC renderer rebuilds visuals when hand equipment changes', () => {
     assert.notEqual(group!.children[0], firstRoot, 'equipment change rebuilds socket attachments')
     assert.equal(findByName(group!, 'equip:staff'), null)
     assert.ok(findByName(group!, 'equip:book'))
+
+    const secondRoot = group!.children[0]!
+    config.beard = 'short'
+    system.update(world, 1 / 60)
+
+    assert.notEqual(group!.children[0], secondRoot, 'appearance change rebuilds the procedural model')
+    assert.ok(findByName(group!, 'CharacterBeardShort'))
 
     system.dispose?.()
 })

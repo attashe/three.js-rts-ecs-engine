@@ -25,7 +25,7 @@ import { equip, unequipSlot } from './anim/equipment'
 import { handLoadoutKey, type EquipmentHandLoadout } from './anim/equipment-types'
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
 import { disposeObject3D } from '../engine/render/dispose-object'
-import { DEFAULT_PLAYER_SETTINGS, type PlayerModelKind, type PlayerSettings } from './player-settings'
+import { DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from './player-settings'
 
 export interface PlayerOptions {
     spawn: { x: number; y: number; z: number }
@@ -35,6 +35,7 @@ export interface PlayerOptions {
 }
 
 export const PLAYER_MODEL_KIND_USER_DATA = 'playerModelKind'
+export const PLAYER_MODEL_VISUAL_KEY_USER_DATA = 'playerModelVisualKey'
 const PLAYER_EQUIPMENT_KEY_USER_DATA = 'playerEquipmentKey'
 
 /**
@@ -81,7 +82,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
 
     const root = new Group()
     root.name = 'PlayerRoot'
-    root.add(buildAnimatedPlayerModel(world, eid, settings.model))
+    root.add(buildAnimatedPlayerModel(world, eid, settings))
     root.add(createBackBow())
     root.add(createBackQuiver())
     root.add(createHeldTorch(settings))
@@ -105,12 +106,13 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
  * Build the player's animated rig from its profile, register the
  * AnimationController in the world side-table, and return the model Group.
  */
-function buildAnimatedPlayerModel(world: GameWorld, eid: number, modelKind: PlayerModelKind): Object3D {
-    const profile = playerProfile(modelKind)
+function buildAnimatedPlayerModel(world: GameWorld, eid: number, settings: PlayerSettings): Object3D {
+    const profile = playerProfile(settings.model, { beard: settings.beard })
     const clipSet = profile.clipSource.instantiate()
     const model = clipSet.root
     model.name = 'PlayerModel'
-    model.userData[PLAYER_MODEL_KIND_USER_DATA] = modelKind
+    model.userData[PLAYER_MODEL_KIND_USER_DATA] = settings.model
+    model.userData[PLAYER_MODEL_VISUAL_KEY_USER_DATA] = playerModelVisualKey(settings)
 
     const controller = new AnimationController(clipSet, profile.graph)
     world.animControllerByEid.get(eid)?.dispose()
@@ -146,13 +148,13 @@ export function syncPlayerVisuals(world: GameWorld): void {
     for (let i = 0; i < players.length; i++) {
         const eid = players[i]!
         const root = world.object3DByEid.get(eid)
-        if (root instanceof Group) syncPlayerModel(world, eid, root, world.playerSettings.model)
+        if (root instanceof Group) syncPlayerModel(world, eid, root, world.playerSettings)
     }
 }
 
-function syncPlayerModel(world: GameWorld, eid: number, root: Group, modelKind: PlayerModelKind): void {
+function syncPlayerModel(world: GameWorld, eid: number, root: Group, settings: PlayerSettings): void {
     const current = root.children.find((child) => child.userData[PLAYER_MODEL_KIND_USER_DATA] !== undefined)
-    if (current?.userData[PLAYER_MODEL_KIND_USER_DATA] === modelKind) {
+    if (current?.userData[PLAYER_MODEL_VISUAL_KEY_USER_DATA] === playerModelVisualKey(settings)) {
         if (root.userData[PLAYER_EQUIPMENT_KEY_USER_DATA] !== playerEquipmentRuntimeKey(world)) {
             equipDefaultLoadout(world, eid)
         }
@@ -160,7 +162,7 @@ function syncPlayerModel(world: GameWorld, eid: number, root: Group, modelKind: 
     }
 
     world.equipmentByEid.delete(eid)
-    const next = buildAnimatedPlayerModel(world, eid, modelKind)
+    const next = buildAnimatedPlayerModel(world, eid, settings)
 
     let index = -1
     if (current) {
@@ -195,6 +197,10 @@ function loadoutHasBow(loadout: EquipmentHandLoadout): boolean {
 
 function playerEquipmentRuntimeKey(world: GameWorld): string {
     return `${world.weaponStance}:${handLoadoutKey(world.playerSettings.equipment[world.weaponStance])}`
+}
+
+function playerModelVisualKey(settings: Pick<PlayerSettings, 'model' | 'beard'>): string {
+    return `${settings.model}:${settings.beard}`
 }
 
 function createHeldTorch(settings: PlayerSettings): Group {

@@ -10,57 +10,55 @@ import {
     sharedSphereGeometry,
     sharedMaterial,
 } from '../assets'
-import type { NpcModelKind } from './npc-types'
+import type { CharacterBeardKind } from '../character-appearance'
+import { defaultNpcBeard, type NpcModelKind } from './npc-types'
 
-export function createNpcModel(kind: NpcModelKind): Group {
+export interface NpcModelOptions {
+    beard?: CharacterBeardKind
+}
+
+export function createNpcModel(kind: NpcModelKind, opts: NpcModelOptions = {}): Group {
+    const beard = opts.beard ?? defaultNpcBeard(kind)
     switch (kind) {
         case 'player':
-            return createPlayerNpcModel()
+            return createPlayerNpcModel(beard)
         case 'keeper':
-            return createKeeperNpcModel()
+            return createKeeperNpcModel(beard)
         case 'large-troll':
-            return createLargeTrollModel()
+            return createLargeTrollModel(beard)
     }
 }
 
-function createPlayerNpcModel(): Group {
+function createPlayerNpcModel(beard: CharacterBeardKind): Group {
     const root = createMainCharacter({
         tunicColor: 0x2f5e8f,
         cloakColor: 0x7a2430,
         skinColor: 0xd8a06a,
         metalColor: 0xc8b56f,
         bootColor: 0x2b211d,
+        beard,
     })
     root.name = 'NpcModel:player'
     return root
 }
 
-function createKeeperNpcModel(): Group {
+function createKeeperNpcModel(beard: CharacterBeardKind): Group {
     const root = createMainCharacter({
         tunicColor: 0x1f2c3f,
         cloakColor: 0x3f2818,
         skinColor: 0xc89461,
         metalColor: 0xffc462,
         bootColor: 0x17120d,
+        beard,
+        beardColor: 0xb6b09a,
     })
     root.name = 'NpcModel:keeper'
 
     // The staff + lantern are now configured as an NPC hand item.
-    // The beard is intrinsic: parent it to the torso so it rides the body's
-    // lean / death topple instead of hanging in mid-air.
-    const beard = shadowed(new Mesh(
-        sharedBoxGeometry(0.08, 0.22, 0.18),
-        sharedMaterial(0xb6b09a, 0.9),
-    ))
-    beard.name = 'KeeperBeard'
-    beard.position.set(0, 1.23, 0.19)
-    root.add(beard)
-    reparentInModel(root, 'Chest', beard)
-
     return root
 }
 
-function createLargeTrollModel(): Group {
+function createLargeTrollModel(beard: CharacterBeardKind): Group {
     const root = new Group()
     root.name = 'NpcModel:large-troll'
 
@@ -70,6 +68,8 @@ function createLargeTrollModel(): Group {
         skinColor: 0x6f8d6b,
         metalColor: 0xd2b45f,
         bootColor: 0x251f19,
+        beard,
+        beardColor: 0x47553c,
     })
     figure.name = 'LargeTrollFigure'
     figure.scale.setScalar(1.85)

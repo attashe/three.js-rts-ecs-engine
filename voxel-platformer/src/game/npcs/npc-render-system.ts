@@ -28,7 +28,7 @@ export interface NpcRenderSystemOptions {
 
 interface RenderedNpc {
     root: Object3D
-    model: NpcConfig['model']
+    visualKey: string
     equipmentKey: string
     controller: AnimationController
 }
@@ -57,7 +57,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
     let unsubscribeDebugInfo: (() => void) | null = null
 
     function buildNpc(npc: NpcConfig): RenderedNpc {
-        const clipSet = partRigSource(() => createNpcModel(npc.model), partCharacterClips()).instantiate()
+        const clipSet = partRigSource(() => createNpcModel(npc.model, { beard: npc.beard }), partCharacterClips()).instantiate()
         const controller = new AnimationController(clipSet, combatLocomotionGraph())
         const root = clipSet.root
         root.name = `NPC:${npc.id}`
@@ -66,7 +66,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         attachNpcEquipment(controller, root, npc)
         applyTransform(root, npc)
         group.add(root)
-        return { root, model: npc.model, equipmentKey: npcEquipmentKey(npc), controller }
+        return { root, visualKey: npcVisualKey(npc), equipmentKey: npcEquipmentKey(npc), controller }
     }
 
     function removeNpc(id: string, entry: RenderedNpc): void {
@@ -90,7 +90,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             if (despawned.has(npc.id)) continue
             const existing = rendered.get(npc.id)
             if (existing && (
-                existing.model !== npc.model ||
+                existing.visualKey !== npcVisualKey(npc) ||
                 existing.equipmentKey !== npcEquipmentKey(npc)
             )) removeNpc(npc.id, existing)
             const liveEntry = rendered.get(npc.id)
@@ -155,6 +155,10 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             unsubscribeDebugInfo = null
         },
     }
+}
+
+function npcVisualKey(npc: Pick<NpcConfig, 'model' | 'beard'>): string {
+    return `${npc.model}:${npc.beard}`
 }
 
 function attachNpcEquipment(controller: AnimationController, root: Object3D, npc: NpcConfig): void {

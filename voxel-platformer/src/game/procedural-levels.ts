@@ -356,6 +356,7 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
             id: 'large-town:large-troll-curator',
             name: 'Curator Brannok',
             model: 'large-troll',
+            beard: 'pointed',
             position: t.stand(34, roadZ - 6),
             yaw: 0,
             scale: 1,

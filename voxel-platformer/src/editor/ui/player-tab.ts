@@ -10,6 +10,11 @@ import {
     type PlayerAbilityKey,
     type PlayerModelKind,
 } from '../../game/player-settings'
+import {
+    CHARACTER_BEARD_KINDS,
+    CHARACTER_BEARD_LABELS,
+    type CharacterBeardKind,
+} from '../../game/character-appearance'
 import { sectionEl, type RefreshableElement } from './common'
 import { equipmentSelect, syncEquipmentSelect } from './equipment-field'
 
@@ -55,7 +60,25 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
     }
     modelSelect.onchange = () => { state.player.model = modelSelect.value as PlayerModelKind }
     modelRow.append(modelLabel, modelSelect)
-    modelSection.appendChild(modelRow)
+
+    const beardRow = document.createElement('label')
+    beardRow.className = 'vpe-field'
+    const beardLabel = document.createElement('span')
+    beardLabel.className = 'vpe-field-label'
+    beardLabel.textContent = 'Beard'
+    const beardSelect = document.createElement('select')
+    beardSelect.className = 'vpe-input'
+    beardSelect.style.flex = '1'
+    for (const beard of CHARACTER_BEARD_KINDS) {
+        const opt = document.createElement('option')
+        opt.value = beard
+        opt.textContent = CHARACTER_BEARD_LABELS[beard]
+        beardSelect.appendChild(opt)
+    }
+    beardSelect.onchange = () => { state.player.beard = beardSelect.value as CharacterBeardKind }
+    beardRow.append(beardLabel, beardSelect)
+
+    modelSection.append(modelRow, beardRow)
     root.appendChild(modelSection)
 
     const equipmentSection = sectionEl('Equipment')
@@ -160,6 +183,7 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
         spawnReadout.textContent = `Spawn: ${state.spawn.x.toFixed(1)}, ${state.spawn.y.toFixed(1)}, ${state.spawn.z.toFixed(1)}`
         placeSpawnBtn.classList.toggle('active', state.mode === 'place-spawn')
         if (document.activeElement !== modelSelect) modelSelect.value = state.player.model
+        if (document.activeElement !== beardSelect) beardSelect.value = state.player.beard
         syncEquipmentSelect(meleeRight.input, state.player.equipment.melee.handR)
         syncEquipmentSelect(meleeLeft.input, state.player.equipment.melee.handL)
         syncEquipmentSelect(rangedRight.input, state.player.equipment.ranged.handR)

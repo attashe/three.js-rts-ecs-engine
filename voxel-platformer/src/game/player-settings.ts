@@ -9,6 +9,7 @@ import {
     type EquipmentHandLoadout,
     type PlayerEquipmentSettings,
 } from './anim/equipment-types'
+import { normalizeCharacterBeard, type CharacterBeardKind } from './character-appearance'
 
 export const PLAYER_MODEL_KINDS = [
     'player',
@@ -85,6 +86,7 @@ export interface PlayerTorchSettings {
 
 export interface PlayerSettings {
     model: PlayerModelKind
+    beard: CharacterBeardKind
     abilities: PlayerAbilitySettings
     inventory: PlayerInventorySettings
     equipment: PlayerEquipmentSettings
@@ -118,6 +120,7 @@ export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'in
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
     model: 'player',
+    beard: 'none',
     abilities: {
         movement: true,
         jump: true,
@@ -167,6 +170,7 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
         : base.model
     return {
         model,
+        beard: normalizeCharacterBeard(input?.beard, base.beard),
         abilities: {
             movement: clampBoolean(input?.abilities?.movement, base.abilities.movement),
             jump: clampBoolean(input?.abilities?.jump, base.abilities.jump),

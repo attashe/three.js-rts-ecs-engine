@@ -7,6 +7,7 @@ import {
     DEFAULT_NPC,
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
+    defaultNpcBeard,
     defaultNpcEquipment,
     npcEquipmentKey,
     npcInteractionZoneId,
@@ -18,6 +19,11 @@ import {
     copyHandLoadout,
     handLoadoutKey,
 } from '../../game/anim/equipment-types'
+import {
+    CHARACTER_BEARD_KINDS,
+    CHARACTER_BEARD_LABELS,
+    type CharacterBeardKind,
+} from '../../game/character-appearance'
 import { sectionEl, trimForList, type RefreshableElement } from './common'
 import { equipmentSelect, syncEquipmentSelect } from './equipment-field'
 
@@ -89,19 +95,46 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             (npc) => {
                 const previousDefault = defaultNpcEquipment(npc.model)
                 const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(previousDefault)
+                const previousDefaultBeard = defaultNpcBeard(npc.model)
+                const wasDefaultBeard = npc.beard === previousDefaultBeard
                 npc.model = model
                 if (wasDefaultEquipment) npc.equipment = defaultNpcEquipment(model)
+                if (wasDefaultBeard) npc.beard = defaultNpcBeard(model)
             },
             () => {
                 const previousDefault = defaultNpcEquipment(state.npcModel)
                 const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(previousDefault)
+                const previousDefaultBeard = defaultNpcBeard(state.npcModel)
+                const wasDefaultBeard = state.npcBeard === previousDefaultBeard
                 state.npcModel = model
                 if (wasDefaultEquipment) state.npcEquipment = defaultNpcEquipment(model)
+                if (wasDefaultBeard) state.npcBeard = defaultNpcBeard(model)
             },
         )
     }
     modelRow.append(modelLabel, modelSelect)
     identitySection.appendChild(modelRow)
+
+    const beardRow = document.createElement('label')
+    beardRow.className = 'vpe-field'
+    const beardLabel = document.createElement('span')
+    beardLabel.className = 'vpe-field-label'
+    beardLabel.textContent = 'Beard'
+    const beardSelect = document.createElement('select')
+    beardSelect.className = 'vpe-input'
+    beardSelect.style.flex = '1'
+    for (const beard of CHARACTER_BEARD_KINDS) {
+        const opt = document.createElement('option')
+        opt.value = beard
+        opt.textContent = CHARACTER_BEARD_LABELS[beard]
+        beardSelect.appendChild(opt)
+    }
+    beardSelect.onchange = () => {
+        const beard = beardSelect.value as CharacterBeardKind
+        updateDraftOrSelected((npc) => { npc.beard = beard }, () => { state.npcBeard = beard })
+    }
+    beardRow.append(beardLabel, beardSelect)
+    identitySection.appendChild(beardRow)
     root.appendChild(identitySection)
 
     const transformSection = sectionEl('Transform')
@@ -268,7 +301,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     function rebuildList(): void {
         const fp = [
             `selected:${state.selectedNpcId ?? ''}`,
-            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npc.scriptSource.length}`),
+            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.beard}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npc.scriptSource.length}`),
         ].join('|')
         if (fp === lastListFingerprint) return
         lastListFingerprint = fp
@@ -332,6 +365,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         syncInputValue(idField.input, npc?.id ?? '')
         syncInputValue(nameField.input, source.name)
         if (document.activeElement !== modelSelect) modelSelect.value = source.model
+        if (document.activeElement !== beardSelect) beardSelect.value = source.beard
         gridRow.input.checked = source.gridAligned
         syncInputValue(yawField.input, String(Math.round((source.yaw * 180) / Math.PI)))
         syncInputValue(scaleField.input, String(roundForInput(source.scale)))
@@ -356,6 +390,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             id: 'draft',
             name: state.npcName || DEFAULT_NPC.name,
             model: state.npcModel,
+            beard: state.npcBeard,
             position: { x: 0, y: 0, z: 0 },
             yaw: state.npcYaw,
             scale: state.npcScale,

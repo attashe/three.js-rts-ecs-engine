@@ -118,6 +118,7 @@ test('NPCs survive a save -> load round-trip through metadata', () => {
         id: 'npc-arlen',
         name: 'Keeper Arlen',
         model: 'player',
+        beard: 'short',
         position: { x: 4.5, y: 2, z: 6.5 },
         yaw: 0.8,
         scale: 1.15,
@@ -147,6 +148,7 @@ test('NPCs survive a save -> load round-trip through metadata', () => {
 test('player defaults survive a save -> load round-trip through metadata', () => {
     const state = createEditorState({ x: 0, y: 0, z: 0 })
     state.player.model = 'keeper'
+    state.player.beard = 'full'
     state.player.abilities.bow = false
     state.player.abilities.highJump = false
     state.player.inventory.gold = 77

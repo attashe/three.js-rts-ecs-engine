@@ -10,6 +10,7 @@ import type { PistonDirection } from './piston-direction'
 import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
 import { DEFAULT_NPC, copyNpcConfig, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
 import type { EquipmentHandLoadout } from '../game/anim/equipment-types'
+import type { CharacterBeardKind } from '../game/character-appearance'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../game/player-settings'
 import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from '../game/weather-config'
 import {
@@ -438,6 +439,7 @@ export interface EditorState {
     selectedNpcId: string | null
     npcName: string
     npcModel: NpcModelKind
+    npcBeard: CharacterBeardKind
     npcGridAlign: boolean
     npcYaw: number
     npcScale: number
@@ -687,6 +689,7 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         selectedNpcId: null,
         npcName: DEFAULT_NPC.name,
         npcModel: DEFAULT_NPC.model,
+        npcBeard: DEFAULT_NPC.beard,
         npcGridAlign: DEFAULT_NPC.gridAligned,
         npcYaw: DEFAULT_NPC.yaw,
         npcScale: DEFAULT_NPC.scale,

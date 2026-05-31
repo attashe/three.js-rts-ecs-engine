@@ -86,6 +86,7 @@ test('large town includes a collidable large troll NPC', () => {
 
     assert.ok(npc, 'large town should place the large troll curator')
     assert.equal(npc!.model, 'large-troll')
+    assert.equal(npc!.beard, 'pointed')
     assert.equal(npc!.collisionEnabled, true)
     assert.equal(npc!.colliderHeight, 3.2)
     assert.equal(npc!.colliderRadius, 0.72)

@@ -7,6 +7,7 @@ import {
     normalizeHandLoadout,
     type EquipmentHandLoadout,
 } from '../anim/equipment-types'
+import { normalizeCharacterBeard, type CharacterBeardKind } from '../character-appearance'
 
 export const NPC_MODEL_KINDS = [
     'keeper',
@@ -26,6 +27,7 @@ export interface NpcConfig {
     id: string
     name: string
     model: NpcModelKind
+    beard: CharacterBeardKind
     position: { x: number; y: number; z: number }
     yaw: number
     scale: number
@@ -63,6 +65,7 @@ export const NPC_DEFAULT_HP = 2
 export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     name: 'NPC',
     model: 'keeper',
+    beard: defaultNpcBeard('keeper'),
     yaw: 0,
     scale: 1,
     gridAligned: true,
@@ -75,6 +78,17 @@ export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     equipment: defaultNpcEquipment('keeper'),
     scriptEnabled: true,
     scriptSource: '',
+}
+
+export function defaultNpcBeard(model: NpcModelKind): CharacterBeardKind {
+    switch (model) {
+        case 'keeper':
+            return 'full'
+        case 'large-troll':
+            return 'pointed'
+        case 'player':
+            return 'none'
+    }
 }
 
 export function defaultNpcEquipment(model: NpcModelKind): EquipmentHandLoadout {
@@ -183,6 +197,7 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         id: sanitizeNpcId(input.id || 'npc'),
         name: input.name || DEFAULT_NPC.name,
         model,
+        beard: normalizeCharacterBeard(input.beard, defaultNpcBeard(model)),
         position: { ...input.position },
         yaw: Number.isFinite(input.yaw) ? input.yaw! : DEFAULT_NPC.yaw,
         scale: safePositive(input.scale, DEFAULT_NPC.scale),
