@@ -3,6 +3,7 @@ import { BLOCK } from '../engine/voxel/palette'
 import type { Zone } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
 import { generatePlatformerLevel, type LevelMeta } from './level'
+import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
 import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
 import {
     generateStructureAsset,
@@ -116,8 +117,35 @@ export function generateDemoProceduralLevel(
     const meta = generatePlatformerLevel(chunks)
     return {
         ...meta,
+        npcs: [...meta.npcs, demoPatrolGuard()],
         scripts: createDemoScripts(scriptSources),
     }
+}
+
+/**
+ * A keeper who walks a short patrol on the front lawn and, if the player strays
+ * within 6 blocks, gives chase and attacks — a live demo of the script-driven
+ * NPC AI (pathfinding + waypoints + perception + hostility + events). The brain
+ * is configured entirely from the NPC's own script via the `npcs.*` API.
+ */
+function demoPatrolGuard(): NpcConfig {
+    return normalizeNpcConfig({
+        id: 'demo-guard',
+        name: 'Patrol Guard',
+        model: 'keeper',
+        position: { x: 8, y: 5, z: 4 }, // grass plane stands at groundY(4)+1
+        interactionEnabled: false,
+        scriptSource: [
+            `on('level-start', () => {`,
+            `  npcs.setPerceptionRadius(NPC_ID, 6)`,
+            `  npcs.setHostile(NPC_ID, 'player', true)`,
+            `  npcs.setWaypoints(NPC_ID, [{ x: 5, y: 5, z: 4 }, { x: 10, y: 5, z: 4 }])`,
+            `})`,
+            `on('npc-spotted-enemy', (e) => {`,
+            `  if (e.npcId === NPC_ID) log.log('Patrol Guard spotted you!')`,
+            `})`,
+        ].join('\n'),
+    })
 }
 
 export function createDemoScripts(scriptSources: ProceduralScriptSources): ScriptEntry[] {
