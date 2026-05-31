@@ -230,6 +230,12 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
                     entityId: evt.entityId,
                 })
                 return
+            case 'npc-spotted-enemy':
+                runtime.emit('npc-spotted-enemy', { npcId: evt.npcId, targetId: evt.targetId })
+                return
+            case 'npc-reached':
+                runtime.emit('npc-reached', { npcId: evt.npcId, waypointIndex: evt.waypointIndex })
+                return
         }
     }
 

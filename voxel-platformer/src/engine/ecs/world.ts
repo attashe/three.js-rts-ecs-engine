@@ -165,6 +165,7 @@ export type DeathReason =
     | 'manual-restart'
     | 'killed-by-zone-script'
     | 'burned-by-lava'
+    | 'slain'
 
 /** Which weapon set the player is wielding. */
 export type WeaponStance = 'melee' | 'ranged'
@@ -293,6 +294,17 @@ export type ScriptTriggerEvent =
         zoneId?: string
         point?: VoxelCoord
         entityId?: number
+    }
+    | {
+        kind: 'npc-spotted-enemy'
+        npcId: string
+        /** The enemy: the `'player'` sentinel or another NPC id. */
+        targetId: string
+    }
+    | {
+        kind: 'npc-reached'
+        npcId: string
+        waypointIndex: number
     }
 
 export type GameWorld = World<GameContext>

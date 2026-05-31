@@ -1,5 +1,6 @@
 import { hasComponent, query } from 'bitecs'
 import { BoxCollider, PlayerControlled, Position } from '../components'
+import { isDead } from '../combat'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushLog, type DeathReason, type GameWorld } from '../world'
@@ -42,6 +43,11 @@ export function createPlayerDeathSystem(opts: PlayerDeathSystemOptions = {}): Sy
                 const eid = eids[i]!
                 if (Position.y[eid] < voidY) {
                     signalDeath(world as GameWorld, 'fell-into-void', 'You fell into the void.', opts.onDeath)
+                    return
+                }
+
+                if (isDead(world as GameWorld, eid)) {
+                    signalDeath(world as GameWorld, 'slain', 'You were slain.', opts.onDeath)
                     return
                 }
 

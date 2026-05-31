@@ -104,6 +104,41 @@ export const Animated = {
     time: new Float32Array(MAX_ENTITIES),
 }
 
+/**
+ * Minimal hit-point pool. Deliberately lean for the platformer: no armor, no
+ * resistances, no regen — most characters die in one or two hits. `max` is kept
+ * only so the HUD/!indicators can show a ratio. Death is handled by the system
+ * that drains it (player-death-system for the player, melee/NPC code for NPCs).
+ */
+export const Health = {
+    current: new Float32Array(MAX_ENTITIES),
+    max: new Float32Array(MAX_ENTITIES),
+}
+
+/**
+ * Mana pool only — no stamina, no built-in regen, no built-in spells. A reserved
+ * resource hook for future script-defined abilities; the engine prescribes no
+ * casting system and no script accessor is wired yet (it reads 0 until one is).
+ */
+export const Mana = {
+    current: new Float32Array(MAX_ENTITIES),
+    max: new Float32Array(MAX_ENTITIES),
+}
+
+/**
+ * Simple directional block. While `raised`, an incoming attack is blocked when
+ * the attack's source direction falls within the shield's forward arc
+ * (`blockArcCos` = min dot of actor-forward · source-dir) and within the
+ * vertical coverage `[Position.y + minY, Position.y + maxY]`. Read by the
+ * melee/arrow hit check.
+ */
+export const Shield = {
+    raised: new Uint8Array(MAX_ENTITIES),
+    blockArcCos: new Float32Array(MAX_ENTITIES),
+    minY: new Float32Array(MAX_ENTITIES),
+    maxY: new Float32Array(MAX_ENTITIES),
+}
+
 // Tag components — empty objects, used purely as identity in queries.
 export const Renderable = {}
 /** Renderable that doesn't move once placed. RenderSync syncs its transform

@@ -3,6 +3,9 @@ export const FixedOrder = {
      *  voxel writes are visible to physics in the same step. */
     mechanisms: 90,
     input: 100,
+    /** NPC patrol/guard/engage brain. After input (so it can react to the
+     *  player's just-resolved position) and before movement/physics. */
+    npcBehaviour: 250,
     movement: 300,
     physics: 400,
     /** Awake rigid-body pair separation (e.g. stone-vs-stone in mid-air). */

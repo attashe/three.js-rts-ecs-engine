@@ -5,6 +5,7 @@ import { pushLog, pushPopupClear, pushPopupMessage, type GameWorld, type VoxelCo
 import { isPointInZone, isZoneActive, setZoneActive } from '../engine/ecs/zones'
 import { WEATHER_PRESETS, type WeatherSystem } from '../engine/fx'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
+import { npcGoTo, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc } from './npcs/npc-ai'
 import { createScriptEngineSystem } from '../engine/script/script-engine-system'
 import type {
     AudioFacade,
@@ -329,6 +330,21 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         },
         list() {
             return Array.from(opts.world.npcRuntimeById.keys())
+        },
+        setWaypoints(id, points) {
+            return setNpcWaypoints(opts.world, id, points)
+        },
+        goTo(id, point) {
+            return npcGoTo(opts.world, id, point)
+        },
+        stop(id) {
+            return stopNpc(opts.world, id)
+        },
+        setPerceptionRadius(id, radius) {
+            return setNpcPerceptionRadius(opts.world, id, radius)
+        },
+        setHostile(id, target, hostile) {
+            return setNpcHostile(opts.world, id, target, hostile)
         },
     }
 

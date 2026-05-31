@@ -228,6 +228,11 @@ test('npc bindings forward attack/die/exists/list through the facade', () => {
         die(id) { calls.push({ type: 'die', id }); return live.delete(id) },
         exists(id) { return live.has(id) },
         list() { return [...live] },
+        setWaypoints(id, points) { calls.push({ type: 'setWaypoints', id, points }); return live.has(id) },
+        goTo(id, point) { calls.push({ type: 'goTo', id, point }); return live.has(id) },
+        stop(id) { calls.push({ type: 'stop', id }); return live.has(id) },
+        setPerceptionRadius(id, radius) { calls.push({ type: 'setPerceptionRadius', id, radius }); return live.has(id) },
+        setHostile(id, target, hostile) { calls.push({ type: 'setHostile', id, target, hostile }); return live.has(id) },
     }
     const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, npc, flags: new Map() })
 

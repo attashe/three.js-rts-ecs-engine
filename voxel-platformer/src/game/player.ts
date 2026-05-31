@@ -5,7 +5,10 @@ import {
     Animated,
     BoxCollider,
     CameraTarget,
+    Health,
+    Mana,
     PlayerControlled,
+    Shield,
     Position,
     Renderable,
     Rotation,
@@ -33,6 +36,11 @@ export interface PlayerOptions {
     rimColor?: number
     settings?: PlayerSettings
 }
+
+/** Lean HP model: the player dies in a few hits. Scripts can raise `Health.max`
+ *  per level if a tougher player is wanted. Mana starts as an empty pool —
+ *  scripts opt in by setting `Mana.max` when they define a spell. */
+export const PLAYER_DEFAULT_MAX_HEALTH = 3
 
 export const PLAYER_MODEL_KIND_USER_DATA = 'playerModelKind'
 export const PLAYER_MODEL_VISUAL_KEY_USER_DATA = 'playerModelVisualKey'
@@ -71,10 +79,24 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
         Renderable,
         CameraTarget,
         Animated,
+        Health,
+        Mana,
+        Shield,
     ])
     Position.x[eid] = opts.spawn.x
     Position.y[eid] = opts.spawn.y
     Position.z[eid] = opts.spawn.z
+
+    Health.max[eid] = PLAYER_DEFAULT_MAX_HEALTH
+    Health.current[eid] = PLAYER_DEFAULT_MAX_HEALTH
+    Mana.max[eid] = 0
+    Mana.current[eid] = 0
+    // Frontal block (~120° cone) covering the body height. Lowered by default;
+    // a raise mechanism (held block / stance) is wired separately.
+    Shield.raised[eid] = 0
+    Shield.blockArcCos[eid] = 0.5
+    Shield.minY[eid] = 0
+    Shield.maxY[eid] = MAIN_CHARACTER_COLLIDER_HALF_HEIGHT * 2
 
     BoxCollider.x[eid] = MAIN_CHARACTER_COLLIDER_RADIUS
     BoxCollider.y[eid] = MAIN_CHARACTER_COLLIDER_HALF_HEIGHT

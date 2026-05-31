@@ -218,6 +218,11 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             die: (id) => npc.die(id),
             exists: (id) => npc.exists(id),
             list: () => npc.list(),
+            setWaypoints: (id, points) => npc.setWaypoints(id, points),
+            goTo: (id, point) => npc.goTo(id, point),
+            stop: (id) => npc.stop(id),
+            setPerceptionRadius: (id, radius) => npc.setPerceptionRadius(id, radius),
+            setHostile: (id, target, hostile) => npc.setHostile(id, target, hostile),
         },
 
         flags: flagsApi,
@@ -346,6 +351,11 @@ const NOOP_NPC: NpcFacade = {
     die() { return false },
     exists() { return false },
     list() { return [] },
+    setWaypoints() { return false },
+    goTo() { return false },
+    stop() { return false },
+    setPerceptionRadius() { return false },
+    setHostile() { return false },
 }
 
 /** Split a boolean `once` out of an author-supplied filter object.

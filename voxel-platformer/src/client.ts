@@ -57,6 +57,8 @@ import { createPlayerLocomotionAudioSystem } from './game/player-audio'
 import { createEnvironmentFxSystem, createVisualFxZoneSystem } from './game/weather'
 import { createPropRenderSystem } from './game/props/prop-system'
 import { createNpcRenderSystem } from './game/npcs/npc-render-system'
+import { createNpcBehaviourSystem } from './engine/ecs/systems/npc-behaviour-system'
+import { createPlayerShieldSystem } from './game/player-shield-system'
 import { registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-runtime'
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
@@ -459,6 +461,8 @@ async function main(): Promise<void> {
         .addSystem(slots.visualFxZones.system, 'visualFxZones')
         .addSystem(slots.propRender.system, 'propRender')
         .addSystem(slots.npcRender.system, 'npcRender')
+        .addSystem(createPlayerShieldSystem(), 'playerShield')
+        .addSystem(createNpcBehaviourSystem(chunks), 'npcBehaviour')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,
             onJump: () => audio.play(GameAudio.Jump, {

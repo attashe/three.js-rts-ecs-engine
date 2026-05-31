@@ -402,9 +402,38 @@ interface NpcApi {
     exists(id: string): boolean
     /** Snapshot of every live NPC id in this level. */
     list(): string[]
+    /** Set a patrol route: empty = hold post, one point = guard/stand, many =
+     *  walk in a loop. While patrolling the NPC engages the nearest enemy in
+     *  perception range, then returns to its route. */
+    setWaypoints(id: string, points: VoxelCoord[]): boolean
+    /** Walk to a single point and hold there (one-point patrol). */
+    goTo(id: string, point: VoxelCoord): boolean
+    /** Clear the route so the NPC holds its current spot. */
+    stop(id: string): boolean
+    /** Radius (world units) within which the NPC notices enemies. */
+    setPerceptionRadius(id: string, radius: number): boolean
+    /** Mark `target` (`'player'` or another NPC id) as an enemy or not. There is
+     *  no faction system — hostility is whatever scripts set. */
+    setHostile(id: string, target: string, hostile: boolean): boolean
 }
 
 declare const npc: NpcApi
+
+/** Fired once when an NPC first spots an enemy and begins engaging. */
+interface NpcSpottedEnemyEvent {
+    npcId: string
+    /** The enemy: `'player'` or another NPC id. */
+    targetId: string
+}
+
+/** Fired when a patrolling NPC reaches one of its waypoints. */
+interface NpcReachedEvent {
+    npcId: string
+    waypointIndex: number
+}
+
+declare function on(event: 'npc-spotted-enemy', handler: EventHandler<NpcSpottedEnemyEvent>, opts?: OnOptions): Disposer
+declare function on(event: 'npc-reached', handler: EventHandler<NpcReachedEvent>, opts?: OnOptions): Disposer
 
 // ─── flags (persistent level state) ───────────────────────────────────
 

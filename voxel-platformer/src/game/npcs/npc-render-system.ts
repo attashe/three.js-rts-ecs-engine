@@ -64,7 +64,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         // Hold the model's items in its hands (per-hand loadout). Each socket is
         // inside its arm pivot, so the item animates with that arm.
         attachNpcEquipment(controller, root, npc)
-        applyTransform(root, npc)
+        applyTransform(root, npc.position, npc.yaw, npc.scale)
         group.add(root)
         return { root, visualKey: npcVisualKey(npc), equipmentKey: npcEquipmentKey(npc), controller }
     }
@@ -76,7 +76,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         rendered.delete(id)
     }
 
-    function sync(): void {
+    function sync(world?: GameWorld): void {
         const npcs = opts.getNpcs()
         const live = new Set(npcs.map((npc) => npc.id))
         // A config removed from the level clears its despawn marker, so re-adding
@@ -95,12 +95,21 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             )) removeNpc(npc.id, existing)
             const liveEntry = rendered.get(npc.id)
             if (liveEntry) {
-                applyTransform(liveEntry.root, npc)
+                // A live brain owns the NPC's transform; fall back to the static
+                // config placement when the NPC has no runtime yet.
+                const rt = world?.npcRuntimeById.get(npc.id)
+                applyTransform(liveEntry.root, rt?.position ?? npc.position, rt?.yaw ?? npc.yaw, npc.scale)
                 continue
             }
             rendered.set(npc.id, buildNpc(npc))
         }
-        updateColliderBoxes(colliderBatch, npcs.filter((npc) => !despawned.has(npc.id)))
+        const boxes: AABB[] = []
+        for (const npc of npcs) {
+            if (despawned.has(npc.id)) continue
+            const box = liveNpcAabb(world, npc)
+            if (box) boxes.push(box)
+        }
+        updateColliderBoxes(colliderBatch, boxes)
     }
 
     function animate(world: GameWorld, dt: number): void {
@@ -130,7 +139,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
     return {
         name: 'npcRender',
         order: RenderOrder.worldRender + 1,
-        init() {
+        init(world) {
             scene.add(group)
             scene.add(colliderBatch.lines)
             colliderBatch.lines.visible = debugInfoEnabled
@@ -138,10 +147,10 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
                 debugInfoEnabled = enabled
                 colliderBatch.lines.visible = enabled
             })
-            sync()
+            sync(world)
         },
         update(world, dt) {
-            sync()
+            sync(world)
             animate(world, dt)
         },
         dispose() {
@@ -174,10 +183,10 @@ function attachNpcEquipment(controller: AnimationController, root: Object3D, npc
     }
 }
 
-function applyTransform(root: Object3D, npc: NpcConfig): void {
-    root.position.set(npc.position.x, npc.position.y, npc.position.z)
-    root.rotation.y = npc.yaw
-    root.scale.setScalar(Math.max(0.001, npc.scale))
+function applyTransform(root: Object3D, pos: { x: number; y: number; z: number }, yaw: number, scale: number): void {
+    root.position.set(pos.x, pos.y, pos.z)
+    root.rotation.y = yaw
+    root.scale.setScalar(Math.max(0.001, scale))
 }
 
 interface ColliderBatchState {
@@ -195,8 +204,24 @@ function createColliderBatch(material: LineBasicMaterial): ColliderBatchState {
     return { lines, capacity: 0 }
 }
 
-function updateColliderBoxes(batch: ColliderBatchState, npcs: readonly NpcConfig[]): void {
-    const boxes = npcs.map(npcCollisionAabb).filter((box): box is AABB => box !== null)
+/** The debug collider AABB for an NPC: its live runtime box (so it follows a
+ *  moving NPC) when a runtime exists, else the static config placement. */
+function liveNpcAabb(world: GameWorld | undefined, npc: NpcConfig): AABB | null {
+    const rt = world?.npcRuntimeById.get(npc.id)
+    if (!rt) return npcCollisionAabb(npc)
+    if (!npc.collisionEnabled) return null
+    const r = rt.colliderRadius
+    return {
+        minX: rt.position.x - r,
+        minY: rt.position.y,
+        minZ: rt.position.z - r,
+        maxX: rt.position.x + r,
+        maxY: rt.position.y + rt.colliderHeight,
+        maxZ: rt.position.z + r,
+    }
+}
+
+function updateColliderBoxes(batch: ColliderBatchState, boxes: readonly AABB[]): void {
     ensureColliderCapacity(batch, boxes.length)
     batch.lines.geometry.setDrawRange(0, boxes.length * 24)
     const attribute = batch.lines.geometry.getAttribute('position') as Float32BufferAttribute | undefined

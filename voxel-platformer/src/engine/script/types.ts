@@ -155,6 +155,19 @@ export interface NpcFacade {
     exists(id: string): boolean
     /** Snapshot of every live NPC id in this level. */
     list(): string[]
+    /** Set a patrol route: empty = hold post, one point = guard/stand, many =
+     *  walk in a loop. While patrolling the NPC engages the nearest enemy in
+     *  perception range, then returns to its route. */
+    setWaypoints(id: string, points: VoxelCoord[]): boolean
+    /** Walk to a single point and hold there (one-point patrol). */
+    goTo(id: string, point: VoxelCoord): boolean
+    /** Clear the route so the NPC holds its current spot. */
+    stop(id: string): boolean
+    /** Radius (world units) within which the NPC notices enemies. */
+    setPerceptionRadius(id: string, radius: number): boolean
+    /** Define who is an enemy. `target` is `'player'` or another NPC id. There
+     *  is no faction system — hostility is whatever scripts set. */
+    setHostile(id: string, target: string, hostile: boolean): boolean
 }
 
 export interface ZoneFacade {
@@ -457,6 +470,17 @@ export interface NpcApi {
     exists(id: string): boolean
     /** Snapshot of every live NPC id in this level. */
     list(): string[]
+    /** Patrol route: empty = hold post, one point = guard, many = loop. The NPC
+     *  engages the nearest enemy in range, then returns to its route. */
+    setWaypoints(id: string, points: VoxelCoord[]): boolean
+    /** Walk to a single point and hold there. */
+    goTo(id: string, point: VoxelCoord): boolean
+    /** Clear the route; the NPC holds its current spot. */
+    stop(id: string): boolean
+    /** Perception radius (world units) for spotting enemies. */
+    setPerceptionRadius(id: string, radius: number): boolean
+    /** Mark `target` (`'player'` or an NPC id) as an enemy or not. */
+    setHostile(id: string, target: string, hostile: boolean): boolean
 }
 
 export interface PickupSpawnOptions {

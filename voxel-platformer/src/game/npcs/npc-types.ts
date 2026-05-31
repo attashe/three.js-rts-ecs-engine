@@ -43,6 +43,38 @@ export interface NpcConfig {
     scriptSource: string
 }
 
+export interface Vec3Like { x: number; y: number; z: number }
+
+/**
+ * Optional, script-driven "brain" for an NPC. Absent (`null`) until a script
+ * (or level setup) gives the NPC a patrol/guard post. Deliberately tiny: a list
+ * of waypoints to walk (one point = a guard who stands its post), a perception
+ * radius, and a script-defined notion of who counts as an enemy. There is no
+ * faction matrix — hostility is whatever scripts set.
+ */
+export interface NpcAiState {
+    /** World-space patrol points. Empty = no patrol; 1 = guard/stand there. */
+    waypoints: Vec3Like[]
+    waypointIndex: number
+    /** Post the NPC holds / returns to when not engaging (its spawn by default). */
+    home: Vec3Like
+    perceptionRadius: number
+    /** Whether the player is treated as an enemy. */
+    hostileToPlayer: boolean
+    /** Other NPC ids treated as enemies. */
+    hostileIds: Set<string>
+    // ── runtime ── (engaging iff `targetId !== null`; "mode" is derived)
+    path: Vec3Like[] | null
+    pathIndex: number
+    /** Current enemy: the `'player'` sentinel or an NPC id; null when none. */
+    targetId: string | null
+    /** True once we've emitted `npc-spotted-enemy` for the current engagement. */
+    announcedTarget: boolean
+    repathCooldown: number
+    attackCooldown: number
+    thinkCooldown: number
+}
+
 /** Per-NPC gameplay/animation runtime state, keyed by NPC id in
  *  `world.npcRuntimeById`. NPCs aren't ECS entities, so this is their combat
  *  state: the melee system + scripts write the request flags; the npc-render
@@ -50,10 +82,18 @@ export interface NpcConfig {
 export interface NpcRuntimeState {
     id: string
     position: { x: number; y: number; z: number }
+    /** Facing yaw, updated by the behaviour system as the NPC moves. */
+    yaw: number
+    /** Collider footprint, mirrored from the config so a moving NPC can keep its
+     *  obstacle-registry box (and path-blocker footprint) in sync. */
+    colliderRadius: number
+    colliderHeight: number
     hp: number
     requestAttack: boolean
     requestDie: boolean
     dying: boolean
+    /** Patrol/guard brain; null until a script assigns one. */
+    ai: NpcAiState | null
     /** Registration handles, so a despawning NPC can free exactly its own zone +
      *  obstacle (see `disposeNpc`). */
     zoneId: string | null

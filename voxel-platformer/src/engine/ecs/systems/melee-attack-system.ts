@@ -6,8 +6,24 @@
 import { hasComponent, query } from 'bitecs'
 import { Grounded, PlayerControlled, Position, Rotation } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
+import type { NpcRuntimeState } from '../../../game/npcs/npc-types'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+
+/** Per-attack reach + arc. Thrust is a forward lunge (long, narrow, single
+ *  target); swing is a wide cleave (shorter, hits everything in front). */
+interface MeleeHitbox {
+    range: number
+    /** `dot(forward, toTarget) ≥ arcCos` to be in the wedge. */
+    arcCos: number
+    /** Thrust commits to the single nearest target; swing cleaves all in arc. */
+    cleave: boolean
+}
+
+// Vertical band (relative to the player's feet) a melee hit can reach, so you
+// can't tag NPCs on a ledge far above or in a pit below.
+const MELEE_REACH_ABOVE = 2.2
+const MELEE_REACH_BELOW = 1.2
 
 export interface MeleeAttackOptions {
     actionId?: ActionId
@@ -22,9 +38,14 @@ export interface MeleeAttackOptions {
 
 export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOptions = {}): System {
     const actionId = opts.actionId ?? 'weapon.attack'
-    const range = opts.range ?? 1.8
-    const arcCos = opts.arcCos ?? 0.35
+    const baseRange = opts.range ?? 1.8
+    const baseArcCos = opts.arcCos ?? 0.35
     const damage = opts.damage ?? 1
+    // Thrust: lunge a bit further on a tight wedge, commit to one target.
+    const thrust: MeleeHitbox = { range: baseRange + 0.5, arcCos: Math.max(baseArcCos, 0.6), cleave: false }
+    // Swing: a wide frontal arc (90° each side — the front hemisphere, never
+    // behind the player) at base reach, cleaving everything in front.
+    const swing: MeleeHitbox = { range: baseRange, arcCos: 0, cleave: true }
     let nextWideSwing = false
     let meleeLockSeconds = 0
 
@@ -49,26 +70,42 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
             nextWideSwing = !nextWideSwing
             meleeLockSeconds = useWideSwing ? 0.56 : 0.44
 
-            // Forward-arc hit against live NPCs.
+            // Forward-arc hit against live NPCs, shaped by which attack played.
+            const box = useWideSwing ? swing : thrust
             const yaw = Rotation.y[player]!
             const fx = Math.sin(yaw)
             const fz = Math.cos(yaw)
             const px = Position.x[player]!
+            const py = Position.y[player]!
             const pz = Position.z[player]!
+            let nearest: NpcRuntimeState | null = null
+            let nearestDist = Infinity
             for (const npc of world.npcRuntimeById.values()) {
                 if (npc.dying) continue
                 const dx = npc.position.x - px
                 const dz = npc.position.z - pz
                 const dist = Math.hypot(dx, dz)
-                if (dist > range || dist < 1e-3) continue
-                if ((fx * dx + fz * dz) / dist < arcCos) continue
-                npc.hp -= damage
-                if (npc.hp <= 0) {
-                    npc.requestDie = true
-                    npc.dying = true
+                if (dist > box.range || dist < 1e-3) continue
+                if ((fx * dx + fz * dz) / dist < box.arcCos) continue
+                const dy = npc.position.y - py
+                if (dy > MELEE_REACH_ABOVE || dy < -MELEE_REACH_BELOW) continue
+                if (box.cleave) {
+                    applyMeleeHit(npc, damage)
+                } else if (dist < nearestDist) {
+                    nearestDist = dist
+                    nearest = npc
                 }
             }
+            if (!box.cleave && nearest) applyMeleeHit(nearest, damage)
         },
+    }
+}
+
+function applyMeleeHit(npc: NpcRuntimeState, damage: number): void {
+    npc.hp -= damage
+    if (npc.hp <= 0) {
+        npc.requestDie = true
+        npc.dying = true
     }
 }
 

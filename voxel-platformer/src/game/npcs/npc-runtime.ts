@@ -38,10 +38,14 @@ export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]
         world.npcRuntimeById.set(npc.id, {
             id: npc.id,
             position: { ...npc.position },
+            yaw: npc.yaw,
+            colliderRadius: npc.colliderRadius,
+            colliderHeight: npc.colliderHeight,
             hp: NPC_DEFAULT_HP,
             requestAttack: false,
             requestDie: false,
             dying: false,
+            ai: null,
             zoneId,
             obstacleId,
         })
