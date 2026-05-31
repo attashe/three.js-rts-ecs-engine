@@ -1,9 +1,10 @@
-// Player melee: on the Attack action, trigger the player's `attack` animation and
-// apply a short forward-arc hit to nearby NPCs (light combat — NPCs are 1–2 HP;
-// a lethal hit flags them to play `die` and despawn, handled by npc-render).
+// Player melee: on the Attack action, alternate a thrust and wide-swing
+// animation, then apply a short forward-arc hit to nearby NPCs (light combat —
+// NPCs are 1–2 HP; a lethal hit flags them to play `die` and despawn, handled by
+// npc-render).
 
-import { query } from 'bitecs'
-import { PlayerControlled, Position, Rotation } from '../components'
+import { hasComponent, query } from 'bitecs'
+import { Grounded, PlayerControlled, Position, Rotation } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -24,19 +25,29 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
     const range = opts.range ?? 1.8
     const arcCos = opts.arcCos ?? 0.35
     const damage = opts.damage ?? 1
+    let nextWideSwing = false
+    let meleeLockSeconds = 0
 
     return {
         fixed: true,
         order: FixedOrder.input + 25,
-        update(world) {
+        update(world, dt) {
+            meleeLockSeconds = Math.max(0, meleeLockSeconds - dt)
             const players = query(world, [PlayerControlled, Position, Rotation])
             if (players.length === 0) return
             const player = players[0]!
             if (opts.canUse && !opts.canUse(world, player)) return
+            if (!hasComponent(world, player, Grounded)) return
+            const controller = world.animControllerByEid.get(player)
+            if (meleeLockSeconds > 0) return
+            if (controller && isMeleeAnimationBusy(controller.machine.currentStateId)) return
             if (!actions.consumePressed(actionId, player)) return
 
-            // Play the swing.
-            world.animControllerByEid.get(player)?.machine.setParam('attack', 1)
+            // Play the next melee variation: thrust, then wide swing.
+            const useWideSwing = nextWideSwing
+            controller?.machine.setParam(useWideSwing ? 'attackWide' : 'attack', 1)
+            nextWideSwing = !nextWideSwing
+            meleeLockSeconds = useWideSwing ? 0.56 : 0.44
 
             // Forward-arc hit against live NPCs.
             const yaw = Rotation.y[player]!
@@ -59,4 +70,8 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
             }
         },
     }
+}
+
+function isMeleeAnimationBusy(stateId: string): boolean {
+    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'shoot'
 }

@@ -80,7 +80,7 @@ extend `SOCKET_ID` / `EQUIP_SLOT` in `src/engine/anim/core/convention.ts`.
 - **Clip/action names must equal the state ids**, which are also the required set
   below. The state machine looks clips up by these exact names.
 
-Required clips (all must be present):
+Base locomotion clips:
 
 | Clip   | When it plays                          | Loop   |
 |--------|----------------------------------------|--------|
@@ -94,6 +94,12 @@ Required clips (all must be present):
 Extra clips are allowed (the validator only warns). The default
 state graph + thresholds live in `src/game/anim/graph-defaults.ts`; a custom
 graph can reference any clip names your model provides.
+
+Player/NPC combat rigs registered through `CHARACTER_MODEL_URLS` must also
+provide `attack`, `attackWide`, `shoot`, `die`, and `dead`, because the game
+drives them with the combat locomotion graph. A model that only provides the
+base locomotion set can still be previewed or used with `locomotionGraph()`, but
+it is not a full runtime replacement for the player/NPC character profile.
 
 ## Previewing
 

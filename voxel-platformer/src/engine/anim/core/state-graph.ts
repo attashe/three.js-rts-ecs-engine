@@ -82,6 +82,16 @@ export interface AnimGraphValidation {
     errors: string[]
 }
 
+export interface MissingGraphClip {
+    stateId: string
+    clip: string
+}
+
+export interface AnimGraphClipValidation {
+    ok: boolean
+    missing: MissingGraphClip[]
+}
+
 // ── Defaulted accessors (single source of truth for the implicit defaults) ──
 
 export function stateClip(state: AnimStateDef): string {
@@ -195,6 +205,22 @@ export function validateAnimGraph(input: unknown): AnimGraphValidation {
     }
 
     return { ok: errors.length === 0, errors }
+}
+
+/** Validate that every graph state can resolve its configured clip. This keeps
+ *  missing action/pose clips from degrading into silent T-poses or frozen
+ *  layers at runtime. */
+export function validateGraphClips(graph: AnimGraphDef, clipNames: Iterable<string>): AnimGraphClipValidation {
+    const available = new Set(clipNames)
+    const seen = new Set<string>()
+    const missing: MissingGraphClip[] = []
+    for (const state of graph.states) {
+        const clip = stateClip(state)
+        if (available.has(clip) || seen.has(`${state.id}:${clip}`)) continue
+        missing.push({ stateId: state.id, clip })
+        seen.add(`${state.id}:${clip}`)
+    }
+    return { ok: missing.length === 0, missing }
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

@@ -54,12 +54,10 @@ export function createAnimationSystem(): System {
                 controller.setLocomotionSpeed(speedXZ)
                 controller.update(dt)
 
-                // Turn the visual model toward its travel direction while moving
-                // (the entity's Rotation.y stays on the aim/look direction, so
-                // gameplay aiming is unaffected). This keeps the walk cycle
-                // aligned with motion instead of moonwalking when the player
-                // strafes or backs up relative to where they're looking.
-                faceTravelDirection(controller.root, eid, speedXZ, dt)
+                // Turn the visual model toward travel direction during
+                // locomotion, but bring it back to aim/look direction for combat
+                // so weapon pose and projectile/melee direction read together.
+                faceModelDirection(controller.root, eid, speedXZ, dt, isCombatState(controller.machine.currentStateId))
 
                 Animated.currentState[eid] = controller.currentStateIndex
                 Animated.prevState[eid] = controller.previousStateIndex
@@ -85,12 +83,16 @@ export function createAnimationSystem(): System {
  *  entity root's local frame) while moving, easing back to the look direction
  *  when idle. `Velocity` is world-space; the root already carries Rotation.y, so
  *  the model's local yaw is `travelYaw - lookYaw`. */
-function faceTravelDirection(model: Object3D, eid: number, speedXZ: number, dt: number): void {
-    const target = speedXZ > FACE_MOVE_MIN_SPEED
+function faceModelDirection(model: Object3D, eid: number, speedXZ: number, dt: number, faceAim: boolean): void {
+    const target = faceAim ? 0 : speedXZ > FACE_MOVE_MIN_SPEED
         ? wrapAngle(Math.atan2(Velocity.x[eid]!, Velocity.z[eid]!) - Rotation.y[eid]!)
         : 0
     const t = 1 - Math.exp(-FACE_TURN_RATE * dt)
     model.rotation.y += wrapAngle(target - model.rotation.y) * t
+}
+
+function isCombatState(stateId: string): boolean {
+    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'shoot'
 }
 
 function wrapAngle(a: number): number {

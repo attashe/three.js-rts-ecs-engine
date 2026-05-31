@@ -12,6 +12,7 @@ import {
     stateLoop,
     stateSpeed,
     stateSyncRefSpeed,
+    validateGraphClips,
     type AnimGraphDef,
     type AnimParamBag,
     type AnimStateDef,
@@ -32,6 +33,11 @@ export class AnimationController {
     private locomotionSpeed = 0
 
     constructor(clipSet: ClipSet, graph: AnimGraphDef) {
+        const clipValidation = validateGraphClips(graph, clipSet.clips.keys())
+        if (!clipValidation.ok) {
+            const missing = clipValidation.missing.map((m) => `${m.stateId}->${m.clip}`).join(', ')
+            throw new Error(`Animation graph "${graph.id}" references missing clips: ${missing}`)
+        }
         this.clipSet = clipSet
         this.root = clipSet.root
         this.sockets = clipSet.sockets
@@ -70,8 +76,13 @@ export class AnimationController {
         for (const layer of layers) {
             const action = this.actionFor(layer.stateId)
             if (!action) continue
-            action.enabled = true
-            if (!this.activeStates.has(layer.stateId)) action.play()
+            const entering = !this.activeStates.has(layer.stateId)
+            if (entering) this.activateAction(layer.stateId, action, true)
+            else if (action.paused) {
+                action.paused = false
+                action.enabled = true
+                action.play()
+            }
             action.setEffectiveWeight(layer.weight)
             this.applyTimeScale(layer.stateId, action)
             next.add(layer.stateId)
@@ -92,14 +103,15 @@ export class AnimationController {
     /** Editor affordance: snap to a state and play it at full weight. */
     playStateImmediate(stateId: string): void {
         this.machine.reset(stateId)
-        for (const a of this.actions.values()) a.stop()
+        for (const a of this.actions.values()) {
+            a.paused = false
+            a.stop()
+        }
         this.activeStates.clear()
         const action = this.actionFor(stateId)
         if (!action) return
-        action.reset()
-        action.enabled = true
+        this.activateAction(stateId, action, true)
         action.setEffectiveWeight(1)
-        action.play()
         this.activeStates.add(stateId)
         this.mixer.update(0)
     }
@@ -108,11 +120,15 @@ export class AnimationController {
     scrub(stateId: string, t01: number): void {
         const action = this.actionFor(stateId)
         if (!action) return
-        for (const a of this.actions.values()) { a.stop() }
+        for (const a of this.actions.values()) {
+            a.paused = false
+            a.stop()
+        }
         this.activeStates.clear()
         action.reset()
         action.enabled = true
         action.setEffectiveWeight(1)
+        this.applyTimeScale(stateId, action)
         action.play()
         action.paused = true
         action.time = Math.max(0, Math.min(1, t01)) * action.getClip().duration
@@ -130,9 +146,13 @@ export class AnimationController {
     private applyTimeScale(stateId: string, action: AnimationAction): void {
         const def = this.stateDefs.get(stateId)
         if (!def) return
-        if (!def.syncToSpeed) return
+        const baseSpeed = stateSpeed(def)
+        if (!def.syncToSpeed) {
+            action.timeScale = baseSpeed
+            return
+        }
         const rate = clamp(this.locomotionSpeed / stateSyncRefSpeed(def), 0.45, 2.2)
-        action.timeScale = stateSpeed(def) * rate
+        action.timeScale = baseSpeed * rate
     }
 
     private actionFor(stateId: string): AnimationAction | undefined {
@@ -149,6 +169,14 @@ export class AnimationController {
         action.timeScale = stateSpeed(def)
         this.actions.set(stateId, action)
         return action
+    }
+
+    private activateAction(stateId: string, action: AnimationAction, reset: boolean): void {
+        if (reset) action.reset()
+        action.paused = false
+        action.enabled = true
+        this.applyTimeScale(stateId, action)
+        action.play()
     }
 }
 

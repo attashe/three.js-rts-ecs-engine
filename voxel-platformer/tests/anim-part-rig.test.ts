@@ -14,7 +14,7 @@ test('part rig instantiates with all clips and sockets resolved', () => {
     const source = partRigSource(() => createMainCharacter(), partCharacterClips())
     const { root, clips, sockets } = source.instantiate()
 
-    const expectedClips = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'shoot', 'die', 'dead']
+    const expectedClips = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'attackWide', 'shoot', 'die', 'dead']
     for (const id of expectedClips) assert.ok(clips.has(id), `clip ${id} present`)
     assert.equal(clips.size, expectedClips.length)
 
@@ -35,5 +35,14 @@ test('every clip track targets a real node in the model', () => {
                 `clip "${clip.name}" track targets missing node "${track.target}"`,
             )
         }
+    }
+})
+
+test('every part clip authors the whole-body figure pose', () => {
+    for (const clip of partCharacterClips()) {
+        assert.ok(
+            clip.tracks.some((track) => track.target === 'Figure' && track.property === 'quaternion'),
+            `clip "${clip.name}" resets or authors Figure.quaternion`,
+        )
     }
 })

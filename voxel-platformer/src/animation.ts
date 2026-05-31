@@ -36,6 +36,7 @@ const EQUIP_BUTTONS: Array<{ slot: EquipSlot; kind: EquipmentKind; label: string
     { slot: 'head', kind: 'hat', label: 'Hat' },
     { slot: 'handR', kind: 'sword', label: 'Sword' },
     { slot: 'handL', kind: 'shield', label: 'Shield' },
+    { slot: 'handR', kind: 'arrow', label: 'Arrow' },
     // Bow shares the left hand with the shield (toggle one or the other) so the
     // bow shot can be previewed with the bow actually in hand.
     { slot: 'handL', kind: 'bow', label: 'Bow' },

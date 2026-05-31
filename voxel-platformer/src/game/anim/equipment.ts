@@ -40,6 +40,7 @@ export function createEquipment(kind: EquipmentKind): Group {
         case 'sword': return buildSword()
         case 'shield': return buildShield()
         case 'bow': return buildBow()
+        case 'arrow': return buildHeldArrow()
         case 'staff': return buildStaff()
         case 'book': return buildBook()
     }
@@ -56,12 +57,14 @@ export interface EquipmentSocketFrame {
  *  are visibly held instead of floating at the socket point. */
 const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, EquipmentSocketFrame>>>> = {
     sword: {
-        handR: { orient: [0.28, 0, -0.34], offset: [0.015, -0.035, 0.055] },
-        handL: { orient: [0.28, 0, 0.34], offset: [-0.015, -0.035, 0.055] },
+        // Blade authored along +Y; rotate it toward +Z so the idle/thrust pose
+        // points at the enemy rather than straight upward.
+        handR: { orient: [Math.PI / 2 - 0.08, 0, -0.16], offset: [0.015, -0.045, 0.08] },
+        handL: { orient: [Math.PI / 2 - 0.08, 0, 0.16], offset: [-0.015, -0.045, 0.08] },
     },
     shield: {
-        handR: { orient: [0, Math.PI / 2 - 0.28, 0], offset: [0.19, -0.12, 0.025] },
-        handL: { orient: [0, -Math.PI / 2 + 0.28, 0], offset: [-0.19, -0.12, 0.025] },
+        handR: { orient: [0, Math.PI / 2 - 0.28, 0], offset: [0.13, -0.075, 0.015] },
+        handL: { orient: [0, -Math.PI / 2 + 0.28, 0], offset: [-0.13, -0.075, 0.015] },
     },
     bow: {
         // Bow authored in its XY plane (height +Y, draws along +X). The shot
@@ -69,6 +72,13 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
         // the arm aims forward.
         handR: { orient: [Math.PI / 2, Math.PI / 2, 0], offset: [0.02, -0.04, 0.03] },
         handL: { orient: [Math.PI / 2, -Math.PI / 2, 0], offset: [-0.02, -0.04, 0.03] },
+    },
+    arrow: {
+        // Nocked against the bow. During the shoot clip's draw pose the right
+        // arm is turned side-on, so this frame levels the shaft across the bow
+        // string instead of letting it pitch upward with the upper arm.
+        handR: { orient: [1.23, -0.44, -0.61], offset: [0, -0.02, 0.08] },
+        handL: { orient: [1.23, 0.44, 0.61], offset: [0, -0.02, 0.08] },
     },
     staff: {
         handR: { orient: [0.08, 0, -0.12], offset: [0.03, -0.2, 0.03] },
@@ -197,6 +207,25 @@ function buildBow(): Group {
     // The shared bow asset, scaled to a hand-held size.
     const g = createBow({ height: 1.2, width: 0.34 })
     g.name = 'equip:bow'
+    return g
+}
+
+function buildHeldArrow(): Group {
+    const g = new Group()
+    g.name = 'equip:arrow'
+    // Canonical frame: arrow shaft along +Y, grip near origin, point toward +Y.
+    const shaft = new Mesh(new CylinderGeometry(0.009, 0.009, 0.72, 6), mat(0x6b3f20, 0.82))
+    shaft.position.y = 0.28
+    const tip = new Mesh(new ConeGeometry(0.028, 0.1, 8), mat(0xc8d1dc, 0.32, 0.65))
+    tip.position.y = 0.69
+    const fletchMat = mat(0xd7e4f0, 0.7)
+    const left = new Mesh(new BoxGeometry(0.09, 0.045, 0.012), fletchMat)
+    left.position.set(-0.035, -0.035, 0)
+    left.rotation.z = -0.35
+    const right = new Mesh(new BoxGeometry(0.09, 0.045, 0.012), fletchMat)
+    right.position.set(0.035, -0.035, 0)
+    right.rotation.z = 0.35
+    for (const m of [shaft, tip, left, right]) { m.castShadow = true; g.add(m) }
     return g
 }
 

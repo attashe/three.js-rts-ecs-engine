@@ -5,6 +5,7 @@ export const EQUIPMENT_KINDS = [
     'sword',
     'shield',
     'bow',
+    'arrow',
     'staff',
     'book',
 ] as const
@@ -15,6 +16,7 @@ export const HAND_EQUIPMENT_KINDS = [
     'sword',
     'shield',
     'bow',
+    'arrow',
     'staff',
     'book',
 ] as const satisfies readonly EquipmentKind[]
@@ -26,6 +28,7 @@ export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
     sword: 'Sword',
     shield: 'Shield',
     bow: 'Bow',
+    arrow: 'Arrow',
     staff: 'Staff',
     book: 'Book',
 }
@@ -53,7 +56,7 @@ export const DEFAULT_PLAYER_EQUIPMENT: PlayerEquipmentSettings = {
         handL: 'shield',
     },
     ranged: {
-        handR: null,
+        handR: 'arrow',
         handL: 'bow',
     },
 }

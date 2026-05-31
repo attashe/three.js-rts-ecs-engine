@@ -1,5 +1,5 @@
-import { query } from 'bitecs'
-import { PlayerControlled, Position, Rotation } from '../components'
+import { hasComponent, query } from 'bitecs'
+import { Grounded, PlayerControlled, Position, Rotation } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -28,6 +28,7 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
 
             const player = players[0]
             if (opts.canUse && !opts.canUse(world, player)) return
+            if (!hasComponent(world, player, Grounded)) return
             if (!actions.consumePressed(actionId, player)) return
             if (!world.playerSettings.abilities.bow) {
                 pushLog(world, 'Bow is disabled.')
@@ -57,8 +58,7 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
                     z: forwardZ * arrowSpeed,
                 },
             )
-            // Play the bow draw + release on the player's rig (weapon-specific
-            // attack: bow → `shoot`, melee → `attack`).
+            // Play the bow draw + release on the player's rig.
             world.animControllerByEid.get(player)?.machine.setParam('shoot', 1)
             pushLog(world, 'Arrow loosed.')
             opts.onLaunch?.()
