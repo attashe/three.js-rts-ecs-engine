@@ -117,35 +117,92 @@ export function generateDemoProceduralLevel(
     const meta = generatePlatformerLevel(chunks)
     return {
         ...meta,
-        npcs: [...meta.npcs, demoPatrolGuard()],
+        npcs: [...meta.npcs, ...demoNpcs()],
         scripts: createDemoScripts(scriptSources),
     }
 }
 
 /**
- * A keeper who walks a short patrol on the front lawn and, if the player strays
- * within 6 blocks, gives chase and attacks — a live demo of the script-driven
- * NPC AI (pathfinding + waypoints + perception + hostility + events). The brain
- * is configured entirely from the NPC's own script via the `npcs.*` API.
+ * Three NPCs on the front lawn showcasing the script-driven brain (the scripts
+ * are injected with NPC_ID / NPC_NAME / NPC_INTERACTION and use the `npc.*` API):
+ *   - Maren — a peaceful wanderer who patrols and never fights.
+ *   - Patrol Guard — patrols and chases/attacks the player on sight.
+ *   - Sentry Voss — stands guard and stays friendly, but turns hostile if you
+ *     pick the insulting reply in his dialogue.
  */
-function demoPatrolGuard(): NpcConfig {
-    return normalizeNpcConfig({
-        id: 'demo-guard',
-        name: 'Patrol Guard',
-        model: 'keeper',
-        position: { x: 8, y: 5, z: 4 }, // grass plane stands at groundY(4)+1
-        interactionEnabled: false,
-        scriptSource: [
-            `on('level-start', () => {`,
-            `  npcs.setPerceptionRadius(NPC_ID, 6)`,
-            `  npcs.setHostile(NPC_ID, 'player', true)`,
-            `  npcs.setWaypoints(NPC_ID, [{ x: 5, y: 5, z: 4 }, { x: 10, y: 5, z: 4 }])`,
-            `})`,
-            `on('npc-spotted-enemy', (e) => {`,
-            `  if (e.npcId === NPC_ID) log.log('Patrol Guard spotted you!')`,
-            `})`,
-        ].join('\n'),
-    })
+function demoNpcs(): NpcConfig[] {
+    return [
+        // 1) Peaceful patrol: walks a route, hostile to no one.
+        normalizeNpcConfig({
+            id: 'demo-wanderer',
+            name: 'Maren',
+            model: 'keeper',
+            position: { x: 7, y: 5, z: 10 },
+            equipment: { handR: null, handL: null },
+            interactionEnabled: false,
+            scriptSource: [
+                `on('level-start', () => {`,
+                `  npc.setWaypoints(NPC_ID, [{ x: 4, y: 5, z: 10 }, { x: 11, y: 5, z: 10 }])`,
+                `  log(NPC_NAME + ' wanders the lawn, minding its own business.')`,
+                `})`,
+            ].join('\n'),
+        }),
+        // 2) Patrol + attack: hostile to the player, chases on sight.
+        normalizeNpcConfig({
+            id: 'demo-guard',
+            name: 'Patrol Guard',
+            model: 'keeper',
+            position: { x: 8, y: 5, z: 4 }, // grass plane stands at groundY(4)+1
+            equipment: { handR: 'sword', handL: null },
+            interactionEnabled: false,
+            scriptSource: [
+                `on('level-start', () => {`,
+                `  npc.setPerceptionRadius(NPC_ID, 6)`,
+                `  npc.setHostile(NPC_ID, 'player', true)`,
+                `  npc.setWaypoints(NPC_ID, [{ x: 6, y: 5, z: 4 }, { x: 11, y: 5, z: 4 }])`,
+                `})`,
+                `on('npc-spotted-enemy', (e) => {`,
+                `  if (e.npcId === NPC_ID) log(NPC_NAME + ' spotted you!')`,
+                `})`,
+            ].join('\n'),
+        }),
+        // 3) Friendly until insulted: a standing sentry that turns hostile on the
+        //    wrong dialogue choice.
+        normalizeNpcConfig({
+            id: 'demo-sentry',
+            name: 'Sentry Voss',
+            model: 'keeper',
+            position: { x: 14, y: 5, z: 7 },
+            yaw: Math.PI, // face south toward the approaching player
+            equipment: { handR: 'sword', handL: null },
+            interactionEnabled: true,
+            interactionRadius: 2.4,
+            interactionPrompt: 'Speak',
+            scriptSource: [
+                `on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {`,
+                `  if (!npc.exists(NPC_ID)) return`,
+                `  const reply = await ui.dialogue({`,
+                `    npc: { name: NPC_NAME, avatar: 'keeper' },`,
+                `    lines: [{`,
+                `      speaker: 'npc',`,
+                `      text: 'State your business, traveller.',`,
+                `      choices: [`,
+                `        { id: 'polite', text: 'Just passing through, friend.' },`,
+                `        { id: 'insult', text: 'Out of my way, fool.' },`,
+                `      ],`,
+                `    }],`,
+                `  })`,
+                `  if (reply.choiceId === 'insult') {`,
+                `    ui.say(NPC_INTERACTION, 'You will regret that.', { seconds: 2 })`,
+                `    npc.setPerceptionRadius(NPC_ID, 8)`,
+                `    npc.setHostile(NPC_ID, 'player', true)`,
+                `  } else {`,
+                `    ui.say(NPC_INTERACTION, 'Safe travels, then.', { seconds: 2 })`,
+                `  }`,
+                `})`,
+            ].join('\n'),
+        }),
+    ]
 }
 
 export function createDemoScripts(scriptSources: ProceduralScriptSources): ScriptEntry[] {
