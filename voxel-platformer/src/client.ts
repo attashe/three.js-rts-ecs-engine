@@ -856,8 +856,16 @@ function isPlaytestMode(): boolean {
 
 function mountRestartButton(world: GameWorld): void {
     const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.tabIndex = -1
     btn.textContent = '↻ Restart'
-    btn.onclick = () => { world.deathSignal ??= 'manual-restart' }
+    btn.onclick = (ev) => {
+        ev.preventDefault()
+        btn.blur()
+        world.deathSignal ??= 'manual-restart'
+    }
+    btn.onkeydown = preventFocusedHudButtonKeys
+    btn.onkeyup = preventFocusedHudButtonKeys
     const offset = isPlaytestMode() ? 'right: 82px' : 'right: 8px'
     btn.style.cssText = [
         'position: fixed', 'top: 8px', offset,
@@ -872,6 +880,13 @@ function mountRestartButton(world: GameWorld): void {
         'cursor: pointer',
     ].join('; ')
     document.body.appendChild(btn)
+}
+
+function preventFocusedHudButtonKeys(ev: KeyboardEvent): void {
+    if (ev.code !== 'Space' && ev.code !== 'Enter') return
+    ev.preventDefault()
+    ev.stopPropagation()
+    if (ev.currentTarget instanceof HTMLElement) ev.currentTarget.blur()
 }
 
 function mountBackToEditorButton(): void {
