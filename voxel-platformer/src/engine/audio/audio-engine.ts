@@ -12,6 +12,7 @@ import type {
     AudioVoice,
     MusicOptions,
     PanningModel,
+    PcmSound,
     RolloffModel,
     SoundHandle,
     SoundOptions,
@@ -21,7 +22,7 @@ import type {
 } from './types'
 import { WebAudioBackend } from './web-audio-backend'
 
-type SoundCategory = 'sounds' | 'stingers'
+type SoundCategory = 'sounds' | 'stingers' | 'generated'
 type SoundBus = 'sfx' | 'stinger' | 'ui'
 
 interface ActiveVoice {
@@ -33,7 +34,8 @@ interface ActiveVoice {
     startedAt: number
 }
 
-interface PendingSound {
+interface PendingAssetSound {
+    kind: 'asset'
     asset: AudioAsset
     category: SoundCategory
     bus: SoundBus
@@ -41,6 +43,17 @@ interface PendingSound {
     spatial: Required<Spatial3DParams> | null
     handle: ManagedSoundHandle
 }
+
+interface PendingGeneratedSound {
+    kind: 'generated'
+    id: string
+    pcm: PcmSound
+    bus: SoundBus
+    options: SoundOptions
+    handle: ManagedSoundHandle
+}
+
+type PendingSound = PendingAssetSound | PendingGeneratedSound
 
 /** Attachment record — the audio-emitter-system reads these each
  *  frame and syncs `handle.setPosition` from the entity's transform. */
@@ -157,7 +170,7 @@ export class AudioEngine {
         this.stingers.delete(id)
         this.music.delete(id)
         this.pendingSounds = this.pendingSounds.filter((pending) => {
-            if (pending.asset.id !== id) return true
+            if (pending.kind !== 'asset' || pending.asset.id !== id) return true
             pending.handle.finish()
             return false
         })
@@ -192,6 +205,21 @@ export class AudioEngine {
         const asset = this.asset(this.sounds, id, 'sound')
         const spatial = this.resolveSpatial({ ...opts, position })
         return this.enqueueOrPlay(asset, 'sounds', opts, 'sfx', spatial)
+    }
+
+    playGenerated(id: string, pcm: PcmSound, opts: SoundOptions = {}): SoundHandle {
+        const handle = new ManagedSoundHandle(id, false)
+        if (this.disposed || pcm.samples.length === 0) {
+            handle.finish()
+            return handle
+        }
+        if (!this.backend.unlocked) {
+            if (opts.deferUntilUnlocked) this.pendingSounds.push({ kind: 'generated', id, pcm, bus: 'ui', options: opts, handle })
+            else handle.finish()
+            return handle
+        }
+        void this.startGeneratedSound(id, pcm, opts, 'ui', handle)
+        return handle
     }
 
     /**
@@ -326,7 +354,7 @@ export class AudioEngine {
         category: SoundCategory,
         opts: SoundOptions,
         bus: SoundBus,
-        spatial: PendingSound['spatial'],
+        spatial: Required<Spatial3DParams> | null,
     ): SoundHandle {
         const handle = new ManagedSoundHandle(asset.id, spatial !== null)
         if (this.disposed) {
@@ -334,7 +362,7 @@ export class AudioEngine {
             return handle
         }
         if (!this.backend.unlocked) {
-            if (opts.deferUntilUnlocked) this.pendingSounds.push({ asset, category, bus, options: opts, spatial, handle })
+            if (opts.deferUntilUnlocked) this.pendingSounds.push({ kind: 'asset', asset, category, bus, options: opts, spatial, handle })
             else handle.finish()
             return handle
         }
@@ -345,8 +373,12 @@ export class AudioEngine {
     private flushPendingSounds(): void {
         const pending = this.pendingSounds.splice(0)
         for (const item of pending) {
-            if (!item.handle.stopped) void this.startSound(item.asset, item.category, item.options, item.bus, item.spatial, item.handle)
-            else item.handle.finish()
+            if (item.handle.stopped) {
+                item.handle.finish()
+                continue
+            }
+            if (item.kind === 'asset') void this.startSound(item.asset, item.category, item.options, item.bus, item.spatial, item.handle)
+            else void this.startGeneratedSound(item.id, item.pcm, item.options, item.bus, item.handle)
         }
     }
 
@@ -355,7 +387,7 @@ export class AudioEngine {
         category: SoundCategory,
         opts: SoundOptions,
         bus: SoundBus,
-        spatial: PendingSound['spatial'],
+        spatial: Required<Spatial3DParams> | null,
         handle: ManagedSoundHandle,
     ): Promise<void> {
         try {
@@ -365,7 +397,7 @@ export class AudioEngine {
                 return
             }
             const priority = opts.priority ?? asset.priority ?? 0
-            if (!this.claimVoiceSlot(asset, opts, priority)) {
+            if (!this.claimVoiceSlot(asset.id, opts.maxInstances ?? asset.maxInstances, priority, opts.fadeOut ?? 0)) {
                 handle.finish()
                 return
             }
@@ -410,16 +442,54 @@ export class AudioEngine {
         }
     }
 
-    private claimVoiceSlot(asset: AudioAsset, opts: SoundOptions, priority: number): boolean {
-        const maxInstances = opts.maxInstances ?? asset.maxInstances
+    private startGeneratedSound(id: string, pcm: PcmSound, opts: SoundOptions, bus: SoundBus, handle: ManagedSoundHandle): void {
+        try {
+            if (this.disposed || handle.stopped) {
+                handle.finish()
+                return
+            }
+            const priority = opts.priority ?? 0
+            if (!this.claimVoiceSlot(id, opts.maxInstances, priority, opts.fadeOut ?? 0)) {
+                handle.finish()
+                return
+            }
+            const buffer = this.backend.createBufferFromPcm(pcm.samples, pcm.sampleRate)
+            const volume = clampVolume(opts.volume ?? 1)
+            const voice = this.backend.playBuffer(buffer, {
+                bus,
+                volume,
+                rate: Math.max(0.05, opts.rate ?? 1),
+                detune: opts.detune ?? 0,
+                loop: opts.loop ?? false,
+                pan: Math.max(-1, Math.min(1, opts.pan ?? 0)),
+            })
+            const active: ActiveVoice = { handle, voice, assetId: id, category: 'generated', priority, startedAt: voice.startedAt }
+            this.activeVoices.push(active)
+            handle.attach(voice)
+            voice.onEnded(() => {
+                this.activeVoices = this.activeVoices.filter((v) => v !== active)
+                this.attachedEmitters.delete(handle)
+                handle.finish()
+            })
+            if (opts.fadeIn && opts.fadeIn > 0) {
+                voice.setVolume(0)
+                voice.setVolume(volume, opts.fadeIn)
+            }
+        } catch (err) {
+            console.warn(`AudioEngine: failed to play generated sound ${id}`, err)
+            handle.finish()
+        }
+    }
+
+    private claimVoiceSlot(assetId: string, maxInstances: number | undefined, priority: number, fadeOut: number): boolean {
         if (maxInstances !== undefined) {
             const same = this.activeVoices
-                .filter((v) => v.assetId === asset.id)
+                .filter((v) => v.assetId === assetId)
                 .sort(compareVoiceForSteal)
             while (same.length >= Math.max(1, maxInstances)) {
                 const victim = same.shift()
                 if (!victim) break
-                victim.voice.stop(opts.fadeOut ?? 0)
+                victim.voice.stop(fadeOut)
             }
         }
 
@@ -428,7 +498,7 @@ export class AudioEngine {
             const victim = sorted.shift()
             if (!victim) return false
             if (victim.priority > priority) return false
-            victim.voice.stop(opts.fadeOut ?? 0)
+            victim.voice.stop(fadeOut)
         }
         return true
     }
@@ -499,7 +569,7 @@ export class AudioEngine {
         return false
     }
 
-    private resolveSpatial(opts: SpatialSoundOptions & { position: Vec3Like }): PendingSound['spatial'] {
+    private resolveSpatial(opts: SpatialSoundOptions & { position: Vec3Like }): Required<Spatial3DParams> | null {
         const refDistance = Math.max(0.0001, opts.refDistance ?? this.spatialDefaults.refDistance)
         const maxDistance = Math.max(refDistance + 0.001, opts.maxDistance ?? this.spatialDefaults.maxDistance)
         const rolloffFactor = Math.max(0, opts.rolloffFactor ?? this.spatialDefaults.rolloffFactor)

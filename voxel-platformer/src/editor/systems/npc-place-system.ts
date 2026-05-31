@@ -91,6 +91,14 @@ export function createNpcPlaceSystem(
             interactionRadius: state.npcInteractionRadius,
             interactionPrompt: state.npcInteractionPrompt,
             equipment: { ...state.npcEquipment },
+            voice: {
+                enabled: state.npcVoiceEnabled,
+                preset: state.npcVoicePreset,
+                seed: state.npcVoiceSeed,
+                volume: state.npcVoiceVolume,
+                rate: state.npcVoiceRate,
+                pitchOffset: state.npcVoicePitchOffset,
+            },
             scriptEnabled: state.npcScriptEnabled,
             scriptSource: state.npcScriptSource,
         })

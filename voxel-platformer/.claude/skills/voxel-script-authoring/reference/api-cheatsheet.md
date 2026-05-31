@@ -102,6 +102,24 @@ stones.triggerSpawner(id, count?)    // → number spawned
 stones.listSpawners()                // → string[]
 ```
 
+## npc (runtime NPCs, patrol, simple combat)
+
+```js
+npc.attack(id)                       // play attack swing; false if unknown/dead
+npc.die(id)                          // topple + despawn; false if already dying
+npc.exists(id)
+npc.list()
+npc.setWaypoints(id, points)         // [] hold, [p] guard, many loop patrol
+npc.goTo(id, point)                  // walk to one point and hold
+npc.stop(id)                         // clear route; hold current spot
+npc.setPerceptionRadius(id, radius)
+npc.setHostile(id, target, hostile)  // target = 'player' or another NPC id
+```
+
+Hostility is script-defined; there is no faction table. Current NPC combat is
+simple: hostile NPCs path toward enemies, play a swing, and apply 1 HP damage
+unless the player shield is raised in the frontal arc.
+
 ## audio
 
 ```js
@@ -124,13 +142,19 @@ zone.setActive(zoneId, on)   // → boolean; deactivating mid-overlap synth's zo
 ui.say(targetId, message, opts?)  // opts = { seconds? }; same target queues, diff targets parallel
 ui.clear(targetId?)               // dismiss one target's bubbles, or all
 await ui.dialogue({               // centered modal; resolves after last line / choice
-  title?, npc?, player?, speakers?,
-  lines: [{ speaker?, name?, avatar?, text, choices?: [{ id, text, disabled? }] }]
+  title?,
+  npc?: { id?, name, avatar?, side?, voice? },
+  player?: { id?, name, avatar?, side?, voice? },
+  speakers?: [{ id?, name, avatar?, side?, voice? }],
+  lines: [{ speaker?, name?, avatar?, voice?, text, choices?: [{ id, text, disabled? }] }]
 })  // → { choiceId?, choiceIndex?, text? }
 ```
 
 Avatar values: built-in keys `keeper|player|sundial|book|npc`, an image
 path (`/avatars/x.png`), or any string (→ labelled badge).
+Dialogue `voice` uses generated fantasy-babble presets (`dwarf`, `troll`,
+`elf`, `undead`, `player`, etc.) and plays only in modal `ui.dialogue`.
+Floating `ui.say` bubbles are intentionally silent.
 
 ## dayCycle
 

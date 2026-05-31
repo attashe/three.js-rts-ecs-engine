@@ -14,6 +14,7 @@ import type { VoxelCoord } from '../ecs/world'
 import type { PlayerAbilityKey, PlayerSettings, PlayerSettingsPatch } from '../../game/player-settings'
 import type { StoneSpawnOptions, StoneTierId } from '../../game/moving-objects'
 import type { InventoryCategoryId, InventoryItemOptions, InventorySnapshotItem } from '../../game/inventory'
+import type { DialogueVoiceRef } from '../../game/dialogue-voice/types'
 
 export type { VoxelCoord }
 
@@ -617,6 +618,8 @@ export interface DialogueSpeaker {
     avatar?: string
     /** Visual side in the dialogue panel. Defaults to NPC left, player right. */
     side?: 'left' | 'right'
+    /** Optional generated fantasy-babble voice for this speaker. */
+    voice?: DialogueVoiceRef
 }
 
 export interface DialogueChoice {
@@ -631,6 +634,7 @@ export interface DialogueLine {
     /** Per-line override when no speaker registry entry is convenient. */
     name?: string
     avatar?: string
+    voice?: DialogueVoiceRef
     text: string
     /** When present, the line waits for a player reply instead of advancing
      *  by click. The selected choice is shown as a player line before resolve. */

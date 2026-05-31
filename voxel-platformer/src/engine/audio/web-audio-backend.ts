@@ -44,6 +44,14 @@ export class WebAudioBackend implements AudioBackend {
         return await ctx.decodeAudioData(bytes.slice(0))
     }
 
+    createBufferFromPcm(samples: Float32Array, sampleRate: number): AudioBufferLike {
+        const ctx = this.ensureContext()
+        const safeRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : ctx.sampleRate
+        const buffer = ctx.createBuffer(1, Math.max(1, samples.length), safeRate)
+        buffer.copyToChannel(new Float32Array(samples), 0)
+        return buffer
+    }
+
     playBuffer(buffer: AudioBufferLike, params: BufferPlaybackParams): AudioVoice {
         const ctx = this.ensureContext()
         const source = ctx.createBufferSource()

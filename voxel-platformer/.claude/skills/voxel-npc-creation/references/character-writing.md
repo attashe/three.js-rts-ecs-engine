@@ -9,7 +9,7 @@ Name:
 Role:
 One-line description:
 Visual hooks:
-Voice:
+Voice: generated voice preset/seed plus speech style
 Interaction prompt:
 Gameplay function:
 Quest/shop/script hooks:
@@ -42,7 +42,11 @@ dialogue behavior.
 - Use choices for player agency: ask for context, accept/refuse a quest, trade,
   return later.
 - Use floating `ui.say` only for quick feedback after interactions,
-  purchases, item pickup hints, or quest state changes.
+  purchases, item pickup hints, or quest state changes. Floating messages are
+  intentionally silent.
+- Use `ui.dialogue` for lines that should speak. Put `voice` on the NPC/player
+  speaker for a stable generated fantasy-babble tone, and override per line
+  only for special effects.
 
 Dialogue helper shape:
 
@@ -50,8 +54,8 @@ Dialogue helper shape:
 async function npcDialogue(lines) {
   return ui.dialogue({
     title: NPC_NAME,
-    npc: { id: NPC_ID, name: NPC_NAME, avatar: 'npc' },
-    player: { id: 'player', name: 'You', avatar: 'player' },
+    npc: { id: NPC_ID, name: NPC_NAME, avatar: 'npc', voice: NPC_VOICE },
+    player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
     lines,
   })
 }

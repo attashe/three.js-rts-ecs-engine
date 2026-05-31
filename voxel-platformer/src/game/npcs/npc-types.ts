@@ -8,6 +8,11 @@ import {
     type EquipmentHandLoadout,
 } from '../anim/equipment-types'
 import { normalizeCharacterBeard, type CharacterBeardKind } from '../character-appearance'
+import {
+    defaultDialogueVoiceForNpcModel,
+    normalizeDialogueVoice,
+} from '../dialogue-voice/presets'
+import type { DialogueVoiceRef } from '../dialogue-voice/types'
 
 export const NPC_MODEL_KINDS = [
     'keeper',
@@ -39,6 +44,7 @@ export interface NpcConfig {
     interactionRadius: number
     interactionPrompt: string
     equipment: EquipmentHandLoadout
+    voice: DialogueVoiceRef
     scriptEnabled: boolean
     scriptSource: string
 }
@@ -116,6 +122,7 @@ export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     interactionRadius: 2.2,
     interactionPrompt: 'Interaction',
     equipment: defaultNpcEquipment('keeper'),
+    voice: defaultNpcVoice('keeper'),
     scriptEnabled: true,
     scriptSource: '',
 }
@@ -140,6 +147,10 @@ export function defaultNpcEquipment(model: NpcModelKind): EquipmentHandLoadout {
         case 'player':
             return { handR: null, handL: null }
     }
+}
+
+export function defaultNpcVoice(model: NpcModelKind): DialogueVoiceRef {
+    return compactNpcVoice(normalizeDialogueVoice(defaultDialogueVoiceForNpcModel(model)))
 }
 
 export function npcInteractionZoneId(npc: Pick<NpcConfig, 'id'>): string {
@@ -217,6 +228,7 @@ export function npcScriptSource(npc: NpcConfig): string {
         `const NPC_NAME = ${JSON.stringify(npc.name || npc.id)}`,
         `const NPC_INTERACTION = ${JSON.stringify(npcInteractionZoneId(npc))}`,
         `const NPC_ZONE = NPC_INTERACTION`,
+        `const NPC_VOICE = ${JSON.stringify(npc.voice)}`,
         npc.scriptSource,
     ].join('\n')
 }
@@ -226,6 +238,7 @@ export function copyNpcConfig(npc: NpcConfig): NpcConfig {
         ...npc,
         position: { ...npc.position },
         equipment: copyHandLoadout(npc.equipment),
+        voice: { ...npc.voice },
     }
 }
 
@@ -249,6 +262,7 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         interactionRadius: safePositive(input.interactionRadius, DEFAULT_NPC.interactionRadius),
         interactionPrompt: input.interactionPrompt || DEFAULT_NPC.interactionPrompt,
         equipment: normalizeHandLoadout(input.equipment, defaultNpcEquipment(model)),
+        voice: compactNpcVoice(normalizeDialogueVoice(input.voice, defaultNpcVoice(model))),
         scriptEnabled: input.scriptEnabled ?? DEFAULT_NPC.scriptEnabled,
         scriptSource: input.scriptSource ?? DEFAULT_NPC.scriptSource,
     }
@@ -269,4 +283,15 @@ export function sanitizeNpcId(value: string): string {
 function safePositive(value: unknown, fallback: number): number {
     const n = Number(value)
     return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
+function compactNpcVoice(voice: DialogueVoiceRef): DialogueVoiceRef {
+    return {
+        preset: voice.preset,
+        seed: voice.seed,
+        enabled: voice.enabled,
+        volume: voice.volume,
+        rate: voice.rate,
+        pitchOffset: voice.pitchOffset,
+    }
 }

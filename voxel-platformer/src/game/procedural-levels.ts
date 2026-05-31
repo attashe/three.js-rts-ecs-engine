@@ -453,6 +453,7 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
             interactionRadius: 3.4,
             interactionPrompt: 'Greet',
             equipment: { handR: null, handL: 'book' },
+            voice: { preset: 'troll', seed: 'curator-brannok', volume: 0.62, rate: 0.86 },
             scriptEnabled: true,
             scriptSource: [
                 `on('input', { action: 'interact', targetId: NPC_INTERACTION }, () => {`,

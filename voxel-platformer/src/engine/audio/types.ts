@@ -124,6 +124,11 @@ export interface AudioBufferLike {
     readonly duration: number
 }
 
+export interface PcmSound {
+    readonly samples: Float32Array
+    readonly sampleRate: number
+}
+
 export interface AudioVoice {
     readonly startedAt: number
     readonly stopped: boolean
@@ -207,6 +212,7 @@ export interface AudioBackend {
     readonly unlocked: boolean
     unlock(): Promise<void>
     loadBuffer(url: string, signal?: AbortSignal): Promise<AudioBufferLike>
+    createBufferFromPcm(samples: Float32Array, sampleRate: number): AudioBufferLike
     playBuffer(buffer: AudioBufferLike, params: BufferPlaybackParams): AudioVoice
     /** Spatial playback. Set up a `PannerNode` chain so the voice is
      *  positioned in world space relative to the engine's listener. */

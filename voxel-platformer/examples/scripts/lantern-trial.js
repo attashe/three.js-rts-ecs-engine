@@ -204,8 +204,8 @@ async function sundialDialogue(lines) {
     }
     return ui.dialogue({
         title: 'The Lantern Trial',
-        npc: { id: 'sundial', name: 'Floating Sundial', avatar: 'sundial', side: 'left' },
-        player: { id: 'player', name: 'You', avatar: 'player', side: 'right' },
+        npc: { id: 'sundial', name: 'Floating Sundial', avatar: 'sundial', side: 'left', voice: { preset: 'elf', seed: 'floating-sundial', volume: 0.5, rate: 0.92 } },
+        player: { id: 'player', name: 'You', avatar: 'player', side: 'right', voice: { preset: 'player', seed: 'player' } },
         lines,
     })
 }

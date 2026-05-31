@@ -486,6 +486,28 @@ declare const geom: GeomApi
 
 // ─── ui (popups + dialogue) ───────────────────────────────────────────
 
+type DialogueVoicePreset =
+    | 'tiny'
+    | 'dwarf'
+    | 'troll'
+    | 'goblin'
+    | 'orc'
+    | 'elf'
+    | 'lizard'
+    | 'undead'
+    | 'demon'
+    | 'gnome'
+    | 'player'
+
+interface DialogueVoiceRef {
+    preset?: DialogueVoicePreset
+    seed?: string
+    volume?: number
+    rate?: number
+    pitchOffset?: number
+    enabled?: boolean
+}
+
 interface DialogueSpeaker {
     id?: string
     name: string
@@ -494,6 +516,8 @@ interface DialogueSpeaker {
      *  a labelled badge). */
     avatar?: string
     side?: 'left' | 'right'
+    /** Generated fantasy-babble voice for this speaker. */
+    voice?: DialogueVoiceRef
 }
 
 interface DialogueChoice {
@@ -507,6 +531,7 @@ interface DialogueLine {
     speaker?: string
     name?: string
     avatar?: string
+    voice?: DialogueVoiceRef
     text: string
     /** When present, the line waits for a player reply instead of
      *  advancing on click. */

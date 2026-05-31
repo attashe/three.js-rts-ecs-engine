@@ -16,6 +16,7 @@ export type {
     BufferPlaybackParams,
     MusicOptions,
     PanningModel,
+    PcmSound,
     RolloffModel,
     SoundHandle,
     SoundOptions,

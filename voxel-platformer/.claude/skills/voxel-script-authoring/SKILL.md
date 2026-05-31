@@ -2,14 +2,16 @@
 name: voxel-script-authoring
 description: >-
   Author or edit in-game scripts for the voxel-platformer engine — quests,
-  cinematics, zone/pickup/input triggers, NPC dialogue, traps, ambient
-  logic — and extend the script API itself. Use when working on `.js`
+  cinematics, zone/pickup/input triggers, NPC dialogue and modal dialogue
+  voices, NPC combat/patrol scripting, traps, ambient logic — and extend the
+  script API itself. Use when working on `.js`
   scripts under voxel-platformer/examples/scripts, scripts pasted into the
   editor's Logic or NPC tabs, or any file under
   voxel-platformer/src/engine/script/ (runtime, bindings, compile, types)
   or src/game/script-system.ts. Triggers: "write a quest script", "add a
   cinematic", "script the lever/zone/NPC", "on('zone-enter'...)",
-  "ui.dialogue", "add a script binding / engine API".
+  "ui.dialogue", "dialogue voice", "npc.setHostile", "npc.attack",
+  "add a script binding / engine API".
 ---
 
 # Voxel script authoring
@@ -59,8 +61,8 @@ on('zone-enter', { zoneId: 'shrine.east' }, async () => {
 - **State** — `flags.get/set(name, value)` persists with the level and is
   the entire quest-state mechanism. No quest classes.
 - **World** — namespaced host objects: `player`, `chunks`, `pickups`,
-  `pistons`, `stones`, `audio`, `zone`, `ui`, `dayCycle`, `weather`,
-  `travel`, `level`, `geom`.
+  `pistons`, `stones`, `npc`, `audio`, `zone`, `ui`, `trade`, `dayCycle`,
+  `weather`, `travel`, `level`, `geom`.
 
 ### Built-in events (filter → payload)
 
@@ -93,6 +95,9 @@ Custom events: any string. `emit('quest.x.done', data)` ↔ `on('quest.x.done', 
 - **`player.position` is `NaN` while dead/respawning** (not null) — AABB
   and distance tests fall through to false; use `player.alive` for an
   explicit gate.
+- **Speech is modal-only.** Put generated `voice` metadata on `ui.dialogue`
+  speakers/lines. `ui.say` floating bubbles are intentionally text-only for
+  quick world feedback.
 - Long sequences that can be interrupted: race against lifecycle —
   `await Promise.race([sequence, once('player.died'), once('level.reset')])`.
 

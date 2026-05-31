@@ -9,6 +9,7 @@ import {
     NPC_MODEL_LABELS,
     defaultNpcBeard,
     defaultNpcEquipment,
+    defaultNpcVoice,
     npcEquipmentKey,
     npcInteractionZoneId,
     sanitizeNpcId,
@@ -24,6 +25,13 @@ import {
     CHARACTER_BEARD_LABELS,
     type CharacterBeardKind,
 } from '../../game/character-appearance'
+import {
+    DIALOGUE_VOICE_PRESET_CONFIGS,
+    DIALOGUE_VOICE_PRESETS,
+    synthDialogueVoiceLine,
+    type DialogueVoicePreset,
+    type DialogueVoiceRef,
+} from '../../game/dialogue-voice'
 import { sectionEl, trimForList, type RefreshableElement } from './common'
 import { equipmentSelect, syncEquipmentSelect } from './equipment-field'
 
@@ -97,18 +105,22 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
                 const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(previousDefault)
                 const previousDefaultBeard = defaultNpcBeard(npc.model)
                 const wasDefaultBeard = npc.beard === previousDefaultBeard
+                const wasDefaultVoice = npcVoiceKey(npc.voice) === npcVoiceKey(defaultNpcVoice(npc.model))
                 npc.model = model
                 if (wasDefaultEquipment) npc.equipment = defaultNpcEquipment(model)
                 if (wasDefaultBeard) npc.beard = defaultNpcBeard(model)
+                if (wasDefaultVoice) npc.voice = defaultNpcVoice(model)
             },
             () => {
                 const previousDefault = defaultNpcEquipment(state.npcModel)
                 const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(previousDefault)
                 const previousDefaultBeard = defaultNpcBeard(state.npcModel)
                 const wasDefaultBeard = state.npcBeard === previousDefaultBeard
+                const wasDefaultVoice = npcVoiceKey(draftVoice()) === npcVoiceKey(defaultNpcVoice(state.npcModel))
                 state.npcModel = model
                 if (wasDefaultEquipment) state.npcEquipment = defaultNpcEquipment(model)
                 if (wasDefaultBeard) state.npcBeard = defaultNpcBeard(model)
+                if (wasDefaultVoice) applyDraftVoice(defaultNpcVoice(model))
             },
         )
     }
@@ -191,6 +203,65 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     }
     equipmentSection.append(handRSelect.row, handLSelect.row, resetEquipmentBtn)
     root.appendChild(equipmentSection)
+
+    const voiceSection = sectionEl('Dialogue Voice')
+    const voiceEnabled = checkboxInput('Generated voice', true, (checked) => {
+        updateDraftOrSelected((npc) => { npc.voice.enabled = checked }, () => { state.npcVoiceEnabled = checked })
+    })
+    const voicePresetRow = document.createElement('label')
+    voicePresetRow.className = 'vpe-field'
+    const voicePresetLabel = document.createElement('span')
+    voicePresetLabel.className = 'vpe-field-label'
+    voicePresetLabel.textContent = 'Preset'
+    const voicePresetSelect = document.createElement('select')
+    voicePresetSelect.className = 'vpe-input'
+    voicePresetSelect.style.flex = '1'
+    for (const preset of DIALOGUE_VOICE_PRESETS) {
+        const opt = document.createElement('option')
+        opt.value = preset
+        opt.textContent = DIALOGUE_VOICE_PRESET_CONFIGS[preset].name
+        voicePresetSelect.appendChild(opt)
+    }
+    voicePresetSelect.onchange = () => {
+        const preset = voicePresetSelect.value as DialogueVoicePreset
+        updateDraftOrSelected(
+            (npc) => {
+                const previousPreset = npc.voice.preset ?? defaultNpcVoice(npc.model).preset ?? 'dwarf'
+                const shouldUsePresetSeed = !npc.voice.seed || npc.voice.seed === defaultSeedForVoicePreset(previousPreset)
+                npc.voice.preset = preset
+                if (shouldUsePresetSeed) npc.voice.seed = defaultSeedForVoicePreset(preset)
+            },
+            () => {
+                const shouldUsePresetSeed = !state.npcVoiceSeed || state.npcVoiceSeed === defaultSeedForVoicePreset(state.npcVoicePreset)
+                state.npcVoicePreset = preset
+                if (shouldUsePresetSeed) state.npcVoiceSeed = defaultSeedForVoicePreset(preset)
+            },
+        )
+    }
+    voicePresetRow.append(voicePresetLabel, voicePresetSelect)
+    const voiceSeedField = textInput('Seed', 'voice-seed', (value) => {
+        updateDraftOrSelected((npc) => { npc.voice.seed = value }, () => { state.npcVoiceSeed = value })
+    })
+    const voiceVolumeField = numberInput('Volume', 0.55, 0, 1, 0.05, (value) => {
+        const volume = clamp(value, 0, 1)
+        updateDraftOrSelected((npc) => { npc.voice.volume = volume }, () => { state.npcVoiceVolume = volume })
+    })
+    const voiceRateField = numberInput('Rate', 1, 0.45, 1.85, 0.05, (value) => {
+        const rate = clamp(value, 0.45, 1.85)
+        updateDraftOrSelected((npc) => { npc.voice.rate = rate }, () => { state.npcVoiceRate = rate })
+    })
+    const voicePitchField = numberInput('Pitch', 0, -36, 36, 1, (value) => {
+        const pitch = clamp(value, -36, 36)
+        updateDraftOrSelected((npc) => { npc.voice.pitchOffset = pitch }, () => { state.npcVoicePitchOffset = pitch })
+    })
+    const voicePreview = document.createElement('button')
+    voicePreview.className = 'vpe-button'
+    voicePreview.textContent = 'Preview'
+    voicePreview.onclick = () => {
+        void previewVoice((selectedNpc() ?? draftNpc()).voice, 'The old road remembers every footstep.')
+    }
+    voiceSection.append(voiceEnabled.row, voicePresetRow, voiceSeedField.row, voiceVolumeField.row, voiceRateField.row, voicePitchField.row, voicePreview)
+    root.appendChild(voiceSection)
 
     const interactionSection = sectionEl('Interaction')
     const interactionEnabled = checkboxInput('Interaction zone', true, (checked) => {
@@ -301,7 +372,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     function rebuildList(): void {
         const fp = [
             `selected:${state.selectedNpcId ?? ''}`,
-            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.beard}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npc.scriptSource.length}`),
+            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.beard}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npcVoiceKey(npc.voice)}:${npc.scriptSource.length}`),
         ].join('|')
         if (fp === lastListFingerprint) return
         lastListFingerprint = fp
@@ -377,6 +448,12 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         interactionEnabled.input.checked = source.interactionEnabled
         syncInputValue(promptField.input, source.interactionPrompt)
         syncInputValue(interactionRadius.input, String(roundForInput(source.interactionRadius)))
+        voiceEnabled.input.checked = source.voice.enabled ?? true
+        if (document.activeElement !== voicePresetSelect) voicePresetSelect.value = source.voice.preset ?? defaultNpcVoice(source.model).preset ?? 'dwarf'
+        syncInputValue(voiceSeedField.input, source.voice.seed ?? '')
+        syncInputValue(voiceVolumeField.input, String(roundForInput(source.voice.volume ?? 0.55)))
+        syncInputValue(voiceRateField.input, String(roundForInput(source.voice.rate ?? 1)))
+        syncInputValue(voicePitchField.input, String(roundForInput(source.voice.pitchOffset ?? 0)))
         scriptEnabled.input.checked = source.scriptEnabled
         syncInputValue(scriptArea, source.scriptSource)
         interactionId.textContent = npc
@@ -402,17 +479,39 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             interactionRadius: state.npcInteractionRadius,
             interactionPrompt: state.npcInteractionPrompt,
             equipment: copyHandLoadout(state.npcEquipment),
+            voice: draftVoice(),
             scriptEnabled: state.npcScriptEnabled,
             scriptSource: state.npcScriptSource,
         }
     }
 
-    function currentScriptTarget(): { name: string; avatar: string } {
+    function currentScriptTarget(): { name: string; avatar: string; voice: DialogueVoiceRef } {
         const npc = selectedNpc()
         return {
             name: npc?.name || state.npcName || DEFAULT_NPC.name,
             avatar: npc?.model ?? state.npcModel,
+            voice: npc?.voice ?? draftVoice(),
         }
+    }
+
+    function draftVoice(): DialogueVoiceRef {
+        return {
+            enabled: state.npcVoiceEnabled,
+            preset: state.npcVoicePreset,
+            seed: state.npcVoiceSeed,
+            volume: state.npcVoiceVolume,
+            rate: state.npcVoiceRate,
+            pitchOffset: state.npcVoicePitchOffset,
+        }
+    }
+
+    function applyDraftVoice(voice: DialogueVoiceRef): void {
+        state.npcVoiceEnabled = voice.enabled ?? true
+        state.npcVoicePreset = voice.preset ?? 'dwarf'
+        state.npcVoiceSeed = voice.seed ?? ''
+        state.npcVoiceVolume = voice.volume ?? 0.55
+        state.npcVoiceRate = voice.rate ?? 1
+        state.npcVoicePitchOffset = voice.pitchOffset ?? 0
     }
 
     function nextNpcId(base: string): string {
@@ -529,8 +628,8 @@ function simpleDialogueTemplate(target: { name: string; avatar: string }): strin
     return `on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
   await ui.dialogue({
     title: ${JSON.stringify(target.name)},
-    npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)} },
-    player: { id: 'player', name: 'You', avatar: 'player' },
+    npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
+    player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
     lines: [
       { speaker: NPC_ID, text: 'Hello, traveler.' },
     ],
@@ -542,8 +641,8 @@ function choiceDialogueTemplate(target: { name: string; avatar: string }): strin
     return `on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
   const result = await ui.dialogue({
     title: ${JSON.stringify(target.name)},
-    npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)} },
-    player: { id: 'player', name: 'You', avatar: 'player' },
+    npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
+    player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
     lines: [
       { speaker: NPC_ID, text: 'What do you need?' },
       {
@@ -572,8 +671,8 @@ on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
   if (state === 'unknown') {
     const result = await ui.dialogue({
       title: ${JSON.stringify(target.name)},
-      npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)} },
-      player: { id: 'player', name: 'You', avatar: 'player' },
+      npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
+      player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
       lines: [{
         speaker: NPC_ID,
         text: 'I lost something nearby. Can you bring it back?',
@@ -585,7 +684,7 @@ on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
     })
     if (result.choiceId !== 'accept') return
     flags.set(QUEST_STATE, 'active')
-    const p = player.getPosition()
+    const p = player.position
     pickups.spawn(ITEM_KIND, { x: p.x + 2, y: p.y, z: p.z }, { id: ITEM_ID, label: 'Quest Item' })
     audio.play('sfx.quest.chime')
     return
@@ -596,8 +695,8 @@ on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
     audio.play('sfx.quest.fanfare')
     await ui.dialogue({
       title: ${JSON.stringify(target.name)},
-      npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)} },
-      player: { id: 'player', name: 'You', avatar: 'player' },
+      npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
+      player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
       lines: [{ speaker: NPC_ID, text: 'Thank you. Take this.' }],
     })
   }
@@ -613,11 +712,47 @@ on('pickup-taken', { kind: ITEM_KIND }, (event) => {
 interface ParseSuccess { ok: true }
 interface ParseFailure { ok: false; error: string }
 
+let previewAudioContext: AudioContext | null = null
+
+function npcVoiceKey(voice: DialogueVoiceRef | undefined): string {
+    return JSON.stringify({
+        enabled: voice?.enabled ?? true,
+        preset: voice?.preset ?? 'dwarf',
+        seed: voice?.seed ?? '',
+        volume: voice?.volume ?? 0.55,
+        rate: voice?.rate ?? 1,
+        pitchOffset: voice?.pitchOffset ?? 0,
+    })
+}
+
+function defaultSeedForVoicePreset(preset: DialogueVoicePreset | undefined): string {
+    return DIALOGUE_VOICE_PRESET_CONFIGS[preset ?? 'dwarf'].seed
+}
+
+async function previewVoice(voice: DialogueVoiceRef, text: string): Promise<void> {
+    const rendered = synthDialogueVoiceLine(text, voice)
+    if (rendered.samples.length === 0) return
+    const Ctor = window.AudioContext ?? window.webkitAudioContext
+    if (!Ctor) return
+    const ctx = previewAudioContext ?? new Ctor()
+    previewAudioContext = ctx
+    if (ctx.state === 'suspended') await ctx.resume()
+    const buffer = ctx.createBuffer(1, rendered.samples.length, rendered.sampleRate)
+    buffer.copyToChannel(new Float32Array(rendered.samples), 0)
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    const gain = ctx.createGain()
+    gain.gain.value = voice.volume ?? 0.55
+    source.connect(gain)
+    gain.connect(ctx.destination)
+    source.start()
+}
+
 function parseCheck(source: string): ParseSuccess | ParseFailure {
     if (!source.trim()) return { ok: false, error: 'Empty script.' }
     try {
         const AsyncFunctionCtor = Object.getPrototypeOf(async function () {}).constructor as new (...args: string[]) => unknown
-        new AsyncFunctionCtor('ctx', `"use strict"; const { ${PRELUDE_LOCALS} } = ctx; const NPC_ID = 'npc'; const NPC_NAME = 'NPC'; const NPC_INTERACTION = 'npc.npc.interact'; const NPC_ZONE = NPC_INTERACTION; ${source}`)
+        new AsyncFunctionCtor('ctx', `"use strict"; const { ${PRELUDE_LOCALS} } = ctx; const NPC_ID = 'npc'; const NPC_NAME = 'NPC'; const NPC_INTERACTION = 'npc.npc.interact'; const NPC_ZONE = NPC_INTERACTION; const NPC_VOICE = {}; ${source}`)
         return { ok: true }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

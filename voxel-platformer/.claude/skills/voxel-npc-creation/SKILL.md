@@ -3,12 +3,13 @@ name: voxel-npc-creation
 description: >-
   Create, edit, or review NPCs for the voxel-platformer engine, including
   NPC naming, character description, visual design, Three.js voxel-style 3D
-  models, collision/interaction settings, dialogue snippets, and NPC
-  placement in demo or procedural levels. Use when working with
-  src/game/npcs/*, LevelMeta.npcs, editor NPC tab scripts, NPC dialogue,
-  character voice, avatars, or requests such as "add an NPC", "improve this
-  character", "make a model for a merchant/troll/keeper", "write NPC
-  dialogue", or "place an NPC in a level".
+  models, collision/interaction settings, dialogue snippets, generated
+  dialogue voices, simple combat/patrol behavior, and NPC placement in demo or
+  procedural levels. Use when working with src/game/npcs/*, LevelMeta.npcs,
+  editor NPC tab scripts, NPC dialogue, character voice, avatars, or requests
+  such as "add an NPC", "improve this character", "make a model for a
+  merchant/troll/keeper", "write NPC dialogue", "make an NPC hostile", or
+  "place an NPC in a level".
 ---
 
 # Voxel NPC creation
@@ -24,13 +25,14 @@ but distinctive character over ornamental geometry.
 2. Choose an existing model first (`keeper`, `player`, `large-troll`). Add a
    new model only when silhouette/scale/materials need to differ materially.
 3. Write a short identity block before coding: display name, one-line
-   description, voice rules, gameplay role, interaction prompt, model scale,
-   collision requirement.
+   description, generated voice preset/seed, gameplay role, interaction
+   prompt, model scale, collision requirement, and combat stance if any.
 4. Implement the NPC model/config using the existing `src/game/npcs/*`
    patterns. Keep geometry cheap, named, shadow-capable, and voxel-readable
    from isometric distance.
-5. Add dialogue through the NPC script surface. Use `ui.say` for one-line
-   barks and `ui.dialogue` for choices or multi-line conversations.
+5. Add dialogue through the NPC script surface. Use silent `ui.say` for
+   one-line feedback and voiced `ui.dialogue` for choices or multi-line
+   conversations.
 6. Place the NPC in `LevelMeta.npcs` or the editor metadata and add tests for
    model registration, script wrapping, runtime zones/collision, and generated
    levels when applicable.
@@ -46,8 +48,16 @@ but distinctive character over ornamental geometry.
 - Let collidable NPCs block players, arrows, and stones; keep collision off
   for decorative or crowd NPCs unless gameplay requires it.
 - Keep dialogue state in script `flags`, not in model/config fields.
+- Give important NPCs a stable `voice` (`preset`, `seed`, optional `volume`).
+  Modal dialogue inherits this voice through `NPC_VOICE`; floating messages do
+  not speak.
+- For guard/enemy NPCs, use `equipment`, `collisionEnabled`, and script calls
+  like `npc.setHostile`, `npc.setPerceptionRadius`, and `npc.setWaypoints`.
+  Current combat is simple: grounded player melee alternates thrust/wide swing;
+  hostile NPCs path into range and their hits are blocked by the player's
+  raised frontal shield.
 - Do not add pathfinding, schedules, or patrol behavior unless requested;
-  current NPCs are static.
+  current NPCs are static until scripts assign waypoints or hostility.
 
 ## References
 

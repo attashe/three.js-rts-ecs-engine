@@ -360,6 +360,17 @@ npc.attack(id: string): boolean   // false for unknown / dead ids
 npc.die(id: string): boolean      // false for unknown / already-dying ids
 npc.exists(id: string): boolean   // live (not yet despawned) NPCs only
 npc.list(): string[]
+npc.setWaypoints(id: string, points: VoxelCoord[]): boolean // [] hold, one guard point, many loop
+npc.goTo(id: string, point: VoxelCoord): boolean            // walk to one point and hold
+npc.stop(id: string): boolean                               // clear route, hold current spot
+npc.setPerceptionRadius(id: string, radius: number): boolean
+npc.setHostile(id: string, target: 'player' | string, hostile: boolean): boolean
+
+// Current combat model is intentionally small: player melee is grounded,
+// alternates thrust/wide swing, and hits NPCs in a forward arc. Script-hostile
+// NPCs path toward enemies, swing in range, and their 1 HP hits are blocked by
+// the player's raised frontal shield. There is no faction table; hostility is
+// exactly what scripts set.
 
 // Audio — `fade` cross-fades over N seconds on play / stop.
 audio.play(soundId: string,
@@ -441,17 +452,20 @@ log(message: string, kind?: 'info' | 'warn' | 'error'): void
 // the current bubble expires. `ui.clear(targetId?)` dismisses bubbles
 // early (per-target or all-at-once) — useful when the player walks
 // away from an NPC mid-line.
-ui.say(targetId: string, message: string, opts?: { seconds?: number }): void
+ui.say(targetId: string, message: string, opts?: {
+  seconds?: number
+}): void
 ui.clear(targetId?: string): void
 ui.dialogue({
   title?: string,
-  npc?: { id?, name, avatar?, side? },
-  player?: { id?, name, avatar?, side? },
-  speakers?: [{ id?, name, avatar?, side? }],
+  npc?: { id?, name, avatar?, side?, voice? },
+  player?: { id?, name, avatar?, side?, voice? },
+  speakers?: [{ id?, name, avatar?, side?, voice? }],
   lines: [{
     speaker?: string,
     name?: string,
     avatar?: string,
+    voice?: { preset?, seed?, volume?, rate?, pitchOffset?, enabled? },
     text: string,
     choices?: [{ id: string, text: string, disabled?: boolean }]
   }]
@@ -489,6 +503,13 @@ trade.open({
 Dialogue `avatar` values can use built-in replaceable PNG keys
 (`keeper`, `player`, `sundial`, `book`, `npc`) or an explicit image path such
 as `/avatars/merchant.png`. Unknown strings fall back to the labelled badge.
+
+Dialogue `voice` values play generated fantasy-babble audio in modal
+`ui.dialogue(...)` windows while keeping the written text readable. Floating
+`ui.say(...)` bubbles are intentionally text-only. Supported presets are
+`tiny`, `dwarf`, `troll`, `goblin`, `orc`, `elf`, `lizard`, `undead`, `demon`,
+`gnome`, and `player`. `seed` makes a speaker's vocabulary stable; `volume`,
+`rate`, and `pitchOffset` tune loudness, speed, and pitch.
 
 Example NPC shop:
 
@@ -816,6 +837,7 @@ on('level-start', async () => {
 | `ui.say` floating bubbles                     | — | ✅ | per-target queue + multi-target parallel render |
 | `ui.clear(targetId?)` dismiss bubbles         | — | ✅ | per-target or sweep-all via `world.popupClears` |
 | `ui.dialogue` modal conversations             | — | ✅ | centered UI with avatars + choices |
+| Modal dialogue generated voice                | — | ✅ | `voice` on speakers/lines; `ui.say` stays silent |
 | `trade.open` NPC buy/sell menu                | — | ✅ | gold currency + arrows resource in v1 |
 | Stable pickup ids + idempotent spawn          | — | ✅ | `pickups.spawn(..., { id, label })` |
 | `Zone.active` + `zone.setActive/isActive/exists` | — | — / 1.6 | inactive zones synthesise zone-exit |
@@ -829,6 +851,7 @@ on('level-start', async () => {
 | `stones.spawn/remove/exists`                  | — | ✅ | Direct physics stones with stable ids |
 | `stones.setSpawnerEnabled/triggerSpawner/listSpawners` | — | ✅ | Editor-authored falling-stone spawners |
 | `npc.attack/die/exists/list`                  | — | ✅ | NPC combat via `world.npcRuntimeById`; `die` topples + despawns |
+| `npc.setWaypoints/goTo/stop/setPerceptionRadius/setHostile` | — | ✅ | script-defined patrol, guard posts, and hostility |
 | `weather.setZoneEnabled` (toggle FX zones)    | — | ✅ | Slice 3 — controller tracks configs / live / enabled |
 | `weather.setZonePreset` (re-spawn with new preset) | — | ✅ | Slice 3 — pairs with setZoneEnabled |
 | `level.spawn / size / name` getters           | — | ✅ | Slice 3 — read-only snapshot of `LevelMeta` |

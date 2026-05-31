@@ -39,8 +39,8 @@ const SHARDS = [
 ]
 
 const REWARD = { x: 10.5, y: 5, z: 10.6 }
-const KEEPER_SPEAKER = { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper', side: 'left' }
-const PLAYER_SPEAKER = { id: 'player', name: 'You', avatar: 'player', side: 'right' }
+const KEEPER_SPEAKER = { id: 'keeper', name: 'Keeper Arlen', avatar: 'keeper', side: 'left', voice: { preset: 'dwarf', seed: 'keeper-arlen', volume: 0.55 } }
+const PLAYER_SPEAKER = { id: 'player', name: 'You', avatar: 'player', side: 'right', voice: { preset: 'player', seed: 'player' } }
 const KEEPER_SHOP = {
     id: 'demo.keeper.supplies',
     title: "Keeper Arlen's Supplies",

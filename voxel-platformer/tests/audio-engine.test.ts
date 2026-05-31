@@ -30,6 +30,10 @@ class FakeBackend implements AudioBackend {
         return { duration: 0.25 }
     }
 
+    createBufferFromPcm(samples: Float32Array, sampleRate: number): AudioBufferLike {
+        return { duration: samples.length / sampleRate }
+    }
+
     playBuffer(_buffer: AudioBufferLike, params: BufferPlaybackParams): AudioVoice {
         const voice = new FakeVoice(this.time, params)
         this.voices.push(voice)
@@ -291,6 +295,26 @@ test('AudioEngine creates a fresh voice per SFX playback', async () => {
     assert.equal(backend.voices.length, 2)
     assert.notEqual(backend.voices[0], backend.voices[1])
     assert.equal(backend.voices[0]?.params.bus, 'sfx')
+})
+
+test('AudioEngine plays generated PCM on the UI bus and supports deferred unlock', async () => {
+    const backend = new FakeBackend()
+    const engine = new AudioEngine({ backend })
+    const pcm = { samples: new Float32Array(3200), sampleRate: 32000 }
+
+    const handle = engine.playGenerated('dialogue.voice.test', pcm, {
+        volume: 0.4,
+        deferUntilUnlocked: true,
+    })
+    await ready()
+    assert.equal(backend.voices.length, 0)
+
+    await engine.unlock()
+    await ready()
+    assert.equal(handle.stopped, false)
+    assert.equal(backend.voices.length, 1)
+    assert.equal(backend.voices[0]?.params.bus, 'ui')
+    assert.equal(backend.voices[0]?.params.volume, 0.4)
 })
 
 test('AudioEngine defers opt-in SFX until unlock', async () => {

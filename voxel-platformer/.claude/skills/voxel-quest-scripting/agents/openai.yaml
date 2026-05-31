@@ -1,4 +1,4 @@
 interface:
   display_name: "Voxel Quest Scripting"
-  short_description: "Write event-driven quests for voxel levels"
-  default_prompt: "Use $voxel-quest-scripting to design and implement a quest script for a voxel-platformer level."
+  short_description: "Write voxel quests with dialogue, voice, and NPC logic"
+  default_prompt: "Use $voxel-quest-scripting to design and implement a quest script with dialogue, state, and gameplay triggers."

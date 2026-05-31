@@ -4,11 +4,12 @@ description: >-
   Design, write, edit, or review event-driven quests and gameplay scripts for
   voxel-platformer levels, including NPC dialogue trees, collect-and-return
   quests, shrine interactions, shops/trade menus, scripted portals, pickup
-  spawning/despawning, flags, weather/day-cycle changes, zone triggers, and
-  tests for examples/scripts/*.js or scripts embedded in editor NPC/Logic
-  tabs. Use for requests such as "write a quest", "script this NPC",
-  "add dialogue choices", "make an item collection quest", "open a shop",
-  "activate a portal", or "use the script engine".
+  spawning/despawning, flags, weather/day-cycle changes, zone triggers,
+  modal dialogue voices, NPC patrol/combat scripting, and tests for
+  examples/scripts/*.js or scripts embedded in editor NPC/Logic tabs. Use for
+  requests such as "write a quest", "script this NPC", "add dialogue choices",
+  "add dialogue voice", "make an item collection quest", "open a shop",
+  "activate a portal", "make this NPC hostile", or "use the script engine".
 ---
 
 # Voxel quest scripting
@@ -28,10 +29,13 @@ spawn helpers, and dialogue that exposes the next player action clearly.
    `on('level-start', ...)`, not in bare top-level statements.
 4. Keep handlers idempotent. Stable pickup ids and guard flags must prevent
    duplicated pickups, rewards, weather effects, or portal toggles after Apply.
-5. Use `ui.dialogue` for branching conversations and `ui.say` for short
-   world-anchored feedback. Use `trade.open` for shops instead of manually
-   subtracting gold.
-6. Add or update tests with stub facades when the quest ships as an example or
+5. Use `ui.dialogue` for branching conversations and important voiced lines.
+   Use `ui.say` for short silent world-anchored feedback. Use `trade.open` for
+   shops instead of manually subtracting gold.
+6. For combat quests, use `npc.setHostile`, `setPerceptionRadius`, and
+   `setWaypoints`/`goTo` to make behavior script-readable; reserve
+   `npc.attack`/`die` for direct scripted beats.
+7. Add or update tests with stub facades when the quest ships as an example or
    generated-level script.
 
 ## Script Style

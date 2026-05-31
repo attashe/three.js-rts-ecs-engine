@@ -62,14 +62,23 @@ pickups.exists(id): boolean          // true if the id is currently live
 
 ui.say(targetId, message, opts?: { seconds? })
 ui.dialogue({
-  npc?: { id?, name, avatar? },
-  player?: { id?, name, avatar? },
-  lines: [{ speaker?, text, choices?: [{ id, text }] }]
+  npc?: { id?, name, avatar?, voice? },
+  player?: { id?, name, avatar?, voice? },
+  lines: [{ speaker?, text, voice?, choices?: [{ id, text }] }]
 }): Promise<{ choiceId?, choiceIndex?, text? }>
 
 // Dialogue avatars use replaceable PNG keys such as `keeper`, `player`,
 // `sundial`, `book`, and `npc`, or an explicit image path like
 // `/avatars/merchant.png`.
+// Dialogue voices are modal-only generated fantasy-babble presets such as
+// `dwarf`, `troll`, `elf`, `undead`, and `player`; use `seed` for stable
+// speaker tone. Floating `ui.say(...)` bubbles are intentionally silent.
+
+npc.setHostile(id, 'player', true)
+npc.setPerceptionRadius(id, 7)
+npc.setWaypoints(id, points)
+npc.attack(id)
+npc.die(id)
 
 trade.open({
   title?: string,

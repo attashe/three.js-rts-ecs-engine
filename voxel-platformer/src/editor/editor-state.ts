@@ -9,6 +9,7 @@ import type { TerrainBrushShape, TerrainFalloff, TerrainTool } from './terrain-b
 import type { PistonDirection } from './piston-direction'
 import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
 import { DEFAULT_NPC, copyNpcConfig, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
+import type { DialogueVoicePreset } from '../game/dialogue-voice/types'
 import type { EquipmentHandLoadout } from '../game/anim/equipment-types'
 import type { CharacterBeardKind } from '../game/character-appearance'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../game/player-settings'
@@ -450,6 +451,12 @@ export interface EditorState {
     npcInteractionRadius: number
     npcInteractionPrompt: string
     npcEquipment: EquipmentHandLoadout
+    npcVoiceEnabled: boolean
+    npcVoicePreset: DialogueVoicePreset
+    npcVoiceSeed: string
+    npcVoiceVolume: number
+    npcVoiceRate: number
+    npcVoicePitchOffset: number
     npcScriptEnabled: boolean
     npcScriptSource: string
 
@@ -700,6 +707,12 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         npcInteractionRadius: DEFAULT_NPC.interactionRadius,
         npcInteractionPrompt: DEFAULT_NPC.interactionPrompt,
         npcEquipment: { ...DEFAULT_NPC.equipment },
+        npcVoiceEnabled: DEFAULT_NPC.voice.enabled ?? true,
+        npcVoicePreset: DEFAULT_NPC.voice.preset ?? 'dwarf',
+        npcVoiceSeed: DEFAULT_NPC.voice.seed ?? '',
+        npcVoiceVolume: DEFAULT_NPC.voice.volume ?? 0.55,
+        npcVoiceRate: DEFAULT_NPC.voice.rate ?? 1,
+        npcVoicePitchOffset: DEFAULT_NPC.voice.pitchOffset ?? 0,
         npcScriptEnabled: DEFAULT_NPC.scriptEnabled,
         npcScriptSource: DEFAULT_NPC.scriptSource,
         stones: [],

@@ -9,9 +9,13 @@ import type {
     DialogueSpeaker,
     UiFacade,
 } from '../engine/script/types'
+import type { DialogueVoiceRef, DialogueVoiceService } from './dialogue-voice/types'
+
+export const DIALOGUE_VOICE_PLAYBACK_RATE_MULTIPLIER = 2
 
 interface DialogueControllerOptions {
     input: Input
+    voice?: DialogueVoiceService
 }
 
 interface DialogueQueueItem {
@@ -25,6 +29,7 @@ interface SpeakerView {
     name: string
     avatar: string
     side: 'left' | 'right'
+    voice?: DialogueVoiceRef
 }
 
 interface ActiveDialogue {
@@ -37,6 +42,7 @@ interface ActiveDialogue {
     result: DialogueResult
     resolve: (result: DialogueResult) => void
     key: string | null
+    voiceKey: string | null
 }
 
 interface DialogueDom {
@@ -87,6 +93,7 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
             result: {},
             resolve: next.resolve,
             key: next.key,
+            voiceKey: null,
         }
         ensureDom()
         opts.input.setEnabled(false)
@@ -108,6 +115,7 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
         },
         dispose() {
             window.removeEventListener('keydown', onKeyDown, true)
+            opts.voice?.stopCurrent(0)
             dom?.root.remove()
             dom = null
             active = null
@@ -210,7 +218,7 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
             if (!choices[next]?.disabled) break
         }
         active.selectedChoice = next
-        render()
+        syncChoiceSelection()
     }
 
     function selectChoice(index: number): void {
@@ -228,6 +236,7 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
         if (!done) return
         active = null
         if (done.key) activeKeys.delete(done.key)
+        opts.voice?.stopCurrent(0.035)
         showRoot(false)
         opts.input.setEnabled(true)
         opts.input.clear()
@@ -273,6 +282,25 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
         const total = Math.max(1, active.lines.length)
         const step = active.awaitingChoiceEcho ? total : Math.min(total, active.index + 1)
         d.progress.textContent = `${step}/${total}`
+        playRenderedLine(line, speaker)
+        preloadNextLine()
+    }
+
+    function playRenderedLine(line: DialogueLine, speaker: SpeakerView): void {
+        if (!active || !opts.voice) return
+        const voice = line.voice ?? speaker.voice
+        const key = `${active.index}:${active.awaitingChoiceEcho?.id ?? ''}:${speaker.id}:${line.text}:${JSON.stringify(voice ?? null)}`
+        if (active.voiceKey === key) return
+        active.voiceKey = key
+        opts.voice.speak(line.text, dialoguePlaybackVoice(voice), { fadeIn: 0.01, fadeOut: 0.035 })
+    }
+
+    function preloadNextLine(): void {
+        if (!active || !opts.voice || active.awaitingChoiceEcho) return
+        const next = active.lines[active.index + 1]
+        if (!next) return
+        const speaker = speakerForLine(active, next)
+        void opts.voice.preload(next.text, dialoguePlaybackVoice(next.voice ?? speaker.voice)).catch(() => {})
     }
 
     function currentChoices(): DialogueChoice[] {
@@ -285,18 +313,26 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
         button.type = 'button'
         button.dataset.dialogueChoice = String(index)
         button.disabled = choice.disabled === true
+        button.addEventListener('pointerdown', (ev) => {
+            if (ev.button !== 0 || choice.disabled) return
+            ev.preventDefault()
+            ev.stopPropagation()
+            selectChoice(index)
+        })
         button.onclick = (ev) => {
             ev.preventDefault()
             ev.stopPropagation()
             selectChoice(index)
         }
-        button.onmouseenter = () => {
+        button.onpointerenter = () => {
             if (!active || choice.disabled) return
+            if (active.selectedChoice === index) return
             active.selectedChoice = index
-            render()
+            syncChoiceSelection()
         }
 
         const key = document.createElement('span')
+        key.dataset.dialogueChoiceKey = ''
         key.textContent = String(index + 1)
         Object.assign(key.style, {
             display: 'inline-grid',
@@ -304,9 +340,6 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
             minWidth: '22px',
             height: '22px',
             borderRadius: '4px',
-            background: selected ? 'rgba(255, 224, 131, 0.18)' : 'rgba(238, 246, 242, 0.08)',
-            border: selected ? '1px solid rgba(255, 224, 131, 0.65)' : '1px solid rgba(238, 246, 242, 0.18)',
-            color: selected ? '#ffe083' : 'rgba(238, 246, 242, 0.78)',
             font: '700 11px ui-monospace, monospace',
         } satisfies Partial<CSSStyleDeclaration>)
 
@@ -323,14 +356,26 @@ export function createDialogueController(opts: DialogueControllerOptions): Dialo
             minHeight: '38px',
             padding: '8px 10px',
             borderRadius: '6px',
-            border: selected ? '1px solid rgba(255, 224, 131, 0.62)' : '1px solid rgba(238, 246, 242, 0.16)',
-            background: selected ? 'rgba(71, 54, 25, 0.92)' : 'rgba(19, 27, 31, 0.86)',
-            color: choice.disabled ? 'rgba(238, 246, 242, 0.36)' : '#eef6f2',
             font: '600 13px ui-sans-serif, system-ui, sans-serif',
             textAlign: 'left',
             cursor: choice.disabled ? 'default' : 'pointer',
         } satisfies Partial<CSSStyleDeclaration>)
+        paintChoiceButton(button, key, choice, selected)
         return button
+    }
+
+    function syncChoiceSelection(): void {
+        if (!active || !dom) return
+        const choices = currentChoices()
+        const buttons = dom.choices.querySelectorAll<HTMLButtonElement>('button[data-dialogue-choice]')
+        buttons.forEach((button) => {
+            const index = Number(button.dataset.dialogueChoice)
+            const choice = choices[index]
+            if (!choice) return
+            const selected = index === active!.selectedChoice
+            const key = button.querySelector<HTMLSpanElement>('span[data-dialogue-choice-key]')
+            paintChoiceButton(button, key, choice, selected)
+        })
     }
 
     function showRoot(visible: boolean): void {
@@ -481,6 +526,13 @@ export function dialogueRequestKey(request: DialogueRequest): string | null {
     return null
 }
 
+export function dialoguePlaybackVoice(voice: DialogueVoiceRef | undefined): DialogueVoiceRef {
+    return {
+        ...(voice ?? {}),
+        rate: (voice?.rate ?? 1) * DIALOGUE_VOICE_PLAYBACK_RATE_MULTIPLIER,
+    }
+}
+
 function buildSpeakers(request: DialogueRequest): Map<string, SpeakerView> {
     const speakers = new Map<string, SpeakerView>()
     const npc = request.npc ?? { id: 'npc', name: 'NPC', avatar: 'npc', side: 'left' as const }
@@ -504,19 +556,47 @@ function addSpeaker(
         name: speaker.name,
         avatar: speaker.avatar ?? id,
         side: speaker.side ?? fallbackSide,
+        voice: speaker.voice ?? defaultDialogueVoiceForSpeaker(id, speaker.side ?? fallbackSide),
     })
 }
 
 function speakerForLine(active: ActiveDialogue, line: DialogueLine): SpeakerView {
     const id = line.speaker ?? 'npc'
     const registered = active.speakers.get(id)
-    if (registered && !line.name && !line.avatar) return registered
+    if (registered && !line.name && !line.avatar && !line.voice) return registered
     return {
         id,
         name: line.name ?? registered?.name ?? (id === 'player' ? 'You' : 'NPC'),
         avatar: line.avatar ?? registered?.avatar ?? id,
         side: registered?.side ?? (id === 'player' ? 'right' : 'left'),
+        voice: line.voice ?? registered?.voice,
     }
+}
+
+function defaultDialogueVoiceForSpeaker(id: string, side: 'left' | 'right'): DialogueVoiceRef {
+    return id === 'player' || side === 'right'
+        ? { preset: 'player' }
+        : { preset: 'dwarf' }
+}
+
+function paintChoiceButton(
+    button: HTMLButtonElement,
+    key: HTMLSpanElement | null,
+    choice: DialogueChoice,
+    selected: boolean,
+): void {
+    if (key) {
+        Object.assign(key.style, {
+            background: selected ? 'rgba(255, 224, 131, 0.18)' : 'rgba(238, 246, 242, 0.08)',
+            border: selected ? '1px solid rgba(255, 224, 131, 0.65)' : '1px solid rgba(238, 246, 242, 0.18)',
+            color: selected ? '#ffe083' : 'rgba(238, 246, 242, 0.78)',
+        } satisfies Partial<CSSStyleDeclaration>)
+    }
+    Object.assign(button.style, {
+        border: selected ? '1px solid rgba(255, 224, 131, 0.62)' : '1px solid rgba(238, 246, 242, 0.16)',
+        background: selected ? 'rgba(71, 54, 25, 0.92)' : 'rgba(19, 27, 31, 0.86)',
+        color: choice.disabled ? 'rgba(238, 246, 242, 0.36)' : '#eef6f2',
+    } satisfies Partial<CSSStyleDeclaration>)
 }
 
 function sanitizeLines(lines: readonly DialogueLine[] | undefined): DialogueLine[] {

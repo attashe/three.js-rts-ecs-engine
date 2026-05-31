@@ -1,6 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { dialogueAvatarImageUrl, dialogueRequestKey } from '../src/game/dialogue-system'
+import {
+    DIALOGUE_VOICE_PLAYBACK_RATE_MULTIPLIER,
+    dialogueAvatarImageUrl,
+    dialoguePlaybackVoice,
+    dialogueRequestKey,
+} from '../src/game/dialogue-system'
 
 test('dialogueRequestKey prefers explicit request.id over npc.id', () => {
     assert.equal(
@@ -55,4 +60,9 @@ test('dialogueAvatarImageUrl accepts explicit image paths for custom portraits',
 test('dialogueAvatarImageUrl keeps unknown author strings on the labelled fallback badge', () => {
     assert.equal(dialogueAvatarImageUrl('merchant'), null)
     assert.equal(dialogueAvatarImageUrl(''), null)
+})
+
+test('dialoguePlaybackVoice doubles modal dialogue voice rate while preserving speaker settings', () => {
+    assert.equal(dialoguePlaybackVoice({ preset: 'elf', seed: 'speaker', rate: 0.8 }).rate, 1.6)
+    assert.deepEqual(dialoguePlaybackVoice(undefined), { rate: DIALOGUE_VOICE_PLAYBACK_RATE_MULTIPLIER })
 })

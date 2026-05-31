@@ -63,6 +63,7 @@ import { registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
 import { createDialogueController } from './game/dialogue-system'
+import { createDialogueVoiceService } from './game/dialogue-voice'
 import { createTradeController } from './game/trade-system'
 import { checkpointStorageKey, createSessionCheckpointStore, resolveSpawn, type CheckpointStore } from './game/checkpoint-store'
 import { defineZone, type Zone } from './engine/ecs/zones'
@@ -132,9 +133,10 @@ async function main(): Promise<void> {
     const engine = new Engine({ fixedHz: 60 })
     const { renderer, world } = engine
     const actions = createGameActionMap(engine.input)
-    const dialogue = createDialogueController({ input: engine.input })
-    const trade = createTradeController({ input: engine.input })
     const audio = new AudioEngine()
+    const dialogueVoice = createDialogueVoiceService(audio)
+    const dialogue = createDialogueController({ input: engine.input, voice: dialogueVoice })
+    const trade = createTradeController({ input: engine.input })
     const audioReady = audio.loadManifest(GAME_AUDIO_MANIFEST)
     void audioReady.catch((err) => console.warn('Game audio failed to load:', err))
 

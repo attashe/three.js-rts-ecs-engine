@@ -18,6 +18,9 @@ class StubBackend implements AudioBackend {
     get currentTime(): number { return 0 }
     async unlock(): Promise<void> {}
     async loadBuffer(): Promise<AudioBufferLike> { return { duration: 1 } }
+    createBufferFromPcm(samples: Float32Array, sampleRate: number): AudioBufferLike {
+        return { duration: samples.length / sampleRate }
+    }
     playBuffer(): AudioVoice { throw new Error('not used') }
     playSpatialBuffer(_buf: AudioBufferLike, params: SpatialPlaybackParams): AudioVoice {
         const voice = new StubSpatialVoice(params)
