@@ -19,7 +19,7 @@ function npc(id: string): NpcConfig {
     return normalizeNpcConfig({
         id,
         name: 'Keeper Arlen',
-        model: 'keeper',
+        model: 'keeper-arlen',
         position: { x: 2, y: 3, z: 4 },
         yaw: 0.25,
         scale: 1.1,
@@ -28,8 +28,10 @@ function npc(id: string): NpcConfig {
     })
 }
 
-test('NPC model registry exposes keeper and player models', () => {
-    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'player', 'large-troll'])
+test('NPC model registry exposes dwarf, Keeper Arlen, player, and troll models', () => {
+    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll'])
+    assert.equal(NPC_MODEL_LABELS.keeper, 'Dwarf')
+    assert.equal(NPC_MODEL_LABELS['keeper-arlen'], 'Keeper Arlen')
     for (const kind of NPC_MODEL_KINDS) {
         assert.ok(NPC_MODEL_LABELS[kind].length > 0)
         const model = createNpcModel(kind)
@@ -38,17 +40,32 @@ test('NPC model registry exposes keeper and player models', () => {
         assert.ok(model.children.length > 0, `${kind} model should contain visible parts`)
     }
     assert.ok(findByName(createNpcModel('keeper'), 'CharacterBeardFull'), 'keeper defaults to a full beard')
+    const arlen = createNpcModel('keeper-arlen')
+    assert.ok(findByName(arlen, 'KeeperArlenHood'), 'Keeper Arlen has a distinct hood')
+    assert.ok(findByName(arlen, 'KeeperArlenLongRobe'), 'Keeper Arlen keeps the long robe silhouette')
+    assert.ok(findByName(arlen, 'KeeperArlenSleeveL'), 'Keeper Arlen has short sleeve arms')
+    assert.equal(findByName(arlen, 'KeeperArlenLongRobe')?.parent?.name, 'Figure', 'long robe covers the leg rig')
+    assert.equal(findByName(arlen, 'KeeperArlenLeftLens')?.parent?.name, 'Head', 'glasses ride the animated head')
+    assert.equal(findByName(arlen, 'KeeperArlenRobeHem')?.parent?.name, 'Figure', 'robe hem rides the animated body')
     assert.ok(findByName(createNpcModel('player', { beard: 'pointed' }), 'CharacterBeardPointed'), 'player NPC can opt into a beard')
 })
 
 test('NPC appearance and equipment normalize from model defaults and custom choices', () => {
-    const keeper = normalizeNpcConfig({
-        id: 'keeper',
+    const dwarf = normalizeNpcConfig({
+        id: 'dwarf',
         model: 'keeper',
         position: { x: 0, y: 0, z: 0 },
     })
-    assert.equal(keeper.beard, 'full')
-    assert.deepEqual(keeper.equipment, defaultNpcEquipment('keeper'))
+    assert.equal(dwarf.beard, 'full')
+    assert.deepEqual(dwarf.equipment, defaultNpcEquipment('keeper'))
+
+    const arlen = normalizeNpcConfig({
+        id: 'arlen',
+        model: 'keeper-arlen',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(arlen.beard, 'full')
+    assert.deepEqual(arlen.equipment, defaultNpcEquipment('keeper-arlen'))
 
     const troll = normalizeNpcConfig({
         id: 'troll',
@@ -136,7 +153,7 @@ test('NPC renderer rebuilds visuals when hand equipment changes', () => {
     system.init?.(world)
     const group = scene.children.find((child) => child.name === 'NPCs') as Group | undefined
     assert.ok(group)
-    assert.ok(findByName(group!, 'equip:staff'), 'keeper starts with staff equipment')
+    assert.ok(findByName(group!, 'equip:staff'), 'Keeper Arlen starts with staff equipment')
     const firstRoot = group!.children[0]!
 
     config.equipment = { handR: null, handL: 'book' }

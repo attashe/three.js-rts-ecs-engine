@@ -2,34 +2,66 @@ import type { EquipSlot } from '../../engine/anim'
 
 export const EQUIPMENT_KINDS = [
     'hat',
+    'hat-arcane',
+    'hat-ranger',
+    'hat-guard',
+    'hat-sun',
     'sword',
     'shield',
     'bow',
     'arrow',
+    'staff-lantern',
     'staff',
+    'staff-crystal',
     'book',
 ] as const
 
 export type EquipmentKind = (typeof EQUIPMENT_KINDS)[number]
+
+export const HEAD_EQUIPMENT_KINDS = [
+    'hat',
+    'hat-arcane',
+    'hat-ranger',
+    'hat-guard',
+    'hat-sun',
+] as const satisfies readonly EquipmentKind[]
+
+export type HeadEquipmentKind = (typeof HEAD_EQUIPMENT_KINDS)[number]
 
 export const HAND_EQUIPMENT_KINDS = [
     'sword',
     'shield',
     'bow',
     'arrow',
+    'staff-lantern',
     'staff',
+    'staff-crystal',
     'book',
 ] as const satisfies readonly EquipmentKind[]
 
 export type HandEquipmentKind = (typeof HAND_EQUIPMENT_KINDS)[number]
 
+export const STAFF_EQUIPMENT_KINDS = [
+    'staff-lantern',
+    'staff',
+    'staff-crystal',
+] as const satisfies readonly EquipmentKind[]
+
+export type StaffEquipmentKind = (typeof STAFF_EQUIPMENT_KINDS)[number]
+
 export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
-    hat: 'Hat',
+    hat: 'Traveler Hat',
+    'hat-arcane': 'Arcane Hat',
+    'hat-ranger': 'Ranger Cap',
+    'hat-guard': 'Guard Helm',
+    'hat-sun': 'Sun Crown',
     sword: 'Sword',
     shield: 'Shield',
     bow: 'Bow',
     arrow: 'Arrow',
-    staff: 'Staff',
+    'staff-lantern': 'Staff A - Lantern',
+    staff: 'Staff B - Battle',
+    'staff-crystal': 'Staff C - Crystal',
     book: 'Book',
 }
 
@@ -41,8 +73,10 @@ export interface EquipmentHandLoadout {
 }
 
 export interface PlayerEquipmentSettings {
+    head: HeadEquipmentKind | null
     melee: EquipmentHandLoadout
     ranged: EquipmentHandLoadout
+    magic: EquipmentHandLoadout
 }
 
 export const EMPTY_HAND_LOADOUT: EquipmentHandLoadout = {
@@ -51,6 +85,7 @@ export const EMPTY_HAND_LOADOUT: EquipmentHandLoadout = {
 }
 
 export const DEFAULT_PLAYER_EQUIPMENT: PlayerEquipmentSettings = {
+    head: 'hat',
     melee: {
         handR: 'sword',
         handL: 'shield',
@@ -58,6 +93,10 @@ export const DEFAULT_PLAYER_EQUIPMENT: PlayerEquipmentSettings = {
     ranged: {
         handR: 'arrow',
         handL: 'bow',
+    },
+    magic: {
+        handR: 'staff',
+        handL: null,
     },
 }
 
@@ -79,18 +118,24 @@ export function normalizeHandLoadout(
 }
 
 export function normalizePlayerEquipment(input?: {
+    head?: unknown
     melee?: Partial<EquipmentHandLoadout> | null
     ranged?: Partial<EquipmentHandLoadout> | null
+    magic?: Partial<EquipmentHandLoadout> | null
 } | null): PlayerEquipmentSettings {
     return {
+        head: normalizeHeadEquipmentKind(input?.head, DEFAULT_PLAYER_EQUIPMENT.head),
         melee: normalizeHandLoadout(input?.melee, DEFAULT_PLAYER_EQUIPMENT.melee),
         ranged: normalizeHandLoadout(input?.ranged, DEFAULT_PLAYER_EQUIPMENT.ranged),
+        magic: normalizeHandLoadout(input?.magic, DEFAULT_PLAYER_EQUIPMENT.magic),
     }
 }
 
 export function copyPlayerEquipment(settings?: {
+    head?: unknown
     melee?: Partial<EquipmentHandLoadout> | null
     ranged?: Partial<EquipmentHandLoadout> | null
+    magic?: Partial<EquipmentHandLoadout> | null
 } | null): PlayerEquipmentSettings {
     return normalizePlayerEquipment(settings)
 }
@@ -106,12 +151,27 @@ export function normalizeHandEquipmentKind(
         : fallback
 }
 
+export function normalizeHeadEquipmentKind(
+    value: unknown,
+    fallback: HeadEquipmentKind | null = null,
+): HeadEquipmentKind | null {
+    if (value === undefined) return fallback
+    if (value === null || value === '' || value === 'none') return null
+    return (HEAD_EQUIPMENT_KINDS as readonly string[]).includes(String(value))
+        ? value as HeadEquipmentKind
+        : fallback
+}
+
+export function isStaffEquipmentKind(value: unknown): value is StaffEquipmentKind {
+    return (STAFF_EQUIPMENT_KINDS as readonly string[]).includes(String(value))
+}
+
 export function handLoadoutKey(loadout: EquipmentHandLoadout): string {
     return `${loadout.handR ?? '-'}:${loadout.handL ?? '-'}`
 }
 
 export function playerEquipmentKey(settings: PlayerEquipmentSettings): string {
-    return `${handLoadoutKey(settings.melee)}|${handLoadoutKey(settings.ranged)}`
+    return `${settings.head ?? '-'}|${handLoadoutKey(settings.melee)}|${handLoadoutKey(settings.ranged)}|${handLoadoutKey(settings.magic)}`
 }
 
 export function describeHandLoadout(loadout: EquipmentHandLoadout): string {

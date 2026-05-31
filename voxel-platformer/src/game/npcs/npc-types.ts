@@ -16,6 +16,7 @@ import type { DialogueVoiceRef } from '../dialogue-voice/types'
 
 export const NPC_MODEL_KINDS = [
     'keeper',
+    'keeper-arlen',
     'player',
     'large-troll',
 ] as const
@@ -23,7 +24,8 @@ export const NPC_MODEL_KINDS = [
 export type NpcModelKind = (typeof NPC_MODEL_KINDS)[number]
 
 export const NPC_MODEL_LABELS: Record<NpcModelKind, string> = {
-    keeper: 'Keeper',
+    keeper: 'Dwarf',
+    'keeper-arlen': 'Keeper Arlen',
     player: 'Player',
     'large-troll': 'Large Troll',
 }
@@ -104,6 +106,20 @@ export interface NpcRuntimeState {
      *  obstacle (see `disposeNpc`). */
     zoneId: string | null
     obstacleId: number | null
+    /** Arrows currently embedded in the body. Each entry is the (frozen) arrow
+     *  entity id plus its offset from the NPC's foot origin at impact, so the
+     *  stuck-arrow system can keep them riding the body as it moves. Lazily
+     *  created on the first hit; absent until then. */
+    stuckArrows?: StuckArrow[]
+}
+
+/** A frozen arrow embedded in an NPC body, tracked so it follows the NPC. */
+export interface StuckArrow {
+    eid: number
+    /** Offset of the arrow from the NPC's foot origin at the moment of impact. */
+    ox: number
+    oy: number
+    oz: number
 }
 
 export const NPC_DEFAULT_HP = 2
@@ -130,6 +146,7 @@ export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
 export function defaultNpcBeard(model: NpcModelKind): CharacterBeardKind {
     switch (model) {
         case 'keeper':
+        case 'keeper-arlen':
             return 'full'
         case 'large-troll':
             return 'pointed'
@@ -141,6 +158,7 @@ export function defaultNpcBeard(model: NpcModelKind): CharacterBeardKind {
 export function defaultNpcEquipment(model: NpcModelKind): EquipmentHandLoadout {
     switch (model) {
         case 'keeper':
+        case 'keeper-arlen':
             return { handR: 'staff', handL: null }
         case 'large-troll':
             return { handR: null, handL: 'book' }

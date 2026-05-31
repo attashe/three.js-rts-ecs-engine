@@ -7,6 +7,7 @@ import {
     copyPlayerEquipment,
     normalizePlayerEquipment,
     type EquipmentHandLoadout,
+    type HeadEquipmentKind,
     type PlayerEquipmentSettings,
 } from './anim/equipment-types'
 import { normalizeCharacterBeard, type CharacterBeardKind } from './character-appearance'
@@ -107,8 +108,10 @@ export interface PlayerSettings {
 }
 
 export interface PlayerEquipmentSettingsPatch {
+    head?: HeadEquipmentKind | null
     melee?: Partial<EquipmentHandLoadout>
     ranged?: Partial<EquipmentHandLoadout>
+    magic?: Partial<EquipmentHandLoadout>
 }
 
 export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'equipment' | 'torch'>> & {
@@ -221,8 +224,10 @@ export function applyPlayerSettingsPatch(settings: PlayerSettings, patch: Player
         },
         equipment: patch.equipment !== undefined
             ? {
+                head: patch.equipment.head !== undefined ? patch.equipment.head : currentEquipment.head,
                 melee: { ...currentEquipment.melee, ...patch.equipment.melee },
                 ranged: { ...currentEquipment.ranged, ...patch.equipment.ranged },
+                magic: { ...currentEquipment.magic, ...patch.equipment.magic },
             }
             : currentEquipment,
         torch: { ...settings.torch, ...patch.torch },

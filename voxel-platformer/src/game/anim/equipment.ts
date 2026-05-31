@@ -20,6 +20,8 @@ import {
     EQUIPMENT_KINDS,
     EQUIPMENT_LABELS,
     HAND_EQUIPMENT_KINDS,
+    HEAD_EQUIPMENT_KINDS,
+    STAFF_EQUIPMENT_KINDS,
     type EquipmentKind,
 } from './equipment-types'
 
@@ -27,21 +29,32 @@ export {
     EQUIPMENT_KINDS,
     EQUIPMENT_LABELS,
     HAND_EQUIPMENT_KINDS,
+    HEAD_EQUIPMENT_KINDS,
+    STAFF_EQUIPMENT_KINDS,
+    isStaffEquipmentKind,
     type EquipmentKind,
     type EquipmentHandLoadout,
+    type HeadEquipmentKind,
     type HandEquipmentKind,
     type HandEquipmentSlot,
     type PlayerEquipmentSettings,
+    type StaffEquipmentKind,
 } from './equipment-types'
 
 export function createEquipment(kind: EquipmentKind): Group {
     switch (kind) {
-        case 'hat': return buildHat()
+        case 'hat': return buildTravelerHat()
+        case 'hat-arcane': return buildArcaneHat()
+        case 'hat-ranger': return buildRangerCap()
+        case 'hat-guard': return buildGuardHelm()
+        case 'hat-sun': return buildSunCrown()
         case 'sword': return buildSword()
         case 'shield': return buildShield()
         case 'bow': return buildBow()
         case 'arrow': return buildHeldArrow()
-        case 'staff': return buildStaff()
+        case 'staff-lantern': return buildLanternStaff()
+        case 'staff': return buildBattleStaff()
+        case 'staff-crystal': return buildCrystalStaff()
         case 'book': return buildBook()
     }
 }
@@ -74,15 +87,31 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
         handL: { orient: [Math.PI / 2, -Math.PI / 2, 0], offset: [-0.02, -0.04, 0.03] },
     },
     arrow: {
-        // Nocked against the bow. During the shoot clip's draw pose the right
-        // arm is turned side-on, so this frame levels the shaft across the bow
-        // string instead of letting it pitch upward with the upper arm.
-        handR: { orient: [1.23, -0.44, -0.61], offset: [0, -0.02, 0.08] },
-        handL: { orient: [1.23, 0.44, 0.61], offset: [0, -0.02, 0.08] },
+        // Nocked against the bow. The shoot clip turns the torso/arm side-on;
+        // this frame compensates so the arrow tip still points toward the
+        // character's forward direction at full draw instead of back across
+        // the body.
+        handR: { orient: [-2.89, -0.69, 0.09], offset: [0, -0.02, 0.08] },
+        handL: { orient: [-2.89, 0.69, -0.09], offset: [0, -0.02, 0.08] },
+    },
+    'staff-lantern': {
+        // Old lantern-staff carry: mostly vertical, warm top visible above the
+        // shoulder, with the grip grounded below the hand.
+        handR: { orient: [0.12, 0, -0.08], offset: [0.045, -0.38, 0.06] },
+        handL: { orient: [0.12, 0, 0.08], offset: [-0.045, -0.38, 0.06] },
     },
     staff: {
-        handR: { orient: [0.08, 0, -0.12], offset: [0.03, -0.2, 0.03] },
-        handL: { orient: [0.08, 0, 0.12], offset: [-0.03, -0.2, 0.03] },
+        // Battle-staff carry: the grip sits below the hand and the weighted
+        // head leans forward, so the idle pose already reads as ready to bonk
+        // instead of a vertical walking stick.
+        handR: { orient: [0.42, 0, -0.12], offset: [0.045, -0.36, 0.075] },
+        handL: { orient: [0.42, 0, 0.12], offset: [-0.045, -0.36, 0.075] },
+    },
+    'staff-crystal': {
+        // Crystal staff keeps the same combat-readable forward lean, but sits a
+        // little higher so the larger crystal cluster clears the ground.
+        handR: { orient: [0.34, 0, -0.1], offset: [0.045, -0.33, 0.07] },
+        handL: { orient: [0.34, 0, 0.1], offset: [-0.045, -0.33, 0.07] },
     },
     book: {
         handR: { orient: [-0.72, -0.22, 0.28], offset: [0.08, -0.08, 0.11] },
@@ -90,6 +119,18 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
     },
     hat: {
         head: { offset: [0, -0.03, 0] },
+    },
+    'hat-arcane': {
+        head: { offset: [0, -0.03, 0] },
+    },
+    'hat-ranger': {
+        head: { offset: [0, -0.04, 0.01] },
+    },
+    'hat-guard': {
+        head: { offset: [0, -0.055, 0] },
+    },
+    'hat-sun': {
+        head: { offset: [0, -0.045, 0] },
     },
 }
 
@@ -159,17 +200,124 @@ function mat(color: number, roughness = 0.7, metalness = 0): MeshStandardMateria
     return new MeshStandardMaterial({ color, roughness, metalness })
 }
 
-function buildHat(): Group {
+function glowMat(color: number, intensity = 0.55): MeshStandardMaterial {
+    return new MeshStandardMaterial({ color, emissive: color, emissiveIntensity: intensity, roughness: 0.42 })
+}
+
+function addParts(g: Group, parts: readonly Mesh[]): Group {
+    for (const m of parts) { m.castShadow = true; g.add(m) }
+    return g
+}
+
+function buildTravelerHat(): Group {
     const g = new Group()
     g.name = 'equip:hat'
-    const brim = new Mesh(new CylinderGeometry(0.26, 0.26, 0.04, 12), mat(0x2a2436))
+    const felt = mat(0x243d36, 0.82)
+    const brim = new Mesh(new CylinderGeometry(0.31, 0.28, 0.035, 14), felt)
     brim.position.y = 0.02
-    const crown = new Mesh(new ConeGeometry(0.18, 0.42, 12), mat(0x3b3350))
-    crown.position.y = 0.24
-    const band = new Mesh(new CylinderGeometry(0.185, 0.185, 0.06, 12), mat(0xb8902f, 0.5, 0.3))
+    brim.scale.z = 0.84
+    const crown = new Mesh(new CylinderGeometry(0.16, 0.22, 0.26, 10), felt)
+    crown.position.y = 0.16
+    crown.scale.z = 0.88
+    const band = new Mesh(new CylinderGeometry(0.225, 0.225, 0.04, 12), mat(0xc28c38, 0.5, 0.2))
+    band.position.y = 0.075
+    band.scale.z = 0.86
+    const feather = new Mesh(new ConeGeometry(0.035, 0.28, 6), mat(0xd7b35a, 0.62))
+    feather.position.set(0.23, 0.18, 0.04)
+    feather.rotation.set(0.18, 0.1, -0.82)
+    const pin = new Mesh(new SphereGeometry(0.035, 8, 6), mat(0x7ac7a2, 0.46, 0.12))
+    pin.position.set(0.17, 0.1, 0.13)
+    return addParts(g, [brim, crown, band, feather, pin])
+}
+
+function buildArcaneHat(): Group {
+    const g = new Group()
+    g.name = 'equip:hat-arcane'
+    const cloth = mat(0x253a7a, 0.78)
+    const brim = new Mesh(new CylinderGeometry(0.29, 0.25, 0.035, 14), mat(0x18234f, 0.82))
+    brim.position.y = 0.015
+    brim.scale.z = 0.86
+    const cone = new Mesh(new ConeGeometry(0.19, 0.66, 12), cloth)
+    cone.position.y = 0.36
+    cone.rotation.z = -0.12
+    cone.scale.z = 0.9
+    const band = new Mesh(new CylinderGeometry(0.21, 0.215, 0.045, 12), mat(0x5f3fa1, 0.55, 0.05))
+    band.position.y = 0.075
+    band.scale.z = 0.86
+    const starH = new Mesh(new BoxGeometry(0.13, 0.025, 0.018), glowMat(0xffd76b, 0.75))
+    const starV = new Mesh(new BoxGeometry(0.025, 0.13, 0.018), glowMat(0xffd76b, 0.75))
+    starH.position.set(0.02, 0.34, 0.175)
+    starV.position.copy(starH.position)
+    const moon = new Mesh(new SphereGeometry(0.035, 8, 6), glowMat(0xbad7ff, 0.5))
+    moon.position.set(-0.08, 0.2, 0.18)
+    return addParts(g, [brim, cone, band, starH, starV, moon])
+}
+
+function buildRangerCap(): Group {
+    const g = new Group()
+    g.name = 'equip:hat-ranger'
+    const crownMat = mat(0x315a2f, 0.84)
+    const crown = new Mesh(new SphereGeometry(0.23, 12, 8), crownMat)
+    crown.position.y = 0.12
+    crown.scale.set(1.05, 0.48, 0.9)
+    const brim = new Mesh(new CylinderGeometry(0.27, 0.25, 0.035, 12), mat(0x203d24, 0.82))
+    brim.position.y = 0.035
+    brim.scale.set(1.1, 1, 0.82)
+    const visor = new Mesh(new BoxGeometry(0.23, 0.035, 0.16), mat(0x264826, 0.8))
+    visor.position.set(0, 0.04, 0.2)
+    visor.rotation.x = -0.08
+    const feather = new Mesh(new BoxGeometry(0.045, 0.3, 0.018), mat(0x9fd179, 0.62))
+    feather.position.set(-0.22, 0.18, 0.05)
+    feather.rotation.set(0.12, -0.18, 0.72)
+    const vein = new Mesh(new BoxGeometry(0.018, 0.29, 0.02), mat(0xf2e6a0, 0.55))
+    vein.position.copy(feather.position)
+    vein.rotation.copy(feather.rotation)
+    return addParts(g, [crown, brim, visor, feather, vein])
+}
+
+function buildGuardHelm(): Group {
+    const g = new Group()
+    g.name = 'equip:hat-guard'
+    const steel = mat(0x9aa7ad, 0.36, 0.55)
+    const dome = new Mesh(new SphereGeometry(0.235, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), steel)
+    dome.position.y = 0.09
+    dome.scale.z = 0.9
+    const rim = new Mesh(new CylinderGeometry(0.25, 0.25, 0.045, 14), mat(0x56656e, 0.42, 0.45))
+    rim.position.y = 0.035
+    rim.scale.z = 0.88
+    const crest = new Mesh(new BoxGeometry(0.065, 0.24, 0.34), mat(0xb6342d, 0.7))
+    crest.position.y = 0.25
+    crest.rotation.x = -0.08
+    const nose = new Mesh(new BoxGeometry(0.04, 0.22, 0.04), mat(0x6f7f87, 0.36, 0.5))
+    nose.position.set(0, 0.02, 0.22)
+    const hornL = new Mesh(new ConeGeometry(0.045, 0.18, 8), mat(0xe5d6a8, 0.58))
+    hornL.position.set(-0.25, 0.16, 0)
+    hornL.rotation.z = Math.PI / 2
+    const hornR = new Mesh(new ConeGeometry(0.045, 0.18, 8), mat(0xe5d6a8, 0.58))
+    hornR.position.set(0.25, 0.16, 0)
+    hornR.rotation.z = -Math.PI / 2
+    return addParts(g, [dome, rim, crest, nose, hornL, hornR])
+}
+
+function buildSunCrown(): Group {
+    const g = new Group()
+    g.name = 'equip:hat-sun'
+    const gold = mat(0xd9a62a, 0.38, 0.38)
+    const band = new Mesh(new CylinderGeometry(0.22, 0.23, 0.12, 12), gold)
     band.position.y = 0.07
-    for (const m of [brim, crown, band]) { m.castShadow = true; g.add(m) }
-    return g
+    band.scale.z = 0.82
+    const rim = new Mesh(new CylinderGeometry(0.245, 0.245, 0.025, 12), mat(0xffd166, 0.34, 0.45))
+    rim.position.y = 0.14
+    rim.scale.z = 0.82
+    const gem = new Mesh(new SphereGeometry(0.045, 8, 6), glowMat(0xff553f, 0.55))
+    gem.position.set(0, 0.1, 0.2)
+    const parts: Mesh[] = [band, rim, gem]
+    for (const [x, z, h] of [[0, 0.18, 0.22], [-0.13, 0.13, 0.18], [0.13, 0.13, 0.18], [-0.19, 0.02, 0.15], [0.19, 0.02, 0.15]] as const) {
+        const ray = new Mesh(new ConeGeometry(0.035, h, 6), gold)
+        ray.position.set(x, 0.18 + h * 0.32, z)
+        parts.push(ray)
+    }
+    return addParts(g, parts)
 }
 
 function buildSword(): Group {
@@ -229,32 +377,126 @@ function buildHeldArrow(): Group {
     return g
 }
 
-function buildStaff(): Group {
+function buildLanternStaff(): Group {
     const g = new Group()
-    g.name = 'equip:staff'
-    // Canonical frame: grip at the origin, pole up the +Y axis, lantern crown on
-    // top — the Keeper's old fixed staff, now a hand item.
+    g.name = 'equip:staff-lantern'
+    // Preserved Keeper staff: a warm lantern cage on a walking pole. The
+    // lantern crown remains on +Y so it still works with staff attack clips.
     const wood = mat(0x4a2c12, 0.86)
-    const pole = new Mesh(new CylinderGeometry(0.02, 0.026, 1.0, 7), wood)
-    pole.position.y = 0.28
+    const pole = new Mesh(new CylinderGeometry(0.02, 0.028, 1.28, 7), wood)
+    pole.name = 'LanternStaffPole'
+    pole.position.y = 0.39
     const dark = mat(0x17120d, 0.72, 0.1)
-    const glow = new Mesh(new SphereGeometry(0.08, 8, 6), mat(0xffb54d, 0.42, 0.08))
-    glow.position.y = 0.82
+    const glow = new Mesh(new SphereGeometry(0.08, 8, 6), glowMat(0xffb54d, 0.55))
+    glow.name = 'LanternStaffGlow'
+    glow.position.y = 1.08
     const capTop = new Mesh(new BoxGeometry(0.16, 0.02, 0.16), dark)
-    capTop.position.y = 0.92
+    capTop.name = 'LanternStaffCapTop'
+    capTop.position.y = 1.18
     const capBottom = new Mesh(new BoxGeometry(0.16, 0.02, 0.16), dark)
-    capBottom.position.y = 0.72
+    capBottom.name = 'LanternStaffCapBottom'
+    capBottom.position.y = 0.98
     const finial = new Mesh(new SphereGeometry(0.045, 7, 5), mat(0xffc462, 0.38, 0.18))
-    finial.position.y = 0.99
+    finial.name = 'LanternStaffFinial'
+    finial.position.y = 1.27
     finial.scale.set(1, 0.78, 1)
     const parts: Mesh[] = [pole, glow, capTop, capBottom, finial]
     for (const [bx, bz] of [[0.06, 0.06], [0.06, -0.06], [-0.06, 0.06], [-0.06, -0.06]] as const) {
         const bar = new Mesh(new BoxGeometry(0.016, 0.18, 0.016), dark)
-        bar.position.set(bx, 0.82, bz)
+        bar.name = 'LanternStaffCageBar'
+        bar.position.set(bx, 1.08, bz)
         parts.push(bar)
+    }
+    return addParts(g, parts)
+}
+
+function buildBattleStaff(): Group {
+    const g = new Group()
+    g.name = 'equip:staff'
+    // Canonical frame: grip at the origin, pole up the +Y axis, striking head on
+    // +Y. Socket frames/attack clips treat +Y as the business end.
+    const wood = mat(0x4a2c12, 0.86)
+    const pole = new Mesh(new CylinderGeometry(0.022, 0.03, 1.34, 7), wood)
+    pole.name = 'StaffPole'
+    pole.position.y = 0.4
+    const leather = mat(0x25170e, 0.8)
+    const grip = new Mesh(new CylinderGeometry(0.035, 0.032, 0.22, 7), leather)
+    grip.name = 'StaffGrip'
+    grip.position.y = 0.02
+    const iron = mat(0x3f4851, 0.38, 0.46)
+    const collarLow = new Mesh(new CylinderGeometry(0.06, 0.055, 0.06, 8), iron)
+    collarLow.name = 'StaffHeadLowerCollar'
+    collarLow.position.y = 1.0
+    const head = new Mesh(new SphereGeometry(0.13, 10, 8), mat(0x56616d, 0.34, 0.42))
+    head.name = 'StaffHeavyHead'
+    head.position.y = 1.12
+    head.scale.set(0.9, 1.1, 0.9)
+    const spike = new Mesh(new ConeGeometry(0.07, 0.24, 8), mat(0xc7d5dc, 0.28, 0.62))
+    spike.name = 'StaffSpike'
+    spike.position.y = 1.31
+    const gem = new Mesh(new SphereGeometry(0.045, 8, 6), glowMat(0x72d7ff, 0.45))
+    gem.name = 'StaffImpactGem'
+    gem.position.set(0, 1.13, 0.115)
+    const parts: Mesh[] = [pole, grip, collarLow, head, spike, gem]
+    for (const [name, x, z, ry] of [
+        ['StaffSideSpikeR', 0.13, 0, -Math.PI / 2],
+        ['StaffSideSpikeL', -0.13, 0, Math.PI / 2],
+        ['StaffFrontSpike', 0, 0.13, Math.PI],
+    ] as const) {
+        const side = new Mesh(new ConeGeometry(0.035, 0.15, 7), mat(0xaebdc5, 0.34, 0.58))
+        side.name = name
+        side.position.set(x, 1.12, z)
+        side.rotation.z = x === 0 ? 0 : ry
+        side.rotation.x = x === 0 ? Math.PI / 2 : 0
+        parts.push(side)
     }
     for (const m of parts) { m.castShadow = true; g.add(m) }
     return g
+}
+
+function buildCrystalStaff(): Group {
+    const g = new Group()
+    g.name = 'equip:staff-crystal'
+    // Channeling staff: lighter shaft with a bright crystal cluster on +Y. The
+    // top is still the striking/casting end for shared staff animations.
+    const ivory = mat(0xd7cfb8, 0.66)
+    const pole = new Mesh(new CylinderGeometry(0.018, 0.026, 1.25, 7), ivory)
+    pole.name = 'CrystalStaffPole'
+    pole.position.y = 0.38
+    const grip = new Mesh(new CylinderGeometry(0.034, 0.03, 0.24, 7), mat(0x25444c, 0.72))
+    grip.name = 'CrystalStaffGrip'
+    grip.position.y = 0.02
+    const gold = mat(0xd0a23d, 0.36, 0.32)
+    const ringLow = new Mesh(new CylinderGeometry(0.055, 0.052, 0.05, 8), gold)
+    ringLow.name = 'CrystalStaffLowerRing'
+    ringLow.position.y = 0.94
+    const ringHigh = new Mesh(new CylinderGeometry(0.075, 0.07, 0.045, 8), gold)
+    ringHigh.name = 'CrystalStaffUpperRing'
+    ringHigh.position.y = 1.11
+    const lowerCrystal = new Mesh(new ConeGeometry(0.075, 0.16, 4), glowMat(0x6af2ff, 0.72))
+    lowerCrystal.name = 'CrystalStaffCrystalLower'
+    lowerCrystal.position.y = 1.04
+    lowerCrystal.rotation.y = Math.PI / 4
+    lowerCrystal.rotation.z = Math.PI
+    const crystal = new Mesh(new ConeGeometry(0.085, 0.24, 4), glowMat(0x74c8ff, 0.85))
+    crystal.name = 'CrystalStaffCrystal'
+    crystal.position.y = 1.22
+    crystal.rotation.y = Math.PI / 4
+    const sideOrbL = new Mesh(new SphereGeometry(0.038, 7, 5), glowMat(0xc797ff, 0.55))
+    sideOrbL.name = 'CrystalStaffSideOrbL'
+    sideOrbL.position.set(-0.095, 1.1, 0)
+    const sideOrbR = new Mesh(new SphereGeometry(0.038, 7, 5), glowMat(0xc797ff, 0.55))
+    sideOrbR.name = 'CrystalStaffSideOrbR'
+    sideOrbR.position.set(0.095, 1.1, 0)
+    const braceL = new Mesh(new BoxGeometry(0.028, 0.16, 0.028), gold)
+    braceL.name = 'CrystalStaffBraceL'
+    braceL.position.set(-0.075, 1.03, 0)
+    braceL.rotation.z = -0.48
+    const braceR = new Mesh(new BoxGeometry(0.028, 0.16, 0.028), gold)
+    braceR.name = 'CrystalStaffBraceR'
+    braceR.position.set(0.075, 1.03, 0)
+    braceR.rotation.z = 0.48
+    return addParts(g, [pole, grip, ringLow, ringHigh, lowerCrystal, crystal, sideOrbL, sideOrbR, braceL, braceR])
 }
 
 function buildBook(): Group {

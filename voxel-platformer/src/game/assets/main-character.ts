@@ -168,12 +168,32 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
     mantle.scale.z = 0.64
     chest.add(mantle)
 
-    const cape = setShadow(new Mesh(sharedConeGeometry(0.36, 0.92, 4), cloak))
+    const cape = new Group()
     cape.name = 'Cloak'
-    cape.position.set(0, cy(0.68), -0.2)
-    cape.rotation.y = Math.PI * 0.25
-    cape.scale.set(0.95, 1, 0.42)
+    cape.position.set(0, 0, 0)
     chest.add(cape)
+
+    const capeBack = setShadow(new Mesh(sharedBoxGeometry(0.42, 0.62, 0.055), cloak))
+    capeBack.name = 'CloakBackPanel'
+    capeBack.position.set(0, cy(0.86), -0.27)
+    capeBack.rotation.x = -0.08
+
+    const capeLower = setShadow(new Mesh(sharedBoxGeometry(0.54, 0.46, 0.06), cloak))
+    capeLower.name = 'CloakLowerPanel'
+    capeLower.position.set(0, cy(0.54), -0.3)
+    capeLower.rotation.x = -0.1
+
+    const capeFoldL = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.64, 0.052), cloak))
+    capeFoldL.name = 'CloakFoldL'
+    capeFoldL.position.set(-0.24, cy(0.56), -0.29)
+    capeFoldL.rotation.set(-0.08, -0.04, -0.12)
+
+    const capeFoldR = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.64, 0.052), cloak))
+    capeFoldR.name = 'CloakFoldR'
+    capeFoldR.position.set(0.24, cy(0.56), -0.29)
+    capeFoldR.rotation.set(-0.08, 0.04, 0.12)
+
+    cape.add(capeBack, capeLower, capeFoldL, capeFoldR)
 
     const nose = setShadow(new Mesh(sharedConeGeometry(0.035, 0.08, 8), skin))
     nose.name = 'Nose'

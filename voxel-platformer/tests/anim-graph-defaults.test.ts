@@ -54,7 +54,7 @@ test('combat graph is valid, with a one-shot attack and a terminal dead state', 
     assert.equal(validateAnimGraph(g).ok, true)
 
     const stateIds = new Set(g.states.map((s) => s.id))
-    assert.ok(stateIds.has('attack') && stateIds.has('attackWide') && stateIds.has('shoot') && stateIds.has('die') && stateIds.has('dead'))
+    assert.ok(stateIds.has('attack') && stateIds.has('attackWide') && stateIds.has('staffAttack') && stateIds.has('shoot') && stateIds.has('die') && stateIds.has('dead'))
 
     // `shoot` and `attackWide` are one-shot triggers that return to locomotion,
     // like the base thrust attack.
@@ -62,6 +62,8 @@ test('combat graph is valid, with a one-shot attack and a terminal dead state', 
     assert.equal(shootParam?.trigger, true)
     const wideParam = (g.params ?? []).find((p) => p.name === 'attackWide')
     assert.equal(wideParam?.trigger, true)
+    const staffParam = (g.params ?? []).find((p) => p.name === 'staffAttack')
+    assert.equal(staffParam?.trigger, true)
 
     // `dead` is terminal — nothing transitions out of it.
     assert.equal(g.transitions.some((t) => t.from === 'dead'), false)
@@ -97,6 +99,13 @@ test('combat graph: attack trigger plays once then returns, dead is absorbing', 
     for (let i = 0; i < 14; i++) { sm.setParams(idle); sm.tick(0.05) }
     assert.equal(sm.currentStateId, 'idle')
 
+    // Staff bonk is a heavier separate one-shot melee variant.
+    sm.setParam('staffAttack', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'staffAttack')
+    for (let i = 0; i < 16; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'idle')
+
     // Bow shot is a separate one-shot that also returns to idle.
     sm.setParam('shoot', 1)
     sm.tick(0.05)
@@ -121,6 +130,11 @@ test('combat graph ignores attack and shoot triggers while airborne', () => {
     const fall = computeLocomotionParams({ speedXZ: 0, vy: -4, grounded: false, blocked: false, movementState: 2 })
 
     sm.setParams(jump)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'jump')
+
+    sm.setParams(jump)
+    sm.setParam('staffAttack', 1)
     sm.tick(0.05)
     assert.equal(sm.currentStateId, 'jump')
 

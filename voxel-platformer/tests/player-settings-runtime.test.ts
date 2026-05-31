@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponent, query } from 'bitecs'
-import { Euler, Mesh, MeshBasicMaterial, PointLight, Vector3, type Object3D } from 'three'
+import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Vector3, type Object3D } from 'three'
 import { Grounded, MovingObject } from '../src/engine/ecs/components'
 import { computeLocomotionParams } from '../src/engine/anim/core'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
@@ -11,7 +11,14 @@ import type { ActionMap } from '../src/engine/input/actions'
 import { PLAYER_TORCH_FLAME, PLAYER_TORCH_LIGHT } from '../src/game/assets'
 import { MovingObjectKind } from '../src/game/moving-objects'
 import { createPlayerTorchSystem } from '../src/game/player-torch-system'
-import { equipmentSocketFrame } from '../src/game/anim/equipment'
+import {
+    HEAD_EQUIPMENT_KINDS,
+    STAFF_EQUIPMENT_KINDS,
+    createEquipment,
+    equipmentSocketFrame,
+    isStaffEquipmentKind,
+} from '../src/game/anim/equipment'
+import { partCharacterClips } from '../src/game/anim/part-clips'
 import { PLAYER_MODEL_KIND_USER_DATA, applyWeaponStance, spawnPlayer, syncPlayerVisuals } from '../src/game/player'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 
@@ -113,28 +120,35 @@ test('player settings normalization keeps saved/script booleans boolean', () => 
 test('player equipment settings normalize, copy, and drive visible hand loadouts', () => {
     const settings = normalizePlayerSettings({
         equipment: {
-            melee: { handR: 'staff', handL: 'book' },
+            head: 'hat-ranger',
+            melee: { handR: 'staff-lantern', handL: 'book' },
             ranged: { handR: 'bogus', handL: 'bow' },
+            magic: { handR: 'staff-crystal' },
         },
     } as never)
 
-    assert.deepEqual(settings.equipment.melee, { handR: 'staff', handL: 'book' })
+    assert.equal(settings.equipment.head, 'hat-ranger')
+    assert.deepEqual(settings.equipment.melee, { handR: 'staff-lantern', handL: 'book' })
     assert.deepEqual(settings.equipment.ranged, { handR: 'arrow', handL: 'bow' })
+    assert.deepEqual(settings.equipment.magic, { handR: 'staff-crystal', handL: null })
 
     const copied = copyPlayerSettings(settings)
+    copied.equipment.head = 'hat-sun'
     copied.equipment.melee.handR = 'sword'
-    assert.equal(settings.equipment.melee.handR, 'staff')
+    assert.equal(settings.equipment.head, 'hat-ranger')
+    assert.equal(settings.equipment.melee.handR, 'staff-lantern')
 
     const world = createGameWorld()
     world.playerSettings = settings
     const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings })
     const root = world.object3DByEid.get(eid)!
-    assert.ok(findObjectByName(root, 'equip:staff'))
+    assert.ok(findObjectByName(root, 'equip:hat-ranger'))
+    assert.ok(findObjectByName(root, 'equip:staff-lantern'))
     assert.ok(findObjectByName(root, 'equip:book'))
 
     world.weaponStance = 'ranged'
     applyWeaponStance(world, eid, 'ranged')
-    assert.equal(findObjectByName(root, 'equip:staff'), null)
+    assert.equal(findObjectByName(root, 'equip:staff-lantern'), null)
     assert.ok(findObjectByName(root, 'equip:bow'))
     assert.ok(findObjectByName(root, 'equip:arrow'))
 })
@@ -145,12 +159,43 @@ test('syncPlayerVisuals applies live equipment changes without model swaps', () 
     const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
     const root = world.object3DByEid.get(eid)!
 
+    assert.ok(findObjectByName(root, 'equip:hat'))
     assert.ok(findObjectByName(root, 'equip:sword'))
-    world.playerSettings.equipment.melee = { handR: 'staff', handL: null }
+    world.playerSettings.equipment.head = 'hat-sun'
+    world.playerSettings.equipment.melee = { handR: 'staff-crystal', handL: null }
     syncPlayerVisuals(world)
 
+    assert.equal(findObjectByName(root, 'equip:hat'), null)
+    assert.ok(findObjectByName(root, 'equip:hat-sun'))
     assert.equal(findObjectByName(root, 'equip:sword'), null)
-    assert.ok(findObjectByName(root, 'equip:staff'))
+    assert.ok(findObjectByName(root, 'equip:staff-crystal'))
+})
+
+test('all head equipment variants build distinct hat models', () => {
+    const childCounts = new Set<number>()
+    for (const kind of HEAD_EQUIPMENT_KINDS) {
+        const item = createEquipment(kind)
+        assert.equal(item.name, `equip:${kind}`)
+        assert.ok(item.children.length >= 5, `${kind} should contain enough shapes to read as a designed hat`)
+        childCounts.add(item.children.length)
+        const frame = equipmentSocketFrame(kind, 'head')
+        assert.ok((frame.offset?.[1] ?? 1) < 0, `${kind} should sit down onto the head socket`)
+    }
+    assert.ok(childCounts.size > 1, 'hat variants should not all share the same silhouette complexity')
+})
+
+test('all staff equipment variants build selectable staff models', () => {
+    for (const kind of STAFF_EQUIPMENT_KINDS) {
+        const item = createEquipment(kind)
+        assert.equal(item.name, `equip:${kind}`)
+        assert.equal(isStaffEquipmentKind(kind), true)
+        assert.ok(item.children.length >= 5, `${kind} should contain enough shapes to read as a designed staff`)
+        const frame = equipmentSocketFrame(kind, 'handR')
+        assert.ok((frame.offset?.[1] ?? 0) < -0.3, `${kind} should sit low enough to read as a staff`)
+    }
+    assert.ok(findObjectByName(createEquipment('staff-lantern'), 'LanternStaffGlow'))
+    assert.ok(findObjectByName(createEquipment('staff'), 'StaffHeavyHead'))
+    assert.ok(findObjectByName(createEquipment('staff-crystal'), 'CrystalStaffCrystal'))
 })
 
 test('player beard setting normalizes and rebuilds the procedural model', () => {
@@ -195,18 +240,44 @@ test('melee attack alternates thrust and wide swing animations', () => {
     assert.equal(controller.machine.currentStateId, 'attackWide')
 })
 
-test('default hand equipment frames point sword forward, nock arrow, and keep shield on the hand', () => {
+test('staff melee variants use the custom staff bonk animation', () => {
+    for (const kind of STAFF_EQUIPMENT_KINDS) {
+        const world = createGameWorld()
+        world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+        world.playerSettings.equipment.melee = { handR: kind, handL: null }
+        world.weaponStance = 'melee'
+        const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+        addComponent(world, player, Grounded)
+        const controller = world.animControllerByEid.get(player)!
+        const idleParams = computeLocomotionParams({ speedXZ: 0, vy: 0, grounded: true, blocked: false, movementState: 0 })
+        const system = createMeleeAttackSystem(onePressAction())
+
+        system.update(world, 1 / 60)
+        controller.setParams(idleParams)
+        controller.update(0.05)
+
+        assert.equal(controller.machine.currentStateId, 'staffAttack', `${kind} should trigger the staff attack`)
+    }
+})
+
+test('default hand equipment frames point sword forward, nock arrow, keep shield on the hand, and ground the staff', () => {
     const sword = equipmentSocketFrame('sword', 'handR')
     const shield = equipmentSocketFrame('shield', 'handL')
     const arrow = equipmentSocketFrame('arrow', 'handR')
+    const staff = equipmentSocketFrame('staff', 'handR')
 
     const bladeDir = new Vector3(0, 1, 0).applyEuler(toEuler(sword.orient))
     assert.ok(bladeDir.z > 0.9, 'right-hand sword should point toward the character front')
     assert.ok(bladeDir.y > 0.03, 'right-hand sword should keep a slight upward lift')
 
-    const drawArmPose = new Euler(-1.26, 1.02, -0.08, 'XYZ')
-    const arrowDirAtDraw = new Vector3(0, 1, 0).applyEuler(toEuler(arrow.orient)).applyEuler(drawArmPose)
-    assert.ok(arrowDirAtDraw.x > 0.96, 'right-hand arrow should line up across the bow at full draw')
+    const drawChestPose = new Euler(0.015, 0.52, -0.02, 'XYZ')
+    const drawArmPose = new Euler(-1.26, 0.85, -0.5, 'XYZ')
+    const arrowDirAtDraw = new Vector3(0, 1, 0)
+        .applyEuler(toEuler(arrow.orient))
+        .applyEuler(drawArmPose)
+        .applyEuler(drawChestPose)
+    assert.ok(arrowDirAtDraw.z > 0.96, 'right-hand arrow should point toward the character front at full draw')
+    assert.ok(Math.abs(arrowDirAtDraw.x) < 0.08, 'right-hand arrow should not point sideways at full draw')
     assert.ok(Math.abs(arrowDirAtDraw.y) < 0.08, 'right-hand arrow should stay level at full draw')
     assert.ok(Math.abs(arrow.offset?.[0] ?? 1) < 0.04, 'right-hand arrow nock should stay close to the fingers')
 
@@ -214,10 +285,49 @@ test('default hand equipment frames point sword forward, nock arrow, and keep sh
     assert.ok(shieldNormal.x < -0.85, 'left-hand shield should guard the left side')
     assert.ok(shieldNormal.z > 0.1, 'left-hand shield should stay slightly readable from the front')
     assert.ok(Math.abs((shield.offset?.[0] ?? 0)) < 0.16, 'shield grip should stay close enough to touch the hand')
+
+    assert.ok((staff.offset?.[1] ?? 0) < -0.35, 'staff grip should sit low enough that the base reaches near the floor')
+    assert.ok((staff.offset?.[2] ?? 0) > 0.04, 'staff should be carried slightly forward of the wrist')
+    const staffIdleDir = new Vector3(0, 1, 0).applyEuler(toEuler(staff.orient))
+    assert.ok(staffIdleDir.y > 0.85, 'staff should still read as an upright staff in idle carry')
+    assert.ok(staffIdleDir.z > 0.35, 'staff weighted head should lean forward in idle carry')
+
+    const staffModel = createEquipment('staff')
+    assert.ok(findObjectByName(staffModel, 'StaffHeavyHead'), 'staff should have a heavy striking head')
+    assert.ok(findObjectByName(staffModel, 'StaffSpike'), 'staff should have a pointy striking tip')
+})
+
+test('staff attack impact drives the pointy head forward and downward', () => {
+    const staff = equipmentSocketFrame('staff', 'handR')
+    const clip = partCharacterClips().find((candidate) => candidate.name === 'staffAttack')
+    assert.ok(clip)
+
+    const staffHeadDir = new Vector3(0, 1, 0)
+        .applyEuler(toEuler(staff.orient))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'UpperArmR')!, 0.34))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'Chest')!, 0.34))
+
+    assert.ok(staffHeadDir.z > 0.72, 'staff head should point into the enemy at impact')
+    assert.ok(staffHeadDir.y < -0.3, 'staff head should drive downward at impact')
 })
 
 function toEuler(value: readonly [number, number, number] | undefined): Euler {
     return new Euler(value?.[0] ?? 0, value?.[1] ?? 0, value?.[2] ?? 0, 'XYZ')
+}
+
+function quaternionAt(
+    track: { times: number[]; values: number[] },
+    time: number,
+): Quaternion {
+    const index = track.times.findIndex((candidate) => Math.abs(candidate - time) < 1e-6)
+    assert.notEqual(index, -1, `missing key at ${time}`)
+    const offset = index * 4
+    return new Quaternion(
+        track.values[offset]!,
+        track.values[offset + 1]!,
+        track.values[offset + 2]!,
+        track.values[offset + 3]!,
+    )
 }
 
 test('indoorCutEnabled defaults on and round-trips through normalization', () => {

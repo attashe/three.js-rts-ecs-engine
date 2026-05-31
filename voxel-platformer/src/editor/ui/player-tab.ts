@@ -16,7 +16,7 @@ import {
     type CharacterBeardKind,
 } from '../../game/character-appearance'
 import { sectionEl, type RefreshableElement } from './common'
-import { equipmentSelect, syncEquipmentSelect } from './equipment-field'
+import { equipmentSelect, headEquipmentSelect, syncEquipmentSelect, syncHeadEquipmentSelect } from './equipment-field'
 
 export interface PlayerTabOptions {
     editorState: EditorState
@@ -82,11 +82,22 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
     root.appendChild(modelSection)
 
     const equipmentSection = sectionEl('Equipment')
+    const headSelect = headEquipmentSelect('Head', (value) => { state.player.equipment.head = value })
     const meleeRight = equipmentSelect('Melee right', (value) => { state.player.equipment.melee.handR = value })
     const meleeLeft = equipmentSelect('Melee left', (value) => { state.player.equipment.melee.handL = value })
     const rangedRight = equipmentSelect('Ranged right', (value) => { state.player.equipment.ranged.handR = value })
     const rangedLeft = equipmentSelect('Ranged left', (value) => { state.player.equipment.ranged.handL = value })
-    equipmentSection.append(meleeRight.row, meleeLeft.row, rangedRight.row, rangedLeft.row)
+    const magicRight = equipmentSelect('Magic right', (value) => { state.player.equipment.magic.handR = value })
+    const magicLeft = equipmentSelect('Magic left', (value) => { state.player.equipment.magic.handL = value })
+    equipmentSection.append(
+        headSelect.row,
+        meleeRight.row,
+        meleeLeft.row,
+        rangedRight.row,
+        rangedLeft.row,
+        magicRight.row,
+        magicLeft.row,
+    )
     root.appendChild(equipmentSection)
 
     const abilitiesSection = sectionEl('Abilities')
@@ -184,10 +195,13 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
         placeSpawnBtn.classList.toggle('active', state.mode === 'place-spawn')
         if (document.activeElement !== modelSelect) modelSelect.value = state.player.model
         if (document.activeElement !== beardSelect) beardSelect.value = state.player.beard
+        syncHeadEquipmentSelect(headSelect.input, state.player.equipment.head)
         syncEquipmentSelect(meleeRight.input, state.player.equipment.melee.handR)
         syncEquipmentSelect(meleeLeft.input, state.player.equipment.melee.handL)
         syncEquipmentSelect(rangedRight.input, state.player.equipment.ranged.handR)
         syncEquipmentSelect(rangedLeft.input, state.player.equipment.ranged.handL)
+        syncEquipmentSelect(magicRight.input, state.player.equipment.magic.handR)
+        syncEquipmentSelect(magicLeft.input, state.player.equipment.magic.handL)
         for (const ability of PLAYER_ABILITY_KEYS) {
             const input = abilityInputs.get(ability)
             if (input && input.checked !== state.player.abilities[ability]) input.checked = state.player.abilities[ability]

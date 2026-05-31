@@ -7,6 +7,7 @@ import { hasComponent, query } from 'bitecs'
 import { Grounded, PlayerControlled, Position, Rotation } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { NpcRuntimeState } from '../../../game/npcs/npc-types'
+import { isStaffEquipmentKind } from '../../../game/anim/equipment-types'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 
@@ -46,6 +47,10 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
     // Swing: a wide frontal arc (90° each side — the front hemisphere, never
     // behind the player) at base reach, cleaving everything in front.
     const swing: MeleeHitbox = { range: baseRange, arcCos: 0, cleave: true }
+    // Staff bonk: longer reach and a forgiving frontal cone; the animation
+    // drives the weighted spike forward/down, so gameplay should read as a
+    // committed heavy hit.
+    const staffSlam: MeleeHitbox = { range: baseRange + 0.85, arcCos: 0.25, cleave: true }
     let nextWideSwing = false
     let meleeLockSeconds = 0
 
@@ -64,14 +69,14 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
             if (controller && isMeleeAnimationBusy(controller.machine.currentStateId)) return
             if (!actions.consumePressed(actionId, player)) return
 
-            // Play the next melee variation: thrust, then wide swing.
-            const useWideSwing = nextWideSwing
-            controller?.machine.setParam(useWideSwing ? 'attackWide' : 'attack', 1)
-            nextWideSwing = !nextWideSwing
-            meleeLockSeconds = useWideSwing ? 0.56 : 0.44
+            const useStaff = activeLoadoutUsesStaff(world)
+            const useWideSwing = !useStaff && nextWideSwing
+            controller?.machine.setParam(useStaff ? 'staffAttack' : useWideSwing ? 'attackWide' : 'attack', 1)
+            if (!useStaff) nextWideSwing = !nextWideSwing
+            meleeLockSeconds = useStaff ? 0.64 : useWideSwing ? 0.56 : 0.44
 
             // Forward-arc hit against live NPCs, shaped by which attack played.
-            const box = useWideSwing ? swing : thrust
+            const box = useStaff ? staffSlam : useWideSwing ? swing : thrust
             const yaw = Rotation.y[player]!
             const fx = Math.sin(yaw)
             const fz = Math.cos(yaw)
@@ -110,5 +115,10 @@ function applyMeleeHit(npc: NpcRuntimeState, damage: number): void {
 }
 
 function isMeleeAnimationBusy(stateId: string): boolean {
-    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'shoot'
+    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'staffAttack' || stateId === 'shoot'
+}
+
+function activeLoadoutUsesStaff(world: Parameters<System['update']>[0]): boolean {
+    const loadout = world.playerSettings.equipment[world.weaponStance]
+    return isStaffEquipmentKind(loadout.handR) || isStaffEquipmentKind(loadout.handL)
 }

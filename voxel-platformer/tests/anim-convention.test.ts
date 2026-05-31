@@ -22,12 +22,12 @@ test('validateClipNames flags missing required clips and reports extras', () => 
 
 test('combat clip set extends base locomotion with action and death clips', () => {
     for (const id of REQUIRED_CLIP_IDS) assert.ok(COMBAT_REQUIRED_CLIP_IDS.includes(id), `${id} remains required`)
-    for (const id of ['attack', 'attackWide', 'shoot', 'die', 'dead'] as const) {
+    for (const id of ['attack', 'attackWide', 'staffAttack', 'shoot', 'die', 'dead'] as const) {
         assert.ok(COMBAT_REQUIRED_CLIP_IDS.includes(id), `${id} is required for combat profiles`)
     }
     const partial = validateClipNames([...REQUIRED_CLIP_IDS], COMBAT_REQUIRED_CLIP_IDS)
     assert.equal(partial.ok, false)
-    assert.deepEqual(partial.missing.sort(), ['attack', 'attackWide', 'dead', 'die', 'shoot'])
+    assert.deepEqual(partial.missing.sort(), ['attack', 'attackWide', 'dead', 'die', 'shoot', 'staffAttack'])
 })
 
 test('validateSocketNames reports canonical coverage; sockets are optional', () => {

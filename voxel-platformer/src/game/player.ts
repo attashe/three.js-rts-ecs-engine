@@ -25,7 +25,7 @@ import {
 import { AnimationController } from '../engine/anim'
 import { playerProfile } from './anim/character-profiles'
 import { equip, unequipSlot } from './anim/equipment'
-import { handLoadoutKey, type EquipmentHandLoadout } from './anim/equipment-types'
+import { playerEquipmentKey, type EquipmentHandLoadout } from './anim/equipment-types'
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
 import { disposeObject3D } from '../engine/render/dispose-object'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from './player-settings'
@@ -91,10 +91,12 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     Health.current[eid] = PLAYER_DEFAULT_MAX_HEALTH
     Mana.max[eid] = 0
     Mana.current[eid] = 0
-    // Frontal block (~120° cone) covering the body height. Lowered by default;
-    // a raise mechanism (held block / stance) is wired separately.
+    // Directional block covering the body height. Lowered by default; the
+    // player-shield-system drives `raised`, the arc width, and the arc
+    // direction (front when T is held, left-flank when passive).
     Shield.raised[eid] = 0
     Shield.blockArcCos[eid] = 0.5
+    Shield.blockYawOffset[eid] = 0
     Shield.minY[eid] = 0
     Shield.maxY[eid] = MAIN_CHARACTER_COLLIDER_HALF_HEIGHT * 2
 
@@ -142,10 +144,12 @@ function buildAnimatedPlayerModel(world: GameWorld, eid: number, settings: Playe
     return model
 }
 
-/** Hat on the head, a weapon in each hand — demonstrates the socket system and
+/** Head item plus weapon hands — demonstrates the socket system and
  *  the iso-important head slot. Re-run after a model swap (sockets are rebuilt). */
 function equipDefaultLoadout(world: GameWorld, eid: number): void {
-    equip(world, eid, 'head', 'hat')
+    const head = world.playerSettings.equipment.head
+    if (head) equip(world, eid, 'head', head)
+    else unequipSlot(world, eid, 'head')
     applyWeaponStance(world, eid, world.weaponStance)
 }
 
@@ -153,7 +157,8 @@ function equipDefaultLoadout(world: GameWorld, eid: number): void {
  * Swap the player's in-hand loadout to match the weapon stance:
  *  - `melee`  — sword (right) + shield (left); the back bow shows (stowed).
  *  - `ranged` — bow (left), hands otherwise empty; back bow hidden (it's in hand).
- * The hat stays on across both. Safe to call repeatedly (re-equips in place).
+ * The head item stays on across all stances. Safe to call repeatedly
+ * (re-equips in place).
  */
 export function applyWeaponStance(world: GameWorld, eid: number, stance: WeaponStance): void {
     const loadout = world.playerSettings.equipment[stance]
@@ -218,7 +223,7 @@ function loadoutHasBow(loadout: EquipmentHandLoadout): boolean {
 }
 
 function playerEquipmentRuntimeKey(world: GameWorld): string {
-    return `${world.weaponStance}:${handLoadoutKey(world.playerSettings.equipment[world.weaponStance])}`
+    return `${world.weaponStance}:${playerEquipmentKey(world.playerSettings.equipment)}`
 }
 
 function playerModelVisualKey(settings: Pick<PlayerSettings, 'model' | 'beard'>): string {

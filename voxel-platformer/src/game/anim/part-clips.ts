@@ -148,6 +148,45 @@ export function partCharacterClips(): ProcClipDef[] {
             ],
         },
         {
+            // Staff bonk: fast wind-up, then the weighted pointy head snaps
+            // forward/down. The authored impact pose deliberately makes the
+            // staff's +Y axis (its striking head) point into the enemy.
+            name: 'staffAttack', duration: 0.64, tracks: [
+                neutralFigure(0.64),
+                eulerQuatTrack('Chest', [
+                    { t: 0, e: [0.02, -0.08, 0] },
+                    { t: 0.1, e: [-0.08, -0.46, -0.08] },
+                    { t: 0.22, e: [-0.16, -0.68, -0.1] },
+                    { t: 0.34, e: [0.34, 0.18, 0.02] },
+                    { t: 0.46, e: [0.42, 0.1, 0.02] },
+                    { t: 0.64, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('Head', [
+                    { t: 0, e: [0, -0.04, 0] },
+                    { t: 0.18, e: [-0.08, -0.28, 0] },
+                    { t: 0.34, e: [0.12, 0.18, 0] },
+                    { t: 0.64, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('UpperArmR', [
+                    { t: 0, e: [0.02, 0, -0.04] },
+                    { t: 0.1, e: [-0.8, -0.52, -0.32] },
+                    { t: 0.22, e: [-1.7, -0.38, -0.52] },
+                    { t: 0.34, e: [1.32, 0.14, -0.12] },
+                    { t: 0.46, e: [1.65, 0.04, -0.08] },
+                    { t: 0.64, e: [0, 0, -0.04] },
+                ]),
+                eulerQuatTrack('UpperArmL', [
+                    { t: 0, e: [0.02, 0, 0.04] },
+                    { t: 0.14, e: [-0.48, 0.28, 0.26] },
+                    { t: 0.32, e: [-0.94, -0.22, 0.34] },
+                    { t: 0.46, e: [-0.36, -0.12, 0.18] },
+                    { t: 0.64, e: [0, 0, 0.04] },
+                ]),
+                eulerQuatTrack('LegR', [{ t: 0, e: [0, 0, 0] }, { t: 0.34, e: [-0.26, 0, 0.08] }, { t: 0.64, e: [0, 0, 0] }]),
+                eulerQuatTrack('LegL', [{ t: 0, e: [0, 0, 0] }, { t: 0.34, e: [0.36, 0, -0.12] }, { t: 0.64, e: [0, 0, 0] }]),
+            ],
+        },
+        {
             // Bow shot: chest turns side-on (archer's stance, reads well from
             // iso), the left arm pushes the bow out front and holds steady, the
             // right arm draws the string back to the cheek, then the release
@@ -160,7 +199,7 @@ export function partCharacterClips(): ProcClipDef[] {
                 eulerQuatTrack('UpperArmL', [{ t: 0, e: [0.05, 0, 0.05] }, { t: 0.14, e: [-1.45, -0.14, 0.02] }, { t: 0.48, e: [-1.52, -0.1, 0.02] }, { t: 0.62, e: [0, 0, 0.04] }]),
                 // Draw arm: up to the string, pull back (elbow swings out), hold,
                 // then release snaps it back toward the bow.
-                eulerQuatTrack('UpperArmR', [{ t: 0, e: [0.05, 0, -0.05] }, { t: 0.16, e: [-1.35, 0.35, -0.04] }, { t: 0.42, e: [-1.26, 1.02, -0.08] }, { t: 0.49, e: [-1.52, 0.12, 0.02] }, { t: 0.62, e: [0, 0, -0.04] }]),
+                eulerQuatTrack('UpperArmR', [{ t: 0, e: [0.05, 0, -0.05] }, { t: 0.16, e: [-1.35, 0.35, -0.22] }, { t: 0.42, e: [-1.26, 0.85, -0.5] }, { t: 0.49, e: [-1.52, 0.12, -0.04] }, { t: 0.62, e: [0, 0, -0.04] }]),
                 eulerQuatTrack('LegR', [{ t: 0, e: [0, 0, 0.02] }, { t: 0.42, e: [-0.08, 0, 0.04] }, { t: 0.62, e: [0, 0, 0] }]),
                 eulerQuatTrack('LegL', [{ t: 0, e: [0, 0, -0.02] }, { t: 0.42, e: [0.12, 0, -0.04] }, { t: 0.62, e: [0, 0, 0] }]),
             ],

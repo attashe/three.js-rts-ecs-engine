@@ -21,7 +21,14 @@ import { combatLocomotionGraph, locomotionGraph } from './game/anim/graph-defaul
 import { playerProfile } from './game/anim/character-profiles'
 import { partCharacterClips } from './game/anim/part-clips'
 import { preloadCharacterModels } from './game/anim/model-registry'
-import { createEquipment, equipmentSocketFrame, type EquipmentKind } from './game/anim/equipment'
+import {
+    EQUIPMENT_LABELS,
+    HEAD_EQUIPMENT_KINDS,
+    STAFF_EQUIPMENT_KINDS,
+    createEquipment,
+    equipmentSocketFrame,
+    type EquipmentKind,
+} from './game/anim/equipment'
 import { createNpcModel } from './game/npcs/npc-models'
 import { NPC_MODEL_KINDS, NPC_MODEL_LABELS } from './game/npcs/npc-types'
 
@@ -33,7 +40,7 @@ interface PreviewProfile {
 }
 
 const EQUIP_BUTTONS: Array<{ slot: EquipSlot; kind: EquipmentKind; label: string }> = [
-    { slot: 'head', kind: 'hat', label: 'Hat' },
+    ...HEAD_EQUIPMENT_KINDS.map((kind) => ({ slot: 'head' as const, kind, label: EQUIPMENT_LABELS[kind] })),
     { slot: 'handR', kind: 'sword', label: 'Sword' },
     { slot: 'handL', kind: 'shield', label: 'Shield' },
     { slot: 'handR', kind: 'arrow', label: 'Arrow' },
@@ -41,8 +48,10 @@ const EQUIP_BUTTONS: Array<{ slot: EquipSlot; kind: EquipmentKind; label: string
     // bow shot can be previewed with the bow actually in hand.
     { slot: 'handL', kind: 'bow', label: 'Bow' },
     // NPC hand items, selectable per hand (each slot holds one at a time).
-    { slot: 'handR', kind: 'staff', label: 'Staff R' },
-    { slot: 'handL', kind: 'staff', label: 'Staff L' },
+    ...STAFF_EQUIPMENT_KINDS.flatMap((kind) => [
+        { slot: 'handR' as const, kind, label: `${EQUIPMENT_LABELS[kind]} R` },
+        { slot: 'handL' as const, kind, label: `${EQUIPMENT_LABELS[kind]} L` },
+    ]),
     { slot: 'handR', kind: 'book', label: 'Book R' },
     { slot: 'handL', kind: 'book', label: 'Book L' },
 ]

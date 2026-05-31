@@ -92,7 +92,7 @@ function faceModelDirection(model: Object3D, eid: number, speedXZ: number, dt: n
 }
 
 function isCombatState(stateId: string): boolean {
-    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'shoot'
+    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'staffAttack' || stateId === 'shoot'
 }
 
 function wrapAngle(a: number): number {

@@ -17,13 +17,14 @@ const RUN_OFF = 3.0
 const LAND_SECONDS = 0.24
 const ATTACK_SECONDS = 0.44
 const ATTACK_WIDE_SECONDS = 0.56
+const STAFF_ATTACK_SECONDS = 0.64
 const SHOOT_SECONDS = 0.62
 // Duration of the `die` topple before settling into the held `dead` pose.
 const DIE_SECONDS = 0.78
 
 /** Living states death can interrupt. Enumerated (rather than `from: '*'`) so the
  *  terminal `dead` state can't re-trigger `die` on itself. */
-const LIVING_STATES = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'attackWide', 'shoot'] as const
+const LIVING_STATES = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'attackWide', 'staffAttack', 'shoot'] as const
 /** States where player/NPC combat may start. Airborne and terminal states are
  *  deliberately excluded so attack/shoot clips do not fight jump/death poses. */
 const GROUNDED_COMBAT_START_STATES = ['idle', 'walk', 'run', 'land'] as const
@@ -31,10 +32,10 @@ const GROUNDED_COMBAT_START_STATES = ['idle', 'walk', 'run', 'land'] as const
 export const LOCOMOTION_GRAPH_ID = 'humanoid.locomotion'
 export const COMBAT_GRAPH_ID = 'humanoid.combatLocomotion'
 
-/** Param names for the combat overlay. `attack` (melee thrust),
- *  `attackWide` (wide slash), and `shoot` (bow) are one-shot triggers; `dead`
- *  latches once set. */
-export const COMBAT_PARAM = { attack: 'attack', attackWide: 'attackWide', shoot: 'shoot', dead: 'dead' } as const
+/** Param names for the combat overlay. `attack` (melee thrust), `attackWide`
+ *  (wide slash), `staffAttack` (staff bonk), and `shoot` (bow) are one-shot
+ *  triggers; `dead` latches once set. */
+export const COMBAT_PARAM = { attack: 'attack', attackWide: 'attackWide', staffAttack: 'staffAttack', shoot: 'shoot', dead: 'dead' } as const
 
 export function locomotionGraph(): AnimGraphDef {
     return {
@@ -107,6 +108,7 @@ export function combatLocomotionGraph(): AnimGraphDef {
             ...base.params ?? [],
             { name: C.attack, default: 0, trigger: true },
             { name: C.attackWide, default: 0, trigger: true },
+            { name: C.staffAttack, default: 0, trigger: true },
             { name: C.shoot, default: 0, trigger: true },
             { name: C.dead, default: 0 },
         ],
@@ -114,6 +116,7 @@ export function combatLocomotionGraph(): AnimGraphDef {
             ...base.states,
             { id: 'attack', loop: 'once' },
             { id: 'attackWide', loop: 'once' },
+            { id: 'staffAttack', loop: 'once' },
             { id: 'shoot', loop: 'once' },
             // Death: `die` topples the body (clamps its last frame), then settles
             // into the looping `dead` lying pose. Both terminal.
@@ -140,6 +143,10 @@ export function combatLocomotionGraph(): AnimGraphDef {
                 from, to: 'attackWide', priority: 200, blendSeconds: 0.06,
                 conditions: [{ param: C.attackWide, op: '==' as const, value: 1 }],
             })),
+            ...GROUNDED_COMBAT_START_STATES.map((from) => ({
+                from, to: 'staffAttack', priority: 210, blendSeconds: 0.08,
+                conditions: [{ param: C.staffAttack, op: '==' as const, value: 1 }],
+            })),
             // Return to locomotion once the swing has read.
             { from: 'attack', to: 'run', priority: 12, minTimeInState: ATTACK_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
@@ -152,6 +159,12 @@ export function combatLocomotionGraph(): AnimGraphDef {
             { from: 'attackWide', to: 'walk', priority: 11, minTimeInState: ATTACK_WIDE_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
             { from: 'attackWide', to: 'idle', priority: 10, minTimeInState: ATTACK_WIDE_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
+            { from: 'staffAttack', to: 'run', priority: 12, minTimeInState: STAFF_ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
+            { from: 'staffAttack', to: 'walk', priority: 11, minTimeInState: STAFF_ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
+            { from: 'staffAttack', to: 'idle', priority: 10, minTimeInState: STAFF_ATTACK_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
             // Shoot: one-shot bow draw + release, same grounded-only start rule.
             ...GROUNDED_COMBAT_START_STATES.map((from) => ({

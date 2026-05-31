@@ -13,6 +13,7 @@ import {
     sharedConeGeometry,
     sharedCylinderGeometry,
     sharedMaterial,
+    sharedSphereGeometry,
 } from './shared-primitives'
 
 function metal(): MeshStandardMaterial {
@@ -165,6 +166,40 @@ export function createArrow(): Group {
     root.add(rightFeather)
 
     enableShadows(root)
+    return root
+}
+
+/** A glowing arcane projectile fired from the staff (magician loadout). Emissive
+ *  so it reads as light even in shadow; small trailing wisps give it heading. */
+export function createMagicBolt(): Group {
+    const root = new Group()
+    root.name = 'MagicBolt'
+
+    const coreMat = new MeshStandardMaterial({
+        color: 0xcfe9ff,
+        emissive: 0x4aa8ff,
+        emissiveIntensity: 2.4,
+        roughness: 0.3,
+        metalness: 0,
+    })
+    const core = new Mesh(sharedSphereGeometry(0.13, 12, 12), coreMat)
+    core.name = 'MagicBoltCore'
+    root.add(core)
+
+    const haloMat = new MeshStandardMaterial({
+        color: 0x9fd0ff,
+        emissive: 0x2f7fe0,
+        emissiveIntensity: 1.4,
+        roughness: 0.6,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+    })
+    const halo = new Mesh(sharedSphereGeometry(0.2, 10, 10), haloMat)
+    halo.name = 'MagicBoltHalo'
+    root.add(halo)
+
     return root
 }
 

@@ -17,6 +17,7 @@ import type { AABB } from '../../engine/voxel/voxel-collide'
 import { getDebugInfoEnabled, subscribeDebugInfo } from '../../engine/render/render-settings'
 import { AnimationController, attachToSocket, partRigSource } from '../../engine/anim'
 import { createEquipment, equipmentSocketFrame } from '../anim/equipment'
+import { isStaffEquipmentKind } from '../anim/equipment-types'
 import { computeLocomotionParams } from '../../engine/anim/core'
 import { combatLocomotionGraph } from '../anim/graph-defaults'
 import { partCharacterClips } from '../anim/part-clips'
@@ -118,7 +119,8 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             controller.setParams(computeLocomotionParams(IDLE_SIGNAL))
             const runtime = world.npcRuntimeById.get(id)
             if (runtime?.requestAttack) {
-                controller.machine.setParam('attack', 1)
+                const npc = opts.getNpcs().find((candidate) => candidate.id === id)
+                controller.machine.setParam(npc && npcUsesStaff(npc) ? 'staffAttack' : 'attack', 1)
                 runtime.requestAttack = false
             }
             if (runtime?.requestDie) {
@@ -181,6 +183,10 @@ function attachNpcEquipment(controller: AnimationController, root: Object3D, npc
             offset: frame.offset,
         })
     }
+}
+
+function npcUsesStaff(npc: Pick<NpcConfig, 'equipment'>): boolean {
+    return isStaffEquipmentKind(npc.equipment.handR) || isStaffEquipmentKind(npc.equipment.handL)
 }
 
 function applyTransform(root: Object3D, pos: { x: number; y: number; z: number }, yaw: number, scale: number): void {
