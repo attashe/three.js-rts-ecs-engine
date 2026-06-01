@@ -29,6 +29,8 @@
             letter-spacing: 0.06em; margin-bottom: 8px; }
         label.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
         label.row > span { color: var(--text-dim); }
+        .control-stack { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+        .control-stack label.row { margin: 0; }
         input[type=range] { width: 150px; }
         select, button { font: inherit; color: var(--text); background: var(--row-bg); border: 1px solid var(--panel-border);
             border-radius: 6px; padding: 5px 8px; cursor: pointer; }
@@ -51,7 +53,8 @@
         <div class="section">
             <div class="title">Model</div>
             <select id="profile"></select>
-            <label class="row"><span>Equip</span><span class="btns" id="equip"></span></label>
+            <div class="control-stack" id="appearance"></div>
+            <div class="control-stack" id="slots"></div>
         </div>
 
         <div class="section">

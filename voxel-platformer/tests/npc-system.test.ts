@@ -8,8 +8,11 @@ import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 import {
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
+    defaultNpcBeard,
     defaultNpcEquipment,
+    defaultNpcVariant,
     normalizeNpcConfig,
+    npcAttackClip,
     npcInteractionZoneId,
     npcObstacleId,
     type NpcConfig,
@@ -48,6 +51,11 @@ test('NPC model registry exposes dwarf, Keeper Arlen, player, and troll models',
     assert.equal(findByName(arlen, 'KeeperArlenLeftLens')?.parent?.name, 'Head', 'glasses ride the animated head')
     assert.equal(findByName(arlen, 'KeeperArlenRobeHem')?.parent?.name, 'Figure', 'robe hem rides the animated body')
     assert.ok(findByName(createNpcModel('player', { beard: 'pointed' }), 'CharacterBeardPointed'), 'player NPC can opt into a beard')
+    const guardian = createNpcModel('large-troll', { variant: 'guardian' })
+    assert.ok(findByName(guardian, 'LargeTrollGuardianBreastplate'), 'Guardian troll wears armor')
+    assert.ok(findByName(guardian, 'CharacterBeardFull'), 'Guardian troll defaults to a full beard')
+    assert.equal(findByName(guardian, 'LargeTrollLeftLens'), null, 'Guardian troll has no Wise Troll glasses')
+    assert.equal(findByName(guardian, 'Cloak'), null, 'Guardian troll has no cloak')
 })
 
 test('NPC appearance and equipment normalize from model defaults and custom choices', () => {
@@ -72,8 +80,21 @@ test('NPC appearance and equipment normalize from model defaults and custom choi
         model: 'large-troll',
         position: { x: 0, y: 0, z: 0 },
     })
+    assert.equal(troll.variant, defaultNpcVariant('large-troll'))
     assert.equal(troll.beard, 'pointed')
     assert.deepEqual(troll.equipment, { handR: null, handL: 'book' })
+    assert.deepEqual(troll.equipment, defaultNpcEquipment('large-troll', 'wise'))
+    assert.equal(npcAttackClip(troll), 'attack')
+
+    const guardian = normalizeNpcConfig({
+        id: 'guardian',
+        model: 'large-troll',
+        variant: 'guardian',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(guardian.beard, defaultNpcBeard('large-troll', 'guardian'))
+    assert.deepEqual(guardian.equipment, { handR: 'battle-hammer', handL: null })
+    assert.equal(npcAttackClip(guardian), 'hammerAttack')
 
     const custom = normalizeNpcConfig({
         id: 'custom',
@@ -170,10 +191,21 @@ test('NPC renderer rebuilds visuals when hand equipment changes', () => {
     assert.notEqual(group!.children[0], secondRoot, 'appearance change rebuilds the procedural model')
     assert.ok(findByName(group!, 'CharacterBeardShort'))
 
+    const thirdRoot = group!.children[0]!
+    config.model = 'large-troll'
+    config.variant = 'guardian'
+    config.beard = 'full'
+    config.equipment = { handR: 'battle-hammer', handL: null }
+    system.update(world, 1 / 60)
+
+    assert.notEqual(group!.children[0], thirdRoot, 'variant change rebuilds the procedural model')
+    assert.ok(findByName(group!, 'LargeTrollGuardianBreastplate'))
+    assert.ok(findByName(group!, 'equip:battle-hammer'))
+
     system.dispose?.()
 })
 
-test('NPC renderer draws debug collider boxes for collidable NPCs only', () => {
+test('NPC renderer draws static collision boxes and live runtime hitboxes', () => {
     const scene = new Scene()
     const collidable = npc('solid')
     const passable = { ...npc('passable'), id: 'passable', collisionEnabled: false }
@@ -188,6 +220,11 @@ test('NPC renderer draws debug collider boxes for collidable NPCs only', () => {
     assert.equal(lines!.visible, true)
     assert.equal(lines!.geometry.drawRange.count, 24, 'one collidable NPC emits one wire box')
 
+    const runtime = registerRuntimeNpcs(world, [collidable, passable])
+    system.update(world, 1 / 60)
+    assert.equal(lines!.geometry.drawRange.count, 48, 'live NPCs expose damage hitboxes even when non-blocking')
+
+    runtime.dispose()
     system.dispose?.()
     assert.equal(scene.children.includes(lines!), false)
 })

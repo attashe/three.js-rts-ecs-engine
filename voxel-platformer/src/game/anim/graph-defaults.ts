@@ -5,6 +5,7 @@
 // graph drives the code reference rig and an imported .glb identically.
 
 import { LOCOMOTION_PARAM, type AnimGraphDef } from '../../engine/anim/core'
+import { HUMANOID_ANIM_TIMINGS } from './clip-timings'
 
 const P = LOCOMOTION_PARAM
 
@@ -14,17 +15,18 @@ const WALK_ON = 0.6
 const WALK_OFF = 0.4
 const RUN_ON = 3.2
 const RUN_OFF = 3.0
-const LAND_SECONDS = 0.24
-const ATTACK_SECONDS = 0.44
-const ATTACK_WIDE_SECONDS = 0.56
-const STAFF_ATTACK_SECONDS = 0.64
-const SHOOT_SECONDS = 0.62
+const LAND_SECONDS = HUMANOID_ANIM_TIMINGS.land
+const ATTACK_SECONDS = HUMANOID_ANIM_TIMINGS.attack
+const ATTACK_WIDE_SECONDS = HUMANOID_ANIM_TIMINGS.attackWide
+const STAFF_ATTACK_SECONDS = HUMANOID_ANIM_TIMINGS.staffAttack
+const HAMMER_ATTACK_SECONDS = HUMANOID_ANIM_TIMINGS.hammerAttack
+const SHOOT_SECONDS = HUMANOID_ANIM_TIMINGS.shoot
 // Duration of the `die` topple before settling into the held `dead` pose.
-const DIE_SECONDS = 0.78
+const DIE_SECONDS = HUMANOID_ANIM_TIMINGS.die
 
 /** Living states death can interrupt. Enumerated (rather than `from: '*'`) so the
  *  terminal `dead` state can't re-trigger `die` on itself. */
-const LIVING_STATES = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'attackWide', 'staffAttack', 'shoot'] as const
+const LIVING_STATES = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'attackWide', 'staffAttack', 'hammerAttack', 'shoot', 'shieldBlock'] as const
 /** States where player/NPC combat may start. Airborne and terminal states are
  *  deliberately excluded so attack/shoot clips do not fight jump/death poses. */
 const GROUNDED_COMBAT_START_STATES = ['idle', 'walk', 'run', 'land'] as const
@@ -33,9 +35,18 @@ export const LOCOMOTION_GRAPH_ID = 'humanoid.locomotion'
 export const COMBAT_GRAPH_ID = 'humanoid.combatLocomotion'
 
 /** Param names for the combat overlay. `attack` (melee thrust), `attackWide`
- *  (wide slash), `staffAttack` (staff bonk), and `shoot` (bow) are one-shot
- *  triggers; `dead` latches once set. */
-export const COMBAT_PARAM = { attack: 'attack', attackWide: 'attackWide', staffAttack: 'staffAttack', shoot: 'shoot', dead: 'dead' } as const
+ *  (wide slash), `staffAttack` (staff bonk), `hammerAttack` (heavy NPC slam),
+ *  and `shoot` (bow) are one-shot triggers; `shieldBlock` is held while
+ *  guarding; `dead` latches once set. */
+export const COMBAT_PARAM = {
+    attack: 'attack',
+    attackWide: 'attackWide',
+    staffAttack: 'staffAttack',
+    hammerAttack: 'hammerAttack',
+    shoot: 'shoot',
+    shieldBlock: 'shieldBlock',
+    dead: 'dead',
+} as const
 
 export function locomotionGraph(): AnimGraphDef {
     return {
@@ -109,7 +120,9 @@ export function combatLocomotionGraph(): AnimGraphDef {
             { name: C.attack, default: 0, trigger: true },
             { name: C.attackWide, default: 0, trigger: true },
             { name: C.staffAttack, default: 0, trigger: true },
+            { name: C.hammerAttack, default: 0, trigger: true },
             { name: C.shoot, default: 0, trigger: true },
+            { name: C.shieldBlock, default: 0 },
             { name: C.dead, default: 0 },
         ],
         states: [
@@ -117,7 +130,9 @@ export function combatLocomotionGraph(): AnimGraphDef {
             { id: 'attack', loop: 'once' },
             { id: 'attackWide', loop: 'once' },
             { id: 'staffAttack', loop: 'once' },
+            { id: 'hammerAttack', loop: 'once' },
             { id: 'shoot', loop: 'once' },
+            { id: 'shieldBlock', loop: 'clamp' },
             // Death: `die` topples the body (clamps its last frame), then settles
             // into the looping `dead` lying pose. Both terminal.
             { id: 'die', loop: 'clamp' },
@@ -137,15 +152,23 @@ export function combatLocomotionGraph(): AnimGraphDef {
             // jump/fall/death.
             ...GROUNDED_COMBAT_START_STATES.map((from) => ({
                 from, to: 'attack', priority: 200, blendSeconds: 0.06,
-                conditions: [{ param: C.attack, op: '==' as const, value: 1 }],
+                conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.attack, op: '==' as const, value: 1 }],
             })),
             ...GROUNDED_COMBAT_START_STATES.map((from) => ({
                 from, to: 'attackWide', priority: 200, blendSeconds: 0.06,
-                conditions: [{ param: C.attackWide, op: '==' as const, value: 1 }],
+                conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.attackWide, op: '==' as const, value: 1 }],
             })),
             ...GROUNDED_COMBAT_START_STATES.map((from) => ({
                 from, to: 'staffAttack', priority: 210, blendSeconds: 0.08,
-                conditions: [{ param: C.staffAttack, op: '==' as const, value: 1 }],
+                conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.staffAttack, op: '==' as const, value: 1 }],
+            })),
+            ...GROUNDED_COMBAT_START_STATES.map((from) => ({
+                from, to: 'hammerAttack', priority: 220, blendSeconds: 0.1,
+                conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.hammerAttack, op: '==' as const, value: 1 }],
+            })),
+            ...GROUNDED_COMBAT_START_STATES.map((from) => ({
+                from, to: 'shieldBlock', priority: 170, blendSeconds: 0.08,
+                conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.shieldBlock, op: '==' as const, value: 1 }],
             })),
             // Return to locomotion once the swing has read.
             { from: 'attack', to: 'run', priority: 12, minTimeInState: ATTACK_SECONDS,
@@ -166,10 +189,16 @@ export function combatLocomotionGraph(): AnimGraphDef {
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
             { from: 'staffAttack', to: 'idle', priority: 10, minTimeInState: STAFF_ATTACK_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
+            { from: 'hammerAttack', to: 'run', priority: 12, minTimeInState: HAMMER_ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
+            { from: 'hammerAttack', to: 'walk', priority: 11, minTimeInState: HAMMER_ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
+            { from: 'hammerAttack', to: 'idle', priority: 10, minTimeInState: HAMMER_ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
             // Shoot: one-shot bow draw + release, same grounded-only start rule.
             ...GROUNDED_COMBAT_START_STATES.map((from) => ({
                 from, to: 'shoot', priority: 200, blendSeconds: 0.06,
-                conditions: [{ param: C.shoot, op: '==' as const, value: 1 }],
+                conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.shoot, op: '==' as const, value: 1 }],
             })),
             { from: 'shoot', to: 'run', priority: 12, minTimeInState: SHOOT_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
@@ -177,6 +206,12 @@ export function combatLocomotionGraph(): AnimGraphDef {
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
             { from: 'shoot', to: 'idle', priority: 10, minTimeInState: SHOOT_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
+            { from: 'shieldBlock', to: 'run', priority: 12, blendSeconds: 0.08,
+                conditions: [{ param: C.shieldBlock, op: '==', value: 0 }, { param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
+            { from: 'shieldBlock', to: 'walk', priority: 11, blendSeconds: 0.08,
+                conditions: [{ param: C.shieldBlock, op: '==', value: 0 }, { param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
+            { from: 'shieldBlock', to: 'idle', priority: 10, blendSeconds: 0.08,
+                conditions: [{ param: C.shieldBlock, op: '==', value: 0 }, { param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
             ...base.transitions,
         ],
     }

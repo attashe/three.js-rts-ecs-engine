@@ -266,6 +266,20 @@ test('demo quest: keeper trade option opens the arrow shop', async () => {
     assert.ok(h.popupMessages.some((msg) => msg.message.includes('10 arrow')))
 })
 
+test('demo quest: keeper goodbye option exits without starting the quest', async () => {
+    const h = makeHarness({ dialogueChoiceId: 'bye' })
+    h.sys.init?.(h.world)
+    h.interact(KEEPER_ZONE)
+    await h.tick(0.1)
+
+    assert.equal(h.sys.flags.get('demo.quest.keeper.state'), undefined)
+    assert.equal(h.pickupSpawns.length, 0)
+    assert.equal(h.tradeRequests.length, 0)
+    const request = h.dialogueRequests[0] as { lines?: Array<{ choices?: Array<{ id?: string; text?: string }> }> } | undefined
+    const choices = request?.lines?.find((line) => line.choices)?.choices ?? []
+    assert.ok(choices.some((choice) => choice.id === 'bye' && choice.text === 'Goodbye.'))
+})
+
 test('demo quest: collecting all shards marks the quest ready to turn in', async () => {
     const h = makeHarness()
     h.sys.init?.(h.world)

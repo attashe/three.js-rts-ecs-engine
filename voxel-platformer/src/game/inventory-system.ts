@@ -1,13 +1,24 @@
-import type { GameWorld } from '../engine/ecs/world'
+import { query } from 'bitecs'
+import { PlayerControlled } from '../engine/ecs/components'
+import type { GameWorld, WeaponStance } from '../engine/ecs/world'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { System } from '../engine/ecs/systems/system'
 import type { ActionMap } from '../engine/input/actions'
 import type { Input } from '../engine/input/input'
 import { PLAYER_ABILITY_KEYS, PLAYER_ABILITY_LABELS } from './player-settings'
 import { GameAction } from './actions'
+import { setWeaponStance } from './weapon-stance-system'
+import { syncPlayerHeldTorchVisibility, syncPlayerVisuals } from './player'
+import {
+    EQUIPMENT_LABELS,
+    HEAD_EQUIPMENT_KINDS,
+    describeHandLoadout,
+} from './anim/equipment-types'
+import { SPELLS } from './spells'
 import {
     INVENTORY_CATEGORIES,
     INVENTORY_CATEGORY_LABELS,
+    inventoryItemCount,
     listInventoryItems,
     type InventoryCategoryId,
     type InventoryIconId,
@@ -17,11 +28,27 @@ import {
 interface InventoryDom {
     root: HTMLDivElement
     panel: HTMLDivElement
+    loadout: HTMLDivElement
+    spell: HTMLDivElement
     categories: HTMLDivElement
     stats: HTMLDivElement
     closeButton: HTMLButtonElement
     keyHint: HTMLSpanElement
 }
+
+interface LoadoutOption {
+    stance: WeaponStance
+    label: string
+    hint: string
+}
+
+const LOADOUT_OPTIONS: readonly LoadoutOption[] = [
+    { stance: 'melee', label: 'Melee', hint: 'Sword & shield — F swings, T blocks.' },
+    { stance: 'ranged', label: 'Ranged', hint: 'Bow — F looses an arrow.' },
+    { stance: 'magic', label: 'Magician', hint: 'Staff — F bonks, C casts the selected spell.' },
+]
+
+const HEAL_POTION_ITEM_ID = 'heal-potion'
 
 export function createInventorySystem(input: Input, actions: ActionMap): System {
     let dom: InventoryDom | null = null
@@ -74,7 +101,11 @@ export function createInventorySystem(input: Input, actions: ActionMap): System 
         update(world) {
             lastWorld = world
             if (!open || !dom) return
-            renderInventory(dom, world)
+            // Don't re-render here: the game is paused while the menu is open,
+            // so the contents are static, and rebuilding the DOM every frame
+            // would destroy the loadout/spell buttons between mousedown and
+            // mouseup — clicks would never land. Rendering happens on open and
+            // after each selection instead.
             input.clear()
         },
         dispose() {
@@ -110,7 +141,7 @@ function buildInventoryDom(keys: readonly string[]): InventoryDom {
         maxHeight: 'min(680px, calc(100vh - 28px))',
         overflow: 'auto',
         display: 'grid',
-        gridTemplateRows: 'auto minmax(0, 1fr)',
+        gridTemplateRows: 'auto auto auto minmax(0, 1fr)',
         gap: '14px',
         padding: '18px',
         borderRadius: '8px',
@@ -152,6 +183,20 @@ function buildInventoryDom(keys: readonly string[]): InventoryDom {
     Object.assign(closeButton.style, buttonStyle())
     header.appendChild(closeButton)
 
+    const loadout = document.createElement('div')
+    Object.assign(loadout.style, {
+        display: 'grid',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    panel.appendChild(loadout)
+
+    const spell = document.createElement('div')
+    Object.assign(spell.style, {
+        display: 'grid',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    panel.appendChild(spell)
+
     const body = document.createElement('div')
     Object.assign(body.style, {
         display: 'grid',
@@ -184,15 +229,135 @@ function buildInventoryDom(keys: readonly string[]): InventoryDom {
         if (ev.target === root) closeButton.click()
     })
 
-    return { root, panel, categories, stats, closeButton, keyHint }
+    return { root, panel, loadout, spell, categories, stats, closeButton, keyHint }
 }
 
 function renderInventory(dom: InventoryDom, world: GameWorld): void {
+    dom.loadout.replaceChildren(...loadoutSection(dom, world))
+    dom.spell.replaceChildren(...spellSection(dom, world))
     const grouped = groupInventoryItems(world)
     dom.categories.replaceChildren(...INVENTORY_CATEGORIES.map((category) =>
-        categorySection(category, grouped.get(category) ?? []),
+        categorySection(category, categoryCards(category, grouped.get(category) ?? [], dom, world)),
     ))
     dom.stats.replaceChildren(...statsSection(world))
+}
+
+function loadoutSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    const title = document.createElement('div')
+    title.textContent = 'Loadout'
+    Object.assign(title.style, {
+        color: 'rgba(244, 240, 220, 0.84)',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+        textTransform: 'uppercase',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const row = document.createElement('div')
+    Object.assign(row.style, {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    for (const option of LOADOUT_OPTIONS) {
+        row.appendChild(loadoutButton(dom, world, option))
+    }
+    return [title, row]
+}
+
+function loadoutButton(dom: InventoryDom, world: GameWorld, option: LoadoutOption): HTMLElement {
+    const active = world.weaponStance === option.stance
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.title = option.hint
+    Object.assign(button.style, {
+        display: 'grid',
+        gap: '3px',
+        minWidth: '150px',
+        padding: '9px 12px',
+        textAlign: 'left',
+        borderRadius: '6px',
+        border: active ? '1px solid #9bdca9' : '1px solid rgba(238, 246, 242, 0.18)',
+        background: active ? 'rgba(155, 220, 169, 0.16)' : 'rgba(238, 246, 242, 0.06)',
+        color: '#eef6f2',
+        cursor: 'pointer',
+        font: '700 13px ui-sans-serif, system-ui, sans-serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const label = document.createElement('div')
+    label.textContent = active ? `${option.label} ✓` : option.label
+    button.appendChild(label)
+
+    const sub = document.createElement('div')
+    sub.textContent = describeHandLoadout(world.playerSettings.equipment[option.stance])
+    Object.assign(sub.style, {
+        color: 'rgba(238, 246, 242, 0.58)',
+        font: '600 11px ui-sans-serif, system-ui, sans-serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+    button.appendChild(sub)
+
+    button.addEventListener('click', () => {
+        const players = query(world, [PlayerControlled])
+        if (players.length === 0) return
+        setWeaponStance(world, players[0]!, option.stance)
+        renderInventory(dom, world)
+    })
+    return button
+}
+
+function spellSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    const title = document.createElement('div')
+    title.textContent = 'Spell (cast with C)'
+    Object.assign(title.style, {
+        color: 'rgba(244, 240, 220, 0.84)',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+        textTransform: 'uppercase',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const row = document.createElement('div')
+    Object.assign(row.style, {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    for (const spell of SPELLS) {
+        const active = world.selectedSpell === spell.id
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.title = spell.hint
+        Object.assign(button.style, {
+            display: 'grid',
+            gap: '3px',
+            minWidth: '150px',
+            padding: '9px 12px',
+            textAlign: 'left',
+            borderRadius: '6px',
+            border: active ? '1px solid #7fb8ff' : '1px solid rgba(238, 246, 242, 0.18)',
+            background: active ? 'rgba(127, 184, 255, 0.16)' : 'rgba(238, 246, 242, 0.06)',
+            color: '#eef6f2',
+            cursor: 'pointer',
+            font: '700 13px ui-sans-serif, system-ui, sans-serif',
+        } satisfies Partial<CSSStyleDeclaration>)
+
+        const label = document.createElement('div')
+        label.textContent = active ? `${spell.label} ✓` : spell.label
+        button.appendChild(label)
+
+        const sub = document.createElement('div')
+        sub.textContent = spell.hint
+        Object.assign(sub.style, {
+            color: 'rgba(238, 246, 242, 0.58)',
+            font: '600 11px ui-sans-serif, system-ui, sans-serif',
+        } satisfies Partial<CSSStyleDeclaration>)
+        button.appendChild(sub)
+
+        button.addEventListener('click', () => {
+            world.selectedSpell = spell.id
+            renderInventory(dom, world)
+        })
+        row.appendChild(button)
+    }
+    return [title, row]
 }
 
 function groupInventoryItems(world: GameWorld): Map<InventoryCategoryId, InventorySnapshotItem[]> {
@@ -215,12 +380,71 @@ function groupInventoryItems(world: GameWorld): Map<InventoryCategoryId, Invento
         },
     )
     for (const item of listInventoryItems(world.inventory.items)) {
+        if (item.id === HEAL_POTION_ITEM_ID) continue
         grouped.get(item.category)?.push(item)
     }
+    grouped.get('consumables')!.unshift(healPotionItem(world))
     return grouped
 }
 
-function categorySection(category: InventoryCategoryId, items: readonly InventorySnapshotItem[]): HTMLElement {
+function healPotionItem(world: GameWorld): InventorySnapshotItem {
+    return {
+        id: HEAL_POTION_ITEM_ID,
+        quantity: inventoryItemCount(world.inventory.items, HEAL_POTION_ITEM_ID),
+        name: 'Heal Potion',
+        description: 'Restores health when potion use is wired into combat.',
+        category: 'consumables',
+        icon: 'heal-potion',
+    }
+}
+
+function categoryCards(
+    category: InventoryCategoryId,
+    items: readonly InventorySnapshotItem[],
+    dom: InventoryDom,
+    world: GameWorld,
+): HTMLElement[] {
+    const cards = items.map((item) => itemCard(item))
+    if (category === 'accessories') cards.unshift(...hatSelectorCards(dom, world))
+    if (category === 'tools') cards.unshift(torchToggleCard(dom, world))
+    return cards
+}
+
+function hatSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    return HEAD_EQUIPMENT_KINDS.map((kind) => {
+        const active = world.playerSettings.equipment.head === kind
+        return menuCard({
+            icon: kind,
+            name: EQUIPMENT_LABELS[kind],
+            detail: active ? 'Equipped' : 'Select',
+            active,
+            title: `Equip ${EQUIPMENT_LABELS[kind]}`,
+            onClick: () => {
+                world.playerSettings.equipment.head = kind
+                syncPlayerVisuals(world)
+                renderInventory(dom, world)
+            },
+        })
+    })
+}
+
+function torchToggleCard(dom: InventoryDom, world: GameWorld): HTMLElement {
+    const active = world.playerSettings.abilities.torch
+    return menuCard({
+        icon: 'torch',
+        name: 'Torch',
+        detail: active ? 'On' : 'Off',
+        active,
+        title: active ? 'Put the hand torch away.' : 'Carry the hand torch.',
+        onClick: () => {
+            world.playerSettings.abilities.torch = !world.playerSettings.abilities.torch
+            syncPlayerHeldTorchVisibility(world)
+            renderInventory(dom, world)
+        },
+    })
+}
+
+function categorySection(category: InventoryCategoryId, cards: readonly HTMLElement[]): HTMLElement {
     const section = document.createElement('section')
     Object.assign(section.style, {
         display: 'grid',
@@ -246,7 +470,7 @@ function categorySection(category: InventoryCategoryId, items: readonly Inventor
     } satisfies Partial<CSSStyleDeclaration>)
     section.appendChild(row)
 
-    if (items.length === 0) {
+    if (cards.length === 0) {
         const empty = document.createElement('div')
         empty.textContent = 'Empty'
         Object.assign(empty.style, {
@@ -258,12 +482,36 @@ function categorySection(category: InventoryCategoryId, items: readonly Inventor
         return section
     }
 
-    for (const item of items) row.appendChild(itemCard(item))
+    for (const card of cards) row.appendChild(card)
     return section
 }
 
 function itemCard(item: InventorySnapshotItem): HTMLElement {
-    const card = document.createElement('div')
+    return menuCard({
+        icon: item.icon,
+        name: item.name,
+        detail: `x${item.quantity}`,
+        title: item.description ? `${item.name}\n${item.description}` : item.name,
+        disabled: item.quantity <= 0,
+    })
+}
+
+interface MenuCardOptions {
+    icon: InventoryIconId
+    name: string
+    detail: string
+    title?: string
+    active?: boolean
+    disabled?: boolean
+    onClick?: () => void
+}
+
+function menuCard(opts: MenuCardOptions): HTMLElement {
+    const card = opts.onClick ? document.createElement('button') : document.createElement('div')
+    if (opts.onClick) {
+        ;(card as HTMLButtonElement).type = 'button'
+        card.addEventListener('click', opts.onClick)
+    }
     Object.assign(card.style, {
         width: '138px',
         minHeight: '58px',
@@ -272,14 +520,19 @@ function itemCard(item: InventorySnapshotItem): HTMLElement {
         gap: '9px',
         alignItems: 'center',
         padding: '9px',
-        border: '1px solid rgba(238, 246, 242, 0.13)',
-        background: 'rgba(238, 246, 242, 0.065)',
+        border: opts.active ? '1px solid #e7b563' : '1px solid rgba(238, 246, 242, 0.13)',
+        background: opts.active ? 'rgba(231, 181, 99, 0.15)' : 'rgba(238, 246, 242, 0.065)',
         borderRadius: '6px',
         boxSizing: 'border-box',
+        color: '#eef6f2',
+        cursor: opts.onClick ? 'pointer' : 'default',
+        opacity: opts.disabled ? '0.55' : '1',
+        textAlign: 'left',
+        font: 'inherit',
     } satisfies Partial<CSSStyleDeclaration>)
-    card.title = item.description ? `${item.name}\n${item.description}` : item.name
+    card.title = opts.title ?? opts.name
 
-    card.appendChild(itemIcon(item.icon))
+    card.appendChild(itemIcon(opts.icon))
 
     const text = document.createElement('div')
     Object.assign(text.style, {
@@ -290,7 +543,7 @@ function itemCard(item: InventorySnapshotItem): HTMLElement {
     card.appendChild(text)
 
     const name = document.createElement('div')
-    name.textContent = item.name
+    name.textContent = opts.name
     Object.assign(name.style, {
         color: '#eef6f2',
         overflow: 'hidden',
@@ -301,9 +554,9 @@ function itemCard(item: InventorySnapshotItem): HTMLElement {
     text.appendChild(name)
 
     const qty = document.createElement('div')
-    qty.textContent = `x${item.quantity}`
+    qty.textContent = opts.detail
     Object.assign(qty.style, {
-        color: 'rgba(238, 246, 242, 0.58)',
+        color: opts.active ? '#e7b563' : 'rgba(238, 246, 242, 0.58)',
         font: '700 12px ui-sans-serif, system-ui, sans-serif',
     } satisfies Partial<CSSStyleDeclaration>)
     text.appendChild(qty)
@@ -395,6 +648,13 @@ function iconBackground(icon: InventoryIconId): string {
         case 'gold': return 'linear-gradient(145deg, #6c5220, #d7ae45)'
         case 'arrows': return 'linear-gradient(145deg, #39444d, #7aa3aa)'
         case 'quest-shard': return 'linear-gradient(145deg, #2f4d5f, #77d0c9)'
+        case 'heal-potion': return 'linear-gradient(145deg, #472333, #c95772)'
+        case 'torch': return 'linear-gradient(145deg, #4a2b18, #d28b37)'
+        case 'hat': return 'linear-gradient(145deg, #20372f, #7ac7a2)'
+        case 'hat-arcane': return 'linear-gradient(145deg, #18234f, #5f7dff)'
+        case 'hat-ranger': return 'linear-gradient(145deg, #203d24, #9fd179)'
+        case 'hat-guard': return 'linear-gradient(145deg, #3f4b52, #b7c3ca)'
+        case 'hat-sun': return 'linear-gradient(145deg, #6d4215, #ffd166)'
         case 'consumable': return 'linear-gradient(145deg, #3e4b2e, #9bbd5c)'
         case 'accessory': return 'linear-gradient(145deg, #4b3656, #b181bd)'
         case 'tool': return 'linear-gradient(145deg, #4d4439, #c0a26f)'
@@ -430,12 +690,68 @@ function glyphStyle(icon: InventoryIconId): Partial<CSSStyleDeclaration> {
             boxShadow: 'inset -3px -3px 0 rgba(126, 82, 21, 0.38)',
         }
     }
+    if (icon === 'heal-potion') {
+        return {
+            width: '16px',
+            height: '22px',
+            borderRadius: '5px 5px 7px 7px',
+            background: 'linear-gradient(180deg, #ffd7de 0 22%, #e34c64 23% 100%)',
+            boxShadow: '0 -6px 0 -2px #d9edf0, inset -3px -4px 0 rgba(85, 10, 22, 0.25)',
+        }
+    }
+    if (icon === 'torch') {
+        return {
+            width: '6px',
+            height: '24px',
+            borderRadius: '4px',
+            background: '#4a2715',
+            transform: 'rotate(18deg)',
+            boxShadow: '0 -10px 0 4px #ffb05f, 0 -14px 0 1px #fff0a8',
+        }
+    }
+    if (icon === 'hat') {
+        return hatGlyph('#243d36', '0 -7px 0 -2px #315a4d')
+    }
+    if (icon === 'hat-arcane') {
+        return {
+            width: '22px',
+            height: '25px',
+            clipPath: 'polygon(50% 0, 78% 72%, 100% 74%, 100% 88%, 0 88%, 0 74%, 24% 72%)',
+            background: 'linear-gradient(180deg, #5f7dff, #253a7a)',
+            boxShadow: 'inset 0 -5px 0 #18234f',
+        }
+    }
+    if (icon === 'hat-ranger') {
+        return hatGlyph('#315a2f', '9px -7px 0 -5px #d7b35a')
+    }
+    if (icon === 'hat-guard') {
+        return hatGlyph('#9aa7ad', '0 -8px 0 -4px #b6342d')
+    }
+    if (icon === 'hat-sun') {
+        return {
+            width: '24px',
+            height: '20px',
+            clipPath: 'polygon(0 100%, 0 48%, 18% 70%, 32% 18%, 50% 64%, 68% 18%, 82% 70%, 100% 48%, 100% 100%)',
+            background: '#ffd166',
+            boxShadow: 'inset 0 -5px 0 #d9a62a',
+        }
+    }
     return {
         width: '18px',
         height: '18px',
         borderRadius: icon === 'tool' ? '2px' : '50%',
         background: '#eef6f2',
         opacity: '0.9',
+    }
+}
+
+function hatGlyph(color: string, boxShadow: string): Partial<CSSStyleDeclaration> {
+    return {
+        width: '24px',
+        height: '10px',
+        borderRadius: '8px 8px 4px 4px',
+        background: color,
+        boxShadow,
     }
 }
 

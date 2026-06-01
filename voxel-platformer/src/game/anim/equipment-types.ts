@@ -13,6 +13,7 @@ export const EQUIPMENT_KINDS = [
     'staff-lantern',
     'staff',
     'staff-crystal',
+    'battle-hammer',
     'book',
 ] as const
 
@@ -36,6 +37,7 @@ export const HAND_EQUIPMENT_KINDS = [
     'staff-lantern',
     'staff',
     'staff-crystal',
+    'battle-hammer',
     'book',
 ] as const satisfies readonly EquipmentKind[]
 
@@ -48,6 +50,12 @@ export const STAFF_EQUIPMENT_KINDS = [
 ] as const satisfies readonly EquipmentKind[]
 
 export type StaffEquipmentKind = (typeof STAFF_EQUIPMENT_KINDS)[number]
+
+export const HAMMER_EQUIPMENT_KINDS = [
+    'battle-hammer',
+] as const satisfies readonly EquipmentKind[]
+
+export type HammerEquipmentKind = (typeof HAMMER_EQUIPMENT_KINDS)[number]
 
 export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
     hat: 'Traveler Hat',
@@ -62,6 +70,7 @@ export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
     'staff-lantern': 'Staff A - Lantern',
     staff: 'Staff B - Battle',
     'staff-crystal': 'Staff C - Crystal',
+    'battle-hammer': 'Battle Hammer',
     book: 'Book',
 }
 
@@ -164,6 +173,10 @@ export function normalizeHeadEquipmentKind(
 
 export function isStaffEquipmentKind(value: unknown): value is StaffEquipmentKind {
     return (STAFF_EQUIPMENT_KINDS as readonly string[]).includes(String(value))
+}
+
+export function isHammerEquipmentKind(value: unknown): value is HammerEquipmentKind {
+    return (HAMMER_EQUIPMENT_KINDS as readonly string[]).includes(String(value))
 }
 
 export function handLoadoutKey(loadout: EquipmentHandLoadout): string {

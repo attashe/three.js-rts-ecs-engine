@@ -11,13 +11,12 @@ import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
 import type { GameWorld } from '../../engine/ecs/world'
 import { createNpcModel } from './npc-models'
-import { npcCollisionAabb, npcEquipmentKey, type NpcConfig } from './npc-types'
+import { npcAttackClip, npcCollisionAabb, npcEquipmentKey, type NpcConfig } from './npc-types'
 import { disposeNpc } from './npc-runtime'
 import type { AABB } from '../../engine/voxel/voxel-collide'
 import { getDebugInfoEnabled, subscribeDebugInfo } from '../../engine/render/render-settings'
 import { AnimationController, attachToSocket, partRigSource } from '../../engine/anim'
 import { createEquipment, equipmentSocketFrame } from '../anim/equipment'
-import { isStaffEquipmentKind } from '../anim/equipment-types'
 import { computeLocomotionParams } from '../../engine/anim/core'
 import { combatLocomotionGraph } from '../anim/graph-defaults'
 import { partCharacterClips } from '../anim/part-clips'
@@ -48,6 +47,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         transparent: true,
         opacity: 0.88,
         depthTest: false,
+        depthWrite: false,
     })
     const colliderBatch = createColliderBatch(colliderMaterial)
     const rendered = new Map<string, RenderedNpc>()
@@ -58,7 +58,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
     let unsubscribeDebugInfo: (() => void) | null = null
 
     function buildNpc(npc: NpcConfig): RenderedNpc {
-        const clipSet = partRigSource(() => createNpcModel(npc.model, { beard: npc.beard }), partCharacterClips()).instantiate()
+        const clipSet = partRigSource(() => createNpcModel(npc.model, { beard: npc.beard, variant: npc.variant }), partCharacterClips()).instantiate()
         const controller = new AnimationController(clipSet, combatLocomotionGraph())
         const root = clipSet.root
         root.name = `NPC:${npc.id}`
@@ -120,8 +120,9 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             const runtime = world.npcRuntimeById.get(id)
             if (runtime?.requestAttack) {
                 const npc = opts.getNpcs().find((candidate) => candidate.id === id)
-                controller.machine.setParam(npc && npcUsesStaff(npc) ? 'staffAttack' : 'attack', 1)
+                controller.machine.setParam(runtime.requestAttackClip ?? runtime.attackClip ?? (npc ? npcAttackClip(npc) : 'attack'), 1)
                 runtime.requestAttack = false
+                runtime.requestAttackClip = undefined
             }
             if (runtime?.requestDie) {
                 controller.machine.setParam('dead', 1)
@@ -168,8 +169,8 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
     }
 }
 
-function npcVisualKey(npc: Pick<NpcConfig, 'model' | 'beard'>): string {
-    return `${npc.model}:${npc.beard}`
+function npcVisualKey(npc: Pick<NpcConfig, 'model' | 'variant' | 'beard'>): string {
+    return `${npc.model}:${npc.variant}:${npc.beard}`
 }
 
 function attachNpcEquipment(controller: AnimationController, root: Object3D, npc: NpcConfig): void {
@@ -183,10 +184,6 @@ function attachNpcEquipment(controller: AnimationController, root: Object3D, npc
             offset: frame.offset,
         })
     }
-}
-
-function npcUsesStaff(npc: Pick<NpcConfig, 'equipment'>): boolean {
-    return isStaffEquipmentKind(npc.equipment.handR) || isStaffEquipmentKind(npc.equipment.handL)
 }
 
 function applyTransform(root: Object3D, pos: { x: number; y: number; z: number }, yaw: number, scale: number): void {
@@ -215,7 +212,6 @@ function createColliderBatch(material: LineBasicMaterial): ColliderBatchState {
 function liveNpcAabb(world: GameWorld | undefined, npc: NpcConfig): AABB | null {
     const rt = world?.npcRuntimeById.get(npc.id)
     if (!rt) return npcCollisionAabb(npc)
-    if (!npc.collisionEnabled) return null
     const r = rt.colliderRadius
     return {
         minX: rt.position.x - r,

@@ -96,10 +96,11 @@ state graph + thresholds live in `src/game/anim/graph-defaults.ts`; a custom
 graph can reference any clip names your model provides.
 
 Player/NPC combat rigs registered through `CHARACTER_MODEL_URLS` must also
-provide `attack`, `attackWide`, `shoot`, `die`, and `dead`, because the game
-drives them with the combat locomotion graph. A model that only provides the
-base locomotion set can still be previewed or used with `locomotionGraph()`, but
-it is not a full runtime replacement for the player/NPC character profile.
+provide `attack`, `attackWide`, `staffAttack`, `shoot`, `die`, and `dead`,
+because the game drives them with the combat locomotion graph. A model that only
+provides the base locomotion set can still be previewed or used with
+`locomotionGraph()`, but it is not a full runtime replacement for the player/NPC
+character profile.
 
 ## Previewing
 

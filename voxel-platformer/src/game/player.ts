@@ -15,6 +15,7 @@ import {
     Velocity,
 } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
+import { HP_PER_HEART } from '../engine/ecs/combat'
 import {
     createBow,
     createPlayerTorch,
@@ -37,10 +38,12 @@ export interface PlayerOptions {
     settings?: PlayerSettings
 }
 
-/** Lean HP model: the player dies in a few hits. Scripts can raise `Health.max`
- *  per level if a tougher player is wanted. Mana starts as an empty pool —
- *  scripts opt in by setting `Mana.max` when they define a spell. */
-export const PLAYER_DEFAULT_MAX_HEALTH = 3
+/** Lean HP model rendered as hearts: the player starts with two full hearts
+ *  (each heart = `HP_PER_HEART` HP), and the default enemy hit takes half a
+ *  heart — so four hits down the player. Scripts can raise `Health.max` per
+ *  level if a tougher player is wanted. Mana starts as an empty pool — scripts
+ *  opt in by setting `Mana.max` when they define a spell. */
+export const PLAYER_DEFAULT_MAX_HEALTH = 2 * HP_PER_HEART
 
 export const PLAYER_MODEL_KIND_USER_DATA = 'playerModelKind'
 export const PLAYER_MODEL_VISUAL_KEY_USER_DATA = 'playerModelVisualKey'
@@ -151,23 +154,45 @@ function equipDefaultLoadout(world: GameWorld, eid: number): void {
     if (head) equip(world, eid, 'head', head)
     else unequipSlot(world, eid, 'head')
     applyWeaponStance(world, eid, world.weaponStance)
+    syncPlayerHeldTorchVisibility(world)
 }
 
 /**
  * Swap the player's in-hand loadout to match the weapon stance:
- *  - `melee`  — sword (right) + shield (left); the back bow shows (stowed).
- *  - `ranged` — bow (left), hands otherwise empty; back bow hidden (it's in hand).
+ *  - `melee`  — sword (right) + shield (left); bow/quiver hidden.
+ *  - `ranged` — bow (left) + arrow (right), quiver shown, duplicate back bow hidden.
+ *  - `magic`  — staff or spell focus; bow/quiver hidden.
  * The head item stays on across all stances. Safe to call repeatedly
  * (re-equips in place).
  */
 export function applyWeaponStance(world: GameWorld, eid: number, stance: WeaponStance): void {
     const loadout = world.playerSettings.equipment[stance]
     applyHandLoadout(world, eid, loadout)
-    // Avoid showing two bows: hide the decorative back bow while it's in hand.
+    // Ranged gear is stance-specific: bow in hand, quiver on back. Keep both
+    // out of melee/magic silhouettes so those loadouts read cleanly.
     const root = world.object3DByEid.get(eid)
     const backBow = root?.getObjectByName('BackBow')
-    if (backBow) backBow.visible = !loadoutHasBow(loadout)
+    if (backBow) backBow.visible = stance === 'ranged' && !loadoutHasBow(loadout)
+    const backQuiver = root?.getObjectByName('BackQuiver')
+    if (backQuiver) backQuiver.visible = stance === 'ranged'
     if (root) root.userData[PLAYER_EQUIPMENT_KEY_USER_DATA] = playerEquipmentRuntimeKey(world)
+}
+
+export function syncPlayerHeldTorchVisibility(world: GameWorld): void {
+    const enabled = world.playerSettings.abilities.torch
+    const players = query(world, [PlayerControlled, Renderable])
+    for (const eid of players) {
+        const root = world.object3DByEid.get(eid)
+        const torch = root?.getObjectByName('PlayerTorch')
+        if (!torch) continue
+        torch.visible = enabled
+        torch.traverse((obj) => {
+            if (obj instanceof PointLight) {
+                obj.visible = enabled
+                obj.castShadow = enabled && world.playerSettings.torch.castsShadow
+            }
+        })
+    }
 }
 
 export function syncPlayerVisuals(world: GameWorld): void {

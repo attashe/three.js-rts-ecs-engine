@@ -19,6 +19,8 @@ export const GameAction = {
     AirPush: 'spell.airPush',
     BowShot: 'weapon.bowShot',
     Attack: 'weapon.attack',
+    RaiseShield: 'weapon.shield',
+    CastSpell: 'spell.cast',
     SwitchWeapon: 'weapon.switch',
     Interact: 'interact',
     Inventory: 'inventory.open',
@@ -97,27 +99,46 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
         hint: { group: 'airPush', label: 'Air push', keys: ['G'], order: 46 },
     },
     {
+        // Universal attack: melee swing, bow shot, or magic bolt depending on
+        // the active weapon stance. Kept under the legacy `weapon.bowShot` id and
+        // F binding so saved keymaps and the action tests stay valid.
         id: GameAction.BowShot,
-        label: 'Bow shot',
+        label: 'Attack',
         bindings: [{ keys: ['KeyF'] }],
         bufferMs: 140,
-        cooldownMs: 520,
-        hint: { group: 'shoot', label: 'Bow', keys: ['F'], order: 50 },
+        cooldownMs: 420,
+        hint: { group: 'attack', label: 'Attack', keys: ['F'], order: 50 },
     },
     {
+        // Legacy melee attack id, retained so saved keymaps and tests stay
+        // valid. The universal attack on F drives combat now; this is unused at
+        // runtime but kept bound to V.
         id: GameAction.Attack,
-        label: 'Attack',
+        label: 'Melee attack',
         bindings: [{ keys: ['KeyV'] }],
         bufferMs: 120,
         cooldownMs: 420,
-        hint: { group: 'attack', label: 'Attack', keys: ['V'], order: 51 },
+    },
+    {
+        id: GameAction.RaiseShield,
+        label: 'Raise shield',
+        bindings: [{ keys: ['KeyT'] }],
+        hint: { group: 'shield', label: 'Shield', keys: ['T'], order: 51 },
+    },
+    {
+        id: GameAction.CastSpell,
+        label: 'Cast spell',
+        bindings: [{ keys: ['KeyC'] }],
+        bufferMs: 140,
+        cooldownMs: 700,
+        hint: { group: 'cast', label: 'Cast', keys: ['C'], order: 52 },
     },
     {
         id: GameAction.SwitchWeapon,
         label: 'Switch weapon',
         bindings: [{ keys: ['KeyX'] }],
         bufferMs: 160,
-        hint: { group: 'switchWeapon', label: 'Switch weapon', keys: ['X'], order: 52 },
+        hint: { group: 'switchWeapon', label: 'Switch weapon', keys: ['X'], order: 53 },
     },
     {
         id: GameAction.Interact,
@@ -142,7 +163,8 @@ export const GAME_COMMAND_HINT_ACTIONS: readonly ActionId[] = [
     GameAction.HighJump,
     GameAction.AirPush,
     GameAction.BowShot,
-    GameAction.Attack,
+    GameAction.RaiseShield,
+    GameAction.CastSpell,
     GameAction.SwitchWeapon,
     GameAction.Interact,
     GameAction.Inventory,

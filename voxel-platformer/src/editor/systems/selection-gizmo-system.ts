@@ -789,7 +789,7 @@ function selectionFingerprint(state: EditorState, selected: SelectionRef | null)
         `spawn:${state.spawn.x},${state.spawn.y},${state.spawn.z}`,
         `pickups:${state.pickups.map((p) => `${p.amount}@${p.position.x},${p.position.y},${p.position.z}`).join(';')}`,
         `props:${state.props.map((p) => `${p.id}:${p.kind}:${p.position.x},${p.position.y},${p.position.z}:${p.scale}`).join(';')}`,
-        `npcs:${state.npcs.map((n) => `${n.id}:${n.model}:${n.beard}:${n.position.x},${n.position.y},${n.position.z}:${n.scale}:${n.colliderRadius}:${n.colliderHeight}`).join(';')}`,
+        `npcs:${state.npcs.map((n) => `${n.id}:${n.model}:${n.variant}:${n.beard}:${n.position.x},${n.position.y},${n.position.z}:${n.scale}:${n.colliderRadius}:${n.colliderHeight}`).join(';')}`,
         `stones:${state.stones.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.tier}:${s.size}`).join(';')}`,
         `stoneSpawners:${state.stoneSpawners.map((s) => `${s.id}:${s.position.x},${s.position.y},${s.position.z}:${s.enabled}:${s.interval}:${s.maxLive}`).join(';')}`,
         `railCarts:${state.railCarts.map((c) => `${c.id}:${c.railCell.x},${c.railCell.y},${c.railCell.z}:${c.front}:${c.speed}:${c.enabled}`).join(';')}`,

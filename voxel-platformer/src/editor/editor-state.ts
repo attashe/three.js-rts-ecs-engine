@@ -8,7 +8,7 @@ import type { BrushKind } from './brush'
 import type { TerrainBrushShape, TerrainFalloff, TerrainTool } from './terrain-brush'
 import type { PistonDirection } from './piston-direction'
 import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
-import { DEFAULT_NPC, copyNpcConfig, type NpcConfig, type NpcModelKind } from '../game/npcs/npc-types'
+import { DEFAULT_NPC, copyNpcConfig, type NpcConfig, type NpcModelKind, type NpcVariantKind } from '../game/npcs/npc-types'
 import type { DialogueVoicePreset } from '../game/dialogue-voice/types'
 import type { EquipmentHandLoadout } from '../game/anim/equipment-types'
 import type { CharacterBeardKind } from '../game/character-appearance'
@@ -440,6 +440,7 @@ export interface EditorState {
     selectedNpcId: string | null
     npcName: string
     npcModel: NpcModelKind
+    npcVariant: NpcVariantKind
     npcBeard: CharacterBeardKind
     npcGridAlign: boolean
     npcYaw: number
@@ -696,6 +697,7 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         selectedNpcId: null,
         npcName: DEFAULT_NPC.name,
         npcModel: DEFAULT_NPC.model,
+        npcVariant: DEFAULT_NPC.variant,
         npcBeard: DEFAULT_NPC.beard,
         npcGridAlign: DEFAULT_NPC.gridAligned,
         npcYaw: DEFAULT_NPC.yaw,

@@ -20,7 +20,7 @@
 4. Implement a local `createXModel()` with shared geometry/material helpers.
 5. Add/update tests that enumerate all model kinds.
 
-Use lowercase hyphen ids (`large-troll`, `market-keeper`). Keep model builders
+Use lowercase hyphen ids (`keeper-arlen`, `large-troll`, `market-keeper`). Keep model builders
 pure: create a `Group`, name the root `NpcModel:<kind>`, add named child meshes,
 return the group.
 

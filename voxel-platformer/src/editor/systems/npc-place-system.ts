@@ -79,6 +79,7 @@ export function createNpcPlaceSystem(
             id,
             name: state.npcName || DEFAULT_NPC.name,
             model: state.npcModel,
+            variant: state.npcVariant,
             beard: state.npcBeard,
             position,
             yaw: state.npcYaw,

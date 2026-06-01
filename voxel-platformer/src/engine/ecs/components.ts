@@ -127,14 +127,18 @@ export const Mana = {
 
 /**
  * Simple directional block. While `raised`, an incoming attack is blocked when
- * the attack's source direction falls within the shield's forward arc
- * (`blockArcCos` = min dot of actor-forward · source-dir) and within the
- * vertical coverage `[Position.y + minY, Position.y + maxY]`. Read by the
- * melee/arrow hit check.
+ * the attack's source direction falls within the shield's arc and vertical
+ * coverage. The arc is centred on the actor's facing yaw rotated by
+ * `blockYawOffset` (0 = front guard, -π/2 = the left-flank passive guard), with
+ * half-width `blockArcCos` (= min dot of block-dir · source-dir). Vertical
+ * coverage is `[Position.y + minY, Position.y + maxY]`. Read by the melee/arrow
+ * hit check.
  */
 export const Shield = {
     raised: new Uint8Array(MAX_ENTITIES),
     blockArcCos: new Float32Array(MAX_ENTITIES),
+    /** Radians added to the actor's yaw to get the block-arc centre direction. */
+    blockYawOffset: new Float32Array(MAX_ENTITIES),
     minY: new Float32Array(MAX_ENTITIES),
     maxY: new Float32Array(MAX_ENTITIES),
 }

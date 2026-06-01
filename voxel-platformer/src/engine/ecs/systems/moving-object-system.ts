@@ -6,6 +6,7 @@ import {
     MovingObject,
     Pickup,
     PickupValue,
+    Position,
     RigidBody,
     Rotation,
     Sleeping,
@@ -22,9 +23,14 @@ import {
     type StoneFallSpawnerConfig,
 } from '../../../game/moving-objects'
 import type { GameWorld, StoneSpawnerRuntime } from '../world'
+import { despawnEntity } from '../entity'
 
 const ARROW_MIN_SETTLE_AGE = 0.18
 const ARROW_REST_SECONDS = 0.06
+/** Magic bolts that hit nothing fizzle out after this many seconds. */
+const BOLT_MAX_AGE = 2.5
+/** Electric orbs bounce around for a while, then dissipate. */
+const ORB_MAX_AGE = 5
 
 /**
  * Lifecycle for in-flight `MovingObject`s. Physics (gravity, swept-AABB,
@@ -44,13 +50,29 @@ export function createMovingObjectSystem(): System {
         fixed: true,
         order: FixedOrder.postPhysics,
         update(world, dt) {
-            const eids = query(world, [MovingObject])
+            // Snapshot: updateArrow embeds (removes MovingObject) and bolts can
+            // despawn mid-loop, both of which mutate the live query array.
+            const eids = [...query(world, [MovingObject])]
             for (let i = 0; i < eids.length; i++) {
-                const eid = eids[i]
+                const eid = eids[i]!
                 MovingObject.age[eid] += dt
 
                 if (MovingObject.kind[eid] === MovingObjectKind.Arrow) {
                     updateArrow(world, eid, dt)
+                } else if (MovingObject.kind[eid] === MovingObjectKind.MagicBolt) {
+                    if (MovingObject.age[eid] >= BOLT_MAX_AGE) {
+                        despawnEntity(world, eid)
+                    } else if (hasComponent(world, eid, Velocity)) {
+                        // Kinematic flight — bolts have no RigidBody, so we
+                        // advance them straight here (arrow-hit owns collision).
+                        Position.x[eid] += Velocity.x[eid] * dt
+                        Position.y[eid] += Velocity.y[eid] * dt
+                        Position.z[eid] += Velocity.z[eid] * dt
+                    }
+                } else if (MovingObject.kind[eid] === MovingObjectKind.ElectricOrb) {
+                    // Orbs are physics bodies (gravity + bounce); just retire
+                    // them once they've caromed long enough.
+                    if (MovingObject.age[eid] >= ORB_MAX_AGE) despawnEntity(world, eid)
                 }
             }
         },
@@ -221,7 +243,13 @@ function updateArrow(
     void dt
 }
 
-function embedArrow(
+/**
+ * Freeze an in-flight arrow into a static, collectable visual: strip its
+ * physics components, flag it static so render-sync stops touching it, and turn
+ * it into an arrow pickup. Shared by the normal "stuck in a wall" sleep path
+ * and the arrow-hit system's "stuck in a body" path.
+ */
+export function embedArrow(
     world: GameWorld,
     eid: number,
 ): void {

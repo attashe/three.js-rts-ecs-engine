@@ -9,7 +9,7 @@ export {
 } from './main-character'
 export type { MainCharacterOptions } from './main-character'
 
-export { createArrow, createBow, createQuiver } from './weapons'
+export { createArrow, createBow, createMagicBolt, createMagicOrb, createQuiver } from './weapons'
 export type { BowOptions, QuiverOptions } from './weapons'
 
 export { createCoinPile, createQuestShard, createStone } from './props'

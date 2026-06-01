@@ -203,6 +203,53 @@ export function createMagicBolt(): Group {
     return root
 }
 
+/** A larger, crackling electric orb — the bouncing staff spell. Brighter and
+ *  wider than the arcane bolt, with a few jagged spokes to read as electricity. */
+export function createMagicOrb(): Group {
+    const root = new Group()
+    root.name = 'ElectricOrb'
+
+    const coreMat = new MeshStandardMaterial({
+        color: 0xe6f0ff,
+        emissive: 0x7a5cff,
+        emissiveIntensity: 2.8,
+        roughness: 0.25,
+        metalness: 0,
+    })
+    const core = new Mesh(sharedSphereGeometry(0.22, 14, 14), coreMat)
+    core.name = 'ElectricOrbCore'
+    root.add(core)
+
+    const haloMat = new MeshStandardMaterial({
+        color: 0x9fd0ff,
+        emissive: 0x5aa0ff,
+        emissiveIntensity: 1.6,
+        roughness: 0.6,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
+    })
+    const halo = new Mesh(sharedSphereGeometry(0.34, 12, 12), haloMat)
+    halo.name = 'ElectricOrbHalo'
+    root.add(halo)
+
+    const arcMat = new MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0xb9a8ff,
+        emissiveIntensity: 2.2,
+        roughness: 0.4,
+        metalness: 0,
+    })
+    for (let i = 0; i < 4; i++) {
+        const spoke = new Mesh(sharedBoxGeometry(0.03, 0.03, 0.32), arcMat)
+        spoke.rotation.set(i * 0.9, i * 1.7, i * 0.5)
+        root.add(spoke)
+    }
+
+    return root
+}
+
 export function createQuiver(options: QuiverOptions = {}): Group {
     const arrowCount = options.arrowCount ?? 5
     const root = new Group()

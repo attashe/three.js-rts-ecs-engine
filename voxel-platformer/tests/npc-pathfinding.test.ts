@@ -8,6 +8,7 @@ import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
 import { createEntity } from '../src/engine/ecs/entity'
 import { PlayerControlled, Position } from '../src/engine/ecs/components'
 import { createNpcBehaviourSystem } from '../src/engine/ecs/systems/npc-behaviour-system'
+import { __resetDebugInfoCache, setDebugInfoEnabled } from '../src/engine/render/render-settings'
 import type { NpcRuntimeState } from '../src/game/npcs/npc-types'
 import {
     NPC_TARGET_PLAYER, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc,
@@ -60,7 +61,7 @@ function makeRuntime(): NpcRuntimeState {
     return {
         id: 'guard', position: { x: 4, y: 1, z: 4 }, yaw: 0,
         colliderRadius: 0.35, colliderHeight: 1.6, hp: 2,
-        requestAttack: false, requestDie: false, dying: false,
+        invulnerable: false, requestAttack: false, requestDie: false, dying: false,
         ai: null, zoneId: null, obstacleId: null,
     }
 }
@@ -104,7 +105,7 @@ function spawnRuntimeNpc(world: GameWorld, id: string, x: number, z: number): Np
     const rt: NpcRuntimeState = {
         id, position: { x, y: 1, z }, yaw: 0,
         colliderRadius: 0.35, colliderHeight: 1.6, hp: 2,
-        requestAttack: false, requestDie: false, dying: false,
+        invulnerable: false, requestAttack: false, requestDie: false, dying: false,
         ai: null, zoneId: null, obstacleId: null,
     }
     world.npcRuntimeById.set(id, rt)
@@ -146,4 +147,48 @@ test('a hostile NPC spots and paths toward the player', () => {
         'expected an npc-spotted-enemy event')
     // It should have closed most of the gap toward the player at x=11.
     assert.ok(rt.position.x > 7, `expected the orc to advance toward the player, x=${rt.position.x}`)
+})
+
+test('hammer NPC attacks use a delayed circular impact', () => {
+    const chunks = flatWorld()
+    const world = createGameWorld()
+    const attacker = spawnRuntimeNpc(world, 'guardian', 4, 4)
+    attacker.attackClip = 'hammerAttack'
+    const target = spawnRuntimeNpc(world, 'target', 4, 5)
+    target.hp = 2
+    setNpcHostile(world, 'guardian', 'target', true)
+    setNpcPerceptionRadius(world, 'guardian', 8)
+
+    const sys = createNpcBehaviourSystem(chunks)
+    sys.update!(world, 1 / 60)
+
+    assert.equal(attacker.requestAttack, true)
+    assert.equal(attacker.requestAttackClip, 'hammerAttack')
+    assert.ok(attacker.pendingHammerHit, 'hammer strike should schedule its impact instead of damaging immediately')
+    assert.equal(target.hp, 2)
+
+    for (let i = 0; i < 40; i++) sys.update!(world, 1 / 60)
+
+    assert.equal(attacker.pendingHammerHit, undefined)
+    assert.equal(target.hp, 1)
+})
+
+test('ordinary NPC attacks expose a debug attack hitbox', () => {
+    __resetDebugInfoCache()
+    setDebugInfoEnabled(true)
+    const chunks = flatWorld()
+    const world = createGameWorld()
+    const attacker = spawnRuntimeNpc(world, 'guard', 4, 4)
+    const target = spawnRuntimeNpc(world, 'target', 4, 5)
+    setNpcHostile(world, 'guard', 'target', true)
+    setNpcPerceptionRadius(world, 'guard', 8)
+
+    const sys = createNpcBehaviourSystem(chunks)
+    sys.update!(world, 1 / 60)
+
+    assert.ok(
+        world.debugHitboxes.some((hitbox) => hitbox.kind === 'circle' && hitbox.id === 'npc:guard:attack'),
+        'ordinary melee attacks should add a visible debug radius',
+    )
+    assert.equal(target.hp, 1)
 })

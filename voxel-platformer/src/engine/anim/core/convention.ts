@@ -12,7 +12,7 @@ export type RequiredClipId = (typeof REQUIRED_CLIP_IDS)[number]
 
 /** Full clip set required by the game's combat locomotion graph. Imported rigs
  *  that drive player/NPC gameplay need these in addition to base locomotion. */
-export const COMBAT_REQUIRED_CLIP_IDS = [...REQUIRED_CLIP_IDS, 'attack', 'attackWide', 'staffAttack', 'shoot', 'die', 'dead'] as const
+export const COMBAT_REQUIRED_CLIP_IDS = [...REQUIRED_CLIP_IDS, 'attack', 'attackWide', 'staffAttack', 'hammerAttack', 'shoot', 'shieldBlock', 'die', 'dead'] as const
 export type CombatRequiredClipId = (typeof COMBAT_REQUIRED_CLIP_IDS)[number]
 
 /** Canonical equipment socket bone names. All optional at runtime — a missing

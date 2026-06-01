@@ -157,6 +157,90 @@ export interface RailCartRuntime {
     } | null
 }
 
+/** An openable door discovered at level load: a connected cluster of door
+ *  voxels the player can toggle between solid (closed) and air (open) to pass
+ *  through. Populated by `scanDoors`; driven by the door interaction provider. */
+export interface DoorRuntime {
+    id: string
+    /** The door's voxel cells (kept even while open so closing can refill). */
+    cells: VoxelCoord[]
+    /** Block value to restore when closing. */
+    blockId: number
+    open: boolean
+    /** Distance reference for the interaction radius. */
+    center: VoxelCoord
+    /** Prompt anchor (top centre of the door). */
+    anchor: VoxelCoord
+    radius: number
+}
+
+/** An expanding spell shockwave (e.g. Frost Nova). The wavefront grows from the
+ *  cast point at `speed` up to `maxRadius`, dealing `damage` to each NPC the
+ *  front reaches once. Driven by the spell-effect system; drawn as a growing
+ *  ring by its render counterpart. */
+export interface SpellWaveEffect {
+    x: number
+    y: number
+    z: number
+    /** Current wavefront radius. */
+    radius: number
+    maxRadius: number
+    /** Expansion speed (world units / second) — small = readable. */
+    speed: number
+    damage: number
+    /** Vertical reach above/below the cast point. */
+    vertical: number
+    age: number
+    /** Total lifetime including a short post-arrival fade. */
+    ttl: number
+    /** NPC ids already damaged by this wave (so each is hit once). */
+    hit: string[]
+}
+
+export type DebugHitbox =
+    | DebugAabbHitbox
+    | DebugCircleHitbox
+    | DebugWedgeHitbox
+
+export interface DebugHitboxBase {
+    /** Optional stable id. New writes replace the previous live box with the
+     *  same id, so held volumes (shield guard, aura, etc.) do not grow the
+     *  debug list every fixed tick. */
+    id?: string
+    /** Seconds the volume remains visible. Decremented by debug-overlay-system. */
+    ttl: number
+    /** RGB in linear-ish 0..1 range, written into a vertex-color line batch. */
+    color: readonly [number, number, number]
+}
+
+export interface DebugAabbHitbox extends DebugHitboxBase {
+    kind: 'aabb'
+    aabb: {
+        minX: number
+        minY: number
+        minZ: number
+        maxX: number
+        maxY: number
+        maxZ: number
+    }
+}
+
+export interface DebugWedgeHitbox extends DebugHitboxBase {
+    kind: 'wedge'
+    origin: { x: number; y: number; z: number }
+    yaw: number
+    range: number
+    arcRadians: number
+    minY: number
+    maxY: number
+}
+
+export interface DebugCircleHitbox extends DebugHitboxBase {
+    kind: 'circle'
+    center: { x: number; y: number; z: number }
+    radius: number
+}
+
 /** Why the level should restart. Set by gameplay systems; consumed by
  *  `restart-system` which calls `location.reload()`. */
 export type DeathReason =
@@ -168,7 +252,7 @@ export type DeathReason =
     | 'slain'
 
 /** Which weapon set the player is wielding. */
-export type WeaponStance = 'melee' | 'ranged'
+export type WeaponStance = 'melee' | 'ranged' | 'magic'
 
 const MAX_LOG_ENTRIES = 12
 const MAX_ZONE_EVENTS = 64
@@ -212,6 +296,14 @@ export interface GameContext {
     railCarts: RailCartRuntime[]
     railCartsById: Map<string, RailCartRuntime>
     ridingCartByPlayer: Map<number, RailCartRuntime>
+    /** Openable doors discovered in the voxel world at level load. */
+    doors: DoorRuntime[]
+    /** Active expanding spell shockwaves (Frost Nova et al.). */
+    spellEffects: SpellWaveEffect[]
+    /** Debug-only transient hitboxes / attack volumes. Gameplay systems push
+     *  compact descriptors only when debug info is enabled; the overlay owns
+     *  all rendering and TTL cleanup. */
+    debugHitboxes: DebugHitbox[]
     /** Named AABB regions placed by the editor (or seeded by `level.ts`).
      *  Gameplay can query these via `isPointInZone` / `findZoneAtPoint`. */
     zones: Map<string, Zone>
@@ -247,6 +339,10 @@ export interface GameContext {
      *  `ranged` carries the bow (draw + shot). Toggled by the weapon-stance
      *  system, which swaps the player's in-hand loadout to match. */
     weaponStance: WeaponStance
+    /** Id of the spell the magician casts on the cast key. Owned by the game's
+     *  spell registry (`game/spells.ts`); stored as a string so the engine
+     *  stays agnostic about the spell list. Defaults to the first spell. */
+    selectedSpell: string
     /** Queue of trigger events for the script engine to drain each
      *  fixed tick. Producer systems (zone trigger, pickup, death) push
      *  events here; `script-engine-system` consumes + emits via
@@ -327,6 +423,9 @@ export function createGameWorld(): GameWorld {
         railCarts: [],
         railCartsById: new Map<string, RailCartRuntime>(),
         ridingCartByPlayer: new Map<number, RailCartRuntime>(),
+        doors: [],
+        spellEffects: [],
+        debugHitboxes: [],
         zones: new Map<string, Zone>(),
         zoneEvents: [],
         log: [],
@@ -338,6 +437,7 @@ export function createGameWorld(): GameWorld {
         deathSignal: null,
         lastCheckpoint: null,
         weaponStance: 'melee',
+        selectedSpell: 'bolt',
         scriptTriggerEvents: [],
     })
 }

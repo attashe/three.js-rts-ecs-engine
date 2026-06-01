@@ -4,6 +4,7 @@ import type { ScriptEntry } from '../../engine/script/types'
 import type { NpcConfig } from './npc-types'
 import {
     NPC_DEFAULT_HP,
+    npcAttackClip,
     npcCollisionAabb,
     npcInteractionZone,
     npcObstacleId,
@@ -42,7 +43,9 @@ export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]
             colliderRadius: npc.colliderRadius,
             colliderHeight: npc.colliderHeight,
             hp: NPC_DEFAULT_HP,
+            invulnerable: npc.invulnerable,
             requestAttack: false,
+            attackClip: npcAttackClip(npc),
             requestDie: false,
             dying: false,
             ai: null,

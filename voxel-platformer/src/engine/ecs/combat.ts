@@ -25,3 +25,12 @@ export function applyDamage(world: GameWorld, eid: number, amount: number): bool
 export function isDead(world: GameWorld, eid: number): boolean {
     return hasComponent(world, eid, Health) && Health.current[eid]! <= 0
 }
+
+/**
+ * Heart granularity for the player health display. The numeric model stays in
+ * integer HP — the heart HUD just renders `HP_PER_HEART` HP as one full heart,
+ * so a `HALF_HEART` (1 HP) hit reads as half a heart. Damage values are tuned
+ * in these units: the default attack deals `HALF_HEART`.
+ */
+export const HP_PER_HEART = 2
+export const HALF_HEART = HP_PER_HEART / 2

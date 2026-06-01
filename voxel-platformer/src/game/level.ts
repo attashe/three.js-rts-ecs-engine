@@ -7,7 +7,7 @@ import { STONE_TIER, type StoneFallSpawnerConfig, type StonePlacementConfig } fr
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
 import type { EditorProp } from './props/prop-types'
-import type { NpcConfig } from './npcs/npc-types'
+import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
 import type { PlayerSettings } from './player-settings'
 import type { ScriptEntry } from '../engine/script/types'
 import {
@@ -309,15 +309,24 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         },
     ]
 
-    const props: EditorProp[] = [
-        {
-            id: 'demo:npc:keeper',
-            kind: 'npc-keeper',
+    const npcs: NpcConfig[] = [
+        normalizeNpcConfig({
+            id: 'demo-keeper-arlen',
+            name: 'Keeper Arlen',
+            model: 'keeper-arlen',
             position: t.stand(10.5, 9.5),
             yaw: Math.PI * 0.18,
-            scale: 1.2,
-            gridAligned: true,
-        },
+            scale: 1.05,
+            gridAligned: false,
+            collisionEnabled: false,
+            interactionEnabled: false,
+            // Essential quest-giver — cannot be harmed.
+            invulnerable: true,
+            scriptEnabled: false,
+        }),
+    ]
+
+    const props: EditorProp[] = [
         {
             // Sundial on the floating island - the Lantern Trial's interactable.
             id: 'demo:sundial',
@@ -391,6 +400,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         pistons,
         zones,
         props,
+        npcs,
         railCarts: [{
             id: 'demo:rail-cart',
             railCell: { x: 3, y: railY, z: 9 },

@@ -4,6 +4,8 @@ import type { AABB } from '../../engine/voxel/voxel-collide'
 import {
     copyHandLoadout,
     handLoadoutKey,
+    isHammerEquipmentKind,
+    isStaffEquipmentKind,
     normalizeHandLoadout,
     type EquipmentHandLoadout,
 } from '../anim/equipment-types'
@@ -30,10 +32,28 @@ export const NPC_MODEL_LABELS: Record<NpcModelKind, string> = {
     'large-troll': 'Large Troll',
 }
 
+export const TROLL_OUTFIT_KINDS = [
+    'wise',
+    'guardian',
+] as const
+
+export type TrollOutfitKind = (typeof TROLL_OUTFIT_KINDS)[number]
+export type NpcVariantKind = 'default' | TrollOutfitKind
+
+export const TROLL_OUTFIT_LABELS: Record<TrollOutfitKind, string> = {
+    wise: 'Wise Troll',
+    guardian: 'Troll Guardian',
+}
+
+export type NpcAttackClip = 'attack' | 'staffAttack' | 'hammerAttack'
+
 export interface NpcConfig {
     id: string
     name: string
     model: NpcModelKind
+    /** Model-specific outfit/variant selector. Non-variant models use
+     *  `'default'`; large trolls use `'wise'` or `'guardian'`. */
+    variant: NpcVariantKind
     beard: CharacterBeardKind
     position: { x: number; y: number; z: number }
     yaw: number
@@ -45,6 +65,9 @@ export interface NpcConfig {
     interactionEnabled: boolean
     interactionRadius: number
     interactionPrompt: string
+    /** When true the NPC ignores all damage (melee, arrows, spells, lava,
+     *  falling stones) — useful for essential/quest characters. */
+    invulnerable: boolean
     equipment: EquipmentHandLoadout
     voice: DialogueVoiceRef
     scriptEnabled: boolean
@@ -97,9 +120,18 @@ export interface NpcRuntimeState {
     colliderRadius: number
     colliderHeight: number
     hp: number
+    /** Mirrors `NpcConfig.invulnerable`; damage helpers no-op when set. */
+    invulnerable: boolean
     requestAttack: boolean
+    /** One-shot animation requested by behaviour/scripts. Defaults to the
+     *  runtime's configured attack clip when omitted. */
+    requestAttackClip?: NpcAttackClip
     requestDie: boolean
     dying: boolean
+    /** Attack style inferred from the authored NPC loadout at registration. */
+    attackClip?: NpcAttackClip
+    /** Delayed circular impact for heavy overhead attacks. */
+    pendingHammerHit?: NpcPendingHammerHit
     /** Patrol/guard brain; null until a script assigns one. */
     ai: NpcAiState | null
     /** Registration handles, so a despawning NPC can free exactly its own zone +
@@ -113,6 +145,16 @@ export interface NpcRuntimeState {
     stuckArrows?: StuckArrow[]
 }
 
+export interface NpcPendingHammerHit {
+    seconds: number
+    x: number
+    y: number
+    z: number
+    radius: number
+    damage: number
+    targetId: string
+}
+
 /** A frozen arrow embedded in an NPC body, tracked so it follows the NPC. */
 export interface StuckArrow {
     eid: number
@@ -124,9 +166,35 @@ export interface StuckArrow {
 
 export const NPC_DEFAULT_HP = 2
 
+/**
+ * Apply `amount` damage to an NPC, honouring invulnerability. Flags the NPC to
+ * die (death anim + despawn) when it drops to 0. The single damage entry point
+ * for melee, arrows, spells, and falling stones. Returns true if this hit was
+ * lethal.
+ */
+export function damageNpc(npc: NpcRuntimeState, amount: number): boolean {
+    if (npc.invulnerable || npc.dying || !(amount > 0)) return false
+    npc.hp -= amount
+    if (npc.hp <= 0) {
+        npc.requestDie = true
+        npc.dying = true
+        return true
+    }
+    return false
+}
+
+/** Outright kill an NPC (e.g. lava), honouring invulnerability. */
+export function killNpc(npc: NpcRuntimeState): void {
+    if (npc.invulnerable || npc.dying) return
+    npc.hp = 0
+    npc.requestDie = true
+    npc.dying = true
+}
+
 export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     name: 'NPC',
     model: 'keeper',
+    variant: defaultNpcVariant('keeper'),
     beard: defaultNpcBeard('keeper'),
     yaw: 0,
     scale: 1,
@@ -137,31 +205,45 @@ export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     interactionEnabled: true,
     interactionRadius: 2.2,
     interactionPrompt: 'Interaction',
+    invulnerable: false,
     equipment: defaultNpcEquipment('keeper'),
     voice: defaultNpcVoice('keeper'),
     scriptEnabled: true,
     scriptSource: '',
 }
 
-export function defaultNpcBeard(model: NpcModelKind): CharacterBeardKind {
+export function defaultNpcVariant(model: NpcModelKind): NpcVariantKind {
+    return model === 'large-troll' ? 'wise' : 'default'
+}
+
+export function normalizeNpcVariant(model: NpcModelKind, value: unknown): NpcVariantKind {
+    if (model !== 'large-troll') return 'default'
+    return (TROLL_OUTFIT_KINDS as readonly string[]).includes(String(value))
+        ? value as TrollOutfitKind
+        : 'wise'
+}
+
+export function defaultNpcBeard(model: NpcModelKind, variant: NpcVariantKind = defaultNpcVariant(model)): CharacterBeardKind {
     switch (model) {
         case 'keeper':
         case 'keeper-arlen':
             return 'full'
         case 'large-troll':
-            return 'pointed'
+            return normalizeNpcVariant(model, variant) === 'guardian' ? 'full' : 'pointed'
         case 'player':
             return 'none'
     }
 }
 
-export function defaultNpcEquipment(model: NpcModelKind): EquipmentHandLoadout {
+export function defaultNpcEquipment(model: NpcModelKind, variant: NpcVariantKind = defaultNpcVariant(model)): EquipmentHandLoadout {
     switch (model) {
         case 'keeper':
         case 'keeper-arlen':
             return { handR: 'staff', handL: null }
         case 'large-troll':
-            return { handR: null, handL: 'book' }
+            return normalizeNpcVariant(model, variant) === 'guardian'
+                ? { handR: 'battle-hammer', handL: null }
+                : { handR: null, handL: 'book' }
         case 'player':
             return { handR: null, handL: null }
     }
@@ -264,11 +346,13 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
     const model = (NPC_MODEL_KINDS as readonly string[]).includes(String(input.model))
         ? input.model as NpcModelKind
         : DEFAULT_NPC.model
+    const variant = normalizeNpcVariant(model, input.variant)
     return {
         id: sanitizeNpcId(input.id || 'npc'),
         name: input.name || DEFAULT_NPC.name,
         model,
-        beard: normalizeCharacterBeard(input.beard, defaultNpcBeard(model)),
+        variant,
+        beard: normalizeCharacterBeard(input.beard, defaultNpcBeard(model, variant)),
         position: { ...input.position },
         yaw: Number.isFinite(input.yaw) ? input.yaw! : DEFAULT_NPC.yaw,
         scale: safePositive(input.scale, DEFAULT_NPC.scale),
@@ -279,7 +363,8 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         interactionEnabled: input.interactionEnabled ?? DEFAULT_NPC.interactionEnabled,
         interactionRadius: safePositive(input.interactionRadius, DEFAULT_NPC.interactionRadius),
         interactionPrompt: input.interactionPrompt || DEFAULT_NPC.interactionPrompt,
-        equipment: normalizeHandLoadout(input.equipment, defaultNpcEquipment(model)),
+        invulnerable: input.invulnerable ?? DEFAULT_NPC.invulnerable,
+        equipment: normalizeHandLoadout(input.equipment, defaultNpcEquipment(model, variant)),
         voice: compactNpcVoice(normalizeDialogueVoice(input.voice, defaultNpcVoice(model))),
         scriptEnabled: input.scriptEnabled ?? DEFAULT_NPC.scriptEnabled,
         scriptSource: input.scriptSource ?? DEFAULT_NPC.scriptSource,
@@ -288,6 +373,12 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
 
 export function npcEquipmentKey(npc: Pick<NpcConfig, 'equipment'>): string {
     return handLoadoutKey(npc.equipment)
+}
+
+export function npcAttackClip(npc: Pick<NpcConfig, 'equipment'>): NpcAttackClip {
+    if (isHammerEquipmentKind(npc.equipment.handR) || isHammerEquipmentKind(npc.equipment.handL)) return 'hammerAttack'
+    if (isStaffEquipmentKind(npc.equipment.handR) || isStaffEquipmentKind(npc.equipment.handL)) return 'staffAttack'
+    return 'attack'
 }
 
 export function sanitizeNpcId(value: string): string {

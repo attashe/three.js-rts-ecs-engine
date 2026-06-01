@@ -5,6 +5,7 @@
 // rig so the combat-locomotion graph drives either interchangeably.
 
 import { eulerQuatTrack, type ProcClipDef, type ProcTrackDef } from '../../engine/anim'
+import { HUMANOID_ANIM_TIMINGS } from './clip-timings'
 
 type E3 = [number, number, number]
 
@@ -148,6 +149,39 @@ export function partCharacterClips(): ProcClipDef[] {
             ],
         },
         {
+            // Raised shield guard: the left hand carries the shield from the
+            // passive side position into a readable front block, then clamps
+            // there while the guard input is held.
+            name: 'shieldBlock', duration: HUMANOID_ANIM_TIMINGS.shieldBlock, tracks: [
+                neutralFigure(HUMANOID_ANIM_TIMINGS.shieldBlock),
+                eulerQuatTrack('Chest', [
+                    { t: 0, e: [0.02, -0.08, 0.015] },
+                    { t: 0.18, e: [0.06, -0.22, 0.04] },
+                    { t: 0.44, e: [0.075, -0.18, 0.035] },
+                    { t: HUMANOID_ANIM_TIMINGS.shieldBlock, e: [0.075, -0.18, 0.035] },
+                ]),
+                eulerQuatTrack('Head', [
+                    { t: 0, e: [0, -0.04, 0] },
+                    { t: 0.24, e: [-0.02, -0.12, 0] },
+                    { t: HUMANOID_ANIM_TIMINGS.shieldBlock, e: [-0.02, -0.12, 0] },
+                ]),
+                eulerQuatTrack('UpperArmL', [
+                    { t: 0, e: [-0.18, 0.5, 0.18] },
+                    { t: 0.16, e: [-0.58, 1.16, 0.28] },
+                    { t: 0.44, e: [-0.66, 1.22, 0.32] },
+                    { t: HUMANOID_ANIM_TIMINGS.shieldBlock, e: [-0.66, 1.22, 0.32] },
+                ]),
+                eulerQuatTrack('UpperArmR', [
+                    { t: 0, e: [-0.12, 0.02, -0.08] },
+                    { t: 0.18, e: [-0.42, -0.18, -0.16] },
+                    { t: 0.44, e: [-0.36, -0.12, -0.12] },
+                    { t: HUMANOID_ANIM_TIMINGS.shieldBlock, e: [-0.36, -0.12, -0.12] },
+                ]),
+                eulerQuatTrack('LegR', [{ t: 0, e: [0.08, 0, 0.04] }, { t: 0.36, e: [0.18, 0, 0.06] }, { t: HUMANOID_ANIM_TIMINGS.shieldBlock, e: [0.18, 0, 0.06] }]),
+                eulerQuatTrack('LegL', [{ t: 0, e: [-0.06, 0, -0.04] }, { t: 0.36, e: [-0.16, 0, -0.06] }, { t: HUMANOID_ANIM_TIMINGS.shieldBlock, e: [-0.16, 0, -0.06] }]),
+            ],
+        },
+        {
             // Staff bonk: fast wind-up, then the weighted pointy head snaps
             // forward/down. The authored impact pose deliberately makes the
             // staff's +Y axis (its striking head) point into the enemy.
@@ -184,6 +218,56 @@ export function partCharacterClips(): ProcClipDef[] {
                 ]),
                 eulerQuatTrack('LegR', [{ t: 0, e: [0, 0, 0] }, { t: 0.34, e: [-0.26, 0, 0.08] }, { t: 0.64, e: [0, 0, 0] }]),
                 eulerQuatTrack('LegL', [{ t: 0, e: [0, 0, 0] }, { t: 0.34, e: [0.36, 0, -0.12] }, { t: 0.64, e: [0, 0, 0] }]),
+            ],
+        },
+        {
+            // Hammer smash: the carried hammer starts horizontal, lifts above
+            // the shoulder, then drives down in front. NPC behaviour applies
+            // the circular impact at HUMANOID_ANIM_TIMINGS.hammerImpact.
+            name: 'hammerAttack', duration: HUMANOID_ANIM_TIMINGS.hammerAttack, tracks: [
+                neutralFigure(HUMANOID_ANIM_TIMINGS.hammerAttack),
+                eulerQuatTrack('Chest', [
+                    { t: 0, e: [0.02, 0, 0] },
+                    { t: 0.16, e: [-0.08, -0.12, -0.02] },
+                    { t: 0.3, e: [-0.32, -0.2, -0.04] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerImpact, e: [0.5, 0.04, 0.02] },
+                    { t: 0.66, e: [0.32, 0.02, 0.01] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerAttack, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('Head', [
+                    { t: 0, e: [0, 0, 0] },
+                    { t: 0.3, e: [-0.1, -0.08, 0] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerImpact, e: [0.16, 0.03, 0] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerAttack, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('UpperArmR', [
+                    { t: 0, e: [-0.12, 0, -0.06] },
+                    { t: 0.16, e: [-0.72, -0.1, -0.18] },
+                    { t: 0.3, e: [-2.15, -0.08, -0.22] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerImpact, e: [0.62, 0.04, -0.1] },
+                    { t: 0.66, e: [0.46, 0.03, -0.08] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerAttack, e: [0, 0, -0.04] },
+                ]),
+                eulerQuatTrack('UpperArmL', [
+                    { t: 0, e: [0.02, 0, 0.04] },
+                    { t: 0.16, e: [-0.52, 0.16, 0.18] },
+                    { t: 0.3, e: [-1.75, 0.1, 0.28] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerImpact, e: [0.42, -0.02, 0.08] },
+                    { t: 0.66, e: [0.28, -0.02, 0.07] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerAttack, e: [0, 0, 0.04] },
+                ]),
+                eulerQuatTrack('LegR', [
+                    { t: 0, e: [0, 0, 0] },
+                    { t: 0.3, e: [0.18, 0, 0.08] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerImpact, e: [-0.34, 0, 0.12] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerAttack, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('LegL', [
+                    { t: 0, e: [0, 0, 0] },
+                    { t: 0.3, e: [-0.2, 0, -0.08] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerImpact, e: [0.42, 0, -0.14] },
+                    { t: HUMANOID_ANIM_TIMINGS.hammerAttack, e: [0, 0, 0] },
+                ]),
             ],
         },
         {

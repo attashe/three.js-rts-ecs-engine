@@ -90,9 +90,11 @@ async function handleKeeperInteraction() {
                     { id: 'accept', text: 'I will find the shards.' },
                     { id: 'ask', text: 'What are Sun Shards?' },
                     { id: 'trade', text: 'Show me your supplies.' },
+                    { id: 'bye', text: 'Goodbye.' },
                 ],
             },
         ])
+        if (intro.choiceId === 'bye') return
         if (intro.choiceId === 'trade') {
             await openKeeperTrade()
             return
@@ -106,9 +108,11 @@ async function handleKeeperInteraction() {
                     choices: [
                         { id: 'accept', text: 'Then I will find them.' },
                         { id: 'trade', text: 'Show me your supplies first.' },
+                        { id: 'bye', text: 'Goodbye.' },
                     ],
                 },
             ])
+            if (followup.choiceId === 'bye') return
             if (followup.choiceId === 'trade') {
                 await openKeeperTrade()
                 return
@@ -127,8 +131,8 @@ async function handleKeeperInteraction() {
             speaker: 'keeper',
             text: `${missing.length} shard(s) still wait: ${missing.map((s) => s.hint).join(', ')}.`,
             choices: [
-                { id: 'leave', text: 'I will keep looking.' },
                 { id: 'trade', text: 'Show me your supplies.' },
+                { id: 'bye', text: 'Goodbye.' },
             ],
         }])
         if (result.choiceId === 'trade') await openKeeperTrade()
@@ -141,8 +145,8 @@ async function handleKeeperInteraction() {
             text: 'The shards are singing in your pack. Will you return them to the lantern?',
             choices: [
                 { id: 'give', text: 'Here are the Sun Shards.' },
-                { id: 'wait', text: 'Not yet.' },
                 { id: 'trade', text: 'Show me your supplies.' },
+                { id: 'bye', text: 'Goodbye.' },
             ],
         }])
         if (turnIn.choiceId === 'give') await completeQuest()
@@ -154,8 +158,8 @@ async function handleKeeperInteraction() {
         speaker: 'keeper',
         text: 'The lantern holds. Walk carefully, friend.',
         choices: [
-            { id: 'leave', text: 'I will.' },
             { id: 'trade', text: 'Show me your supplies.' },
+            { id: 'bye', text: 'Goodbye.' },
         ],
     }])
     if (done.choiceId === 'trade') await openKeeperTrade()

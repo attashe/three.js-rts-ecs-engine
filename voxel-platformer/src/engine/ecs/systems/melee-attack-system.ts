@@ -6,8 +6,9 @@
 import { hasComponent, query } from 'bitecs'
 import { Grounded, PlayerControlled, Position, Rotation } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
-import type { NpcRuntimeState } from '../../../game/npcs/npc-types'
+import { damageNpc, type NpcRuntimeState } from '../../../game/npcs/npc-types'
 import { isStaffEquipmentKind } from '../../../game/anim/equipment-types'
+import { debugHitboxesEnabled, pushDebugHitbox } from '../debug-hitboxes'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 
@@ -83,6 +84,19 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
             const px = Position.x[player]!
             const py = Position.y[player]!
             const pz = Position.z[player]!
+            if (debugHitboxesEnabled()) {
+                pushDebugHitbox(world, {
+                    kind: 'wedge',
+                    ttl: Math.min(0.32, meleeLockSeconds),
+                    color: useStaff ? [0.88, 0.48, 1.0] : useWideSwing ? [1.0, 0.58, 0.18] : [1.0, 0.28, 0.22],
+                    origin: { x: px, y: py, z: pz },
+                    yaw,
+                    range: box.range,
+                    arcRadians: Math.acos(box.arcCos) * 2,
+                    minY: -MELEE_REACH_BELOW,
+                    maxY: MELEE_REACH_ABOVE,
+                })
+            }
             let nearest: NpcRuntimeState | null = null
             let nearestDist = Infinity
             for (const npc of world.npcRuntimeById.values()) {
@@ -95,27 +109,19 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
                 const dy = npc.position.y - py
                 if (dy > MELEE_REACH_ABOVE || dy < -MELEE_REACH_BELOW) continue
                 if (box.cleave) {
-                    applyMeleeHit(npc, damage)
+                    damageNpc(npc, damage)
                 } else if (dist < nearestDist) {
                     nearestDist = dist
                     nearest = npc
                 }
             }
-            if (!box.cleave && nearest) applyMeleeHit(nearest, damage)
+            if (!box.cleave && nearest) damageNpc(nearest, damage)
         },
     }
 }
 
-function applyMeleeHit(npc: NpcRuntimeState, damage: number): void {
-    npc.hp -= damage
-    if (npc.hp <= 0) {
-        npc.requestDie = true
-        npc.dying = true
-    }
-}
-
 function isMeleeAnimationBusy(stateId: string): boolean {
-    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'staffAttack' || stateId === 'shoot'
+    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'staffAttack' || stateId === 'hammerAttack' || stateId === 'shoot' || stateId === 'shieldBlock'
 }
 
 function activeLoadoutUsesStaff(world: Parameters<System['update']>[0]): boolean {

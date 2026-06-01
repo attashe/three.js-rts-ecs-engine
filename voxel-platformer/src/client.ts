@@ -20,9 +20,17 @@ import { createRenderMetricsSystem } from './engine/ecs/systems/render-metrics-s
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
 import { createMeleeAttackSystem } from './engine/ecs/systems/melee-attack-system'
+import { createSpellCastSystem } from './game/spells'
+import { createSpellEffectSystem, createSpellEffectRenderSystem } from './game/spell-effect-system'
 import { createWeaponStanceSystem } from './game/weapon-stance-system'
 import { createPlayerDeathAnimSystem } from './game/anim/player-death-anim-system'
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
+import { createNpcHazardSystem } from './engine/ecs/systems/npc-hazard-system'
+import { createStuckArrowSystem } from './game/stuck-arrow-system'
+import { createHealthBarSystem } from './game/health-bar-system'
+import { createHealthHudSystem } from './game/health-hud-system'
+import { createStoneDamageSystem } from './game/stone-damage-system'
+import { createElectricOrbSystem } from './game/electric-orb-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { createPickupSystem, PickupKind } from './engine/ecs/systems/pickup-system'
@@ -62,6 +70,7 @@ import { createPlayerShieldSystem } from './game/player-shield-system'
 import { registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-runtime'
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
+import { nearestDoorInteractionTarget, scanDoors } from './game/doors'
 import { createDialogueController } from './game/dialogue-system'
 import { createDialogueVoiceService } from './game/dialogue-voice'
 import { createTradeController } from './game/trade-system'
@@ -257,6 +266,9 @@ async function main(): Promise<void> {
         cleanupActiveLocation()
         clearRuntimeWorld(world)
         replaceChunks(chunks, loaded.chunks)
+        // Make base-game-style door blocks (placed by the procedural house /
+        // church / stable generators and hand-authored levels) openable.
+        scanDoors(world, chunks)
 
         const version = ++locationVersion
         const entrySpawn = opts.entrySpawn ?? resolveArrival(loaded.meta, opts.arrivalId) ?? loaded.meta.spawn
@@ -463,8 +475,13 @@ async function main(): Promise<void> {
         .addSystem(slots.visualFxZones.system, 'visualFxZones')
         .addSystem(slots.propRender.system, 'propRender')
         .addSystem(slots.npcRender.system, 'npcRender')
-        .addSystem(createPlayerShieldSystem(), 'playerShield')
+        .addSystem(createStuckArrowSystem(), 'stuckArrows')
+        .addSystem(createSpellEffectSystem(), 'spellEffects')
+        .addSystem(createSpellEffectRenderSystem(renderer.scene), 'spellEffectsRender')
+        .addSystem(createHealthBarSystem(renderer.scene, () => renderer.iso.camera), 'healthBars')
+        .addSystem(createPlayerShieldSystem(actions, { actionId: GameAction.RaiseShield }), 'playerShield')
         .addSystem(createNpcBehaviourSystem(chunks), 'npcBehaviour')
+        .addSystem(createNpcHazardSystem(chunks), 'npcHazard')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,
             onJump: () => audio.play(GameAudio.Jump, {
@@ -475,16 +492,27 @@ async function main(): Promise<void> {
         .addSystem(createPlayerTorchSystem(), 'playerTorch')
         .addSystem(createWeaponStanceSystem(actions, { actionId: GameAction.SwitchWeapon }), 'weaponStance')
         .addSystem(createProjectileLaunchSystem(actions, {
+            // F is the universal attack; in the ranged stance it looses an arrow.
             actionId: GameAction.BowShot,
             canUse: (world) => world.weaponStance === 'ranged',
             onLaunch: () => audio.play(GameAudio.Bow, { deferUntilUnlocked: true }),
         }), 'projectileLaunch')
         .addSystem(createMeleeAttackSystem(actions, {
-            actionId: GameAction.Attack,
-            canUse: (world) => world.weaponStance === 'melee',
+            // F drives melee in both the sword (melee) and staff (magic) stances;
+            // the system plays the sword swing or the staff bonk per loadout.
+            actionId: GameAction.BowShot,
+            canUse: (world) => world.weaponStance === 'melee' || world.weaponStance === 'magic',
         }), 'meleeAttack')
+        .addSystem(createSpellCastSystem(actions, {
+            // C casts the selected spell — magician only (the staff channels it).
+            actionId: GameAction.CastSpell,
+            canUse: (world) => world.weaponStance === 'magic',
+            onCast: () => audio.play(GameAudio.AirPush, { deferUntilUnlocked: true, rate: 1.1 }),
+        }), 'spellCast')
         .addSystem(createArrowHitSystem(chunks, {
             onArrowLand: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
+            onArrowHitNpc: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
+            onBoltHit: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true, rate: 1.25 }),
         }), 'arrowHit')
         .addSystem(createHighJumpSystem(actions, {
             actionId: GameAction.HighJump,
@@ -534,6 +562,12 @@ async function main(): Promise<void> {
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')
         .addSystem(createImpactSystem(), 'impact')
         .addSystem(createMovingObjectSystem(), 'movingObjects')
+        .addSystem(createStoneDamageSystem({
+            onHit: () => audio.play(GameAudio.StoneImpact, { deferUntilUnlocked: true, volume: 0.7, rate: 0.9 }),
+        }), 'stoneDamage')
+        .addSystem(createElectricOrbSystem({
+            onZap: () => audio.play(GameAudio.AirPush, { deferUntilUnlocked: true, volume: 0.7, rate: 1.4 }),
+        }), 'electricOrb')
         .addSystem(createDynamicCollisionSystem(chunks), 'dynamicCollision')
         .addSystem(createPlayerDeathSystem({
             chunks,
@@ -557,6 +591,7 @@ async function main(): Promise<void> {
             cameraProvider: () => renderer.iso.camera,
             renderElement: renderer.webgpu.domElement,
         }), 'debugOverlay')
+        .addSystem(createHealthHudSystem(), 'healthHud')
         .addSystem(createInventorySystem(engine.input, actions), 'inventory')
         .addSystem(createGameMenuSystem(engine.input, actions, audio, {
             renderElement: renderer.webgpu.domElement,
@@ -570,6 +605,7 @@ async function main(): Promise<void> {
             domElement: renderer.webgpu.domElement,
             providers: [
                 (activeWorld, player) => nearestRailCartInteractionTarget(activeWorld, player, chunks),
+                (activeWorld, player) => nearestDoorInteractionTarget(activeWorld, player, chunks),
             ],
         }), 'interaction')
         .addSystem(createRestartSystem({
@@ -635,6 +671,7 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.railCarts.length = 0
     world.railCartsById.clear()
     world.ridingCartByPlayer.clear()
+    world.doors.length = 0
     world.pistons.length = 0
     world.pistonsById.clear()
     world.zones.clear()
@@ -647,6 +684,8 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.deathSignal = null
     world.lastCheckpoint = null
     world.weaponStance = 'melee'
+    world.selectedSpell = 'bolt'
+    world.spellEffects.length = 0
 }
 
 function replaceChunks(target: ChunkManager, source: ChunkManager): void {

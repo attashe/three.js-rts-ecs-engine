@@ -102,6 +102,16 @@ test('demo level has a paid portal shrine and dormant magic gate FX', () => {
     assert.equal(fx?.enabled, false)
 })
 
+test('demo level uses the rigged Keeper Arlen NPC model at the quest spot', () => {
+    const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
+    const arlen = meta.npcs.find((npc) => npc.id === 'demo-keeper-arlen')
+
+    assert.equal(arlen?.name, 'Keeper Arlen')
+    assert.equal(arlen?.model, 'keeper-arlen')
+    assert.equal(arlen?.interactionEnabled, false, 'quest interaction remains owned by zone.demo.keeper')
+    assert.ok(!meta.props.some((prop) => prop.id === 'demo:npc:keeper'), 'old static Keeper prop should not render in the demo')
+})
+
 test('demo level includes a lava pond authored as lethal lava blocks', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     generatePlatformerLevel(chunks)

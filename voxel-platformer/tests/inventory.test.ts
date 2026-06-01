@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
     addInventoryItem,
     copyInventoryItems,
+    defaultInventoryIcon,
     inventoryItemCount,
     listInventoryItems,
     normalizeInventoryItems,
@@ -23,6 +24,11 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.deepEqual(listInventoryItems(items, 'tools').map((item) => item.id), ['moon-key'])
     assert.equal(removeInventoryItem(items, 'sun-shard', 2), true)
     assert.equal(inventoryItemCount(items, 'sun-shard'), 1)
+    assert.equal(addInventoryItem(items, 'heal-potion', 3), true)
+    assert.equal(defaultInventoryIcon('heal-potion'), 'heal-potion')
+    assert.deepEqual(listInventoryItems(items, 'consumables').map((item) => [item.id, item.quantity, item.icon]), [
+        ['heal-potion', 3, 'heal-potion'],
+    ])
 })
 
 test('player settings deep-copy durable inventory and tolerate old saves', () => {

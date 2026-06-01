@@ -17,6 +17,7 @@ import type { Input } from '../../input/input'
 import { getDebugInfoEnabled, setDebugInfoEnabled, subscribeDebugInfo } from '../../render/render-settings'
 import { isTriggerZone, isZoneActive, type Zone } from '../zones'
 import { colliderAabbForEntity } from '../collider-bounds'
+import type { DebugHitbox } from '../world'
 import type { AABB } from '../../voxel/voxel-collide'
 
 /** CSS positioning hints for the floating panels. Each accepts any subset of
@@ -53,6 +54,12 @@ interface BoxBatchState {
 
 interface ColoredBoxBatchState extends BoxBatchState {}
 
+interface LineBatchState {
+    lines: LineSegments
+    vertexCapacity: number
+    vertexCount: number
+}
+
 /**
  * Minimal debug overlay for the platformer foundation:
  *  - Backtick toggles a Box3 outline for every entity with Position + BoxCollider
@@ -69,7 +76,20 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
     const updateDt = 1 / (opts.updateHz ?? 4)
     const root = new Group()
     root.name = 'DebugOverlay'
-    const boxMaterial = new LineBasicMaterial({ color: 0x9cff57 })
+    const boxMaterial = new LineBasicMaterial({
+        color: 0x9cff57,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+    })
+    const hitboxMaterial = new LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+    })
     const zoneMaterial = new LineBasicMaterial({
         vertexColors: true,
         transparent: true,
@@ -78,6 +98,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         depthWrite: false,
     })
     const boxBatch = createBoxBatch(boxMaterial)
+    const hitboxBatch = createLineBatch(hitboxMaterial, 'DebugHitboxBatch')
     const zoneBatch = createColoredBoxBatch(zoneMaterial)
     const zoneLabels = new Map<string, HTMLDivElement>()
     const labelWorldPos = new Vector3()
@@ -99,6 +120,7 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         init() {
             scene.add(root)
             root.add(boxBatch.lines)
+            root.add(hitboxBatch.lines)
             root.add(zoneBatch.lines)
 
             metricsPanel = new DebugPerfPanel(opts.metricsPosition ?? { top: '8px', left: '8px' })
@@ -120,8 +142,12 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
             if (enabled) {
                 const eids = query(world, [Position, BoxCollider])
                 updateBoxes(boxBatch, world, eids)
+                updateDebugHitboxes(hitboxBatch, world.debugHitboxes, dt)
                 updateZoneBoxes(zoneBatch, world.zones.values())
                 updateZoneLabels(zoneLabels, world.zones.values(), opts, labelWorldPos)
+            } else if (world.debugHitboxes.length > 0) {
+                world.debugHitboxes.length = 0
+                hitboxBatch.lines.geometry.setDrawRange(0, 0)
             }
 
             accumulator += dt
@@ -139,8 +165,10 @@ export function createDebugOverlaySystem(scene: Scene, input: Input, opts: Debug
         dispose() {
             scene.remove(root)
             boxBatch.lines.geometry.dispose()
+            hitboxBatch.lines.geometry.dispose()
             zoneBatch.lines.geometry.dispose()
             boxMaterial.dispose()
+            hitboxMaterial.dispose()
             zoneMaterial.dispose()
             for (const label of zoneLabels.values()) label.remove()
             zoneLabels.clear()
@@ -271,6 +299,17 @@ function createColoredBoxBatch(material: LineBasicMaterial): ColoredBoxBatchStat
     return { lines, capacity: 0, count: 0 }
 }
 
+function createLineBatch(material: LineBasicMaterial, name: string): LineBatchState {
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(0, 3))
+    geometry.setAttribute('color', new Float32BufferAttribute(0, 3))
+    const lines = new LineSegments(geometry, material)
+    lines.name = name
+    lines.frustumCulled = false
+    lines.renderOrder = 10_002
+    return { lines, vertexCapacity: 0, vertexCount: 0 }
+}
+
 const tmpEntityAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 
 function updateBoxes(batch: BoxBatchState, world: Parameters<System['update']>[0], eids: ArrayLike<number>): void {
@@ -312,6 +351,137 @@ function updateZoneBoxes(batch: ColoredBoxBatchState, zonesIterable: Iterable<Zo
     }
     position.needsUpdate = true
     color.needsUpdate = true
+}
+
+function updateDebugHitboxes(batch: LineBatchState, hitboxes: DebugHitbox[], dt: number): void {
+    for (let i = hitboxes.length - 1; i >= 0; i--) {
+        hitboxes[i]!.ttl -= dt
+        if (hitboxes[i]!.ttl <= 0) hitboxes.splice(i, 1)
+    }
+    let vertexCount = 0
+    for (const hitbox of hitboxes) vertexCount += hitboxVertexCount(hitbox)
+    ensureLineVertexCapacity(batch, vertexCount)
+    batch.vertexCount = vertexCount
+    batch.lines.geometry.setDrawRange(0, vertexCount)
+    if (vertexCount === 0) return
+
+    const position = batch.lines.geometry.getAttribute('position') as Float32BufferAttribute | undefined
+    const color = batch.lines.geometry.getAttribute('color') as Float32BufferAttribute | undefined
+    if (!position || !color) return
+    const coords = position.array as Float32Array
+    const colors = color.array as Float32Array
+    let offset = 0
+    for (const hitbox of hitboxes) {
+        const start = offset
+        offset = writeDebugHitbox(coords, offset, hitbox)
+        const [r, g, b] = hitbox.color
+        writeLineColor(colors, start, offset - start, r, g, b)
+    }
+    position.needsUpdate = true
+    color.needsUpdate = true
+}
+
+function hitboxVertexCount(hitbox: DebugHitbox): number {
+    switch (hitbox.kind) {
+        case 'aabb': return 24
+        case 'circle': return circleVertexCount()
+        case 'wedge': return wedgeVertexCount()
+    }
+}
+
+function ensureLineVertexCapacity(batch: LineBatchState, vertexCount: number): void {
+    if (vertexCount <= batch.vertexCapacity) return
+    let capacity = Math.max(64, batch.vertexCapacity)
+    while (capacity < vertexCount) capacity *= 2
+    batch.lines.geometry.dispose()
+    batch.lines.geometry = new BufferGeometry()
+    batch.lines.geometry.setAttribute('position', new Float32BufferAttribute(capacity * 3, 3))
+    batch.lines.geometry.setAttribute('color', new Float32BufferAttribute(capacity * 3, 3))
+    batch.vertexCapacity = capacity
+}
+
+function writeDebugHitbox(coords: Float32Array, vertexOffset: number, hitbox: DebugHitbox): number {
+    if (hitbox.kind === 'aabb') {
+        const o = vertexOffset * 3
+        writeBoxEdges(
+            coords,
+            o,
+            hitbox.aabb.minX, hitbox.aabb.minY, hitbox.aabb.minZ,
+            hitbox.aabb.maxX, hitbox.aabb.maxY, hitbox.aabb.maxZ,
+        )
+        return vertexOffset + 24
+    }
+    if (hitbox.kind === 'circle') return writeCircleEdges(coords, vertexOffset, hitbox)
+    return writeWedgeEdges(coords, vertexOffset, hitbox)
+}
+
+const WEDGE_STEPS = 10
+const CIRCLE_STEPS = 32
+
+function circleVertexCount(): number {
+    return CIRCLE_STEPS * 2
+}
+
+function writeCircleEdges(coords: Float32Array, vertexOffset: number, hitbox: Extract<DebugHitbox, { kind: 'circle' }>): number {
+    let v = vertexOffset
+    const cx = hitbox.center.x
+    const cy = hitbox.center.y
+    const cz = hitbox.center.z
+    for (let i = 0; i < CIRCLE_STEPS; i++) {
+        const a0 = (Math.PI * 2 * i) / CIRCLE_STEPS
+        const a1 = (Math.PI * 2 * (i + 1)) / CIRCLE_STEPS
+        v = writeLineVertex(
+            coords,
+            v,
+            cx + Math.sin(a0) * hitbox.radius,
+            cy,
+            cz + Math.cos(a0) * hitbox.radius,
+            cx + Math.sin(a1) * hitbox.radius,
+            cy,
+            cz + Math.cos(a1) * hitbox.radius,
+        )
+    }
+    return v
+}
+
+function wedgeVertexCount(): number {
+    // Bottom/top left + right radii (4 segments), two arcs (WEDGE_STEPS each),
+    // and three verticals (left, origin, right).
+    return (4 + WEDGE_STEPS * 2 + 3) * 2
+}
+
+function writeWedgeEdges(coords: Float32Array, vertexOffset: number, hitbox: Extract<DebugHitbox, { kind: 'wedge' }>): number {
+    const ox = hitbox.origin.x
+    const oz = hitbox.origin.z
+    const minY = hitbox.origin.y + hitbox.minY
+    const maxY = hitbox.origin.y + hitbox.maxY
+    const half = hitbox.arcRadians * 0.5
+    const leftYaw = hitbox.yaw - half
+    const rightYaw = hitbox.yaw + half
+    const leftX = ox + Math.sin(leftYaw) * hitbox.range
+    const leftZ = oz + Math.cos(leftYaw) * hitbox.range
+    const rightX = ox + Math.sin(rightYaw) * hitbox.range
+    const rightZ = oz + Math.cos(rightYaw) * hitbox.range
+
+    let v = vertexOffset
+    v = writeLineVertex(coords, v, ox, minY, oz, leftX, minY, leftZ)
+    v = writeLineVertex(coords, v, ox, minY, oz, rightX, minY, rightZ)
+    v = writeLineVertex(coords, v, ox, maxY, oz, leftX, maxY, leftZ)
+    v = writeLineVertex(coords, v, ox, maxY, oz, rightX, maxY, rightZ)
+    for (let i = 0; i < WEDGE_STEPS; i++) {
+        const a0 = leftYaw + (hitbox.arcRadians * i) / WEDGE_STEPS
+        const a1 = leftYaw + (hitbox.arcRadians * (i + 1)) / WEDGE_STEPS
+        const x0 = ox + Math.sin(a0) * hitbox.range
+        const z0 = oz + Math.cos(a0) * hitbox.range
+        const x1 = ox + Math.sin(a1) * hitbox.range
+        const z1 = oz + Math.cos(a1) * hitbox.range
+        v = writeLineVertex(coords, v, x0, minY, z0, x1, minY, z1)
+        v = writeLineVertex(coords, v, x0, maxY, z0, x1, maxY, z1)
+    }
+    v = writeLineVertex(coords, v, leftX, minY, leftZ, leftX, maxY, leftZ)
+    v = writeLineVertex(coords, v, ox, minY, oz, ox, maxY, oz)
+    v = writeLineVertex(coords, v, rightX, minY, rightZ, rightX, maxY, rightZ)
+    return v
 }
 
 function ensureBoxCapacity(batch: BoxBatchState, count: number): void {
@@ -369,6 +539,16 @@ function writeBoxColor(colors: Float32Array, offset: number, r: number, g: numbe
     }
 }
 
+function writeLineColor(colors: Float32Array, vertexOffset: number, vertexCount: number, r: number, g: number, b: number): void {
+    const end = vertexOffset + vertexCount
+    for (let i = vertexOffset; i < end; i++) {
+        const j = i * 3
+        colors[j + 0] = r
+        colors[j + 1] = g
+        colors[j + 2] = b
+    }
+}
+
 function zoneDebugColor(zone: Zone): readonly [number, number, number] {
     if (!isZoneActive(zone)) return [0.44, 0.44, 0.48]
     if (zone.kind === 'arrival') return [0.35, 1.0, 0.62]
@@ -387,4 +567,15 @@ function writeEdge(
 ): void {
     coords[offset + 0] = ax; coords[offset + 1] = ay; coords[offset + 2] = az
     coords[offset + 3] = bx; coords[offset + 4] = by; coords[offset + 5] = bz
+}
+
+function writeLineVertex(
+    coords: Float32Array,
+    vertexOffset: number,
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number,
+): number {
+    const offset = vertexOffset * 3
+    writeEdge(coords, offset, ax, ay, az, bx, by, bz)
+    return vertexOffset + 2
 }

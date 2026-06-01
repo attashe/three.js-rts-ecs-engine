@@ -22,7 +22,8 @@ uses generated PCM, and routes through the existing `AudioEngine` UI bus.
 
 NPCs have a Dialogue Voice section in the editor. Model defaults are:
 
-- keeper: `dwarf`
+- keeper / Dwarf: `dwarf`
+- keeper-arlen / Keeper Arlen: `dwarf`
 - large troll: `troll`
 - player model: `player`
 

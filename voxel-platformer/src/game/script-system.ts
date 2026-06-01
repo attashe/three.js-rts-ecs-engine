@@ -316,6 +316,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
             const runtime = opts.world.npcRuntimeById.get(id)
             if (!runtime || runtime.dying) return false
             runtime.requestAttack = true
+            runtime.requestAttackClip = runtime.attackClip ?? 'attack'
             return true
         },
         die(id) {

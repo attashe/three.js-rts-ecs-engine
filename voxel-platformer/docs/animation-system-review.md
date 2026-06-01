@@ -32,7 +32,7 @@ combat actions, and imported models.
   frozen/empty layer.
 - Registered player/NPC glTF overrides must provide the combat clip set:
   `idle`, `walk`, `run`, `jump`, `fall`, `land`, `attack`, `attackWide`,
-  `shoot`, `die`, `dead`.
+  `staffAttack`, `shoot`, `die`, `dead`.
 
 ## Remaining Architecture Risks
 
@@ -96,4 +96,5 @@ combat actions, and imported models.
 - Adding a new character model fails fast if required clips, sockets, or track
   targets are missing.
 - Player and NPC equipment attachment behavior is implemented through one shared
-  helper and tested against at least the player, keeper, and troll models.
+  helper and tested against at least the player, dwarf, Keeper Arlen, and troll
+  models.

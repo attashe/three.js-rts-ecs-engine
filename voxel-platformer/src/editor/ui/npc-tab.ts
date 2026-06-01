@@ -7,14 +7,19 @@ import {
     DEFAULT_NPC,
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
+    TROLL_OUTFIT_KINDS,
+    TROLL_OUTFIT_LABELS,
     defaultNpcBeard,
     defaultNpcEquipment,
+    defaultNpcVariant,
     defaultNpcVoice,
+    normalizeNpcVariant,
     npcEquipmentKey,
     npcInteractionZoneId,
     sanitizeNpcId,
     type NpcConfig,
     type NpcModelKind,
+    type TrollOutfitKind,
 } from '../../game/npcs/npc-types'
 import {
     copyHandLoadout,
@@ -101,31 +106,75 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         const model = modelSelect.value as NpcModelKind
         updateDraftOrSelected(
             (npc) => {
-                const previousDefault = defaultNpcEquipment(npc.model)
+                const previousDefault = defaultNpcEquipment(npc.model, npc.variant)
                 const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(previousDefault)
-                const previousDefaultBeard = defaultNpcBeard(npc.model)
+                const previousDefaultBeard = defaultNpcBeard(npc.model, npc.variant)
                 const wasDefaultBeard = npc.beard === previousDefaultBeard
                 const wasDefaultVoice = npcVoiceKey(npc.voice) === npcVoiceKey(defaultNpcVoice(npc.model))
                 npc.model = model
-                if (wasDefaultEquipment) npc.equipment = defaultNpcEquipment(model)
-                if (wasDefaultBeard) npc.beard = defaultNpcBeard(model)
+                npc.variant = defaultNpcVariant(model)
+                if (wasDefaultEquipment) npc.equipment = defaultNpcEquipment(model, npc.variant)
+                if (wasDefaultBeard) npc.beard = defaultNpcBeard(model, npc.variant)
                 if (wasDefaultVoice) npc.voice = defaultNpcVoice(model)
             },
             () => {
-                const previousDefault = defaultNpcEquipment(state.npcModel)
+                const previousDefault = defaultNpcEquipment(state.npcModel, state.npcVariant)
                 const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(previousDefault)
-                const previousDefaultBeard = defaultNpcBeard(state.npcModel)
+                const previousDefaultBeard = defaultNpcBeard(state.npcModel, state.npcVariant)
                 const wasDefaultBeard = state.npcBeard === previousDefaultBeard
                 const wasDefaultVoice = npcVoiceKey(draftVoice()) === npcVoiceKey(defaultNpcVoice(state.npcModel))
                 state.npcModel = model
-                if (wasDefaultEquipment) state.npcEquipment = defaultNpcEquipment(model)
-                if (wasDefaultBeard) state.npcBeard = defaultNpcBeard(model)
+                state.npcVariant = defaultNpcVariant(model)
+                if (wasDefaultEquipment) state.npcEquipment = defaultNpcEquipment(model, state.npcVariant)
+                if (wasDefaultBeard) state.npcBeard = defaultNpcBeard(model, state.npcVariant)
                 if (wasDefaultVoice) applyDraftVoice(defaultNpcVoice(model))
             },
         )
     }
     modelRow.append(modelLabel, modelSelect)
     identitySection.appendChild(modelRow)
+
+    const variantRow = document.createElement('label')
+    variantRow.className = 'vpe-field'
+    const variantLabel = document.createElement('span')
+    variantLabel.className = 'vpe-field-label'
+    variantLabel.textContent = 'Troll outfit'
+    const variantSelect = document.createElement('select')
+    variantSelect.className = 'vpe-input'
+    variantSelect.style.flex = '1'
+    for (const variant of TROLL_OUTFIT_KINDS) {
+        const opt = document.createElement('option')
+        opt.value = variant
+        opt.textContent = TROLL_OUTFIT_LABELS[variant]
+        variantSelect.appendChild(opt)
+    }
+    variantSelect.onchange = () => {
+        const variant = variantSelect.value as TrollOutfitKind
+        updateDraftOrSelected(
+            (npc) => {
+                const nextVariant = normalizeNpcVariant(npc.model, variant)
+                const previousDefault = defaultNpcEquipment(npc.model, npc.variant)
+                const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(previousDefault)
+                const previousDefaultBeard = defaultNpcBeard(npc.model, npc.variant)
+                const wasDefaultBeard = npc.beard === previousDefaultBeard
+                npc.variant = nextVariant
+                if (wasDefaultEquipment) npc.equipment = defaultNpcEquipment(npc.model, nextVariant)
+                if (wasDefaultBeard) npc.beard = defaultNpcBeard(npc.model, nextVariant)
+            },
+            () => {
+                const nextVariant = normalizeNpcVariant(state.npcModel, variant)
+                const previousDefault = defaultNpcEquipment(state.npcModel, state.npcVariant)
+                const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(previousDefault)
+                const previousDefaultBeard = defaultNpcBeard(state.npcModel, state.npcVariant)
+                const wasDefaultBeard = state.npcBeard === previousDefaultBeard
+                state.npcVariant = nextVariant
+                if (wasDefaultEquipment) state.npcEquipment = defaultNpcEquipment(state.npcModel, nextVariant)
+                if (wasDefaultBeard) state.npcBeard = defaultNpcBeard(state.npcModel, nextVariant)
+            },
+        )
+    }
+    variantRow.append(variantLabel, variantSelect)
+    identitySection.appendChild(variantRow)
 
     const beardRow = document.createElement('label')
     beardRow.className = 'vpe-field'
@@ -197,8 +246,8 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     resetEquipmentBtn.textContent = 'Model defaults'
     resetEquipmentBtn.onclick = () => {
         updateDraftOrSelected(
-            (npc) => { npc.equipment = defaultNpcEquipment(npc.model) },
-            () => { state.npcEquipment = defaultNpcEquipment(state.npcModel) },
+            (npc) => { npc.equipment = defaultNpcEquipment(npc.model, npc.variant) },
+            () => { state.npcEquipment = defaultNpcEquipment(state.npcModel, state.npcVariant) },
         )
     }
     equipmentSection.append(handRSelect.row, handLSelect.row, resetEquipmentBtn)
@@ -372,7 +421,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     function rebuildList(): void {
         const fp = [
             `selected:${state.selectedNpcId ?? ''}`,
-            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.beard}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npcVoiceKey(npc.voice)}:${npc.scriptSource.length}`),
+            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.variant}:${npc.beard}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npcVoiceKey(npc.voice)}:${npc.scriptSource.length}`),
         ].join('|')
         if (fp === lastListFingerprint) return
         lastListFingerprint = fp
@@ -436,6 +485,9 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         syncInputValue(idField.input, npc?.id ?? '')
         syncInputValue(nameField.input, source.name)
         if (document.activeElement !== modelSelect) modelSelect.value = source.model
+        variantRow.style.display = source.model === 'large-troll' ? 'flex' : 'none'
+        variantSelect.disabled = source.model !== 'large-troll'
+        if (document.activeElement !== variantSelect) variantSelect.value = normalizeNpcVariant(source.model, source.variant) as string
         if (document.activeElement !== beardSelect) beardSelect.value = source.beard
         gridRow.input.checked = source.gridAligned
         syncInputValue(yawField.input, String(Math.round((source.yaw * 180) / Math.PI)))
@@ -467,6 +519,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             id: 'draft',
             name: state.npcName || DEFAULT_NPC.name,
             model: state.npcModel,
+            variant: normalizeNpcVariant(state.npcModel, state.npcVariant),
             beard: state.npcBeard,
             position: { x: 0, y: 0, z: 0 },
             yaw: state.npcYaw,
@@ -478,6 +531,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             interactionEnabled: state.npcInteractionEnabled,
             interactionRadius: state.npcInteractionRadius,
             interactionPrompt: state.npcInteractionPrompt,
+            invulnerable: false,
             equipment: copyHandLoadout(state.npcEquipment),
             voice: draftVoice(),
             scriptEnabled: state.npcScriptEnabled,

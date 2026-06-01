@@ -19,6 +19,7 @@ import { createBow } from '../assets'
 import {
     EQUIPMENT_KINDS,
     EQUIPMENT_LABELS,
+    HAMMER_EQUIPMENT_KINDS,
     HAND_EQUIPMENT_KINDS,
     HEAD_EQUIPMENT_KINDS,
     STAFF_EQUIPMENT_KINDS,
@@ -30,10 +31,13 @@ export {
     EQUIPMENT_LABELS,
     HAND_EQUIPMENT_KINDS,
     HEAD_EQUIPMENT_KINDS,
+    HAMMER_EQUIPMENT_KINDS,
     STAFF_EQUIPMENT_KINDS,
+    isHammerEquipmentKind,
     isStaffEquipmentKind,
     type EquipmentKind,
     type EquipmentHandLoadout,
+    type HammerEquipmentKind,
     type HeadEquipmentKind,
     type HandEquipmentKind,
     type HandEquipmentSlot,
@@ -55,6 +59,7 @@ export function createEquipment(kind: EquipmentKind): Group {
         case 'staff-lantern': return buildLanternStaff()
         case 'staff': return buildBattleStaff()
         case 'staff-crystal': return buildCrystalStaff()
+        case 'battle-hammer': return buildBattleHammer()
         case 'book': return buildBook()
     }
 }
@@ -112,6 +117,13 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
         // little higher so the larger crystal cluster clears the ground.
         handR: { orient: [0.34, 0, -0.1], offset: [0.045, -0.33, 0.07] },
         handL: { orient: [0.34, 0, 0.1], offset: [-0.045, -0.33, 0.07] },
+    },
+    'battle-hammer': {
+        // Hammer canonical +Y points toward the heavy head. Rotate that axis
+        // mostly forward so idle carry reads as a horizontal war-hammer, not a
+        // vertical staff.
+        handR: { orient: [Math.PI / 2, 0, -0.1], offset: [0.07, -0.08, 0.16] },
+        handL: { orient: [Math.PI / 2, 0, 0.1], offset: [-0.07, -0.08, 0.16] },
     },
     book: {
         handR: { orient: [-0.72, -0.22, 0.28], offset: [0.08, -0.08, 0.11] },
@@ -497,6 +509,42 @@ function buildCrystalStaff(): Group {
     braceR.position.set(0.075, 1.03, 0)
     braceR.rotation.z = 0.48
     return addParts(g, [pole, grip, ringLow, ringHigh, lowerCrystal, crystal, sideOrbL, sideOrbR, braceL, braceR])
+}
+
+function buildBattleHammer(): Group {
+    const g = new Group()
+    g.name = 'equip:battle-hammer'
+    // Troll-scaled heavy hammer. Canonical frame matches staff weapons:
+    // grip near the origin, haft along +Y, striking head on +Y.
+    const haft = new Mesh(new CylinderGeometry(0.035, 0.045, 1.34, 7), mat(0x4a2c12, 0.86))
+    haft.name = 'BattleHammerHaft'
+    haft.position.y = 0.42
+    const grip = new Mesh(new CylinderGeometry(0.052, 0.048, 0.28, 8), mat(0x21160f, 0.78))
+    grip.name = 'BattleHammerGrip'
+    grip.position.y = 0.03
+    const collar = new Mesh(new CylinderGeometry(0.1, 0.09, 0.08, 8), mat(0x59636c, 0.36, 0.45))
+    collar.name = 'BattleHammerCollar'
+    collar.position.y = 1.04
+    const headMat = mat(0x6f7880, 0.32, 0.55)
+    const head = new Mesh(new BoxGeometry(0.58, 0.22, 0.28), headMat)
+    head.name = 'BattleHammerHead'
+    head.position.y = 1.18
+    const leftCap = new Mesh(new BoxGeometry(0.08, 0.26, 0.32), mat(0x4f5962, 0.34, 0.56))
+    leftCap.name = 'BattleHammerCapL'
+    leftCap.position.set(-0.33, 1.18, 0)
+    const rightCap = new Mesh(new BoxGeometry(0.08, 0.26, 0.32), mat(0x4f5962, 0.34, 0.56))
+    rightCap.name = 'BattleHammerCapR'
+    rightCap.position.set(0.33, 1.18, 0)
+    const spike = new Mesh(new ConeGeometry(0.08, 0.28, 8), mat(0xc0ccd4, 0.28, 0.66))
+    spike.name = 'BattleHammerTopSpike'
+    spike.position.y = 1.43
+    const faceA = new Mesh(new BoxGeometry(0.22, 0.16, 0.04), mat(0x9ea9b0, 0.32, 0.5))
+    faceA.name = 'BattleHammerFaceFront'
+    faceA.position.set(0, 1.18, 0.18)
+    const faceB = new Mesh(new BoxGeometry(0.22, 0.16, 0.04), mat(0x9ea9b0, 0.32, 0.5))
+    faceB.name = 'BattleHammerFaceBack'
+    faceB.position.set(0, 1.18, -0.18)
+    return addParts(g, [haft, grip, collar, head, leftCap, rightCap, spike, faceA, faceB])
 }
 
 function buildBook(): Group {

@@ -2,24 +2,35 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponent, query } from 'bitecs'
 import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Vector3, type Object3D } from 'three'
-import { Grounded, MovingObject } from '../src/engine/ecs/components'
+import { BoxCollider, Grounded, MovingObject, Shield } from '../src/engine/ecs/components'
 import { computeLocomotionParams } from '../src/engine/anim/core'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
 import { createProjectileLaunchSystem } from '../src/engine/ecs/systems/projectile-launch-system'
 import { createGameWorld } from '../src/engine/ecs/world'
 import type { ActionMap } from '../src/engine/input/actions'
 import { PLAYER_TORCH_FLAME, PLAYER_TORCH_LIGHT } from '../src/game/assets'
+import { MAIN_CHARACTER_COLLIDER_HEIGHT, MAIN_CHARACTER_COLLIDER_RADIUS } from '../src/game/assets/main-character'
 import { MovingObjectKind } from '../src/game/moving-objects'
 import { createPlayerTorchSystem } from '../src/game/player-torch-system'
+import { createPlayerShieldSystem } from '../src/game/player-shield-system'
 import {
     HEAD_EQUIPMENT_KINDS,
+    HAMMER_EQUIPMENT_KINDS,
     STAFF_EQUIPMENT_KINDS,
     createEquipment,
     equipmentSocketFrame,
+    isHammerEquipmentKind,
     isStaffEquipmentKind,
 } from '../src/game/anim/equipment'
+import { HUMANOID_ANIM_TIMINGS } from '../src/game/anim/clip-timings'
 import { partCharacterClips } from '../src/game/anim/part-clips'
-import { PLAYER_MODEL_KIND_USER_DATA, applyWeaponStance, spawnPlayer, syncPlayerVisuals } from '../src/game/player'
+import {
+    PLAYER_MODEL_KIND_USER_DATA,
+    applyWeaponStance,
+    spawnPlayer,
+    syncPlayerHeldTorchVisibility,
+    syncPlayerVisuals,
+} from '../src/game/player'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 
 function onePressAction(): ActionMap {
@@ -43,6 +54,20 @@ function trackingPressAction(): { actions: ActionMap; calls: () => number } {
             },
         } as unknown as ActionMap,
         calls: () => calls,
+    }
+}
+
+function heldAction(initialHeld: boolean): { actions: ActionMap; setHeld: (held: boolean) => void } {
+    let held = initialHeld
+    return {
+        actions: {
+            isHeld() {
+                return held
+            },
+        } as unknown as ActionMap,
+        setHeld(next) {
+            held = next
+        },
     }
 }
 
@@ -153,6 +178,17 @@ test('player equipment settings normalize, copy, and drive visible hand loadouts
     assert.ok(findObjectByName(root, 'equip:arrow'))
 })
 
+test('spawned player collider matches the slimmer animated body hitbox', () => {
+    const world = createGameWorld()
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: DEFAULT_PLAYER_SETTINGS })
+
+    assert.ok(Math.abs(BoxCollider.x[player]! - MAIN_CHARACTER_COLLIDER_RADIUS) < 1e-5)
+    assert.ok(Math.abs(BoxCollider.z[player]! - MAIN_CHARACTER_COLLIDER_RADIUS) < 1e-5)
+    assert.ok(Math.abs(BoxCollider.y[player]! * 2 - MAIN_CHARACTER_COLLIDER_HEIGHT) < 1e-5)
+    assert.ok(BoxCollider.x[player]! < 0.35, 'player collider radius should be slimmer than the old broad body box')
+    assert.ok(BoxCollider.y[player]! * 2 < 1.6, 'player collider height should sit slightly below the old full-height box')
+})
+
 test('syncPlayerVisuals applies live equipment changes without model swaps', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
@@ -169,6 +205,35 @@ test('syncPlayerVisuals applies live equipment changes without model swaps', () 
     assert.ok(findObjectByName(root, 'equip:hat-sun'))
     assert.equal(findObjectByName(root, 'equip:sword'), null)
     assert.ok(findObjectByName(root, 'equip:staff-crystal'))
+})
+
+test('weapon stance shows bow and quiver only in ranged mode', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const root = world.object3DByEid.get(eid)!
+    const backBow = findObjectByName(root, 'BackBow')
+    const backQuiver = findObjectByName(root, 'BackQuiver')
+
+    assert.ok(backBow)
+    assert.ok(backQuiver)
+    assert.equal(backBow.visible, false)
+    assert.equal(backQuiver.visible, false)
+    assert.equal(findObjectByName(root, 'equip:bow'), null)
+
+    world.weaponStance = 'ranged'
+    applyWeaponStance(world, eid, 'ranged')
+    assert.equal(backBow.visible, false, 'ranged hand bow should not duplicate on the back')
+    assert.equal(backQuiver.visible, true)
+    assert.ok(findObjectByName(root, 'equip:bow'))
+    assert.ok(findObjectByName(root, 'equip:arrow'))
+
+    world.weaponStance = 'magic'
+    applyWeaponStance(world, eid, 'magic')
+    assert.equal(backBow.visible, false)
+    assert.equal(backQuiver.visible, false)
+    assert.equal(findObjectByName(root, 'equip:bow'), null)
+    assert.equal(findObjectByName(root, 'equip:arrow'), null)
 })
 
 test('all head equipment variants build distinct hat models', () => {
@@ -196,6 +261,22 @@ test('all staff equipment variants build selectable staff models', () => {
     assert.ok(findObjectByName(createEquipment('staff-lantern'), 'LanternStaffGlow'))
     assert.ok(findObjectByName(createEquipment('staff'), 'StaffHeavyHead'))
     assert.ok(findObjectByName(createEquipment('staff-crystal'), 'CrystalStaffCrystal'))
+})
+
+test('battle hammer builds as a selectable heavy hand item', () => {
+    for (const kind of HAMMER_EQUIPMENT_KINDS) {
+        const item = createEquipment(kind)
+        assert.equal(item.name, `equip:${kind}`)
+        assert.equal(isHammerEquipmentKind(kind), true)
+        assert.ok(findObjectByName(item, 'BattleHammerHead'), `${kind} should have a heavy hammer head`)
+        assert.ok(findObjectByName(item, 'BattleHammerTopSpike'), `${kind} should keep a pointy silhouette`)
+        const frame = equipmentSocketFrame(kind, 'handR')
+        const carriedAxis = new Vector3(0, 1, 0).applyEuler(toEuler(frame.orient))
+        assert.ok(Math.abs(carriedAxis.y) < 0.12, `${kind} should be carried horizontally`)
+        assert.ok(carriedAxis.z > 0.9, `${kind} heavy head should point forward while carried`)
+        assert.ok(Math.abs(frame.offset?.[1] ?? 1) < 0.12, `${kind} grip should stay near hand height`)
+        assert.ok((frame.offset?.[2] ?? 0) > 0.12, `${kind} should be carried forward of the wrist`)
+    }
 })
 
 test('player beard setting normalizes and rebuilds the procedural model', () => {
@@ -260,6 +341,44 @@ test('staff melee variants use the custom staff bonk animation', () => {
     }
 })
 
+test('held shield action drives the shield block animation while grounded', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.weaponStance = 'melee'
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    const controller = world.animControllerByEid.get(player)!
+    const idleParams = computeLocomotionParams({ speedXZ: 0, vy: 0, grounded: true, blocked: false, movementState: 0 })
+    const action = heldAction(true)
+    const system = createPlayerShieldSystem(action.actions)
+
+    system.update(world, 1 / 60)
+    controller.setParams(idleParams)
+    controller.update(0.05)
+    assert.equal(controller.machine.currentStateId, 'shieldBlock')
+
+    action.setHeld(false)
+    system.update(world, 1 / 60)
+    controller.setParams(idleParams)
+    controller.update(0.1)
+    assert.equal(controller.machine.currentStateId, 'idle')
+})
+
+test('passive shield guard uses the left-side yaw offset', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.weaponStance = 'melee'
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    const action = heldAction(false)
+    const system = createPlayerShieldSystem(action.actions)
+
+    system.update(world, 1 / 60)
+
+    assert.equal(Shield.raised[player], 1)
+    assert.ok(Shield.blockYawOffset[player]! < 0, 'passive shield should cover the left side, not the right')
+})
+
 test('default hand equipment frames point sword forward, nock arrow, keep shield on the hand, and ground the staff', () => {
     const sword = equipmentSocketFrame('sword', 'handR')
     const shield = equipmentSocketFrame('shield', 'handL')
@@ -297,6 +416,27 @@ test('default hand equipment frames point sword forward, nock arrow, keep shield
     assert.ok(findObjectByName(staffModel, 'StaffSpike'), 'staff should have a pointy striking tip')
 })
 
+test('shield block pose brings the shield in front of the body', () => {
+    const shield = equipmentSocketFrame('shield', 'handL')
+    const clip = partCharacterClips().find((candidate) => candidate.name === 'shieldBlock')
+    assert.ok(clip)
+
+    const frontNormal = new Vector3(0, 0, 1)
+        .applyEuler(toEuler(shield.orient))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'UpperArmL')!, 0.44))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'Chest')!, 0.44))
+
+    assert.ok(frontNormal.z > 0.8, 'raised shield should face mostly forward')
+    assert.ok(Math.abs(frontNormal.x) < 0.5, 'raised shield should leave the passive side-guard pose')
+
+    const heldNormal = new Vector3(0, 0, 1)
+        .applyEuler(toEuler(shield.orient))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'UpperArmL')!, HUMANOID_ANIM_TIMINGS.shieldBlock))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'Chest')!, HUMANOID_ANIM_TIMINGS.shieldBlock))
+    assert.ok(heldNormal.z > 0.8, 'clamped shield block should hold the front guard pose')
+    assert.ok(Math.abs(heldNormal.x) < 0.5, 'clamped shield block should not loop back to side guard')
+})
+
 test('staff attack impact drives the pointy head forward and downward', () => {
     const staff = equipmentSocketFrame('staff', 'handR')
     const clip = partCharacterClips().find((candidate) => candidate.name === 'staffAttack')
@@ -309,6 +449,30 @@ test('staff attack impact drives the pointy head forward and downward', () => {
 
     assert.ok(staffHeadDir.z > 0.72, 'staff head should point into the enemy at impact')
     assert.ok(staffHeadDir.y < -0.3, 'staff head should drive downward at impact')
+})
+
+test('hammer attack drives the hammer head down into the ground circle', () => {
+    const hammer = equipmentSocketFrame('battle-hammer', 'handR')
+    const clip = partCharacterClips().find((candidate) => candidate.name === 'hammerAttack')
+    assert.ok(clip)
+
+    const carriedAxis = new Vector3(0, 1, 0).applyEuler(toEuler(hammer.orient))
+    assert.ok(Math.abs(carriedAxis.y) < 0.12, 'hammer should be held horizontally before the strike')
+    assert.ok(carriedAxis.z > 0.9, 'hammer head should point forward in the carried pose')
+
+    const windupDir = new Vector3(0, 1, 0)
+        .applyEuler(toEuler(hammer.orient))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'UpperArmR')!, 0.3))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'Chest')!, 0.3))
+    assert.ok(windupDir.y > 0.45, 'hammer wind-up should lift the head upward')
+
+    const hammerHeadDir = new Vector3(0, 1, 0)
+        .applyEuler(toEuler(hammer.orient))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'UpperArmR')!, HUMANOID_ANIM_TIMINGS.hammerImpact))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'Chest')!, HUMANOID_ANIM_TIMINGS.hammerImpact))
+
+    assert.ok(hammerHeadDir.z > 0.35, 'hammer head should land in front of the character')
+    assert.ok(hammerHeadDir.y < -0.85, 'hammer head should drive sharply downward at impact')
 })
 
 function toEuler(value: readonly [number, number, number] | undefined): Euler {
@@ -391,6 +555,26 @@ test('player torch system updates shadow camera range when distance changes', ()
     system.update(world, 0.25)
 
     assert.ok(light.shadow.camera.far >= 30)
+})
+
+test('player torch visibility follows the torch ability flag immediately', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.abilities.torch = false
+    const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const root = world.object3DByEid.get(eid)!
+    const torch = findObjectByName(root, 'PlayerTorch')
+    const light = findPlayerTorchLight(root)
+
+    assert.ok(torch)
+    assert.ok(light)
+    assert.equal(torch.visible, false)
+    assert.equal(light.visible, false)
+
+    world.playerSettings.abilities.torch = true
+    syncPlayerHeldTorchVisibility(world)
+    assert.equal(torch.visible, true)
+    assert.equal(light.visible, true)
 })
 
 function findFirstPlayerTorchFlameMaterial(root: Object3D): MeshBasicMaterial | null {

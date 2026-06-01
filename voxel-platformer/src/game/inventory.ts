@@ -21,8 +21,15 @@ export type InventoryIconId =
     | 'arrows'
     | 'quest-shard'
     | 'consumable'
+    | 'heal-potion'
     | 'accessory'
+    | 'hat'
+    | 'hat-arcane'
+    | 'hat-ranger'
+    | 'hat-guard'
+    | 'hat-sun'
     | 'tool'
+    | 'torch'
     | 'item'
 
 export interface InventoryItemRecord {
@@ -147,6 +154,7 @@ export function defaultInventoryCategory(itemId: string): InventoryCategoryId {
 export function defaultInventoryIcon(itemId: string, category = defaultInventoryCategory(itemId)): InventoryIconId {
     if (itemId === 'gold' || itemId === 'coin') return 'gold'
     if (itemId === 'arrow' || itemId === 'arrows') return 'arrows'
+    if (itemId === 'heal-potion' || itemId === 'health-potion') return 'heal-potion'
     if (itemId.includes('shard') || category === 'quest') return 'quest-shard'
     if (category === 'consumables') return 'consumable'
     if (category === 'accessories') return 'accessory'
@@ -238,8 +246,15 @@ function isInventoryIcon(value: unknown): value is InventoryIconId {
         'arrows',
         'quest-shard',
         'consumable',
+        'heal-potion',
         'accessory',
+        'hat',
+        'hat-arcane',
+        'hat-ranger',
+        'hat-guard',
+        'hat-sun',
         'tool',
+        'torch',
         'item',
     ].includes(value)
 }

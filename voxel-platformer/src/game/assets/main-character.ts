@@ -11,10 +11,10 @@ import {
     sharedMaterial,
     sharedSphereGeometry,
 } from './shared-primitives'
-import type { CharacterBeardKind } from '../character-appearance'
+import type { CharacterBeardKind, CharacterCloakKind } from '../character-appearance'
 
-export const MAIN_CHARACTER_COLLIDER_RADIUS = 0.35
-export const MAIN_CHARACTER_COLLIDER_HEIGHT = 1.6
+export const MAIN_CHARACTER_COLLIDER_RADIUS = 0.31
+export const MAIN_CHARACTER_COLLIDER_HEIGHT = 1.54
 export const MAIN_CHARACTER_COLLIDER_HALF_HEIGHT = MAIN_CHARACTER_COLLIDER_HEIGHT / 2
 
 /**
@@ -62,6 +62,7 @@ export interface MainCharacterOptions {
     bootColor?: number
     beard?: CharacterBeardKind
     beardColor?: number
+    cloak?: CharacterCloakKind
 }
 
 const BODY_HEIGHT = 0.74
@@ -162,38 +163,40 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
     rightPauldron.scale.set(1.45, 0.58, 1)
     chest.add(leftPauldron, rightPauldron)
 
-    const mantle = setShadow(new Mesh(sharedCylinderGeometry(0.34, 0.3, 0.14, 8), cloak))
-    mantle.name = 'CloakMantle'
-    mantle.position.set(0, cy(1.12), -0.05)
-    mantle.scale.z = 0.64
-    chest.add(mantle)
+    if ((opts.cloak ?? 'default') !== 'none') {
+        const mantle = setShadow(new Mesh(sharedCylinderGeometry(0.34, 0.3, 0.14, 8), cloak))
+        mantle.name = 'CloakMantle'
+        mantle.position.set(0, cy(1.12), -0.05)
+        mantle.scale.z = 0.64
+        chest.add(mantle)
 
-    const cape = new Group()
-    cape.name = 'Cloak'
-    cape.position.set(0, 0, 0)
-    chest.add(cape)
+        const cape = new Group()
+        cape.name = 'Cloak'
+        cape.position.set(0, 0, 0)
+        chest.add(cape)
 
-    const capeBack = setShadow(new Mesh(sharedBoxGeometry(0.42, 0.62, 0.055), cloak))
-    capeBack.name = 'CloakBackPanel'
-    capeBack.position.set(0, cy(0.86), -0.27)
-    capeBack.rotation.x = -0.08
+        const capeBack = setShadow(new Mesh(sharedBoxGeometry(0.42, 0.62, 0.055), cloak))
+        capeBack.name = 'CloakBackPanel'
+        capeBack.position.set(0, cy(0.86), -0.27)
+        capeBack.rotation.x = -0.08
 
-    const capeLower = setShadow(new Mesh(sharedBoxGeometry(0.54, 0.46, 0.06), cloak))
-    capeLower.name = 'CloakLowerPanel'
-    capeLower.position.set(0, cy(0.54), -0.3)
-    capeLower.rotation.x = -0.1
+        const capeLower = setShadow(new Mesh(sharedBoxGeometry(0.54, 0.46, 0.06), cloak))
+        capeLower.name = 'CloakLowerPanel'
+        capeLower.position.set(0, cy(0.54), -0.3)
+        capeLower.rotation.x = -0.1
 
-    const capeFoldL = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.64, 0.052), cloak))
-    capeFoldL.name = 'CloakFoldL'
-    capeFoldL.position.set(-0.24, cy(0.56), -0.29)
-    capeFoldL.rotation.set(-0.08, -0.04, -0.12)
+        const capeFoldL = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.64, 0.052), cloak))
+        capeFoldL.name = 'CloakFoldL'
+        capeFoldL.position.set(-0.24, cy(0.56), -0.29)
+        capeFoldL.rotation.set(-0.08, -0.04, -0.12)
 
-    const capeFoldR = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.64, 0.052), cloak))
-    capeFoldR.name = 'CloakFoldR'
-    capeFoldR.position.set(0.24, cy(0.56), -0.29)
-    capeFoldR.rotation.set(-0.08, 0.04, 0.12)
+        const capeFoldR = setShadow(new Mesh(sharedBoxGeometry(0.08, 0.64, 0.052), cloak))
+        capeFoldR.name = 'CloakFoldR'
+        capeFoldR.position.set(0.24, cy(0.56), -0.29)
+        capeFoldR.rotation.set(-0.08, 0.04, 0.12)
 
-    cape.add(capeBack, capeLower, capeFoldL, capeFoldR)
+        cape.add(capeBack, capeLower, capeFoldL, capeFoldR)
+    }
 
     const nose = setShadow(new Mesh(sharedConeGeometry(0.035, 0.08, 8), skin))
     nose.name = 'Nose'

@@ -23,38 +23,53 @@ import { partCharacterClips } from './game/anim/part-clips'
 import { preloadCharacterModels } from './game/anim/model-registry'
 import {
     EQUIPMENT_LABELS,
+    HAND_EQUIPMENT_KINDS,
     HEAD_EQUIPMENT_KINDS,
-    STAFF_EQUIPMENT_KINDS,
     createEquipment,
     equipmentSocketFrame,
     type EquipmentKind,
 } from './game/anim/equipment'
 import { createNpcModel } from './game/npcs/npc-models'
-import { NPC_MODEL_KINDS, NPC_MODEL_LABELS } from './game/npcs/npc-types'
+import {
+    NPC_MODEL_KINDS,
+    NPC_MODEL_LABELS,
+    TROLL_OUTFIT_KINDS,
+    TROLL_OUTFIT_LABELS,
+    type NpcModelKind,
+    type TrollOutfitKind,
+} from './game/npcs/npc-types'
+import {
+    CHARACTER_BEARD_KINDS,
+    CHARACTER_BEARD_LABELS,
+    CHARACTER_CLOAK_KINDS,
+    CHARACTER_CLOAK_LABELS,
+    type CharacterBeardKind,
+    type CharacterCloakKind,
+} from './game/character-appearance'
 
 interface PreviewProfile {
     id: string
     label: string
     graph: AnimGraphDef
-    source: ClipSource
+    buildSource: (appearance: PreviewAppearance) => ClipSource
+    supportsBeard: boolean
+    supportsCloak: boolean
+    modelKind?: NpcModelKind
 }
 
-const EQUIP_BUTTONS: Array<{ slot: EquipSlot; kind: EquipmentKind; label: string }> = [
-    ...HEAD_EQUIPMENT_KINDS.map((kind) => ({ slot: 'head' as const, kind, label: EQUIPMENT_LABELS[kind] })),
-    { slot: 'handR', kind: 'sword', label: 'Sword' },
-    { slot: 'handL', kind: 'shield', label: 'Shield' },
-    { slot: 'handR', kind: 'arrow', label: 'Arrow' },
-    // Bow shares the left hand with the shield (toggle one or the other) so the
-    // bow shot can be previewed with the bow actually in hand.
-    { slot: 'handL', kind: 'bow', label: 'Bow' },
-    // NPC hand items, selectable per hand (each slot holds one at a time).
-    ...STAFF_EQUIPMENT_KINDS.flatMap((kind) => [
-        { slot: 'handR' as const, kind, label: `${EQUIPMENT_LABELS[kind]} R` },
-        { slot: 'handL' as const, kind, label: `${EQUIPMENT_LABELS[kind]} L` },
-    ]),
-    { slot: 'handR', kind: 'book', label: 'Book R' },
-    { slot: 'handL', kind: 'book', label: 'Book L' },
-]
+interface PreviewAppearance {
+    beard: CharacterBeardKind
+    cloak: CharacterCloakKind
+    trollOutfit: TrollOutfitKind
+}
+
+interface SlotSelect {
+    slot: EquipSlot
+    row: HTMLLabelElement
+    input: HTMLSelectElement
+}
+
+type SlotValue = EquipmentKind | null
 
 async function main(): Promise<void> {
     const errorEl = el('error')
@@ -88,21 +103,30 @@ async function main(): Promise<void> {
         let clipSet: ClipSet | null = null
         let mode: 'drive' | 'clips' = 'drive'
         let activeClip = ''
+        let currentProfile: PreviewProfile = profiles[0]!
+        const appearance: PreviewAppearance = { beard: 'none', cloak: 'default', trollOutfit: 'wise' }
         const equipState = new Map<EquipSlot, EquipmentKind>()
         const equipped = new Map<EquipSlot, Object3D>()
 
         function setProfile(p: PreviewProfile): void {
+            const previousClip = activeClip
+            currentProfile = p
             if (controller) {
                 renderer.scene.remove(controller.root)
                 controller.dispose()
             }
             equipped.clear()
-            clipSet = p.source.instantiate()
+            clipSet = p.buildSource(effectiveAppearance(p)).instantiate()
             controller = new AnimationController(clipSet, p.graph)
             renderer.scene.add(controller.root)
             for (const [slot, kind] of equipState) attach(slot, kind)
-            activeClip = [...clipSet.clips.keys()][0] ?? ''
+            activeClip = previousClip && clipSet.clips.has(previousClip)
+                ? previousClip
+                : [...clipSet.clips.keys()][0] ?? ''
             rebuildClipButtons()
+            refreshAppearanceControls()
+            syncSlotControls()
+            if (mode === 'clips' && activeClip) controller.playStateImmediate(activeClip)
         }
 
         function attach(slot: EquipSlot, kind: EquipmentKind): void {
@@ -116,26 +140,29 @@ async function main(): Promise<void> {
             })) equipped.set(slot, item)
         }
 
-        const equipBtns: Array<{ slot: EquipSlot; kind: EquipmentKind; btn: HTMLButtonElement }> = []
-        function refreshEquipButtons(): void {
-            for (const e of equipBtns) e.btn.classList.toggle('active', equipState.get(e.slot) === e.kind)
-        }
         function clearSlot(slot: EquipSlot): void {
             const item = equipped.get(slot)
             if (item) detachFromSocket(item)
             equipped.delete(slot)
             equipState.delete(slot)
         }
-        function toggleEquip(slot: EquipSlot, kind: EquipmentKind): void {
-            // Clicking the equipped kind removes it; clicking a different kind in
-            // the same slot (e.g. bow over shield) replaces it.
-            const current = equipState.get(slot)
+        function setSlot(slot: EquipSlot, kind: SlotValue): void {
             clearSlot(slot)
-            if (current !== kind) {
+            if (kind) {
                 equipState.set(slot, kind)
                 attach(slot, kind)
             }
-            refreshEquipButtons()
+            syncSlotControls()
+        }
+
+        function effectiveAppearance(profile: PreviewProfile): PreviewAppearance {
+            return {
+                beard: profile.supportsBeard ? appearance.beard : 'none',
+                cloak: profile.supportsCloak && !(profile.modelKind === 'large-troll' && appearance.trollOutfit === 'guardian')
+                    ? appearance.cloak
+                    : 'none',
+                trollOutfit: appearance.trollOutfit,
+            }
         }
 
         // ── UI wiring ───────────────────────────────────────────────────────
@@ -151,13 +178,63 @@ async function main(): Promise<void> {
             if (p) setProfile(p)
         })
 
-        const equipWrap = el('equip')
-        for (const { slot, kind, label } of EQUIP_BUTTONS) {
-            const btn = document.createElement('button')
-            btn.textContent = label
-            btn.addEventListener('click', () => toggleEquip(slot, kind))
-            equipWrap.appendChild(btn)
-            equipBtns.push({ slot, kind, btn })
+        const appearanceWrap = el('appearance')
+        const beardField = selectField<CharacterBeardKind>('Beard', CHARACTER_BEARD_KINDS, CHARACTER_BEARD_LABELS, (value) => {
+            appearance.beard = value
+            setProfile(currentProfile)
+        })
+        const cloakField = selectField<CharacterCloakKind>('Cloak', CHARACTER_CLOAK_KINDS, CHARACTER_CLOAK_LABELS, (value) => {
+            appearance.cloak = value
+            setProfile(currentProfile)
+        })
+        const outfitField = selectField<TrollOutfitKind>('Troll outfit', TROLL_OUTFIT_KINDS, TROLL_OUTFIT_LABELS, (value) => {
+            appearance.trollOutfit = value
+            setProfile(currentProfile)
+        })
+        appearanceWrap.append(beardField.row, cloakField.row, outfitField.row)
+
+        const slotControls: SlotSelect[] = [
+            slotSelect('head', 'Hat', HEAD_EQUIPMENT_KINDS),
+            slotSelect('handR', 'Right hand', HAND_EQUIPMENT_KINDS),
+            slotSelect('handL', 'Left hand', HAND_EQUIPMENT_KINDS),
+        ]
+        const slotsWrap = el('slots')
+        for (const control of slotControls) slotsWrap.appendChild(control.row)
+
+        function slotSelect(slot: EquipSlot, label: string, kinds: readonly EquipmentKind[]): SlotSelect {
+            const row = document.createElement('label')
+            row.className = 'row'
+            const text = document.createElement('span')
+            text.textContent = label
+            const input = document.createElement('select')
+            input.appendChild(option('', 'None'))
+            for (const kind of kinds) input.appendChild(option(kind, EQUIPMENT_LABELS[kind]))
+            input.addEventListener('change', () => {
+                setSlot(slot, input.value === '' ? null : input.value as EquipmentKind)
+            })
+            row.append(text, input)
+            return { slot, row, input }
+        }
+
+        function syncSlotControls(): void {
+            for (const control of slotControls) {
+                if (document.activeElement === control.input) continue
+                control.input.value = equipState.get(control.slot) ?? ''
+            }
+        }
+
+        function refreshAppearanceControls(): void {
+            const canTrollOutfit = currentProfile.modelKind === 'large-troll'
+            const canCloak = currentProfile.supportsCloak && !(canTrollOutfit && appearance.trollOutfit === 'guardian')
+            beardField.row.style.display = currentProfile.supportsBeard ? 'flex' : 'none'
+            cloakField.row.style.display = currentProfile.supportsCloak ? 'flex' : 'none'
+            outfitField.row.style.display = canTrollOutfit ? 'flex' : 'none'
+            beardField.input.disabled = !currentProfile.supportsBeard
+            cloakField.input.disabled = !canCloak
+            outfitField.input.disabled = !canTrollOutfit
+            if (document.activeElement !== beardField.input) beardField.input.value = appearance.beard
+            if (document.activeElement !== cloakField.input) cloakField.input.value = canCloak ? appearance.cloak : 'none'
+            if (document.activeElement !== outfitField.input) outfitField.input.value = appearance.trollOutfit
         }
 
         const driveEl = el('drive')
@@ -248,9 +325,15 @@ async function main(): Promise<void> {
 }
 
 function buildProfiles(): PreviewProfile[] {
-    const pp = playerProfile('player')
     const profiles: PreviewProfile[] = [
-        { id: 'player', label: 'Player', graph: pp.graph, source: pp.clipSource },
+        {
+            id: 'player',
+            label: 'Player',
+            graph: combatLocomotionGraph(),
+            buildSource: (appearance) => playerProfile('player', { beard: appearance.beard, cloak: appearance.cloak }).clipSource,
+            supportsBeard: true,
+            supportsCloak: true,
+        },
     ]
     // Every authored NPC model (keeper, player-NPC, large troll), each driven by
     // the part rig + combat graph — so the troll and the full keeper (staff,
@@ -261,10 +344,27 @@ function buildProfiles(): PreviewProfile[] {
             id: `npc:${kind}`,
             label: NPC_MODEL_LABELS[kind],
             graph: combatLocomotionGraph(),
-            source: partRigSource(() => createNpcModel(kind), partCharacterClips()),
+            buildSource: (appearance) => partRigSource(
+                () => createNpcModel(kind, {
+                    beard: appearance.beard,
+                    variant: kind === 'large-troll' ? appearance.trollOutfit : undefined,
+                    cloak: appearance.cloak,
+                }),
+                partCharacterClips(),
+            ),
+            supportsBeard: true,
+            supportsCloak: kind !== 'keeper-arlen',
+            modelKind: kind,
         })
     }
-    profiles.push({ id: 'reference', label: 'Reference rig (code)', graph: locomotionGraph(), source: referenceRigSource({}) })
+    profiles.push({
+        id: 'reference',
+        label: 'Reference rig (code)',
+        graph: locomotionGraph(),
+        buildSource: () => referenceRigSource({}),
+        supportsBeard: false,
+        supportsCloak: false,
+    })
     return profiles
 }
 
@@ -272,6 +372,30 @@ function el(id: string): HTMLElement {
     const node = document.getElementById(id)
     if (!node) throw new Error(`missing element #${id}`)
     return node
+}
+
+function option(value: string, label: string): HTMLOptionElement {
+    const opt = document.createElement('option')
+    opt.value = value
+    opt.textContent = label
+    return opt
+}
+
+function selectField<T extends string>(
+    label: string,
+    values: readonly T[],
+    labels: Record<T, string>,
+    onChange: (value: T) => void,
+): { row: HTMLLabelElement; input: HTMLSelectElement } {
+    const row = document.createElement('label')
+    row.className = 'row'
+    const text = document.createElement('span')
+    text.textContent = label
+    const input = document.createElement('select')
+    for (const value of values) input.appendChild(option(value, labels[value]))
+    input.addEventListener('change', () => onChange(input.value as T))
+    row.append(text, input)
+    return { row, input }
 }
 
 void main()

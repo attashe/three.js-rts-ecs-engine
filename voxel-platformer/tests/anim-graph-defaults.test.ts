@@ -5,6 +5,7 @@ import {
     REQUIRED_CLIP_IDS,
     computeLocomotionParams,
     stateClip,
+    stateLoop,
     validateAnimGraph,
     type LocomotionSignals,
 } from '../src/engine/anim/core'
@@ -54,7 +55,7 @@ test('combat graph is valid, with a one-shot attack and a terminal dead state', 
     assert.equal(validateAnimGraph(g).ok, true)
 
     const stateIds = new Set(g.states.map((s) => s.id))
-    assert.ok(stateIds.has('attack') && stateIds.has('attackWide') && stateIds.has('staffAttack') && stateIds.has('shoot') && stateIds.has('die') && stateIds.has('dead'))
+    assert.ok(stateIds.has('attack') && stateIds.has('attackWide') && stateIds.has('staffAttack') && stateIds.has('hammerAttack') && stateIds.has('shoot') && stateIds.has('shieldBlock') && stateIds.has('die') && stateIds.has('dead'))
 
     // `shoot` and `attackWide` are one-shot triggers that return to locomotion,
     // like the base thrust attack.
@@ -64,6 +65,11 @@ test('combat graph is valid, with a one-shot attack and a terminal dead state', 
     assert.equal(wideParam?.trigger, true)
     const staffParam = (g.params ?? []).find((p) => p.name === 'staffAttack')
     assert.equal(staffParam?.trigger, true)
+    const hammerParam = (g.params ?? []).find((p) => p.name === 'hammerAttack')
+    assert.equal(hammerParam?.trigger, true)
+    const blockParam = (g.params ?? []).find((p) => p.name === 'shieldBlock')
+    assert.notEqual(blockParam?.trigger, true)
+    assert.equal(stateLoop(g.states.find((s) => s.id === 'shieldBlock')!), 'clamp')
 
     // `dead` is terminal — nothing transitions out of it.
     assert.equal(g.transitions.some((t) => t.from === 'dead'), false)
@@ -106,11 +112,29 @@ test('combat graph: attack trigger plays once then returns, dead is absorbing', 
     for (let i = 0; i < 16; i++) { sm.setParams(idle); sm.tick(0.05) }
     assert.equal(sm.currentStateId, 'idle')
 
+    // Hammer slam is the heaviest one-shot variant.
+    sm.setParam('hammerAttack', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'hammerAttack')
+    for (let i = 0; i < 18; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'idle')
+
     // Bow shot is a separate one-shot that also returns to idle.
     sm.setParam('shoot', 1)
     sm.tick(0.05)
     assert.equal(sm.currentStateId, 'shoot')
     for (let i = 0; i < 14; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'idle')
+
+    // Shield block is held while the guard input is active, then returns.
+    sm.setParam('shieldBlock', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'shieldBlock')
+    for (let i = 0; i < 4; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'shieldBlock')
+    sm.setParam('shieldBlock', 0)
+    sm.setParams(idle)
+    sm.tick(0.05)
     assert.equal(sm.currentStateId, 'idle')
 
     // Death: first the `die` topple, then it settles into the absorbing `dead`.
@@ -135,6 +159,11 @@ test('combat graph ignores attack and shoot triggers while airborne', () => {
 
     sm.setParams(jump)
     sm.setParam('staffAttack', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'jump')
+
+    sm.setParams(jump)
+    sm.setParam('hammerAttack', 1)
     sm.tick(0.05)
     assert.equal(sm.currentStateId, 'jump')
 

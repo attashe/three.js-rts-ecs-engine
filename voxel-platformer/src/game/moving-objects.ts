@@ -10,11 +10,13 @@ import {
     Velocity,
 } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
-import { createArrow, createStone, mergeGroupByMaterial } from './assets'
+import { createArrow, createMagicBolt, createMagicOrb, createStone, mergeGroupByMaterial } from './assets'
 
 export const MovingObjectKind = {
     Arrow: 1,
     Stone: 2,
+    MagicBolt: 3,
+    ElectricOrb: 4,
 } as const
 
 export interface StoneSpawnOptions {
@@ -189,6 +191,82 @@ export function spawnArrowProjectile(
     const obj = mergeGroupByMaterial(createArrow())
     obj.scale.setScalar(0.9)
     world.object3DByEid.set(eid, obj)
+    addComponent(world, eid, Renderable)
+    return eid
+}
+
+/**
+ * A staff-launched magic bolt. It is deliberately NOT a physics body: with a
+ * BoxCollider the physics sweep would stop it on the first wall/NPC and drop its
+ * speed below the arrow-hit probe's threshold, so it never registered a hit.
+ * Instead it carries only Position + Velocity and is integrated kinematically by
+ * `moving-object-system`; `arrow-hit-system` owns all of its collision (sweep
+ * vs NPCs for damage, ray vs voxels for walls) and despawns it on contact, or
+ * after a short lifetime if it sails into open air.
+ */
+export function spawnMagicBolt(
+    world: GameWorld,
+    position: { x: number; y: number; z: number },
+    velocity: { x: number; y: number; z: number },
+): number {
+    const eid = createEntity(world)
+    addComponents(world, eid, [Position, Velocity, MovingObject])
+    Position.x[eid] = position.x
+    Position.y[eid] = position.y
+    Position.z[eid] = position.z
+    Velocity.x[eid] = velocity.x
+    Velocity.y[eid] = velocity.y
+    Velocity.z[eid] = velocity.z
+
+    MovingObject.kind[eid] = MovingObjectKind.MagicBolt
+    MovingObject.age[eid] = 0
+
+    world.object3DByEid.set(eid, createMagicBolt())
+    addComponent(world, eid, Renderable)
+    return eid
+}
+
+const ORB_HALF = 0.28
+
+/**
+ * A staff-launched electric orb. Unlike the arcane bolt this IS a physics body
+ * (the bouncy version): it arcs under light gravity and ricochets off walls and
+ * floors (high restitution), never sleeping so it keeps caroming until it
+ * expires. The electric-orb system adds extra velocity fluctuations and applies
+ * its zap damage on contact (re-zapping on a cooldown).
+ */
+export function spawnElectricOrb(
+    world: GameWorld,
+    position: { x: number; y: number; z: number },
+    velocity: { x: number; y: number; z: number },
+): number {
+    const eid = createEntity(world)
+    addComponents(world, eid, [Position, Rotation, Velocity, BoxCollider, RigidBody, MovingObject])
+    Position.x[eid] = position.x
+    Position.y[eid] = position.y
+    Position.z[eid] = position.z
+    Velocity.x[eid] = velocity.x
+    Velocity.y[eid] = velocity.y
+    Velocity.z[eid] = velocity.z
+    BoxCollider.x[eid] = ORB_HALF
+    BoxCollider.y[eid] = ORB_HALF
+    BoxCollider.z[eid] = ORB_HALF
+
+    RigidBody.mass[eid] = 0.5
+    RigidBody.restitution[eid] = 0.85 // bounce off walls / floor
+    RigidBody.linearDamping[eid] = 0.05
+    RigidBody.gravityScale[eid] = 0.3 // a gentle arc
+    RigidBody.maxFallSpeed[eid] = 22
+    RigidBody.sleepThresholdSq[eid] = 0 // never settle — keep bouncing
+    RigidBody.sleepDelay[eid] = 999
+    RigidBody.sleepTimer[eid] = 0
+    RigidBody.rollOnGround[eid] = 0
+    RigidBody.centerAnchored[eid] = 1
+
+    MovingObject.kind[eid] = MovingObjectKind.ElectricOrb
+    MovingObject.age[eid] = 0
+
+    world.object3DByEid.set(eid, createMagicOrb())
     addComponent(world, eid, Renderable)
     return eid
 }

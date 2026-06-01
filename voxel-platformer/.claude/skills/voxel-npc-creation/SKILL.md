@@ -22,8 +22,9 @@ but distinctive character over ornamental geometry.
 
 1. Define the NPC's job in the level: guide, merchant, quest giver, blocker,
    ambient character, or lore object.
-2. Choose an existing model first (`keeper`, `player`, `large-troll`). Add a
-   new model only when silhouette/scale/materials need to differ materially.
+2. Choose an existing model first (`keeper` / Dwarf, `keeper-arlen`,
+   `player`, `large-troll`). Add a new model only when
+   silhouette/scale/materials need to differ materially.
 3. Write a short identity block before coding: display name, one-line
    description, generated voice preset/seed, gameplay role, interaction
    prompt, model scale, collision requirement, and combat stance if any.
