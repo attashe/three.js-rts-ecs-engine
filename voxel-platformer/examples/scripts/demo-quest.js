@@ -46,16 +46,28 @@ const KEEPER_SHOP = {
     title: "Keeper Arlen's Supplies",
     npc: KEEPER_SPEAKER,
     currency: 'gold',
-    items: [{
-        id: 'arrows.bundle',
-        name: 'Arrow bundle',
-        description: 'Five straight arrows for careful shots.',
-        resource: 'arrows',
-        unitSize: 5,
-        buyPrice: 3,
-        sellPrice: 1,
-        stock: 20,
-    }],
+    items: [
+        {
+            id: 'arrows.bundle',
+            name: 'Arrow bundle',
+            description: 'Five straight arrows for careful shots.',
+            resource: 'arrows',
+            unitSize: 5,
+            buyPrice: 3,
+            sellPrice: 1,
+            stock: 20,
+        },
+        {
+            id: 'heal-potion',
+            name: 'Healing Potion',
+            description: 'A sealed red draught for dangerous climbs.',
+            resource: 'heal-potion',
+            unitSize: 1,
+            buyPrice: 5,
+            sellPrice: 2,
+            stock: 8,
+        },
+    ],
 }
 
 on('level-start', () => {
@@ -239,11 +251,19 @@ async function keeperDialogue(lines) {
 async function openKeeperTrade() {
     const result = await trade.open(KEEPER_SHOP)
     if (result.status === 'bought') {
-        const arrows = result.gained.arrows ?? result.quantity * result.unitSize
-        ui.say(KEEPER_ZONE, `Wrapped ${arrows} arrow(s). Spend them with care.`, { seconds: 3 })
+        const arrows = result.gained.arrows ?? 0
+        const potions = result.gained['heal-potion'] ?? 0
+        ui.say(KEEPER_ZONE, arrows > 0
+            ? `Wrapped ${arrows} arrow(s). Spend them with care.`
+            : `Packed ${potions} healing potion(s). Keep them close.`,
+        { seconds: 3 })
     } else if (result.status === 'sold') {
-        const arrows = result.removed.arrows ?? result.quantity * result.unitSize
-        ui.say(KEEPER_ZONE, `I can use those ${arrows} arrow(s). Take ${result.gained.gold} gold.`, { seconds: 3 })
+        const arrows = result.removed.arrows ?? 0
+        const potions = result.removed['heal-potion'] ?? 0
+        ui.say(KEEPER_ZONE, arrows > 0
+            ? `I can use those ${arrows} arrow(s). Take ${result.gained.gold} gold.`
+            : `I can restock those ${potions} potion(s). Take ${result.gained.gold} gold.`,
+        { seconds: 3 })
     } else if (result.status === 'unavailable') {
         ui.say(KEEPER_ZONE, result.reason ?? 'The supplies are not ready.', { seconds: 3 })
     }

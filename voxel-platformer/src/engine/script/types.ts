@@ -550,12 +550,13 @@ export interface TradeApi {
 }
 
 export type TradeCurrency = 'gold'
-export type TradeResource = 'arrows'
+export type TradeResource = 'arrows' | 'heal-potion'
 export type TradeMode = 'buy' | 'sell'
 
 export interface TradeInventorySnapshot {
     gold: number
     arrows: number
+    items?: Record<string, { quantity: number }>
 }
 
 export interface TradeItem {

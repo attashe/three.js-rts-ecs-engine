@@ -1,5 +1,5 @@
 import { hasComponent, query } from 'bitecs'
-import { Grounded, PlayerControlled, Position, Rotation } from '../components'
+import { Grounded, PlayerControlled, Position, Rotation, Stunned } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -28,6 +28,7 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
 
             const player = players[0]
             if (opts.canUse && !opts.canUse(world, player)) return
+            if (hasComponent(world, player, Stunned)) return
             if (!hasComponent(world, player, Grounded)) return
             if (!actions.consumePressed(actionId, player)) return
             if (!world.playerSettings.abilities.bow) {

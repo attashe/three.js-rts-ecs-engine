@@ -1,6 +1,7 @@
 import type { ScriptEntry } from '../../engine/script/types'
 import type { Zone } from '../../engine/ecs/zones'
 import type { AABB } from '../../engine/voxel/voxel-collide'
+import type { NpcImpactState } from '../../engine/ecs/melee-types'
 import {
     copyHandLoadout,
     handLoadoutKey,
@@ -127,11 +128,16 @@ export interface NpcRuntimeState {
      *  runtime's configured attack clip when omitted. */
     requestAttackClip?: NpcAttackClip
     requestDie: boolean
+    /** One-shot: a non-lethal hit landed this frame. Consumed by npc-render
+     *  to fire the hurt sound; lethal hits set `requestDie` instead. */
+    requestHurt?: boolean
     dying: boolean
     /** Attack style inferred from the authored NPC loadout at registration. */
     attackClip?: NpcAttackClip
-    /** Delayed circular impact for heavy overhead attacks. */
-    pendingHammerHit?: NpcPendingHammerHit
+    /** Lightweight kinematic knockback/recoil applied by timed melee hits. */
+    push?: NpcImpactState
+    /** Optional combat stun; default attacks leave it unset/zero. */
+    stunSeconds?: number
     /** Patrol/guard brain; null until a script assigns one. */
     ai: NpcAiState | null
     /** Registration handles, so a despawning NPC can free exactly its own zone +
@@ -143,16 +149,6 @@ export interface NpcRuntimeState {
      *  stuck-arrow system can keep them riding the body as it moves. Lazily
      *  created on the first hit; absent until then. */
     stuckArrows?: StuckArrow[]
-}
-
-export interface NpcPendingHammerHit {
-    seconds: number
-    x: number
-    y: number
-    z: number
-    radius: number
-    damage: number
-    targetId: string
 }
 
 /** A frozen arrow embedded in an NPC body, tracked so it follows the NPC. */
@@ -180,6 +176,7 @@ export function damageNpc(npc: NpcRuntimeState, amount: number): boolean {
         npc.dying = true
         return true
     }
+    npc.requestHurt = true
     return false
 }
 

@@ -6,6 +6,13 @@ import type {
     TradeResource,
     TradeResult,
 } from '../engine/script/types'
+import {
+    addInventoryItem,
+    copyInventoryItems,
+    inventoryItemCount,
+    type InventoryItemMap,
+    removeInventoryItem,
+} from './inventory'
 import { PLAYER_INVENTORY_LIMITS } from './player-settings'
 
 export interface NormalizedTradeItem {
@@ -42,11 +49,13 @@ export interface TradeAvailability {
 export interface TradeInventoryLimits {
     gold: number
     arrows: number
+    items: number
 }
 
 export const DEFAULT_TRADE_LIMITS: TradeInventoryLimits = {
     gold: PLAYER_INVENTORY_LIMITS.gold,
     arrows: PLAYER_INVENTORY_LIMITS.arrows,
+    items: 999999,
 }
 
 export function normalizeTradeRequest(request: TradeRequest): NormalizedTradeRequest {
@@ -72,10 +81,12 @@ export function sanitizeTradeInventory(
     inventory: TradeInventorySnapshot,
     limits: TradeInventoryLimits = DEFAULT_TRADE_LIMITS,
 ): TradeInventorySnapshot {
-    return {
+    const out: TradeInventorySnapshot = {
         gold: clampInt(inventory.gold, 0, limits.gold),
         arrows: clampInt(inventory.arrows, 0, limits.arrows),
     }
+    if (inventory.items !== undefined) out.items = copyInventoryItems(inventory.items)
+    return out
 }
 
 export function tradeAvailability(
@@ -149,6 +160,7 @@ export function applyTradeSelection(
         const next = sanitizeTradeInventory({
             gold: current.gold - spentGold,
             arrows: item.resource === 'arrows' ? current.arrows + resourceTotal : current.arrows,
+            items: tradeItemsAfterResourceChange(current, item.resource, resourceTotal),
         }, limits)
         return {
             status: 'bought',
@@ -166,6 +178,7 @@ export function applyTradeSelection(
     const next = sanitizeTradeInventory({
         gold: current.gold + gainedGold,
         arrows: item.resource === 'arrows' ? current.arrows - resourceTotal : current.arrows,
+        items: tradeItemsAfterResourceChange(current, item.resource, -resourceTotal),
     }, limits)
     return {
         status: 'sold',
@@ -182,6 +195,7 @@ export function applyTradeSelection(
 export function resourceLabel(resource: TradeResource): string {
     switch (resource) {
         case 'arrows': return 'arrows'
+        case 'heal-potion': return 'healing potions'
     }
 }
 
@@ -204,12 +218,13 @@ function normalizeTradeItem(raw: TradeItem): NormalizedTradeItem | null {
 }
 
 function isTradeResource(value: string): value is TradeResource {
-    return value === 'arrows'
+    return value === 'arrows' || value === 'heal-potion'
 }
 
 function resourceAmount(resource: TradeResource, inventory: TradeInventorySnapshot): number {
     switch (resource) {
         case 'arrows': return inventory.arrows
+        case 'heal-potion': return inventoryItemCount(inventory.items, resource)
     }
 }
 
@@ -220,7 +235,30 @@ function resourceCapacity(
 ): number {
     switch (resource) {
         case 'arrows': return Math.max(0, limits.arrows - inventory.arrows)
+        case 'heal-potion': return Math.max(0, limits.items - inventoryItemCount(inventory.items, resource))
     }
+}
+
+function tradeItemsAfterResourceChange(
+    inventory: TradeInventorySnapshot,
+    resource: TradeResource,
+    delta: number,
+): InventoryItemMap | undefined {
+    if (resource !== 'heal-potion') {
+        return inventory.items === undefined ? undefined : copyInventoryItems(inventory.items)
+    }
+    const items = copyInventoryItems(inventory.items)
+    if (delta > 0) {
+        addInventoryItem(items, resource, delta, {
+            name: 'Healing Potion',
+            description: 'Restores health when potion use is wired into combat.',
+            category: 'consumables',
+            icon: 'heal-potion',
+        })
+    } else if (delta < 0) {
+        removeInventoryItem(items, resource, -delta)
+    }
+    return items
 }
 
 function buyBlockReason(

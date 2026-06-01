@@ -24,6 +24,9 @@ import { disposeObject3D } from '../../engine/render/dispose-object'
 
 export interface NpcRenderSystemOptions {
     getNpcs: () => readonly NpcConfig[]
+    /** Fired when an NPC takes a non-lethal hit, at its world position, so
+     *  the caller can play a spatial hurt cue. */
+    onHurt?: (position: { x: number; y: number; z: number }) => void
 }
 
 interface RenderedNpc {
@@ -127,6 +130,10 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             if (runtime?.requestDie) {
                 controller.machine.setParam('dead', 1)
                 runtime.requestDie = false
+            }
+            if (runtime?.requestHurt) {
+                opts.onHurt?.(runtime.position)
+                runtime.requestHurt = false
             }
             controller.update(dt)
             // Despawn once the body has lain dead for a beat.

@@ -249,7 +249,8 @@ export function createTradeController(opts: TradeControllerOptions): TradeContro
         const speaker = active.request.npc ?? { name: 'Merchant', avatar: 'npc' }
         d.title.textContent = active.request.title ?? 'Trade'
         d.npcName.textContent = speaker.name
-        d.inventory.textContent = `Gold ${active.inventory.gold}  |  Arrows ${active.inventory.arrows}`
+        const potions = active.inventory.items?.['heal-potion']?.quantity ?? 0
+        d.inventory.textContent = `Gold ${active.inventory.gold}  |  Arrows ${active.inventory.arrows}  |  Potions ${potions}`
         paintAvatar(d.avatar, d.avatarImage, d.avatarInitial, speaker)
 
         d.itemList.innerHTML = ''
@@ -644,6 +645,8 @@ function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLEle
     switch (resource) {
         case 'arrows':
             return arrowBundleIcon(size)
+        case 'heal-potion':
+            return healPotionIcon(size)
     }
 }
 
@@ -702,6 +705,21 @@ function arrowBundleIcon(size: 'small' | 'large'): HTMLElement {
         arrow.append(head, fletching)
         root.appendChild(arrow)
     }
+    return root
+}
+
+function healPotionIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '26px' : '18px',
+        height: isLarge ? '34px' : '24px',
+        display: 'block',
+        borderRadius: isLarge ? '7px 7px 10px 10px' : '5px 5px 7px 7px',
+        background: 'linear-gradient(180deg, #ffd7de 0 22%, #e34c64 23% 100%)',
+        boxShadow: '0 -7px 0 -2px #d9edf0, inset -4px -5px 0 rgba(85, 10, 22, 0.25), 0 0 8px rgba(227, 76, 100, 0.22)',
+    } satisfies Partial<CSSStyleDeclaration>)
     return root
 }
 

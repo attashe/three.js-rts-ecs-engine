@@ -44,6 +44,20 @@ test('procedural demo export preserves scripts and travel metadata', () => {
     assert.ok(garden.editorMeta.zones?.some((zone) => zone.portal?.targetLevelId === DEMO_LEVEL_ID))
 })
 
+test('procedural demo includes an aggressive hammer troll guardian', () => {
+    const demo = createProceduralEditorLevel(DEMO_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const npc = demo.runtimeMeta.npcs.find((candidate) => candidate.id === 'demo:troll-guardian')
+
+    assert.ok(npc, 'demo should place the troll guardian')
+    assert.equal(npc!.model, 'large-troll')
+    assert.equal(npc!.variant, 'guardian')
+    assert.equal(npc!.collisionEnabled, true)
+    assert.deepEqual(npc!.equipment, { handR: 'battle-hammer', handL: null })
+    assert.match(npc!.scriptSource, /npc\.setHostile\(NPC_ID, 'player', true\)/)
+    assert.match(npc!.scriptSource, /npc\.setPerceptionRadius\(NPC_ID, 8\)/)
+    assert.equal(demo.chunks.getVoxel(Math.floor(npc!.position.x), npc!.position.y - 1, Math.floor(npc!.position.z)), BLOCK.grass)
+})
+
 test('demo <-> large-town portals resolve to existing arrival zones', () => {
     const demo = createProceduralEditorLevel(DEMO_LEVEL_ID, FAKE_SCRIPT_SOURCES)
     const town = createProceduralEditorLevel(LARGE_TOWN_LEVEL_ID, FAKE_SCRIPT_SOURCES)

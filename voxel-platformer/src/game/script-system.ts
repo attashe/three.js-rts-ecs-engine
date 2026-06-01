@@ -53,6 +53,7 @@ import {
 import {
     addInventoryItem as addInventoryItemToMap,
     copyInventoryItems,
+    type InventoryItemMap,
     inventoryItemCount,
     listInventoryItems,
     removeInventoryItem as removeInventoryItemFromMap,
@@ -481,14 +482,17 @@ function tradeInventory(world: GameWorld) {
     return sanitizeTradeInventory({
         gold: world.inventory.gold,
         arrows: world.inventory.arrows,
+        items: world.inventory.items,
     })
 }
 
-function applyTradeInventory(world: GameWorld, inventory: { gold: number; arrows: number }): void {
+function applyTradeInventory(world: GameWorld, inventory: { gold: number; arrows: number; items?: InventoryItemMap }): void {
     world.inventory.gold = inventory.gold
     world.inventory.arrows = inventory.arrows
+    if (inventory.items !== undefined) world.inventory.items = copyInventoryItems(inventory.items)
     world.playerSettings.inventory.gold = inventory.gold
     world.playerSettings.inventory.arrows = inventory.arrows
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
 }
 
 function syncInventoryItems(world: GameWorld): void {

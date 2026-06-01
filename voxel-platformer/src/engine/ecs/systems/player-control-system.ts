@@ -1,6 +1,6 @@
 import { Vector3 } from 'three'
 import { hasComponent, query, removeComponent } from 'bitecs'
-import { BoxCollider, Grounded, PlayerControlled, Position, RidingCart, Rotation, Velocity } from '../components'
+import { BoxCollider, Grounded, PlayerControlled, Position, RidingCart, Rotation, Stunned, Velocity } from '../components'
 import type { Input } from '../../input/input'
 import type { ActionMap, ActionId } from '../../input/actions'
 import type { IsometricCamera } from '../../render/isometric-camera'
@@ -134,6 +134,15 @@ export function createPlayerControlSystem(
                         jumpBuffered = false
                     }
                     updateAimRotation(world, eid, pointer, pointerRay)
+                    continue
+                }
+                if (hasComponent(world, eid, Stunned)) {
+                    if (jumpBuffered) {
+                        actions.consumePressed(actionIds.jump, eid)
+                        jumpBuffered = false
+                    }
+                    Velocity.x[eid] += (0 - Velocity.x[eid]) * alpha
+                    Velocity.z[eid] += (0 - Velocity.z[eid]) * alpha
                     continue
                 }
                 const grounded = hasComponent(world, eid, Grounded)

@@ -409,9 +409,10 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             interactionRadius: 1.75,
             enabled: true,
         }],
-        // Demo keeps the background music bed; editor-authored levels start
-        // with no environment and pick a track from the Sound tab.
-        environment: { soundId: 'music.background', volume: 0.36 },
+        // Demo spawn uses the calm, intriguing "Threshold" ambient bed;
+        // editor-authored levels start with no environment and pick a
+        // track from the Sound tab.
+        environment: { soundId: 'music.amb.start', volume: 0.36 },
         ambient: outdoorDay(),
         weatherZones: [
             {

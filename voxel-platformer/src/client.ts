@@ -20,6 +20,8 @@ import { createRenderMetricsSystem } from './engine/ecs/systems/render-metrics-s
 import { createFallingStoneSpawnerSystem, createMovingObjectSystem } from './engine/ecs/systems/moving-object-system'
 import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-launch-system'
 import { createMeleeAttackSystem } from './engine/ecs/systems/melee-attack-system'
+import { createMeleeCombatSystem } from './engine/ecs/systems/melee-combat-system'
+import { createPlayerHurtAudioSystem } from './engine/ecs/systems/player-hurt-audio-system'
 import { createSpellCastSystem } from './game/spells'
 import { createSpellEffectSystem, createSpellEffectRenderSystem } from './game/spell-effect-system'
 import { createWeaponStanceSystem } from './game/weapon-stance-system'
@@ -376,7 +378,18 @@ async function main(): Promise<void> {
         slots.environmentFx.set(environmentFx)
         slots.visualFxZones.set(visualFxZones)
         slots.propRender.set(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }))
-        slots.npcRender.set(createNpcRenderSystem(renderer.scene, { getNpcs: () => meta.npcs }))
+        slots.npcRender.set(createNpcRenderSystem(renderer.scene, {
+            getNpcs: () => meta.npcs,
+            onHurt: (p) => audio.playSpatial(GameAudio.NpcHurt, p, {
+                deferUntilUnlocked: true,
+                rate: 0.9 + Math.random() * 0.2,
+                refDistance: 4,
+                maxDistance: 30,
+                rolloffModel: 'linear',
+                panningModel: 'equalpower',
+                priority: 2,
+            }),
+        }))
         slots.railCarts.set(createRailCartSystem(chunks, meta.railCarts, { actions }))
         slots.piston.set(createPistonSystem(chunks, {
             onFlip: (piston, position) => {
@@ -466,6 +479,23 @@ async function main(): Promise<void> {
         useCheckpoint: true,
     })
 
+    // Melee SFX — staff/hammer attacks get the beefier swing/hit samples;
+    // everything else uses the light pair. Spatial so a brawl across the
+    // plaza is positioned, not flat. The player's own swings originate at
+    // the listener, so they land at full volume.
+    const HEAVY_MELEE_ATTACKS = new Set(['staff-slam', 'hammer-slam'])
+    const playMeleeCue = (id: string, x: number, y: number, z: number, priority: number): void => {
+        audio.playSpatial(id, { x, y, z }, {
+            deferUntilUnlocked: true,
+            rate: 0.94 + Math.random() * 0.12,
+            refDistance: 4,
+            maxDistance: 30,
+            rolloffModel: 'linear',
+            panningModel: 'equalpower',
+            priority,
+        })
+    }
+
     engine
         .addSystem(createSunFollowSystem(sun, () => renderer.iso.target), 'sunFollow')
         .addSystem(createAudioUnlockSystem(audio), 'audioUnlock')
@@ -481,6 +511,23 @@ async function main(): Promise<void> {
         .addSystem(createHealthBarSystem(renderer.scene, () => renderer.iso.camera), 'healthBars')
         .addSystem(createPlayerShieldSystem(actions, { actionId: GameAction.RaiseShield }), 'playerShield')
         .addSystem(createNpcBehaviourSystem(chunks), 'npcBehaviour')
+        .addSystem(createMeleeCombatSystem({
+            onSwing: (e) => playMeleeCue(
+                HEAVY_MELEE_ATTACKS.has(e.attackId) ? GameAudio.HeavySwing : GameAudio.SwordSwing,
+                e.x, e.y, e.z, 2,
+            ),
+            onHit: (e) => playMeleeCue(
+                HEAVY_MELEE_ATTACKS.has(e.attackId) ? GameAudio.MeleeHitHeavy : GameAudio.MeleeHit,
+                e.x, e.y, e.z, 3,
+            ),
+            onBlock: (e) => playMeleeCue(GameAudio.ShieldBlock, e.x, e.y, e.z, 4),
+        }), 'meleeCombat')
+        .addSystem(createPlayerHurtAudioSystem({
+            onHurt: () => audio.play(GameAudio.PlayerHurt, {
+                deferUntilUnlocked: true,
+                rate: 0.94 + Math.random() * 0.12,
+            }),
+        }), 'playerHurtAudio')
         .addSystem(createNpcHazardSystem(chunks), 'npcHazard')
         .addSystem(createPlayerControlSystem(engine.input, actions, renderer.iso, {
             chunks,

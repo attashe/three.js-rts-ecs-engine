@@ -1,5 +1,5 @@
 import { hasComponent, query } from 'bitecs'
-import { Grounded, PlayerControlled, Position, Rotation, Shield } from '../engine/ecs/components'
+import { Grounded, PlayerControlled, Position, Rotation, Shield, Stunned } from '../engine/ecs/components'
 import { clearDebugHitbox, debugHitboxesEnabled, pushDebugHitbox } from '../engine/ecs/debug-hitboxes'
 import type { ActionId, ActionMap } from '../engine/input/actions'
 import type { System } from '../engine/ecs/systems/system'
@@ -46,7 +46,7 @@ export function createPlayerShieldSystem(actions: ActionMap, opts: PlayerShieldO
                 const eid = players[i]!
                 const debugId = shieldDebugId(eid)
                 const grounded = hasComponent(world, eid, Grounded)
-                if (!melee || !grounded) {
+                if (!melee || !grounded || hasComponent(world, eid, Stunned)) {
                     Shield.raised[eid] = 0
                     gw.animControllerByEid.get(eid)?.machine.setParam(COMBAT_PARAM.shieldBlock, 0)
                     clearDebugHitbox(gw, debugId)

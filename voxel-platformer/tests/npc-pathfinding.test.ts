@@ -8,8 +8,10 @@ import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
 import { createEntity } from '../src/engine/ecs/entity'
 import { PlayerControlled, Position } from '../src/engine/ecs/components'
 import { createNpcBehaviourSystem } from '../src/engine/ecs/systems/npc-behaviour-system'
+import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
 import { __resetDebugInfoCache, setDebugInfoEnabled } from '../src/engine/render/render-settings'
 import type { NpcRuntimeState } from '../src/game/npcs/npc-types'
+import { HUMANOID_ANIM_TIMINGS } from '../src/game/anim/clip-timings'
 import {
     NPC_TARGET_PLAYER, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc,
 } from '../src/game/npcs/npc-ai'
@@ -149,7 +151,7 @@ test('a hostile NPC spots and paths toward the player', () => {
     assert.ok(rt.position.x > 7, `expected the orc to advance toward the player, x=${rt.position.x}`)
 })
 
-test('hammer NPC attacks use a delayed circular impact', () => {
+test('hammer NPC attacks use a timed circular impact', () => {
     const chunks = flatWorld()
     const world = createGameWorld()
     const attacker = spawnRuntimeNpc(world, 'guardian', 4, 4)
@@ -160,20 +162,22 @@ test('hammer NPC attacks use a delayed circular impact', () => {
     setNpcPerceptionRadius(world, 'guardian', 8)
 
     const sys = createNpcBehaviourSystem(chunks)
+    const combat = createMeleeCombatSystem()
     sys.update!(world, 1 / 60)
 
     assert.equal(attacker.requestAttack, true)
     assert.equal(attacker.requestAttackClip, 'hammerAttack')
-    assert.ok(attacker.pendingHammerHit, 'hammer strike should schedule its impact instead of damaging immediately')
+    assert.ok(world.meleeAttacks.has('npc:guardian'), 'hammer strike should schedule a timed melee attack')
     assert.equal(target.hp, 2)
 
-    for (let i = 0; i < 40; i++) sys.update!(world, 1 / 60)
+    combat.update(world, HUMANOID_ANIM_TIMINGS.hammerImpact - 0.02)
+    assert.equal(target.hp, 2)
 
-    assert.equal(attacker.pendingHammerHit, undefined)
+    combat.update(world, 0.04)
     assert.equal(target.hp, 1)
 })
 
-test('ordinary NPC attacks expose a debug attack hitbox', () => {
+test('ordinary NPC attacks expose an active wedge hitbox and damage on active', () => {
     __resetDebugInfoCache()
     setDebugInfoEnabled(true)
     const chunks = flatWorld()
@@ -184,11 +188,61 @@ test('ordinary NPC attacks expose a debug attack hitbox', () => {
     setNpcPerceptionRadius(world, 'guard', 8)
 
     const sys = createNpcBehaviourSystem(chunks)
+    const combat = createMeleeCombatSystem()
     sys.update!(world, 1 / 60)
 
+    assert.equal(target.hp, 2)
+    assert.equal(world.debugHitboxes.some((hitbox) => hitbox.id === 'npc:guard:attack'), false)
+
+    combat.update(world, 0.29)
+    assert.equal(target.hp, 2)
+    assert.equal(world.debugHitboxes.some((hitbox) => hitbox.id === 'npc:guard:attack'), false)
+
+    combat.update(world, 0.03)
     assert.ok(
-        world.debugHitboxes.some((hitbox) => hitbox.kind === 'circle' && hitbox.id === 'npc:guard:attack'),
-        'ordinary melee attacks should add a visible debug radius',
+        world.debugHitboxes.some((hitbox) => hitbox.kind === 'wedge' && hitbox.id === 'npc:guard:attack'),
+        'ordinary melee attacks should add a visible active wedge',
     )
     assert.equal(target.hp, 1)
+})
+
+test('ordinary NPC slash can be avoided outside the locked wedge', () => {
+    const chunks = flatWorld()
+    const world = createGameWorld()
+    const attacker = spawnRuntimeNpc(world, 'guard', 4, 4)
+    const target = spawnRuntimeNpc(world, 'target', 4, 5)
+    setNpcHostile(world, 'guard', 'target', true)
+    setNpcPerceptionRadius(world, 'guard', 8)
+
+    const sys = createNpcBehaviourSystem(chunks)
+    const combat = createMeleeCombatSystem()
+    sys.update!(world, 1 / 60)
+
+    combat.update(world, 0.26)
+    target.position.x = 6
+    target.position.z = 4
+    combat.update(world, 0.06)
+
+    assert.equal(target.hp, 2)
+})
+
+test('NPC stops moving and turning once melee attack locks', () => {
+    const chunks = flatWorld()
+    const world = createGameWorld()
+    const attacker = spawnRuntimeNpc(world, 'guard', 4, 4)
+    const target = spawnRuntimeNpc(world, 'target', 4, 5)
+    setNpcHostile(world, 'guard', 'target', true)
+    setNpcPerceptionRadius(world, 'guard', 8)
+
+    const sys = createNpcBehaviourSystem(chunks)
+    const combat = createMeleeCombatSystem()
+    sys.update!(world, 1 / 60)
+    combat.update(world, 0.26)
+
+    target.position.x = 6
+    target.position.z = 4
+    const before = { x: attacker.position.x, z: attacker.position.z, yaw: attacker.yaw }
+    sys.update!(world, 0.1)
+
+    assert.deepEqual({ x: attacker.position.x, z: attacker.position.z, yaw: attacker.yaw }, before)
 })

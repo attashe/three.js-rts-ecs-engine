@@ -37,6 +37,15 @@ const expected = {
         sha256: 'c4113915a90992c66ece1074c3243a50e0dbcaf1e5fe9503f5cd3615ff24a9d1',
     },
 
+    // ── Melee combat ──────────────────────────────────────────────
+    'sword-swing.wav':     { bytes: 6218, sha256: 'f7757e6574030755fb6defc662b2816fec5d8cbc9fae6ecd6dafcd6368409c76' },
+    'heavy-swing.wav':     { bytes: 8423, sha256: 'c3a2194815a1f1ebbb43403abae969b79681a09133cf80fe3e3c0575b3bef78a' },
+    'melee-hit.wav':       { bytes: 6659, sha256: '96cec2d338ebcef602af71895403d22e89a71cf82e3d7f0392a3f6c8240ec5c2' },
+    'melee-hit-heavy.wav': { bytes: 8864, sha256: 'fed9ad1e4b3ef39ebbf1a7c2899e9b1bd74520230f56813a80396fc3ba43738c' },
+    'shield-block.wav':    { bytes: 7541, sha256: '4bc5067315aa0fb38daea57af12eff09cb1d1340dd2114f18c834b737e24f005' },
+    'player-hurt.wav':     { bytes: 5777, sha256: '725ec7249fa3d3f84645dd481e66ba9863f029e21298fd004563e234acd5bdf1' },
+    'npc-hurt.wav':        { bytes: 4895, sha256: '3ca8fd63bc357837ab0f5a8efc60b6cc3efadb32ede334402cb60431f00a21d5' },
+
     // ── Player locomotion ─────────────────────────────────────────
     // Surface-aware footsteps: 5 families × 2 variants. Volumes vary
     // per family (see GAME_AUDIO_MANIFEST).
@@ -96,6 +105,13 @@ const expected = {
         bytes: 194084,
         sha256: '91e2430ca83750d5a4fa37599a6a8903aae8068801e602ce9f60a869206d385a',
     },
+
+    // ── Ambient location set (calm / intriguing, C418-style) ──────
+    'amb-start-loop.wav':   { bytes: 264644, sha256: '4e2253c670f6c46372d70d09070e05d9a2be0b7a20d7c59a6a1fa560bffa2eef' },
+    'amb-garden-loop.wav':  { bytes: 286694, sha256: '1f7c9cb5182a73942aad43bf20e9fd038f664d78e8c12ae7e1b112c68afbf533' },
+    'amb-town-loop.wav':    { bytes: 308744, sha256: '204d907ec03451f681fe6bb1fedddd55214bb54d04639001883349b3d75421c1' },
+    'amb-tension-loop.wav': { bytes: 220544, sha256: 'a7eb748191f2e480ec97fc8c4a396c6c0167948e59632c64e863999f8a1fc216' },
+    'amb-cave-loop.wav':    { bytes: 352844, sha256: '5778625c4a604784fb089c8fab08aa08bc67f17f6cf5c91b4230efd9bab8be5d' },
 
     // ── Weather ───────────────────────────────────────────────────
     'rain-loop.wav': {

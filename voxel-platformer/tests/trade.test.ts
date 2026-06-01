@@ -86,3 +86,37 @@ test('trade availability respects stock, gold, and inventory capacity', () => {
     assert.equal(tradeAvailability(item, 'sell', { gold: 0, arrows: 14 }).maxQuantity, 2)
     assert.equal(tradeAvailability(item, 'sell', { gold: 999999, arrows: 14 }).maxQuantity, 0)
 })
+
+test('trade buy and sell can mutate durable healing potions', () => {
+    const shop = normalizeTradeRequest({
+        title: 'Field Supplies',
+        items: [{
+            id: 'heal-potion',
+            name: 'Healing Potion',
+            resource: 'heal-potion',
+            unitSize: 1,
+            buyPrice: 5,
+            sellPrice: 2,
+        }],
+    })
+
+    const bought = applyTradeSelection(shop, { gold: 12, arrows: 0, items: {} }, {
+        action: 'buy',
+        itemId: 'heal-potion',
+        quantity: 2,
+    })
+
+    if (bought.status !== 'bought') throw new Error(`expected bought, got ${bought.status}`)
+    assert.equal(bought.inventory.items?.['heal-potion']?.quantity, 2)
+    assert.deepEqual(bought.gained, { 'heal-potion': 2 })
+
+    const sold = applyTradeSelection(shop, bought.inventory, {
+        action: 'sell',
+        itemId: 'heal-potion',
+        quantity: 1,
+    })
+
+    if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
+    assert.equal(sold.inventory.items?.['heal-potion']?.quantity, 1)
+    assert.deepEqual(sold.removed, { 'heal-potion': 1 })
+})

@@ -1,5 +1,6 @@
 import { query } from 'bitecs'
-import { PlayerControlled } from '../engine/ecs/components'
+import { Health, PlayerControlled } from '../engine/ecs/components'
+import { HP_PER_HEART } from '../engine/ecs/combat'
 import type { GameWorld, WeaponStance } from '../engine/ecs/world'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { System } from '../engine/ecs/systems/system'
@@ -18,8 +19,10 @@ import { SPELLS } from './spells'
 import {
     INVENTORY_CATEGORIES,
     INVENTORY_CATEGORY_LABELS,
+    copyInventoryItems,
     inventoryItemCount,
     listInventoryItems,
+    removeInventoryItem,
     type InventoryCategoryId,
     type InventoryIconId,
     type InventorySnapshotItem,
@@ -49,6 +52,21 @@ const LOADOUT_OPTIONS: readonly LoadoutOption[] = [
 ]
 
 const HEAL_POTION_ITEM_ID = 'heal-potion'
+const HEAL_POTION_RESTORE_HP = HP_PER_HEART
+
+export function consumeHealPotion(world: GameWorld): boolean {
+    const players = query(world, [PlayerControlled, Health])
+    if (players.length === 0) return false
+    const player = players[0]!
+    const max = Health.max[player]!
+    const current = Health.current[player]!
+    if (!(max > 0) || current >= max) return false
+    if (inventoryItemCount(world.inventory.items, HEAL_POTION_ITEM_ID) <= 0) return false
+    if (!removeInventoryItem(world.inventory.items, HEAL_POTION_ITEM_ID, 1)) return false
+    Health.current[player] = Math.min(max, current + HEAL_POTION_RESTORE_HP)
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+    return true
+}
 
 export function createInventorySystem(input: Input, actions: ActionMap): System {
     let dom: InventoryDom | null = null
@@ -392,7 +410,7 @@ function healPotionItem(world: GameWorld): InventorySnapshotItem {
         id: HEAL_POTION_ITEM_ID,
         quantity: inventoryItemCount(world.inventory.items, HEAL_POTION_ITEM_ID),
         name: 'Heal Potion',
-        description: 'Restores health when potion use is wired into combat.',
+        description: 'Restores one heart.',
         category: 'consumables',
         icon: 'heal-potion',
     }
@@ -404,7 +422,7 @@ function categoryCards(
     dom: InventoryDom,
     world: GameWorld,
 ): HTMLElement[] {
-    const cards = items.map((item) => itemCard(item))
+    const cards = items.map((item) => itemCard(item, dom, world))
     if (category === 'accessories') cards.unshift(...hatSelectorCards(dom, world))
     if (category === 'tools') cards.unshift(torchToggleCard(dom, world))
     return cards
@@ -486,7 +504,21 @@ function categorySection(category: InventoryCategoryId, cards: readonly HTMLElem
     return section
 }
 
-function itemCard(item: InventorySnapshotItem): HTMLElement {
+function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWorld): HTMLElement {
+    if (item.id === HEAL_POTION_ITEM_ID) {
+        return menuCard({
+            icon: item.icon,
+            name: item.name,
+            detail: `x${item.quantity}`,
+            title: item.quantity > 0
+                ? `${item.name}\nDouble-click to drink. Restores one heart.`
+                : item.name,
+            disabled: item.quantity <= 0,
+            onDoubleClick: () => {
+                if (consumeHealPotion(world)) renderInventory(dom, world)
+            },
+        })
+    }
     return menuCard({
         icon: item.icon,
         name: item.name,
@@ -504,13 +536,26 @@ interface MenuCardOptions {
     active?: boolean
     disabled?: boolean
     onClick?: () => void
+    onDoubleClick?: () => void
 }
 
 function menuCard(opts: MenuCardOptions): HTMLElement {
-    const card = opts.onClick ? document.createElement('button') : document.createElement('div')
+    const interactive = opts.onClick !== undefined || opts.onDoubleClick !== undefined
+    const card = interactive ? document.createElement('button') : document.createElement('div')
+    if (interactive && opts.disabled) {
+        ;(card as HTMLButtonElement).disabled = true
+    }
     if (opts.onClick) {
         ;(card as HTMLButtonElement).type = 'button'
         card.addEventListener('click', opts.onClick)
+    } else if (interactive) {
+        ;(card as HTMLButtonElement).type = 'button'
+    }
+    if (opts.onDoubleClick) {
+        card.addEventListener('dblclick', (ev) => {
+            ev.preventDefault()
+            opts.onDoubleClick?.()
+        })
     }
     Object.assign(card.style, {
         width: '138px',
@@ -525,7 +570,7 @@ function menuCard(opts: MenuCardOptions): HTMLElement {
         borderRadius: '6px',
         boxSizing: 'border-box',
         color: '#eef6f2',
-        cursor: opts.onClick ? 'pointer' : 'default',
+        cursor: interactive ? 'pointer' : 'default',
         opacity: opts.disabled ? '0.55' : '1',
         textAlign: 'left',
         font: 'inherit',

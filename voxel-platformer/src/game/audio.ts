@@ -26,6 +26,17 @@ export const GameAudio = {
     PianoNight: 'music.piano.night',
     PianoDrift: 'music.piano.drift',
 
+    /** Ambient location set — calm, intriguing, piano-led beds in the
+     *  C418 vein. `Start` / `Garden` / `Town` are the demo-location
+     *  environment beds; `Tension` and `Cave` are meant to be triggered
+     *  by scripts (`audio.play('music.amb.tension', { fade })`) or set as
+     *  a cave level's environment track. */
+    MusicStart: 'music.amb.start',
+    MusicGarden: 'music.amb.garden',
+    MusicTown: 'music.amb.town',
+    MusicTension: 'music.amb.tension',
+    MusicCave: 'music.amb.cave',
+
     PickupGold: 'sfx.pickup.gold',
     PickupArrow: 'sfx.pickup.arrow',
     Bow: 'sfx.bow',
@@ -77,6 +88,21 @@ export const GameAudio = {
     AmbMagic: 'sfx.amb.magic',
     TorchFire: 'sfx.amb.torch',
 
+    // ── Melee combat ─────────────────────────────────────────────────
+    // Driven by the timed melee system. `swing` plays when an attack goes
+    // active (whoosh of the weapon); `hit` when it lands and deals damage;
+    // `block` when a raised shield catches it. Light vs heavy is chosen by
+    // the attack id (staff-slam / hammer-slam → heavy).
+    SwordSwing: 'sfx.melee.swing',
+    HeavySwing: 'sfx.melee.swing.heavy',
+    MeleeHit: 'sfx.melee.hit',
+    MeleeHitHeavy: 'sfx.melee.hit.heavy',
+    ShieldBlock: 'sfx.melee.block',
+    /** Non-lethal "ugh" grunts when a body takes damage (death has its own
+     *  cue). `PlayerHurt` plays flat (it's you); `NpcHurt` plays spatially. */
+    PlayerHurt: 'sfx.hurt.player',
+    NpcHurt: 'sfx.hurt.npc',
+
     // ── One-shot effects ─────────────────────────────────────────────
     Thunder: 'sfx.thunder',
     FireWhoosh: 'sfx.fire.whoosh',
@@ -107,6 +133,16 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.Bow,         url: path('bow.wav'),          volume: 0.48, maxInstances: 3, priority: 2 },
         { id: GameAudio.ArrowHit,    url: path('arrow-hit.wav'),    volume: 0.52, maxInstances: 5, priority: 2 },
         { id: GameAudio.Death,       url: path('death.wav'),        volume: 0.62, maxInstances: 1, priority: 8 },
+
+        // Melee combat — short, rapid-fire cues. `maxInstances` is generous
+        // so a flurry of swings/hits never starves a voice.
+        { id: GameAudio.SwordSwing,    url: path('sword-swing.wav'),     volume: 0.40, maxInstances: 5, priority: 2 },
+        { id: GameAudio.HeavySwing,    url: path('heavy-swing.wav'),     volume: 0.46, maxInstances: 4, priority: 2 },
+        { id: GameAudio.MeleeHit,      url: path('melee-hit.wav'),       volume: 0.52, maxInstances: 5, priority: 3 },
+        { id: GameAudio.MeleeHitHeavy, url: path('melee-hit-heavy.wav'), volume: 0.60, maxInstances: 4, priority: 4 },
+        { id: GameAudio.ShieldBlock,   url: path('shield-block.wav'),    volume: 0.56, maxInstances: 4, priority: 4 },
+        { id: GameAudio.PlayerHurt,    url: path('player-hurt.wav'),     volume: 0.50, maxInstances: 2, priority: 5 },
+        { id: GameAudio.NpcHurt,       url: path('npc-hurt.wav'),        volume: 0.44, maxInstances: 4, priority: 2 },
 
         // Player locomotion — kept quiet by default so the constant
         // walking cadence doesn't dominate the mix. The locomotion
@@ -163,6 +199,14 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.PianoQuiet,       url: path('piano-ambient-quiet.wav'),   volume: 0.30, loop: true, priority: 1 },
         { id: GameAudio.PianoNight,       url: path('piano-ambient-night.wav'),   volume: 0.28, loop: true, priority: 1 },
         { id: GameAudio.PianoDrift,       url: path('piano-ambient-drift.wav'),   volume: 0.30, loop: true, priority: 1 },
+        // Ambient location set (calm/intriguing, C418-style). Volumes here
+        // are the defaults used when a script plays them without an
+        // explicit volume; the demo locations override via `environment`.
+        { id: GameAudio.MusicStart,       url: path('amb-start-loop.wav'),        volume: 0.34, loop: true, priority: 1 },
+        { id: GameAudio.MusicGarden,      url: path('amb-garden-loop.wav'),       volume: 0.30, loop: true, priority: 1 },
+        { id: GameAudio.MusicTown,        url: path('amb-town-loop.wav'),         volume: 0.30, loop: true, priority: 1 },
+        { id: GameAudio.MusicTension,     url: path('amb-tension-loop.wav'),      volume: 0.40, loop: true, priority: 1 },
+        { id: GameAudio.MusicCave,        url: path('amb-cave-loop.wav'),         volume: 0.40, loop: true, priority: 1 },
     ],
     stingers: [
         { id: GameAudio.DeathStinger, url: path('death-stinger.wav'), volume: 0.78, priority: 9 },

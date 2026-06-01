@@ -129,6 +129,8 @@ export function generateDemoProceduralLevel(
  *   - Patrol Guard — patrols and chases/attacks the player on sight.
  *   - Sentry Voss — stands guard and stays friendly, but turns hostile if you
  *     pick the insulting reply in his dialogue.
+ *   - Grondak — a large troll guardian who starts hostile and uses the heavy
+ *     hammer slam for combat tuning.
  */
 function demoNpcs(): NpcConfig[] {
     return [
@@ -196,9 +198,42 @@ function demoNpcs(): NpcConfig[] {
                 `    ui.say(NPC_INTERACTION, 'You will regret that.', { seconds: 2 })`,
                 `    npc.setPerceptionRadius(NPC_ID, 8)`,
                 `    npc.setHostile(NPC_ID, 'player', true)`,
+                `    // Extreme situation — swap the calm bed for the uneasy`,
+                `    // "Unrest" tension track as the sentry draws his sword.`,
+                `    audio.play('music.amb.tension', { fade: 1.5 })`,
                 `  } else {`,
                 `    ui.say(NPC_INTERACTION, 'Safe travels, then.', { seconds: 2 })`,
                 `  }`,
+                `})`,
+            ].join('\n'),
+        }),
+        // 4) Heavy melee test: aggressive large troll with a hammer slam.
+        normalizeNpcConfig({
+            id: 'demo:troll-guardian',
+            name: 'Grondak',
+            model: 'large-troll',
+            variant: 'guardian',
+            beard: 'full',
+            position: { x: 20, y: 5, z: 7 },
+            yaw: -Math.PI * 0.55,
+            scale: 1.05,
+            gridAligned: false,
+            collisionEnabled: true,
+            colliderRadius: 0.86,
+            colliderHeight: 3.35,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: 'battle-hammer', handL: null },
+            voice: { preset: 'troll', seed: 'demo-guardian-grondak', volume: 0.66, rate: 0.82 },
+            scriptSource: [
+                `on('level-start', () => {`,
+                `  npc.setPerceptionRadius(NPC_ID, 8)`,
+                `  npc.setHostile(NPC_ID, 'player', true)`,
+                `  npc.setWaypoints(NPC_ID, [{ x: 20, y: 5, z: 7 }])`,
+                `  log(NPC_NAME + ' guards the east path with a heavy hammer.')`,
+                `})`,
+                `on('npc-spotted-enemy', (e) => {`,
+                `  if (e.npcId === NPC_ID) ui.say(NPC_ID, 'Grondak crush!', { seconds: 1.5 })`,
                 `})`,
             ].join('\n'),
         }),
@@ -281,7 +316,8 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
             { position: { x: 6.2, y: groundY + 1, z: 14.8 }, amount: 1 },
         ],
         zones,
-        environment: { soundId: 'music.background', volume: 0.24 },
+        // "Verdant" — warm, pastoral piano bed for the garden.
+        environment: { soundId: 'music.amb.garden', volume: 0.28 },
         ambient: outdoorDay({
             timeOfDay: 16.0,
             skyTint: [1, 0.96, 0.9],
@@ -493,7 +529,8 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
             { position: { x: 240, y: groundY + 1, z: roadZ }, amount: 3 },
             { position: { x: 400, y: groundY + 1, z: roadZ }, amount: 3 },
         ],
-        environment: { soundId: 'music.background', volume: 0.2 },
+        // "Commons" — gentle I–vi–IV–V piano bed for the lived-in town.
+        environment: { soundId: 'music.amb.town', volume: 0.24 },
         ambient: outdoorDay({ timeOfDay: 14 }),
     })
 }

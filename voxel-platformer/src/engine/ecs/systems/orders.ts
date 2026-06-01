@@ -6,6 +6,8 @@ export const FixedOrder = {
     /** NPC patrol/guard/engage brain. After input (so it can react to the
      *  player's just-resolved position) and before movement/physics. */
     npcBehaviour: 250,
+    /** Timed melee lock/hit resolution after actors have aimed for the tick. */
+    meleeCombat: 275,
     movement: 300,
     physics: 400,
     /** Awake rigid-body pair separation (e.g. stone-vs-stone in mid-air). */
@@ -16,6 +18,9 @@ export const FixedOrder = {
     impacts: 480,
     dynamicCollision: 500,
     postPhysics: 600,
+    /** Watches the player's Health for a drop and fires the hurt cue. Runs
+     *  last so every damage source this tick has already been applied. */
+    playerHurtAudio: 620,
 } as const
 
 export const RenderOrder = {

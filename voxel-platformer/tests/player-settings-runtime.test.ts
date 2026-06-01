@@ -5,6 +5,7 @@ import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Vector3, type O
 import { BoxCollider, Grounded, MovingObject, Shield } from '../src/engine/ecs/components'
 import { computeLocomotionParams } from '../src/engine/anim/core'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
+import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
 import { createProjectileLaunchSystem } from '../src/engine/ecs/systems/projectile-launch-system'
 import { createGameWorld } from '../src/engine/ecs/world'
 import type { ActionMap } from '../src/engine/input/actions'
@@ -303,13 +304,16 @@ test('melee attack alternates thrust and wide swing animations', () => {
     const controller = world.animControllerByEid.get(player)!
     const idleParams = computeLocomotionParams({ speedXZ: 0, vy: 0, grounded: true, blocked: false, movementState: 0 })
     const system = createMeleeAttackSystem(queuedPressAction(2))
+    const combat = createMeleeCombatSystem()
 
     system.update(world, 1 / 60)
+    combat.update(world, 1 / 60)
     controller.setParams(idleParams)
     controller.update(0.05)
     assert.equal(controller.machine.currentStateId, 'attack')
 
     for (let i = 0; i < 12; i++) {
+        combat.update(world, 0.05)
         controller.setParams(idleParams)
         controller.update(0.05)
     }

@@ -1,16 +1,15 @@
-import { hasComponent, query } from 'bitecs'
-import { PlayerControlled, Position, Rotation, Shield } from '../components'
-import { applyDamage, HALF_HEART } from '../combat'
+import { query } from 'bitecs'
+import { PlayerControlled, Position } from '../components'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushScriptTriggerEvent, type GameWorld } from '../world'
-import { pushDebugHitbox } from '../debug-hitboxes'
 import type { ChunkManager } from '../../voxel/chunk-manager'
 import { findPath } from '../../voxel/voxel-path'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
-import { damageNpc, type NpcAiState, type NpcPendingHammerHit, type NpcRuntimeState, type Vec3Like } from '../../../game/npcs/npc-types'
+import { type NpcAiState, type NpcRuntimeState, type Vec3Like } from '../../../game/npcs/npc-types'
 import { NPC_TARGET_PLAYER } from '../../../game/npcs/npc-ai'
-import { HUMANOID_ANIM_TIMINGS } from '../../../game/anim/clip-timings'
+import { isMeleeActorLocked, startMeleeAttack } from '../melee-combat'
+import { MELEE_ATTACK_DEFS } from '../melee-types'
 
 // Tuning — deliberately gentle so NPCs read as "simple guards", not RPG combat AI.
 const MOVE_SPEED = 2.6
@@ -18,11 +17,6 @@ const ATTACK_RANGE = 1.7
 const ATTACK_COOLDOWN = 0.9
 const HAMMER_ATTACK_RANGE = 2.45
 const HAMMER_ATTACK_COOLDOWN = 1.25
-const HAMMER_IMPACT_DELAY = HUMANOID_ANIM_TIMINGS.hammerImpact
-const HAMMER_IMPACT_RADIUS = 1.15
-const HAMMER_IMPACT_VERTICAL = 1.8
-// Default enemy hit = half a heart against the player's heart pool.
-const ATTACK_DAMAGE = HALF_HEART
 const THINK_INTERVAL = 0.25
 const REPATH_INTERVAL = 0.5
 const ARRIVE_EPS = 0.2
@@ -60,10 +54,9 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
 
             for (const rt of gw.npcRuntimeById.values()) {
                 if (rt.dying) {
-                    rt.pendingHammerHit = undefined
+                    gw.meleeAttacks.delete(`npc:${rt.id}`)
                     continue
                 }
-                updatePendingHammerHit(gw, rt, player, dt)
                 if (!rt.ai) continue
                 updateNpc(gw, rt, rt.ai, player, dt)
             }
@@ -74,6 +67,11 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
         ai.thinkCooldown -= dt
         ai.repathCooldown -= dt
         ai.attackCooldown -= dt
+
+        if ((rt.stunSeconds ?? 0) > 0 || isMeleeActorLocked(gw, { kind: 'npc', id: rt.id })) {
+            ai.path = null
+            return
+        }
 
         if (ai.thinkCooldown <= 0) {
             ai.thinkCooldown = THINK_INTERVAL
@@ -110,7 +108,7 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
             face(rt, dx, dz)
             if (dist <= attackRange(rt)) {
                 ai.path = null
-                tryAttack(gw, rt, ai, ai.targetId, player)
+                tryAttack(gw, rt, ai, ai.targetId)
             } else {
                 ensurePath(gw, rt, ai, target)
                 moveAlongPath(gw, rt, ai, dt)
@@ -195,113 +193,19 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
         gw.obstacles.add(rt.obstacleId, obstacleBox)
     }
 
-    function tryAttack(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, targetId: string, player: PlayerSnapshot | null): void {
+    function tryAttack(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, targetId: string): void {
         if (ai.attackCooldown > 0) return
         const clip = rt.attackClip ?? 'attack'
+        const def = clip === 'hammerAttack' ? MELEE_ATTACK_DEFS['hammer-slam'] : MELEE_ATTACK_DEFS['npc-slash']
+        if (!startMeleeAttack(gw, { kind: 'npc', id: rt.id }, def, { targetId })) return
         ai.attackCooldown = clip === 'hammerAttack' ? HAMMER_ATTACK_COOLDOWN : ATTACK_COOLDOWN
         rt.requestAttack = true // npc-render plays the swing
         rt.requestAttackClip = clip
-        if (clip === 'hammerAttack') {
-            const target = enemyPosition(gw, targetId, player)
-            scheduleHammerHit(gw, rt, targetId, target)
-            return
-        }
-        pushNpcAttackDebug(gw, rt)
-        if (targetId === NPC_TARGET_PLAYER) {
-            if (player && !blockedByShield(gw, player.eid, rt)) {
-                applyDamage(gw, player.eid, ATTACK_DAMAGE)
-            }
-            return
-        }
-        const target = gw.npcRuntimeById.get(targetId)
-        if (target) damageNpc(target, ATTACK_DAMAGE)
-    }
-
-    function updatePendingHammerHit(gw: GameWorld, rt: NpcRuntimeState, player: PlayerSnapshot | null, dt: number): void {
-        const hit = rt.pendingHammerHit
-        if (!hit) return
-        hit.seconds -= dt
-        pushHammerDebug(gw, rt, hit, hit.seconds > 0 ? 0.08 : 0.22)
-        if (hit.seconds > 0) return
-        rt.pendingHammerHit = undefined
-        if (player && pointInsideHammerHit(hit, player.x, player.y, player.z) && !blockedByShield(gw, player.eid, rt)) {
-            applyDamage(gw, player.eid, hit.damage)
-        }
-        for (const npc of gw.npcRuntimeById.values()) {
-            if (npc.id === rt.id || npc.dying) continue
-            if (pointInsideHammerHit(hit, npc.position.x, npc.position.y, npc.position.z)) damageNpc(npc, hit.damage)
-        }
-    }
-
-    function scheduleHammerHit(gw: GameWorld, rt: NpcRuntimeState, targetId: string, target: Vec3Like | null): void {
-        const center = hammerImpactCenter(rt, target)
-        rt.pendingHammerHit = {
-            seconds: HAMMER_IMPACT_DELAY,
-            x: center.x,
-            y: center.y,
-            z: center.z,
-            radius: HAMMER_IMPACT_RADIUS,
-            damage: ATTACK_DAMAGE,
-            targetId,
-        }
-        pushHammerDebug(gw, rt, rt.pendingHammerHit, HAMMER_IMPACT_DELAY)
     }
 }
 
 function attackRange(rt: NpcRuntimeState): number {
     return (rt.attackClip ?? 'attack') === 'hammerAttack' ? HAMMER_ATTACK_RANGE : ATTACK_RANGE
-}
-
-function hammerImpactCenter(rt: NpcRuntimeState, target: Vec3Like | null): Vec3Like {
-    const fx = Math.sin(rt.yaw)
-    const fz = Math.cos(rt.yaw)
-    if (!target) {
-        return {
-            x: rt.position.x + fx * 1.35,
-            y: rt.position.y,
-            z: rt.position.z + fz * 1.35,
-        }
-    }
-    const dx = target.x - rt.position.x
-    const dz = target.z - rt.position.z
-    const dist = Math.hypot(dx, dz)
-    if (dist <= HAMMER_ATTACK_RANGE && dist > 1e-3) {
-        return { x: target.x, y: target.y, z: target.z }
-    }
-    return {
-        x: rt.position.x + fx * Math.min(HAMMER_ATTACK_RANGE, Math.max(1.35, dist)),
-        y: target.y,
-        z: rt.position.z + fz * Math.min(HAMMER_ATTACK_RANGE, Math.max(1.35, dist)),
-    }
-}
-
-function pointInsideHammerHit(hit: NpcPendingHammerHit, x: number, y: number, z: number): boolean {
-    if (Math.abs(y - hit.y) > HAMMER_IMPACT_VERTICAL) return false
-    const dx = x - hit.x
-    const dz = z - hit.z
-    return dx * dx + dz * dz <= hit.radius * hit.radius
-}
-
-function pushHammerDebug(gw: GameWorld, rt: NpcRuntimeState, hit: NpcPendingHammerHit, ttl: number): void {
-    pushDebugHitbox(gw, {
-        id: `npc:${rt.id}:hammer`,
-        kind: 'circle',
-        ttl,
-        color: hit.seconds > 0 ? [1.0, 0.78, 0.18] : [1.0, 0.22, 0.1],
-        center: { x: hit.x, y: hit.y + 0.04, z: hit.z },
-        radius: hit.radius,
-    })
-}
-
-function pushNpcAttackDebug(gw: GameWorld, rt: NpcRuntimeState): void {
-    pushDebugHitbox(gw, {
-        id: `npc:${rt.id}:attack`,
-        kind: 'circle',
-        ttl: 0.24,
-        color: [1.0, 0.32, 0.16],
-        center: { x: rt.position.x, y: rt.position.y + 0.04, z: rt.position.z },
-        radius: attackRange(rt),
-    })
 }
 
 function nearestEnemy(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, player: PlayerSnapshot | null): string | null {
@@ -333,22 +237,6 @@ function enemyPosition(gw: GameWorld, targetId: string, player: PlayerSnapshot |
     if (targetId === NPC_TARGET_PLAYER) return player ? { x: player.x, y: player.y, z: player.z } : null
     const other = gw.npcRuntimeById.get(targetId)
     return other && !other.dying ? other.position : null
-}
-
-function blockedByShield(gw: GameWorld, playerEid: number, rt: NpcRuntimeState): boolean {
-    if (!hasComponent(gw, playerEid, Shield) || Shield.raised[playerEid] !== 1) return false
-    // Block arc is centred on the facing yaw rotated by the shield's offset
-    // (0 = front guard, -π/2 = passive left-flank guard).
-    const blockYaw = Rotation.y[playerEid]! + Shield.blockYawOffset[playerEid]!
-    const fx = Math.sin(blockYaw)
-    const fz = Math.cos(blockYaw)
-    const ax = rt.position.x - Position.x[playerEid]!
-    const az = rt.position.z - Position.z[playerEid]!
-    const ad = Math.hypot(ax, az)
-    if (ad < 1e-3) return false
-    if ((fx * ax + fz * az) / ad < Shield.blockArcCos[playerEid]!) return false
-    const dy = rt.position.y - Position.y[playerEid]!
-    return dy >= Shield.minY[playerEid]! && dy <= Shield.maxY[playerEid]!
 }
 
 function face(rt: NpcRuntimeState, dx: number, dz: number): void {

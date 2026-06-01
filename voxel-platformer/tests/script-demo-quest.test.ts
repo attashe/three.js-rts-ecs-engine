@@ -238,7 +238,7 @@ test('demo quest: talking to the keeper starts the quest and spawns three shards
     ))
 })
 
-test('demo quest: keeper trade option opens the arrow shop', async () => {
+test('demo quest: keeper trade option opens the supply shop', async () => {
     const h = makeHarness({
         dialogueChoiceId: 'trade',
         tradeResult: {
@@ -262,6 +262,9 @@ test('demo quest: keeper trade option opens the arrow shop', async () => {
     assert.equal(request.items?.[0]?.id, 'arrows.bundle')
     assert.equal(request.items?.[0]?.resource, 'arrows')
     assert.equal(request.items?.[0]?.unitSize, 5)
+    assert.equal(request.items?.[1]?.id, 'heal-potion')
+    assert.equal(request.items?.[1]?.resource, 'heal-potion')
+    assert.equal(request.items?.[1]?.unitSize, 1)
     assert.equal(h.sys.flags.get('demo.quest.keeper.state'), undefined)
     assert.ok(h.popupMessages.some((msg) => msg.message.includes('10 arrow')))
 })

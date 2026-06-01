@@ -55,6 +55,70 @@ writeWav('death.wav', mix(0.86, [
     noiseBurst(0.08, 0.62, 0.15, 71),
 ]))
 
+// ── Melee combat ─────────────────────────────────────────────────────
+// Driven by the timed melee system (player + NPC attacks). Three event
+// families:
+//   - swing : the weapon cutting air. Bright noise whose cutoff falls as
+//             the blade passes — pure air, NO thud (the thud is the hit).
+//             Light = sword/thrust/npc-slash; heavy = staff/hammer.
+//   - hit   : a body impact. A pitched-down kick thump + a slap
+//             transient; the heavy variant adds low-end and a crunch.
+//   - block : shield catches the blow. A metallic clang from inharmonic
+//             plucks (ratios ~1 : 1.52 : 2.31) so it reads as struck
+//             steel rather than a tuned note.
+// Kept short and not too loud — in a fight these fire several times a
+// second, so any ring-out or excess low-end fatigues fast.
+writeWav('sword-swing.wav', mix(0.28, [
+    chirpNoise(0.00, 0.20, 2600, 600, 0.30, 8101), // blade cutting air, cutoff falls
+    filteredNoise(0.00, 0.16, 0.10, 1800, 8111),   // body of the rush
+    chirp(0.02, 0.18, 900, 320, 0.06),             // faint tonal "shing"
+]))
+
+writeWav('heavy-swing.wav', mix(0.38, [
+    chirpNoise(0.00, 0.30, 1600, 280, 0.34, 8121), // slower, darker sweep
+    filteredNoise(0.00, 0.26, 0.14, 900, 8131),
+    rumble(0.02, 0.34, 70, 0.10, 8141),            // weight behind the swing
+]))
+
+writeWav('melee-hit.wav', mix(0.30, [
+    kick(0.00, 0.30),                              // body thump
+    pluck(0.00, 0.10, 120, 0.40),                  // impact body
+    noiseBurst(0.00, 0.05, 0.40, 8151),            // slap transient
+    filteredNoise(0.01, 0.12, 0.10, 1400, 8161),   // grit
+]))
+
+writeWav('melee-hit-heavy.wav', mix(0.40, [
+    kick(0.00, 0.34),
+    pluck(0.00, 0.14, 90, 0.50),                   // deeper body
+    noiseBurst(0.00, 0.05, 0.55, 8171),
+    crackle(0.00, 0.18, 0.12, 0.30, 8181),         // bone/wood crunch debris
+    rumble(0.02, 0.34, 60, 0.18, 8191),            // low-end shove
+]))
+
+writeWav('shield-block.wav', mix(0.34, [
+    noiseBurst(0.00, 0.03, 0.55, 8201),            // the clack of contact
+    pluck(0.00, 0.22, 320, 0.34),                  // metallic body
+    pluck(0.00, 0.26, 487, 0.22),                  // inharmonic partial → "metal"
+    pluck(0.005, 0.30, 740, 0.16),                 // high ring
+    filteredNoise(0.00, 0.10, 0.10, 3000, 8211),   // bright shimmer
+]))
+
+// Hurt grunts — a short falling "ugh" when a body takes (non-lethal)
+// damage. A square chirp dropping in pitch (the vocalisation) over a
+// quick breath of filtered noise. Player sits lower/grounded; NPC is a
+// touch brighter and shorter so you can tell who got hit without looking.
+writeWav('player-hurt.wav', mix(0.26, [
+    chirp(0.00, 0.16, 300, 150, 0.32), // falling grunt
+    chirp(0.01, 0.13, 200, 110, 0.18), // lower body
+    filteredNoise(0.00, 0.12, 0.12, 1100, 8221), // breath
+]))
+
+writeWav('npc-hurt.wav', mix(0.22, [
+    chirp(0.00, 0.13, 380, 190, 0.30),
+    chirp(0.01, 0.10, 250, 150, 0.16),
+    filteredNoise(0.00, 0.10, 0.10, 1400, 8231),
+]))
+
 // ── Character footsteps (per surface) ────────────────────────────────
 // Five surface families × 2 variants each. The locomotion system
 // detects the voxel under the player's feet and picks the matching
@@ -198,6 +262,15 @@ writeWav('background-cave-loop.wav', caveLoop(7.2))
 writeWav('piano-ambient-quiet.wav', pianoQuietLoop(8.0))
 writeWav('piano-ambient-night.wav', pianoNightLoop(9.6))
 writeWav('piano-ambient-drift.wav', pianoDriftLoop(8.8))
+
+// Ambient music set — calm, intriguing, piano-led location beds in the
+// C418 vein (see the `ambStartLoop` family below). Long loops so the
+// repeat is hard to catch; one key/register/density per location.
+writeWav('amb-start-loop.wav',   ambStartLoop(12.0))
+writeWav('amb-garden-loop.wav',  ambGardenLoop(13.0))
+writeWav('amb-town-loop.wav',    ambTownLoop(14.0))
+writeWav('amb-tension-loop.wav', ambTensionLoop(10.0))
+writeWav('amb-cave-loop.wav',    ambCaveLoop(16.0))
 
 // ── Weather (new) ────────────────────────────────────────────────────
 
@@ -634,6 +707,68 @@ function pianoNote(start, end, hz, amp) {
     }
 }
 
+/**
+ * Warm synth pad — the bed the piano floats over in the new ambient
+ * set. Two slightly detuned sines plus a quiet fifth, wrapped in a slow
+ * raised-sine swell so the note breathes in and out instead of switching
+ * on. Deliberately very low amplitude: it's felt more than heard, the
+ * way C418's pads sit under the piano. No harmonics-chopping decay (that
+ * would make it a bell) — the swell is the whole envelope.
+ */
+function padNote(start, end, hz, amp) {
+    return (signal) => {
+        const a = Math.floor(start * sampleRate)
+        const b = Math.min(signal.length, Math.floor(end * sampleRate))
+        const len = Math.max(1, b - a)
+        const twoPi = Math.PI * 2
+        for (let i = a; i < b; i++) {
+            const t = (i - a) / sampleRate
+            const p = (i - a) / len
+            // 0 → 1 → 0 over the note (sine bell) so there's no attack
+            // click and no release thud.
+            const env = Math.sin(Math.PI * Math.min(1, p))
+            const v =
+                Math.sin(twoPi * hz * t) +
+                0.7 * Math.sin(twoPi * hz * 1.004 * t) + // slow detune shimmer
+                0.25 * Math.sin(twoPi * hz * 1.5 * t)    // soft fifth for warmth
+            signal[i] += v * amp * env
+        }
+    }
+}
+
+/**
+ * Cave water drop. A clean sine "tink" that bends down fast — the pitch
+ * a droplet sheds as it pulls off the stone — followed by two fainter
+ * echoes (~0.2s and ~0.4s later) for the reverberant tail you only hear
+ * underground. Pure sine on purpose: a square wave would read as a chip
+ * blip, not water. Used sparsely so it stays a *rare* punctuation, never
+ * a rhythm.
+ */
+function waterDrop(start, hz, amp) {
+    return (signal) => {
+        const twoPi = Math.PI * 2
+        const ping = (offset, gain) => {
+            const a = Math.floor((start + offset) * sampleRate)
+            const dur = 0.18
+            const b = Math.min(signal.length, Math.floor((start + offset + dur) * sampleRate))
+            const len = Math.max(1, b - a)
+            for (let i = a; i < b; i++) {
+                const t = (i - a) / sampleRate
+                const p = (i - a) / len
+                // Pitch falls fast over the first ~35 ms, then settles.
+                const f = hz * (1.5 - 0.6 * Math.min(1, p * 5))
+                const body = Math.sin(twoPi * f * t) * Math.exp(-p * 11)
+                // Bright surface-break transient, decays much faster.
+                const tick = Math.sin(twoPi * f * 2 * t) * 0.3 * Math.exp(-p * 26)
+                signal[i] += (body + tick) * gain * amp
+            }
+        }
+        ping(0.00, 1.00)
+        ping(0.21, 0.34) // first echo
+        ping(0.43, 0.13) // distant cave tail
+    }
+}
+
 /** Closed hi-hat: very short filtered noise burst. */
 function hihat(start, amp, seed) {
     return (signal) => {
@@ -906,6 +1041,168 @@ function pianoDriftLoop(duration) {
         pianoNote(start + 0.55, start + 1.6, p.lo, 0.11)(signal)
     }
     crossfadeEnds(signal, 0.50)
+    return signal
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Ambient music set — "calm and intriguing" location beds
+// ─────────────────────────────────────────────────────────────────────
+// A C418-inspired family: sparse acoustic-ish piano (`pianoNote`) over a
+// warm breathing pad (`padNote`), no drums, long loops, lots of empty
+// space. Tuned to stay un-fatiguing across hours — low amplitudes, soft
+// attacks, gentle modal colour for "intrigue" instead of big hooks. Each
+// location gets its own key, register and density so they read as
+// distinct places, not one track re-skinned.
+
+/**
+ * Start / spawn bed — "Threshold". C major with a single raised 4th
+ * (F#, Lydian) that gives the otherwise-welcoming phrase a curious,
+ * open-ended lift. Pad climbs C2 → G2 across the loop; A2 inner warmth
+ * holds throughout.
+ */
+function ambStartLoop(duration) {
+    const signal = make(duration)
+    padNote(0, duration * 0.62, 65, 0.05)(signal)          // C2
+    padNote(duration * 0.5, duration, 98, 0.045)(signal)   // G2 lift
+    padNote(0, duration, 110, 0.03)(signal)                // A2 inner warmth
+    const phrase = [
+        { at: 0.05, hz: 330, dur: 1.6 }, // E4
+        { at: 0.18, hz: 392, dur: 1.4 }, // G4
+        { at: 0.32, hz: 440, dur: 1.8 }, // A4
+        { at: 0.48, hz: 370, dur: 1.6 }, // F#4 — Lydian colour, the "intrigue"
+        { at: 0.64, hz: 330, dur: 1.4 }, // E4
+        { at: 0.78, hz: 294, dur: 2.0 }, // D4
+        { at: 0.90, hz: 262, dur: 2.2 }, // C4 — resolve home
+    ]
+    for (const n of phrase) {
+        const s = n.at * duration
+        pianoNote(s, s + n.dur, n.hz, 0.15)(signal)
+    }
+    // High bell glints, octave up, very quiet — the "stars" over the bed.
+    pianoNote(0.28 * duration, 0.28 * duration + 1.2, 659, 0.05)(signal)  // E5
+    pianoNote(0.72 * duration, 0.72 * duration + 1.4, 587, 0.045)(signal) // D5
+    filteredNoise(0, duration, 0.03, 5000, 7001)(signal) // faint air/reverb hiss
+    crossfadeEnds(signal, 0.5)
+    return signal
+}
+
+/**
+ * Garden bed — "Verdant". F major with a natural B (F Lydian #4) for a
+ * pastoral, slightly wistful brightness. A recurring two-note rise →
+ * gentle fall, like a question answered. Warmer and a touch denser than
+ * the start bed.
+ */
+function ambGardenLoop(duration) {
+    const signal = make(duration)
+    padNote(0, duration, 87, 0.05)(signal)                 // F2 root
+    padNote(0, duration, 131, 0.03)(signal)                // C3 inner
+    padNote(duration * 0.45, duration, 174, 0.028)(signal) // F3 lift
+    const phrase = [
+        { at: 0.05, hz: 440, dur: 1.2 }, // A4
+        { at: 0.14, hz: 523, dur: 1.4 }, // C5 — question, rising
+        { at: 0.30, hz: 494, dur: 1.6 }, // B4 — Lydian #4, the bright "intrigue"
+        { at: 0.46, hz: 440, dur: 1.4 }, // A4
+        { at: 0.60, hz: 392, dur: 1.6 }, // G4
+        { at: 0.74, hz: 349, dur: 2.2 }, // F4 — answer, resolve
+        { at: 0.88, hz: 262, dur: 1.8 }, // C4
+    ]
+    for (const n of phrase) {
+        const s = n.at * duration
+        pianoNote(s, s + n.dur, n.hz, 0.14)(signal)
+    }
+    pianoNote(0.22 * duration, 0.22 * duration + 1.0, 698, 0.045)(signal) // F5 glint
+    pianoNote(0.66 * duration, 0.66 * duration + 1.2, 880, 0.04)(signal)  // A5 glint
+    filteredNoise(0, duration, 0.03, 5200, 7011)(signal)
+    crossfadeEnds(signal, 0.5)
+    return signal
+}
+
+/**
+ * Town bed — "Commons". The only track with real harmonic motion: a
+ * slow I–vi–IV–V in G major (G → Em → C → D) traced by the bass pad,
+ * with a gentle rolling three-note arpeggio over each chord. Reads as
+ * "a warm, lived-in place" without ever building to a hook.
+ */
+function ambTownLoop(duration) {
+    const signal = make(duration)
+    // Bass roots — one chord per quarter of the loop, overlapping so the
+    // changes melt into each other.
+    padNote(0.00 * duration, 0.30 * duration, 98, 0.05)(signal) // G2  (I)
+    padNote(0.25 * duration, 0.55 * duration, 82, 0.05)(signal) // E2  (vi)
+    padNote(0.50 * duration, 0.80 * duration, 65, 0.05)(signal) // C2  (IV)
+    padNote(0.75 * duration, 1.00 * duration, 73, 0.05)(signal) // D2  (V)
+    padNote(0, duration, 247, 0.022)(signal)                    // B3 inner warmth
+    const chords = [
+        { at: 0.02, notes: [392, 494, 587] }, // G:  G4 B4 D5
+        { at: 0.27, notes: [330, 392, 494] }, // Em: E4 G4 B4
+        { at: 0.52, notes: [262, 330, 392] }, // C:  C4 E4 G4
+        { at: 0.77, notes: [294, 370, 440] }, // D:  D4 F#4 A4
+    ]
+    for (const c of chords) {
+        for (let k = 0; k < c.notes.length; k++) {
+            const s = c.at * duration + k * 0.5 // ~half-second roll, key-independent
+            pianoNote(s, s + 2.4, c.notes[k], 0.11)(signal)
+        }
+    }
+    filteredNoise(0, duration, 0.03, 5200, 7021)(signal)
+    crossfadeEnds(signal, 0.5)
+    return signal
+}
+
+/**
+ * Extreme-situation bed — "Unrest". Still ambient, NOT an action loop:
+ * dread, not a drum-driven fight. A low D2 beats against a quiet Eb2 a
+ * semitone above (the two frequencies clash and pulse on their own); a
+ * tritone Ab2 swells in mid-loop; a sub-bass G1 is felt more than heard.
+ * Sparse low piano picks out minor-third and tritone colours. Kept quiet
+ * and slow on purpose — it should make the player uneasy, not annoyed.
+ * Intended for script-triggered danger (e.g. an NPC turning hostile):
+ *   audio.play('music.amb.tension', { fade: 1.5 })
+ */
+function ambTensionLoop(duration) {
+    const signal = make(duration)
+    padNote(0, duration, 73, 0.06)(signal)                       // D2
+    padNote(0, duration, 78, 0.03)(signal)                       // Eb2 — semitone clash
+    padNote(duration * 0.35, duration * 0.8, 104, 0.04)(signal)  // Ab2 — tritone swell
+    padNote(0, duration, 49, 0.05)(signal)                       // G1 — sub rumble, felt
+    pianoNote(0.10 * duration, 0.10 * duration + 2.0, 147, 0.10)(signal) // D3
+    pianoNote(0.12 * duration, 0.12 * duration + 2.0, 175, 0.08)(signal) // F3 — minor 3rd
+    pianoNote(0.42 * duration, 0.42 * duration + 1.8, 208, 0.09)(signal) // Ab3 — tritone, the dread note
+    pianoNote(0.66 * duration, 0.66 * duration + 1.6, 156, 0.07)(signal) // Eb3 — minor 2nd, tension
+    pianoNote(0.84 * duration, 0.84 * duration + 2.2, 147, 0.10)(signal) // D3 — unresolved settle
+    filteredNoise(0, duration, 0.05, 700, 7031)(signal) // dark, low-cutoff air
+    crossfadeEnds(signal, 0.45)
+    return signal
+}
+
+/**
+ * Cave bed — "Deepwater". The sparsest track: a deep D2 + A2 drone (C2
+ * joins for depth in the second half), a handful of distant long-decay
+ * piano notes, and rare echoing water drops at irregular spots. The low
+ * 300 Hz air hum is the underground "pressure". Built so long stretches
+ * are nearly silent — the drops are events, not a beat.
+ *   audio.play('music.amb.cave', { fade: 1.5 })
+ */
+function ambCaveLoop(duration) {
+    const signal = make(duration)
+    padNote(0, duration, 73, 0.055)(signal)             // D2
+    padNote(0, duration, 110, 0.03)(signal)             // A2
+    padNote(duration * 0.5, duration, 65, 0.04)(signal) // C2 depth, second half
+    pianoNote(0.15 * duration, 0.15 * duration + 2.6, 220, 0.08)(signal) // A3
+    pianoNote(0.48 * duration, 0.48 * duration + 3.0, 175, 0.07)(signal) // F3
+    pianoNote(0.78 * duration, 0.78 * duration + 3.4, 147, 0.07)(signal) // D3
+    // Rare water drops — irregular spacing, varied pitch, each echoes.
+    const drops = [
+        { at: 0.07, hz: 880 },
+        { at: 0.24, hz: 1175 },
+        { at: 0.38, hz: 740 },
+        { at: 0.55, hz: 988 },
+        { at: 0.69, hz: 1318 },
+        { at: 0.86, hz: 831 },
+    ]
+    for (const d of drops) waterDrop(d.at * duration, d.hz, 0.20)(signal)
+    filteredNoise(0, duration, 0.04, 300, 7041)(signal) // deep underground hum
+    crossfadeEnds(signal, 0.6)
     return signal
 }
 

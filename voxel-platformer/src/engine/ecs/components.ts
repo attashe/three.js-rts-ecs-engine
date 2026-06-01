@@ -143,6 +143,12 @@ export const Shield = {
     maxY: new Float32Array(MAX_ENTITIES),
 }
 
+/** Short combat interruption timer. Player control and weapon systems ignore
+ *  input while present; melee-combat-system owns countdown/removal. */
+export const Stunned = {
+    seconds: new Float32Array(MAX_ENTITIES),
+}
+
 // Tag components — empty objects, used purely as identity in queries.
 export const Renderable = {}
 /** Renderable that doesn't move once placed. RenderSync syncs its transform

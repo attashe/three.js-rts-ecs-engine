@@ -73,5 +73,6 @@ export function disposeNpc(world: GameWorld, id: string): void {
     if (!runtime) return
     if (runtime.zoneId) removeZone(world, runtime.zoneId)
     if (runtime.obstacleId !== null) world.obstacles.remove(runtime.obstacleId)
+    world.meleeAttacks.delete(`npc:${id}`)
     world.npcRuntimeById.delete(id)
 }

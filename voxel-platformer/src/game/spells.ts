@@ -1,5 +1,5 @@
 import { hasComponent, query } from 'bitecs'
-import { Grounded, PlayerControlled, Position, Rotation } from '../engine/ecs/components'
+import { Grounded, PlayerControlled, Position, Rotation, Stunned } from '../engine/ecs/components'
 import type { ActionId, ActionMap } from '../engine/input/actions'
 import type { System } from '../engine/ecs/systems/system'
 import { FixedOrder } from '../engine/ecs/systems/orders'
@@ -125,6 +125,7 @@ export function createSpellCastSystem(actions: ActionMap, opts: SpellCastOptions
             if (players.length === 0) return
             const player = players[0]!
             if (opts.canUse && !opts.canUse(gw, player)) return
+            if (hasComponent(world, player, Stunned)) return
             if (!hasComponent(world, player, Grounded)) return
             if (!actions.consumePressed(actionId, player)) return
 

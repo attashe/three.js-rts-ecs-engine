@@ -136,7 +136,15 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
     inventory: {
         gold: 0,
         arrows: 0,
-        items: {},
+        items: {
+            'heal-potion': {
+                quantity: 2,
+                name: 'Healing Potion',
+                description: 'Restores health when potion use is wired into combat.',
+                category: 'consumables',
+                icon: 'heal-potion',
+            },
+        },
     },
     equipment: normalizePlayerEquipment(),
     moveSpeed: 5,
@@ -186,7 +194,9 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
         inventory: {
             gold: clampInt(input?.inventory?.gold, 0, PLAYER_INVENTORY_LIMITS.gold, base.inventory.gold),
             arrows: clampInt(input?.inventory?.arrows, 0, PLAYER_INVENTORY_LIMITS.arrows, base.inventory.arrows),
-            items: normalizeInventoryItems(input?.inventory?.items),
+            items: input === undefined || input === null
+                ? copyInventoryItems(base.inventory.items)
+                : normalizeInventoryItems(input.inventory?.items),
         },
         equipment: normalizePlayerEquipment(input?.equipment),
         moveSpeed: clampNumber(input?.moveSpeed, 0, 30, base.moveSpeed),

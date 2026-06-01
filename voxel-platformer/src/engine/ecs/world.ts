@@ -5,8 +5,9 @@ import { ObstacleRegistry } from './obstacle-registry'
 import { EngineMetrics } from '../metrics'
 import type { Zone, ZoneTriggerEvent, ZoneTriggerSource } from './zones'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../../game/player-settings'
-import type { InventoryItemMap, InventoryItemOptions } from '../../game/inventory'
+import { copyInventoryItems, type InventoryItemMap, type InventoryItemOptions } from '../../game/inventory'
 import type { NpcRuntimeState } from '../../game/npcs/npc-types'
+import type { ActiveMeleeAttack } from './melee-types'
 
 export interface VoxelCoord {
     x: number
@@ -270,6 +271,9 @@ export interface GameContext {
     /** Per-NPC combat/animation runtime (NPCs aren't ECS entities). Melee +
      *  scripts write request flags; npc-render reads them. */
     npcRuntimeById: Map<string, NpcRuntimeState>
+    /** Active timed melee attacks keyed by actor (`player:<eid>` / `npc:<id>`).
+     *  The melee combat system owns timeline advancement and hit resolution. */
+    meleeAttacks: Map<string, ActiveMeleeAttack>
     /** AABBs of settled rigid bodies the voxel-sweep treats as solid. */
     obstacles: ObstacleRegistry
     inventory: PickupInventory
@@ -412,8 +416,13 @@ export function createGameWorld(): GameWorld {
         animControllerByEid: new Map<number, AnimationController>(),
         equipmentByEid: new Map<number, Map<string, Object3D>>(),
         npcRuntimeById: new Map<string, NpcRuntimeState>(),
+        meleeAttacks: new Map<string, ActiveMeleeAttack>(),
         obstacles: new ObstacleRegistry(),
-        inventory: { gold: 0, arrows: 0, items: {} },
+        inventory: {
+            gold: DEFAULT_PLAYER_SETTINGS.inventory.gold,
+            arrows: DEFAULT_PLAYER_SETTINGS.inventory.arrows,
+            items: copyInventoryItems(DEFAULT_PLAYER_SETTINGS.inventory.items),
+        },
         pickupMetaByEid: new Map<number, PickupScriptMeta>(),
         pickupEntityByScriptId: new Map<string, number>(),
         pistons: [],
