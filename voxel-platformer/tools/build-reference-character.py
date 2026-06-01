@@ -9,7 +9,8 @@ It writes `public/models/reference-character.glb`, authored to the contract in
 `docs/animation-blender-convention.md`:
   - glTF 2.0 binary, +Y up, feet at the origin, ~1.6 units tall
   - one armature named `Armature` + one skinned mesh
-  - socket bones: socket.head, socket.hand.R, socket.hand.L, socket.back
+  - socket bones: socket_head, socket_hand_R, socket_hand_L, socket_back,
+    socket_foot_R, socket_foot_L
   - actions named: idle, walk, run, jump, fall, land
 
 This is the canonical Blender mirror of the code reference rig — proof the import
@@ -51,6 +52,8 @@ BONES = [
     ("socket_hand_R", (-0.30, 0.0, 1.00), (-0.30, 0.0, 0.88), "upperArm.R", False),
     ("socket_hand_L", (0.30, 0.0, 1.00), (0.30, 0.0, 0.88), "upperArm.L", False),
     ("socket_back",   (0.0, 0.12, 1.30), (0.0, 0.20, 1.30), "spine",      False),
+    ("socket_foot_R", (-0.10, 0.02, 0.18), (-0.10, 0.02, 0.04), "thigh.R", False),
+    ("socket_foot_L", (0.10, 0.02, 0.18), (0.10, 0.02, 0.04), "thigh.L",   False),
 ]
 
 

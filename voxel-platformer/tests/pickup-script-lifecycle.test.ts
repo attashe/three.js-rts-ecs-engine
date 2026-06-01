@@ -8,6 +8,11 @@ import {
     scriptPickupExists,
     spawnScriptPickup,
 } from '../src/game/pickups'
+import {
+    HIGH_JUMP_BOOTS_ITEM_ID,
+    HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+    HIGH_JUMP_BOOTS_NAME,
+} from '../src/game/high-jump-boots'
 
 test('spawnScriptPickup + scriptPickupExists round-trip a stable id', () => {
     const world = createGameWorld()
@@ -46,6 +51,28 @@ test('spawnScriptPickup stores durable inventory metadata for custom pickups', (
             category: 'quest',
             icon: 'quest-shard',
         },
+    })
+})
+
+test('spawnScriptPickup renders high jump boots with the boots pickup prop', () => {
+    const world = createGameWorld()
+    spawnScriptPickup(world, {
+        kind: HIGH_JUMP_BOOTS_ITEM_ID,
+        position: { x: 1, y: 2, z: 3 },
+        id: 'boots.meta',
+        label: HIGH_JUMP_BOOTS_NAME,
+        inventoryItem: {
+            id: HIGH_JUMP_BOOTS_ITEM_ID,
+            ...HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+        },
+    })
+
+    const eid = world.pickupEntityByScriptId.get('boots.meta')!
+    assert.equal(world.object3DByEid.get(eid)?.name, 'HighJumpBootsProp')
+    assert.deepEqual(world.pickupMetaByEid.get(eid)?.inventoryItem, {
+        id: HIGH_JUMP_BOOTS_ITEM_ID,
+        quantity: 1,
+        options: HIGH_JUMP_BOOTS_ITEM_OPTIONS,
     })
 })
 

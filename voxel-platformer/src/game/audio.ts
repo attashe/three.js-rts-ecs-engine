@@ -103,6 +103,17 @@ export const GameAudio = {
     PlayerHurt: 'sfx.hurt.player',
     NpcHurt: 'sfx.hurt.npc',
 
+    // ── Spells ───────────────────────────────────────────────────────
+    // Each staff spell has a cast cue (played as it fires) and an impact
+    // cue (played where it lands). Casts are flat (you cast them); impacts
+    // play spatially at the point of contact.
+    SpellBoltCast: 'sfx.spell.bolt.cast',
+    SpellBoltHit: 'sfx.spell.bolt.hit',
+    SpellNovaCast: 'sfx.spell.nova.cast',
+    SpellNovaHit: 'sfx.spell.nova.hit',
+    SpellOrbCast: 'sfx.spell.orb.cast',
+    SpellOrbZap: 'sfx.spell.orb.zap',
+
     // ── One-shot effects ─────────────────────────────────────────────
     Thunder: 'sfx.thunder',
     FireWhoosh: 'sfx.fire.whoosh',
@@ -143,6 +154,14 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.ShieldBlock,   url: path('shield-block.wav'),    volume: 0.56, maxInstances: 4, priority: 4 },
         { id: GameAudio.PlayerHurt,    url: path('player-hurt.wav'),     volume: 0.50, maxInstances: 2, priority: 5 },
         { id: GameAudio.NpcHurt,       url: path('npc-hurt.wav'),        volume: 0.44, maxInstances: 4, priority: 2 },
+
+        // Spells — cast + impact cues.
+        { id: GameAudio.SpellBoltCast, url: path('bolt-cast.wav'),       volume: 0.46, maxInstances: 3, priority: 3 },
+        { id: GameAudio.SpellBoltHit,  url: path('bolt-hit.wav'),        volume: 0.50, maxInstances: 4, priority: 3 },
+        { id: GameAudio.SpellNovaCast, url: path('nova-cast.wav'),       volume: 0.46, maxInstances: 2, priority: 3 },
+        { id: GameAudio.SpellNovaHit,  url: path('nova-hit.wav'),        volume: 0.42, maxInstances: 5, priority: 2 },
+        { id: GameAudio.SpellOrbCast,  url: path('orb-cast.wav'),        volume: 0.46, maxInstances: 3, priority: 3 },
+        { id: GameAudio.SpellOrbZap,   url: path('orb-zap.wav'),         volume: 0.48, maxInstances: 5, priority: 3 },
 
         // Player locomotion — kept quiet by default so the constant
         // walking cadence doesn't dominate the mix. The locomotion

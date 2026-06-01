@@ -14,8 +14,9 @@ import {
     normalizeInventoryItems,
     removeInventoryItem,
 } from '../src/game/inventory'
-import { consumeHealPotion } from '../src/game/inventory-system'
+import { consumeHealPotion, setHighJumpBootsEquipped } from '../src/game/inventory-system'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 
 function spawnInventoryPlayer(world: GameWorld, current: number, max: number): number {
     const eid = createEntity(world)
@@ -39,14 +40,20 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.equal(removeInventoryItem(items, 'sun-shard', 2), true)
     assert.equal(inventoryItemCount(items, 'sun-shard'), 1)
     assert.equal(addInventoryItem(items, 'heal-potion', 3), true)
+    assert.equal(addInventoryItem(items, HIGH_JUMP_BOOTS_ITEM_ID, 1), true)
     assert.equal(defaultInventoryIcon('heal-potion'), 'heal-potion')
+    assert.equal(defaultInventoryIcon(HIGH_JUMP_BOOTS_ITEM_ID), 'boots')
     assert.deepEqual(listInventoryItems(items, 'consumables').map((item) => [item.id, item.quantity, item.icon]), [
         ['heal-potion', 3, 'heal-potion'],
+    ])
+    assert.deepEqual(listInventoryItems(items, 'accessories').map((item) => [item.id, item.quantity, item.icon]), [
+        [HIGH_JUMP_BOOTS_ITEM_ID, 1, 'boots'],
     ])
 })
 
 test('player settings deep-copy durable inventory and tolerate old saves', () => {
     assert.equal(DEFAULT_PLAYER_SETTINGS.inventory.items['heal-potion']?.quantity, 2)
+    assert.equal(DEFAULT_PLAYER_SETTINGS.equipment.boots, null)
     assert.equal(normalizePlayerSettings().inventory.items['heal-potion']?.quantity, 2)
     const oldSave = normalizePlayerSettings({ inventory: { gold: 4, arrows: 2 } })
     assert.deepEqual(oldSave.inventory.items, {})
@@ -67,6 +74,25 @@ test('player settings deep-copy durable inventory and tolerate old saves', () =>
     assert.equal(settings.inventory.arrows, 3)
     assert.equal(settings.inventory.items['sun-shard']?.quantity, 1)
     assert.equal(copyInventoryItems(settings.inventory.items)['sun-shard']?.quantity, 1)
+})
+
+test('high jump boots equip from durable accessory inventory without being consumed', () => {
+    const world = createGameWorld()
+    world.inventory.items = normalizeInventoryItems({
+        [HIGH_JUMP_BOOTS_ITEM_ID]: { quantity: 1 },
+    })
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+
+    assert.equal(setHighJumpBootsEquipped(world, true), true)
+    assert.equal(world.playerSettings.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
+    assert.equal(world.inventory.items[HIGH_JUMP_BOOTS_ITEM_ID]?.quantity, 1)
+
+    assert.equal(setHighJumpBootsEquipped(world, false), true)
+    assert.equal(world.playerSettings.equipment.boots, null)
+
+    world.inventory.items = {}
+    assert.equal(setHighJumpBootsEquipped(world, true), false)
+    assert.equal(world.playerSettings.equipment.boots, null)
 })
 
 test('heal potion consumption restores one heart and updates inventory settings', () => {

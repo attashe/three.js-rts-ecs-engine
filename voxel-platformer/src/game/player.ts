@@ -98,6 +98,9 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     // player-shield-system drives `raised`, the arc width, and the arc
     // direction (front when T is held, left-flank when passive).
     Shield.raised[eid] = 0
+    Shield.perfect[eid] = 0
+    Shield.heldSeconds[eid] = 0
+    Shield.reloadSeconds[eid] = 0
     Shield.blockArcCos[eid] = 0.5
     Shield.blockYawOffset[eid] = 0
     Shield.minY[eid] = 0
@@ -147,12 +150,20 @@ function buildAnimatedPlayerModel(world: GameWorld, eid: number, settings: Playe
     return model
 }
 
-/** Head item plus weapon hands — demonstrates the socket system and
- *  the iso-important head slot. Re-run after a model swap (sockets are rebuilt). */
+/** Persistent accessories plus weapon hands. Re-run after a model swap
+ *  because sockets are rebuilt with the new rig. */
 function equipDefaultLoadout(world: GameWorld, eid: number): void {
     const head = world.playerSettings.equipment.head
     if (head) equip(world, eid, 'head', head)
     else unequipSlot(world, eid, 'head')
+    const boots = world.playerSettings.equipment.boots
+    if (boots) {
+        equip(world, eid, 'footL', boots)
+        equip(world, eid, 'footR', boots)
+    } else {
+        unequipSlot(world, eid, 'footL')
+        unequipSlot(world, eid, 'footR')
+    }
     applyWeaponStance(world, eid, world.weaponStance)
     syncPlayerHeldTorchVisibility(world)
 }

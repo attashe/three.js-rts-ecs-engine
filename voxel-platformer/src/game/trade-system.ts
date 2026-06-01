@@ -10,6 +10,7 @@ import {
     type NormalizedTradeRequest,
     type TradeSelection,
 } from './trade'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from './high-jump-boots'
 
 interface TradeControllerOptions {
     input: Input
@@ -250,7 +251,8 @@ export function createTradeController(opts: TradeControllerOptions): TradeContro
         d.title.textContent = active.request.title ?? 'Trade'
         d.npcName.textContent = speaker.name
         const potions = active.inventory.items?.['heal-potion']?.quantity ?? 0
-        d.inventory.textContent = `Gold ${active.inventory.gold}  |  Arrows ${active.inventory.arrows}  |  Potions ${potions}`
+        const boots = active.inventory.items?.[HIGH_JUMP_BOOTS_ITEM_ID]?.quantity ?? 0
+        d.inventory.textContent = `Gold ${active.inventory.gold}  |  Arrows ${active.inventory.arrows}  |  Potions ${potions}  |  Boots ${boots}`
         paintAvatar(d.avatar, d.avatarImage, d.avatarInitial, speaker)
 
         d.itemList.innerHTML = ''
@@ -647,6 +649,8 @@ function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLEle
             return arrowBundleIcon(size)
         case 'heal-potion':
             return healPotionIcon(size)
+        case HIGH_JUMP_BOOTS_ITEM_ID:
+            return bootsIcon(size)
     }
 }
 
@@ -719,6 +723,22 @@ function healPotionIcon(size: 'small' | 'large'): HTMLElement {
         borderRadius: isLarge ? '7px 7px 10px 10px' : '5px 5px 7px 7px',
         background: 'linear-gradient(180deg, #ffd7de 0 22%, #e34c64 23% 100%)',
         boxShadow: '0 -7px 0 -2px #d9edf0, inset -4px -5px 0 rgba(85, 10, 22, 0.25), 0 0 8px rgba(227, 76, 100, 0.22)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function bootsIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '34px' : '22px',
+        height: isLarge ? '26px' : '17px',
+        display: 'block',
+        borderRadius: isLarge ? '4px 4px 9px 9px' : '3px 3px 6px 6px',
+        background: '#dff7ff',
+        clipPath: 'polygon(4% 0, 42% 0, 44% 48%, 62% 48%, 64% 0, 96% 0, 96% 58%, 76% 58%, 76% 100%, 52% 100%, 52% 62%, 48% 62%, 48% 100%, 24% 100%, 24% 58%, 4% 58%)',
+        boxShadow: '0 0 10px rgba(101, 215, 255, 0.45)',
     } satisfies Partial<CSSStyleDeclaration>)
     return root
 }

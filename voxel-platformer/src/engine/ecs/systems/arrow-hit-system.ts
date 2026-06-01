@@ -40,8 +40,9 @@ export interface ArrowHitOptions {
     onArrowHitNpc?: (eid: number, npc: NpcRuntimeState) => void
     /** Damage a magic bolt deals to an NPC it strikes. Default 1. */
     boltDamage?: number
-    /** Fires when a magic bolt hits a wall or NPC (just before it despawns). */
-    onBoltHit?: (eid: number) => void
+    /** Fires when a magic bolt hits a wall or NPC (just before it despawns),
+     *  with the bolt eid and the world-space impact point. */
+    onBoltHit?: (eid: number, position: { x: number; y: number; z: number }) => void
 }
 
 export function createArrowHitSystem(
@@ -94,7 +95,7 @@ export function createArrowHitSystem(
                     landed.add(arrow)
                     if (isBolt) {
                         damageNpc(npcHit.npc, boltDamage)
-                        opts.onBoltHit?.(arrow)
+                        opts.onBoltHit?.(arrow, { x: sx + dirX * npcHit.t, y: sy + dirY * npcHit.t, z: sz + dirZ * npcHit.t })
                         despawnEntity(gw, arrow)
                     } else {
                         stickArrowInNpc(gw, arrow, npcHit.npc, sx + dirX * npcHit.t, sy + dirY * npcHit.t, sz + dirZ * npcHit.t)
@@ -114,7 +115,7 @@ export function createArrowHitSystem(
                 if (wallHit !== null) {
                     landed.add(arrow)
                     if (isBolt) {
-                        opts.onBoltHit?.(arrow)
+                        opts.onBoltHit?.(arrow, { x: sx, y: sy, z: sz })
                         despawnEntity(gw, arrow)
                     } else {
                         opts.onArrowLand?.(arrow, { x: wallHit.voxel.x, y: wallHit.voxel.y, z: wallHit.voxel.z })

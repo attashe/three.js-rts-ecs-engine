@@ -5,6 +5,7 @@ import {
     normalizeTradeRequest,
     tradeAvailability,
 } from '../src/game/trade'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 
 const SHOP = normalizeTradeRequest({
     title: 'Field Supplies',
@@ -119,4 +120,40 @@ test('trade buy and sell can mutate durable healing potions', () => {
     if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
     assert.equal(sold.inventory.items?.['heal-potion']?.quantity, 1)
     assert.deepEqual(sold.removed, { 'heal-potion': 1 })
+})
+
+test('trade buy and sell can mutate unique high jump boots', () => {
+    const shop = normalizeTradeRequest({
+        title: 'Field Supplies',
+        items: [{
+            id: HIGH_JUMP_BOOTS_ITEM_ID,
+            name: 'High Jump Boots',
+            resource: HIGH_JUMP_BOOTS_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 10,
+            sellPrice: 5,
+        }],
+    })
+    const item = shop.items[0]!
+
+    const bought = applyTradeSelection(shop, { gold: 12, arrows: 0, items: {} }, {
+        action: 'buy',
+        itemId: HIGH_JUMP_BOOTS_ITEM_ID,
+        quantity: 1,
+    })
+
+    if (bought.status !== 'bought') throw new Error(`expected bought, got ${bought.status}`)
+    assert.equal(bought.inventory.items?.[HIGH_JUMP_BOOTS_ITEM_ID]?.quantity, 1)
+    assert.deepEqual(bought.gained, { [HIGH_JUMP_BOOTS_ITEM_ID]: 1 })
+    assert.equal(tradeAvailability(item, 'buy', bought.inventory).maxQuantity, 0)
+
+    const sold = applyTradeSelection(shop, bought.inventory, {
+        action: 'sell',
+        itemId: HIGH_JUMP_BOOTS_ITEM_ID,
+        quantity: 1,
+    })
+
+    if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
+    assert.equal(sold.inventory.items?.[HIGH_JUMP_BOOTS_ITEM_ID], undefined)
+    assert.deepEqual(sold.removed, { [HIGH_JUMP_BOOTS_ITEM_ID]: 1 })
 })

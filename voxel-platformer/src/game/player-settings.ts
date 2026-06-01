@@ -6,6 +6,7 @@ import {
 import {
     copyPlayerEquipment,
     normalizePlayerEquipment,
+    type BootEquipmentKind,
     type EquipmentHandLoadout,
     type HeadEquipmentKind,
     type PlayerEquipmentSettings,
@@ -109,6 +110,7 @@ export interface PlayerSettings {
 
 export interface PlayerEquipmentSettingsPatch {
     head?: HeadEquipmentKind | null
+    boots?: BootEquipmentKind | null
     melee?: Partial<EquipmentHandLoadout>
     ranged?: Partial<EquipmentHandLoadout>
     magic?: Partial<EquipmentHandLoadout>
@@ -235,6 +237,7 @@ export function applyPlayerSettingsPatch(settings: PlayerSettings, patch: Player
         equipment: patch.equipment !== undefined
             ? {
                 head: patch.equipment.head !== undefined ? patch.equipment.head : currentEquipment.head,
+                boots: patch.equipment.boots !== undefined ? patch.equipment.boots : currentEquipment.boots,
                 melee: { ...currentEquipment.melee, ...patch.equipment.melee },
                 ranged: { ...currentEquipment.ranged, ...patch.equipment.ranged },
                 magic: { ...currentEquipment.magic, ...patch.equipment.magic },

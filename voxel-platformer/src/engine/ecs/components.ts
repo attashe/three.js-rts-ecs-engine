@@ -136,6 +136,12 @@ export const Mana = {
  */
 export const Shield = {
     raised: new Uint8Array(MAX_ENTITIES),
+    /** 1 while the current raised front guard is inside the perfect-block window. */
+    perfect: new Uint8Array(MAX_ENTITIES),
+    /** Seconds the raise action has been held for the current front guard. */
+    heldSeconds: new Float32Array(MAX_ENTITIES),
+    /** Seconds until any shield guard can be raised again after an ordinary block. */
+    reloadSeconds: new Float32Array(MAX_ENTITIES),
     blockArcCos: new Float32Array(MAX_ENTITIES),
     /** Radians added to the actor's yaw to get the block-arc centre direction. */
     blockYawOffset: new Float32Array(MAX_ENTITIES),

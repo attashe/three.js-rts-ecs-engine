@@ -29,6 +29,8 @@ export const SOCKET_ID = {
     handR: 'socket_hand_R',
     handL: 'socket_hand_L',
     back: 'socket_back',
+    footR: 'socket_foot_R',
+    footL: 'socket_foot_L',
 } as const
 export type SocketName = (typeof SOCKET_ID)[keyof typeof SOCKET_ID]
 export const SOCKET_NAMES: readonly SocketName[] = Object.values(SOCKET_ID)
@@ -40,6 +42,8 @@ export const EQUIP_SLOT = {
     handR: 'handR',
     handL: 'handL',
     back: 'back',
+    footR: 'footR',
+    footL: 'footL',
 } as const
 export type EquipSlot = (typeof EQUIP_SLOT)[keyof typeof EQUIP_SLOT]
 
@@ -48,6 +52,8 @@ export const SLOT_TO_SOCKET: Record<EquipSlot, SocketName> = {
     handR: SOCKET_ID.handR,
     handL: SOCKET_ID.handL,
     back: SOCKET_ID.back,
+    footR: SOCKET_ID.footR,
+    footL: SOCKET_ID.footL,
 }
 
 export interface NameValidation {

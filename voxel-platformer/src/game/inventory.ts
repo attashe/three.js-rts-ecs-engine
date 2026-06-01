@@ -1,3 +1,5 @@
+import { HIGH_JUMP_BOOTS_ITEM_ID } from './high-jump-boots'
+
 export const INVENTORY_CATEGORIES = [
     'resources',
     'quest',
@@ -23,6 +25,7 @@ export type InventoryIconId =
     | 'consumable'
     | 'heal-potion'
     | 'accessory'
+    | 'boots'
     | 'hat'
     | 'hat-arcane'
     | 'hat-ranger'
@@ -146,7 +149,13 @@ export function normalizeInventoryItemId(raw: string): string {
 export function defaultInventoryCategory(itemId: string): InventoryCategoryId {
     if (itemId === 'arrow' || itemId === 'arrows' || itemId === 'gold' || itemId === 'coin') return 'resources'
     if (itemId.includes('potion') || itemId.includes('food')) return 'consumables'
-    if (itemId.includes('charm') || itemId.includes('ring') || itemId.includes('amulet')) return 'accessories'
+    if (
+        itemId === HIGH_JUMP_BOOTS_ITEM_ID
+        || itemId.includes('charm')
+        || itemId.includes('ring')
+        || itemId.includes('amulet')
+        || itemId.includes('boots')
+    ) return 'accessories'
     if (itemId.includes('key') || itemId.includes('tool')) return 'tools'
     return 'quest'
 }
@@ -155,6 +164,7 @@ export function defaultInventoryIcon(itemId: string, category = defaultInventory
     if (itemId === 'gold' || itemId === 'coin') return 'gold'
     if (itemId === 'arrow' || itemId === 'arrows') return 'arrows'
     if (itemId === 'heal-potion' || itemId === 'health-potion') return 'heal-potion'
+    if (itemId === HIGH_JUMP_BOOTS_ITEM_ID || itemId.includes('boots')) return 'boots'
     if (itemId.includes('shard') || category === 'quest') return 'quest-shard'
     if (category === 'consumables') return 'consumable'
     if (category === 'accessories') return 'accessory'
@@ -248,6 +258,7 @@ function isInventoryIcon(value: unknown): value is InventoryIconId {
         'consumable',
         'heal-potion',
         'accessory',
+        'boots',
         'hat',
         'hat-arcane',
         'hat-ranger',

@@ -86,6 +86,8 @@ function buildRigRoot(opts: ReferenceRigOptions): Object3D {
     head3d.add(socket(SOCKET_ID.head, 0, 0.20, 0))
     armR.add(socket(SOCKET_ID.handR, 0, -0.50, 0))
     armL.add(socket(SOCKET_ID.handL, 0, -0.50, 0))
+    legR.add(socket(SOCKET_ID.footR, 0, -0.52, 0.02))
+    legL.add(socket(SOCKET_ID.footL, 0, -0.52, 0.02))
     spine.add(socket(SOCKET_ID.back, 0, 0.10, -0.16))
 
     mesh.add(hips)

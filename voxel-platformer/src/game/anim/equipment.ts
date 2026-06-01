@@ -17,6 +17,7 @@ import { SLOT_TO_SOCKET, attachToSocket, detachFromSocket, type EquipSlot } from
 import type { GameWorld } from '../../engine/ecs/world'
 import { createBow } from '../assets'
 import {
+    BOOT_EQUIPMENT_KINDS,
     EQUIPMENT_KINDS,
     EQUIPMENT_LABELS,
     HAMMER_EQUIPMENT_KINDS,
@@ -27,6 +28,7 @@ import {
 } from './equipment-types'
 
 export {
+    BOOT_EQUIPMENT_KINDS,
     EQUIPMENT_KINDS,
     EQUIPMENT_LABELS,
     HAND_EQUIPMENT_KINDS,
@@ -37,6 +39,7 @@ export {
     isStaffEquipmentKind,
     type EquipmentKind,
     type EquipmentHandLoadout,
+    type BootEquipmentKind,
     type HammerEquipmentKind,
     type HeadEquipmentKind,
     type HandEquipmentKind,
@@ -61,6 +64,7 @@ export function createEquipment(kind: EquipmentKind): Group {
         case 'staff-crystal': return buildCrystalStaff()
         case 'battle-hammer': return buildBattleHammer()
         case 'book': return buildBook()
+        case 'high-jump-boots': return buildHighJumpBoot()
     }
 }
 
@@ -144,6 +148,10 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
     'hat-sun': {
         head: { offset: [0, -0.045, 0] },
     },
+    'high-jump-boots': {
+        footR: { offset: [0, 0, 0] },
+        footL: { offset: [0, 0, 0] },
+    },
 }
 
 /** Held orientation (Euler XYZ, model frame) for an equipment kind. Kept for
@@ -157,7 +165,7 @@ export function equipmentSocketFrame(kind: EquipmentKind, slot?: EquipSlot): Equ
     const bySlot = EQUIP_FRAMES[kind]
     if (!bySlot) return {}
     if (slot && bySlot[slot]) return bySlot[slot]!
-    return bySlot.handR ?? bySlot.handL ?? bySlot.head ?? bySlot.back ?? {}
+    return bySlot.handR ?? bySlot.handL ?? bySlot.head ?? bySlot.back ?? bySlot.footR ?? bySlot.footL ?? {}
 }
 
 /**
@@ -561,4 +569,41 @@ function buildBook(): Group {
     front.position.set(0, 0.2, 0.06)
     for (const m of [back, pages, front]) { m.castShadow = true; g.add(m) }
     return g
+}
+
+function buildHighJumpBoot(): Group {
+    const g = new Group()
+    g.name = 'equip:high-jump-boots'
+    const leather = mat(0x2c2531, 0.74)
+    const soleMat = mat(0x151720, 0.68)
+    const brass = mat(0xd2a64b, 0.34, 0.26)
+    const glow = glowMat(0x65d7ff, 0.62)
+
+    const sole = new Mesh(new BoxGeometry(0.22, 0.055, 0.34), soleMat)
+    sole.name = 'HighJumpBootSole'
+    sole.position.set(0, -0.16, 0.02)
+
+    const upper = new Mesh(new BoxGeometry(0.18, 0.24, 0.22), leather)
+    upper.name = 'HighJumpBootUpper'
+    upper.position.set(0, -0.02, -0.025)
+
+    const toe = new Mesh(new BoxGeometry(0.21, 0.095, 0.18), leather)
+    toe.name = 'HighJumpBootToe'
+    toe.position.set(0, -0.085, 0.13)
+
+    const cuff = new Mesh(new CylinderGeometry(0.115, 0.105, 0.045, 10), brass)
+    cuff.name = 'HighJumpBootCuff'
+    cuff.position.set(0, 0.12, -0.025)
+    cuff.scale.z = 0.72
+
+    const spring = new Mesh(new CylinderGeometry(0.026, 0.026, 0.24, 8), brass)
+    spring.name = 'HighJumpBootSpring'
+    spring.position.set(0, -0.05, -0.16)
+    spring.rotation.x = Math.PI * 0.5
+
+    const crystal = new Mesh(new SphereGeometry(0.035, 8, 6), glow)
+    crystal.name = 'HighJumpBootGlow'
+    crystal.position.set(0, 0.015, 0.12)
+
+    return addParts(g, [sole, upper, toe, cuff, spring, crystal])
 }

@@ -15,6 +15,8 @@ const PASSIVE_ARC_COS = Math.cos((45 * Math.PI) / 180)
 const LEFT_YAW_OFFSET = -Math.PI / 2
 const FRONT_BLOCK_RANGE = 1.42
 const PASSIVE_BLOCK_RANGE = 0.92
+export const PERFECT_BLOCK_WINDOW_SECONDS = 0.22
+export const BLOCK_RELOAD_SECONDS = 0.55
 
 export interface PlayerShieldOptions {
     /** Action that raises the front guard while held. */
@@ -37,7 +39,7 @@ export function createPlayerShieldSystem(actions: ActionMap, opts: PlayerShieldO
     return {
         fixed: true,
         order: FixedOrder.npcBehaviour - 1,
-        update(world) {
+        update(world, dt) {
             const melee = (world as GameWorld).weaponStance === 'melee'
             const players = query(world, [PlayerControlled, Shield, Position, Rotation])
             const raising = actions.isHeld(raiseAction)
@@ -46,17 +48,23 @@ export function createPlayerShieldSystem(actions: ActionMap, opts: PlayerShieldO
                 const eid = players[i]!
                 const debugId = shieldDebugId(eid)
                 const grounded = hasComponent(world, eid, Grounded)
-                if (!melee || !grounded || hasComponent(world, eid, Stunned)) {
+                Shield.reloadSeconds[eid] = Math.max(0, Shield.reloadSeconds[eid]! - dt)
+                if (!raising) Shield.heldSeconds[eid] = 0
+                if (!melee || !grounded || hasComponent(world, eid, Stunned) || Shield.reloadSeconds[eid]! > 0) {
                     Shield.raised[eid] = 0
+                    Shield.perfect[eid] = 0
                     gw.animControllerByEid.get(eid)?.machine.setParam(COMBAT_PARAM.shieldBlock, 0)
                     clearDebugHitbox(gw, debugId)
                     continue
                 }
                 Shield.raised[eid] = 1
                 if (raising) {
+                    Shield.heldSeconds[eid] += dt
+                    Shield.perfect[eid] = Shield.heldSeconds[eid]! <= PERFECT_BLOCK_WINDOW_SECONDS ? 1 : 0
                     Shield.blockYawOffset[eid] = 0
                     Shield.blockArcCos[eid] = FRONT_ARC_COS
                 } else {
+                    Shield.perfect[eid] = 0
                     Shield.blockYawOffset[eid] = LEFT_YAW_OFFSET
                     Shield.blockArcCos[eid] = PASSIVE_ARC_COS
                 }

@@ -58,6 +58,7 @@ import {
     listInventoryItems,
     removeInventoryItem as removeInventoryItemFromMap,
 } from './inventory'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from './high-jump-boots'
 
 export interface GameScriptSystemOptions {
     world: GameWorld
@@ -472,6 +473,7 @@ function stoneConfigFromScript(pos: { x: number; y: number; z: number }, opts?: 
 
 function applyPlayerPatch(world: GameWorld, patch: PlayerSettingsPatch) {
     const next = applyPlayerSettingsPatch(world.playerSettings, patch)
+    unequipMissingHighJumpBoots(next)
     world.inventory.gold = next.inventory.gold
     world.inventory.arrows = next.inventory.arrows
     world.inventory.items = copyInventoryItems(next.inventory.items)
@@ -493,10 +495,19 @@ function applyTradeInventory(world: GameWorld, inventory: { gold: number; arrows
     world.playerSettings.inventory.gold = inventory.gold
     world.playerSettings.inventory.arrows = inventory.arrows
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+    if (unequipMissingHighJumpBoots(world.playerSettings)) syncPlayerVisuals(world)
 }
 
 function syncInventoryItems(world: GameWorld): void {
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+    if (unequipMissingHighJumpBoots(world.playerSettings)) syncPlayerVisuals(world)
+}
+
+function unequipMissingHighJumpBoots(settings: { equipment: { boots?: string | null }; inventory: { items?: InventoryItemMap } }): boolean {
+    if (settings.equipment.boots !== HIGH_JUMP_BOOTS_ITEM_ID) return false
+    if (inventoryItemCount(settings.inventory.items, HIGH_JUMP_BOOTS_ITEM_ID) > 0) return false
+    settings.equipment.boots = null
+    return true
 }
 
 function safeInventoryAmount(value: number, fallback: number, max: number): number {

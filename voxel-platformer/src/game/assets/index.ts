@@ -12,7 +12,7 @@ export type { MainCharacterOptions } from './main-character'
 export { createArrow, createBow, createMagicBolt, createMagicOrb, createQuiver } from './weapons'
 export type { BowOptions, QuiverOptions } from './weapons'
 
-export { createCoinPile, createQuestShard, createStone } from './props'
+export { createCoinPile, createHighJumpBootsProp, createQuestShard, createStone } from './props'
 export type { StoneVisualOptions } from './props'
 
 export { BLOCK_TORCH_LIGHT_SPEC, createBlockTorch, createPlayerTorch, PLAYER_TORCH_FLAME, PLAYER_TORCH_LIGHT } from './torch'

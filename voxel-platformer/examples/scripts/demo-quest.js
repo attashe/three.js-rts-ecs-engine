@@ -67,6 +67,16 @@ const KEEPER_SHOP = {
             sellPrice: 2,
             stock: 8,
         },
+        {
+            id: 'high-jump-boots',
+            name: 'High Jump Boots',
+            description: 'Spring-soled boots. Equip them from Accessories to enable High Jump.',
+            resource: 'high-jump-boots',
+            unitSize: 1,
+            buyPrice: 10,
+            sellPrice: 5,
+            stock: 1,
+        },
     ],
 }
 
@@ -253,15 +263,21 @@ async function openKeeperTrade() {
     if (result.status === 'bought') {
         const arrows = result.gained.arrows ?? 0
         const potions = result.gained['heal-potion'] ?? 0
+        const boots = result.gained['high-jump-boots'] ?? 0
         ui.say(KEEPER_ZONE, arrows > 0
             ? `Wrapped ${arrows} arrow(s). Spend them with care.`
+            : boots > 0
+                ? 'Packed the High Jump Boots. Equip them from Accessories.'
             : `Packed ${potions} healing potion(s). Keep them close.`,
         { seconds: 3 })
     } else if (result.status === 'sold') {
         const arrows = result.removed.arrows ?? 0
         const potions = result.removed['heal-potion'] ?? 0
+        const boots = result.removed['high-jump-boots'] ?? 0
         ui.say(KEEPER_ZONE, arrows > 0
             ? `I can use those ${arrows} arrow(s). Take ${result.gained.gold} gold.`
+            : boots > 0
+                ? `I can resole those boots. Take ${result.gained.gold} gold.`
             : `I can restock those ${potions} potion(s). Take ${result.gained.gold} gold.`,
         { seconds: 3 })
     } else if (result.status === 'unavailable') {

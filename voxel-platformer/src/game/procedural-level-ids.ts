@@ -1,6 +1,7 @@
 export const DEMO_LEVEL_ID = 'demo'
 export const TELEPORT_GARDEN_LEVEL_ID = 'demo-teleport-garden'
 export const LARGE_TOWN_LEVEL_ID = 'demo-large-town'
+export const COMBAT_ARENA_LEVEL_ID = 'demo-combat-arena'
 
 export const DEMO_FROM_GARDEN_ARRIVAL_ID = 'arrival.from-garden'
 export const TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID = 'arrival.from-demo'
@@ -10,3 +11,6 @@ export const TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID = 'arrival.from-demo'
 // chunks visibly stream in and out as the player walks it.
 export const TOWN_FROM_DEMO_ARRIVAL_ID = 'arrival.town.from-demo'
 export const DEMO_FROM_TOWN_ARRIVAL_ID = 'arrival.demo.from-town'
+
+export const ARENA_FROM_DEMO_ARRIVAL_ID = 'arrival.arena.from-demo'
+export const DEMO_FROM_ARENA_ARRIVAL_ID = 'arrival.demo.from-arena'

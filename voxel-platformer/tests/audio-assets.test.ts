@@ -46,6 +46,14 @@ const expected = {
     'player-hurt.wav':     { bytes: 5777, sha256: '725ec7249fa3d3f84645dd481e66ba9863f029e21298fd004563e234acd5bdf1' },
     'npc-hurt.wav':        { bytes: 4895, sha256: '3ca8fd63bc357837ab0f5a8efc60b6cc3efadb32ede334402cb60431f00a21d5' },
 
+    // ── Spells (cast + impact per spell) ──────────────────────────
+    'bolt-cast.wav': { bytes: 6659,  sha256: '5b1c7bace6ecbba2b787f01906e215f5d490f29e451a702c25b7261cab27c055' },
+    'bolt-hit.wav':  { bytes: 5777,  sha256: '0c988e8931e40c67b7a99627926b6ec5e926ad214fcdd0f48c5e8073a8f08d74' },
+    'nova-cast.wav': { bytes: 11069, sha256: 'd8d2a85fdc2ba1de6c0b673128784b6c90ddf8d6b56cb665a7038b68f39bd4e1' },
+    'nova-hit.wav':  { bytes: 5336,  sha256: 'e280bf3f303160e06d36f3bd68e7cb9ade0a26c0847a1bebd56afa46092489dc' },
+    'orb-cast.wav':  { bytes: 7541,  sha256: '2ff3f619df00123a928c075e99b7b53c5220652beae8dbf6fd778c304de6c5cf' },
+    'orb-zap.wav':   { bytes: 4454,  sha256: '45154902dc69f5a723c19132d3f0381deb519247440595e36f1883c85da3fa72' },
+
     // ── Player locomotion ─────────────────────────────────────────
     // Surface-aware footsteps: 5 families × 2 variants. Volumes vary
     // per family (see GAME_AUDIO_MANIFEST).
@@ -107,9 +115,9 @@ const expected = {
     },
 
     // ── Ambient location set (calm / intriguing, C418-style) ──────
-    'amb-start-loop.wav':   { bytes: 264644, sha256: '4e2253c670f6c46372d70d09070e05d9a2be0b7a20d7c59a6a1fa560bffa2eef' },
-    'amb-garden-loop.wav':  { bytes: 286694, sha256: '1f7c9cb5182a73942aad43bf20e9fd038f664d78e8c12ae7e1b112c68afbf533' },
-    'amb-town-loop.wav':    { bytes: 308744, sha256: '204d907ec03451f681fe6bb1fedddd55214bb54d04639001883349b3d75421c1' },
+    'amb-start-loop.wav':   { bytes: 264644, sha256: '7775fbe3854d10eb014ed45cb922a55b2dfcc2fc6e9950bb50e59c2cb740313b' },
+    'amb-garden-loop.wav':  { bytes: 286694, sha256: '698fd893141383dd9bbe63e56d853d92005a53c6bae9fd1ee610ad6c962781ca' },
+    'amb-town-loop.wav':    { bytes: 308744, sha256: '9d50543c9081afb4b8e81868f4cdd674c01cd4352496c2e7703d842b00d9e6d7' },
     'amb-tension-loop.wav': { bytes: 220544, sha256: 'a7eb748191f2e480ec97fc8c4a396c6c0167948e59632c64e863999f8a1fc216' },
     'amb-cave-loop.wav':    { bytes: 352844, sha256: '5778625c4a604784fb089c8fab08aa08bc67f17f6cf5c91b4230efd9bab8be5d' },
 
@@ -176,7 +184,7 @@ const expected = {
     // ── Magic ─────────────────────────────────────────────────────
     'magic-loop.wav': {
         bytes: 83834,
-        sha256: '9fb017ff1fe2b7589966f9eec7ac0b0e94129954af8c6e8d1d65edcbfddcfc3f',
+        sha256: '6943001fa1950baa408883a1c517e004bc4d3491c7944151c812322f0aa8e546',
     },
     'magic-chime.wav': {
         bytes: 16361,

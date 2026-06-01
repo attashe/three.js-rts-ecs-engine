@@ -550,7 +550,7 @@ export interface TradeApi {
 }
 
 export type TradeCurrency = 'gold'
-export type TradeResource = 'arrows' | 'heal-potion'
+export type TradeResource = 'arrows' | 'heal-potion' | 'high-jump-boots'
 export type TradeMode = 'buy' | 'sell'
 
 export interface TradeInventorySnapshot {

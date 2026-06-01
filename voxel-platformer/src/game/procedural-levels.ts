@@ -2,7 +2,12 @@ import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK } from '../engine/voxel/palette'
 import type { Zone } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
-import { generatePlatformerLevel, type LevelMeta } from './level'
+import { generatePlatformerLevel, playerSettingsWithHighJumpDisabled, type LevelMeta } from './level'
+import {
+    HIGH_JUMP_BOOTS_ITEM_ID,
+    HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+    HIGH_JUMP_BOOTS_NAME,
+} from './high-jump-boots'
 import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
 import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
 import {
@@ -16,6 +21,9 @@ import {
 } from '../procedural-structures'
 import type { EditorProp } from './props/prop-types'
 import {
+    ARENA_FROM_DEMO_ARRIVAL_ID,
+    COMBAT_ARENA_LEVEL_ID,
+    DEMO_FROM_ARENA_ARRIVAL_ID,
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
@@ -26,6 +34,9 @@ import {
 } from './procedural-level-ids'
 
 export {
+    ARENA_FROM_DEMO_ARRIVAL_ID,
+    COMBAT_ARENA_LEVEL_ID,
+    DEMO_FROM_ARENA_ARRIVAL_ID,
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
@@ -92,6 +103,12 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         name: 'Large Town',
         generate: generateLargeTownLevel,
     },
+    {
+        id: COMBAT_ARENA_LEVEL_ID,
+        file: `${COMBAT_ARENA_LEVEL_ID}.vplevel`,
+        name: 'Combat Arena',
+        generate: generateCombatArenaLevel,
+    },
 ]
 
 export const PROCEDURAL_LEVEL_IDS = PROCEDURAL_LEVEL_DEFINITIONS.map((level) => level.id)
@@ -123,14 +140,9 @@ export function generateDemoProceduralLevel(
 }
 
 /**
- * Three NPCs on the front lawn showcasing the script-driven brain (the scripts
- * are injected with NPC_ID / NPC_NAME / NPC_INTERACTION and use the `npc.*` API):
- *   - Maren — a peaceful wanderer who patrols and never fights.
- *   - Patrol Guard — patrols and chases/attacks the player on sight.
- *   - Sentry Voss — stands guard and stays friendly, but turns hostile if you
- *     pick the insulting reply in his dialogue.
- *   - Grondak — a large troll guardian who starts hostile and uses the heavy
- *     hammer slam for combat tuning.
+ * NPCs on the front lawn. Combat tests live in the separate combat arena, but
+ * Sentry Voss keeps one opt-in hostile dialogue branch as a compact systems
+ * smoke test.
  */
 function demoNpcs(): NpcConfig[] {
     return [
@@ -149,27 +161,8 @@ function demoNpcs(): NpcConfig[] {
                 `})`,
             ].join('\n'),
         }),
-        // 2) Patrol + attack: hostile to the player, chases on sight.
-        normalizeNpcConfig({
-            id: 'demo-guard',
-            name: 'Patrol Guard',
-            model: 'keeper',
-            position: { x: 8, y: 5, z: 4 }, // grass plane stands at groundY(4)+1
-            equipment: { handR: 'sword', handL: null },
-            interactionEnabled: false,
-            scriptSource: [
-                `on('level-start', () => {`,
-                `  npc.setPerceptionRadius(NPC_ID, 6)`,
-                `  npc.setHostile(NPC_ID, 'player', true)`,
-                `  npc.setWaypoints(NPC_ID, [{ x: 6, y: 5, z: 4 }, { x: 11, y: 5, z: 4 }])`,
-                `})`,
-                `on('npc-spotted-enemy', (e) => {`,
-                `  if (e.npcId === NPC_ID) log(NPC_NAME + ' spotted you!')`,
-                `})`,
-            ].join('\n'),
-        }),
-        // 3) Friendly until insulted: a standing sentry that turns hostile on the
-        //    wrong dialogue choice.
+        // 2) Friendly until insulted: a standing sentry that turns hostile on
+        //    the wrong dialogue choice.
         normalizeNpcConfig({
             id: 'demo-sentry',
             name: 'Sentry Voss',
@@ -198,42 +191,10 @@ function demoNpcs(): NpcConfig[] {
                 `    ui.say(NPC_INTERACTION, 'You will regret that.', { seconds: 2 })`,
                 `    npc.setPerceptionRadius(NPC_ID, 8)`,
                 `    npc.setHostile(NPC_ID, 'player', true)`,
-                `    // Extreme situation — swap the calm bed for the uneasy`,
-                `    // "Unrest" tension track as the sentry draws his sword.`,
                 `    audio.play('music.amb.tension', { fade: 1.5 })`,
                 `  } else {`,
                 `    ui.say(NPC_INTERACTION, 'Safe travels, then.', { seconds: 2 })`,
                 `  }`,
-                `})`,
-            ].join('\n'),
-        }),
-        // 4) Heavy melee test: aggressive large troll with a hammer slam.
-        normalizeNpcConfig({
-            id: 'demo:troll-guardian',
-            name: 'Grondak',
-            model: 'large-troll',
-            variant: 'guardian',
-            beard: 'full',
-            position: { x: 20, y: 5, z: 7 },
-            yaw: -Math.PI * 0.55,
-            scale: 1.05,
-            gridAligned: false,
-            collisionEnabled: true,
-            colliderRadius: 0.86,
-            colliderHeight: 3.35,
-            interactionEnabled: false,
-            invulnerable: false,
-            equipment: { handR: 'battle-hammer', handL: null },
-            voice: { preset: 'troll', seed: 'demo-guardian-grondak', volume: 0.66, rate: 0.82 },
-            scriptSource: [
-                `on('level-start', () => {`,
-                `  npc.setPerceptionRadius(NPC_ID, 8)`,
-                `  npc.setHostile(NPC_ID, 'player', true)`,
-                `  npc.setWaypoints(NPC_ID, [{ x: 20, y: 5, z: 7 }])`,
-                `  log(NPC_NAME + ' guards the east path with a heavy hammer.')`,
-                `})`,
-                `on('npc-spotted-enemy', (e) => {`,
-                `  if (e.npcId === NPC_ID) ui.say(NPC_ID, 'Grondak crush!', { seconds: 1.5 })`,
                 `})`,
             ].join('\n'),
         }),
@@ -353,6 +314,194 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
             { id: 'teleport-garden:book', kind: 'book-2', position: t.stand(5.2, 14.4), yaw: Math.PI * 0.2, scale: 0.9, gridAligned: false },
         ],
     })
+}
+
+export function generateCombatArenaLevel(chunks: ChunkManager): LevelMeta {
+    const size = 36
+    const groundY = 4
+    const t = terrain(chunks, { size, groundY })
+
+    t.ground({ top: BLOCK.sand })
+        .fill([2, 33], [groundY, groundY], [2, 33], BLOCK.stone)
+        .fill([4, 31], [groundY, groundY], [4, 31], BLOCK.sand)
+        .fill([2, 33], [groundY + 1, groundY + 2], [2, 2], BLOCK.brick)
+        .fill([2, 33], [groundY + 1, groundY + 2], [33, 33], BLOCK.brick)
+        .fill([2, 2], [groundY + 1, groundY + 2], [2, 33], BLOCK.brick)
+        .fill([33, 33], [groundY + 1, groundY + 2], [2, 33], BLOCK.brick)
+        .fill([3, 5], [groundY + 1, groundY + 2], [17, 19], BLOCK.air)
+        .fill([3, 5], [groundY, groundY], [17, 19], BLOCK.door)
+        .fill([13, 16], [groundY, groundY], [24, 27], BLOCK.plank)
+        .fill([19, 23], [groundY, groundY], [24, 27], BLOCK.plank)
+        .fill([23, 27], [groundY, groundY], [16, 20], BLOCK.stone2)
+        .fill([15, 17], [groundY, groundY], [8, 12], BLOCK.plank)
+
+    const zones: Zone[] = [
+        {
+            id: ARENA_FROM_DEMO_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Arrival from Demo',
+            ...zoneBox({ x: 6, z: 18 }, { x: 0.75, z: 0.75 }, groundY + 1, groundY + 2.8),
+        },
+        {
+            id: 'zone.combat-arena.portal.demo',
+            kind: 'portal',
+            label: 'Gate back to Demo',
+            ...zoneBox({ x: 4, z: 18 }, { x: 1, z: 1 }, groundY + 1, groundY + 3),
+            triggerSources: ['player'],
+            portal: {
+                targetLevelId: DEMO_LEVEL_ID,
+                targetArrivalId: DEMO_FROM_ARENA_ARRIVAL_ID,
+            },
+        },
+    ]
+    const bootsPickupPosition = t.stand(9.5, 18)
+
+    const npcs: NpcConfig[] = [
+        normalizeNpcConfig({
+            id: 'arena-sword-guard',
+            name: 'Arena Sword Guard',
+            model: 'keeper',
+            position: t.stand(16, 10),
+            yaw: Math.PI,
+            gridAligned: false,
+            collisionEnabled: true,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: 'sword', handL: null },
+            scriptSource: [
+                `on('level-start', () => {`,
+                `  npc.setPerceptionRadius(NPC_ID, 7)`,
+                `  npc.setHostile(NPC_ID, 'player', true)`,
+                `  npc.setWaypoints(NPC_ID, [{ x: 16, y: 5, z: 10 }])`,
+                `})`,
+            ].join('\n'),
+        }),
+        normalizeNpcConfig({
+            id: 'arena-hammer-guardian',
+            name: 'Arena Hammer Guardian',
+            model: 'large-troll',
+            variant: 'guardian',
+            beard: 'full',
+            position: t.stand(25, 18),
+            yaw: -Math.PI * 0.5,
+            scale: 1.05,
+            gridAligned: false,
+            collisionEnabled: true,
+            colliderRadius: 0.86,
+            colliderHeight: 3.35,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: 'battle-hammer', handL: null },
+            voice: { preset: 'troll', seed: 'arena-hammer-guardian', volume: 0.66, rate: 0.82 },
+            scriptSource: [
+                `on('level-start', () => {`,
+                `  npc.setPerceptionRadius(NPC_ID, 9)`,
+                `  npc.setHostile(NPC_ID, 'player', true)`,
+                `  npc.setWaypoints(NPC_ID, [{ x: 25, y: 5, z: 18 }])`,
+                `})`,
+            ].join('\n'),
+        }),
+        normalizeNpcConfig({
+            id: 'arena-volume-dummy-small',
+            name: 'Small Target Dummy',
+            model: 'keeper',
+            position: t.stand(14, 25),
+            yaw: 0,
+            gridAligned: false,
+            collisionEnabled: true,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: null, handL: null },
+            scriptEnabled: false,
+        }),
+        normalizeNpcConfig({
+            id: 'arena-volume-dummy-large',
+            name: 'Large Target Dummy',
+            model: 'large-troll',
+            variant: 'wise',
+            beard: 'pointed',
+            position: t.stand(20, 25),
+            yaw: 0,
+            scale: 1,
+            gridAligned: false,
+            collisionEnabled: true,
+            colliderRadius: 0.78,
+            colliderHeight: 3.2,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: null, handL: null },
+            scriptEnabled: false,
+        }),
+        normalizeNpcConfig({
+            id: 'arena-friendly-fire-a',
+            name: 'Arena Bystander A',
+            model: 'keeper',
+            position: t.stand(24.4, 19.2),
+            yaw: -Math.PI * 0.4,
+            gridAligned: false,
+            collisionEnabled: true,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: null, handL: null },
+            scriptEnabled: false,
+        }),
+        normalizeNpcConfig({
+            id: 'arena-friendly-fire-b',
+            name: 'Arena Bystander B',
+            model: 'keeper',
+            position: t.stand(25.8, 19.2),
+            yaw: Math.PI * 0.4,
+            gridAligned: false,
+            collisionEnabled: true,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: null, handL: null },
+            scriptEnabled: false,
+        }),
+    ]
+
+    return defineLevel({
+        name: 'Combat Arena',
+        size,
+        spawn: t.stand(6, 18),
+        player: playerSettingsWithHighJumpDisabled(),
+        zones,
+        npcs,
+        scripts: [combatArenaBootsScript(bootsPickupPosition)],
+        environment: { soundId: 'music.amb.tension', volume: 0.22 },
+        ambient: outdoorDay({
+            timeOfDay: 15.5,
+            skyTint: [1, 0.96, 0.88],
+            sunIntensityMul: 1.05,
+            cloudCoverage: 0.08,
+        }),
+    })
+}
+
+function combatArenaBootsScript(position: { x: number; y: number; z: number }): ScriptEntry {
+    const inventoryItem = {
+        id: HIGH_JUMP_BOOTS_ITEM_ID,
+        ...HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+    }
+    return {
+        id: 'combat-arena-high-jump-boots',
+        name: 'combat-arena-high-jump-boots.js',
+        source: [
+            `const BOOTS_ID = ${JSON.stringify(HIGH_JUMP_BOOTS_ITEM_ID)}`,
+            `const PICKUP_ID = 'combat-arena.high-jump-boots'`,
+            `const PICKUP_POS = ${JSON.stringify(position)}`,
+            `const BOOTS_ITEM = ${JSON.stringify(inventoryItem)}`,
+            ``,
+            `on('level-start', () => {`,
+            `  if (player.inventory.has(BOOTS_ID)) return`,
+            `  pickups.spawn(BOOTS_ID, PICKUP_POS, {`,
+            `    id: PICKUP_ID,`,
+            `    label: ${JSON.stringify(HIGH_JUMP_BOOTS_NAME)},`,
+            `    inventoryItem: BOOTS_ITEM,`,
+            `  })`,
+            `})`,
+        ].join('\n'),
+    }
 }
 
 /**

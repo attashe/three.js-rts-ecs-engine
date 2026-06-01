@@ -1,7 +1,7 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
 import { applyDamage } from '../combat'
-import { PlayerControlled, Position, Rotation, Shield, Stunned, Velocity } from '../components'
+import { BoxCollider, PlayerControlled, Position, Rotation, Shield, Stunned, Velocity } from '../components'
 import { pushDebugHitbox } from '../debug-hitboxes'
 import { isActiveMeleeAttackLocked } from '../melee-combat'
 import {
@@ -22,6 +22,16 @@ import { NPC_TARGET_PLAYER } from '../../../game/npcs/npc-ai'
 
 const COMMITTED_MOVEMENT_DAMPING = 32
 const MIN_DEBUG_TTL = 0.06
+const ORDINARY_BLOCK_DEFENDER_PUSH_SPEED = 1.4
+const ORDINARY_BLOCK_DEFENDER_PUSH_SECONDS = 0.10
+const ORDINARY_BLOCK_STUN_SECONDS = 0.18
+const ORDINARY_HAMMER_BLOCK_STUN_SECONDS = 1.1
+const PERFECT_BLOCK_DEFENDER_PUSH_SPEED = 0.5
+const PERFECT_BLOCK_DEFENDER_PUSH_SECONDS = 0.06
+const PERFECT_BLOCK_ATTACKER_PUSH_SPEED = 2.2
+const PERFECT_BLOCK_ATTACKER_PUSH_SECONDS = 0.12
+const PERFECT_BLOCK_ATTACKER_STUN_SECONDS = 0.45
+const ORDINARY_BLOCK_RELOAD_SECONDS = 0.55
 
 interface ActorPose extends MeleeVec3 {
     yaw: number
@@ -35,6 +45,9 @@ interface MeleeTarget {
     x: number
     y: number
     z: number
+    radius: number
+    minY: number
+    maxY: number
 }
 
 interface ShapeHit {
@@ -57,13 +70,27 @@ export interface MeleeHitAudioEvent extends MeleeAudioEvent {
     target: 'player' | 'npc'
 }
 
+export type MeleeBlockKind = 'ordinary' | 'perfect'
+export type MeleeStunReason = 'attack' | 'ordinary-block' | 'perfect-block'
+
+export interface MeleeBlockAudioEvent extends MeleeAudioEvent {
+    blockKind: MeleeBlockKind
+}
+
+export interface MeleeStunAudioEvent extends MeleeAudioEvent {
+    target: 'player' | 'npc'
+    reason: MeleeStunReason
+}
+
 export interface MeleeCombatSystemOptions {
     /** An attack entered its active window (the weapon is now swinging). */
     onSwing?: (event: MeleeAudioEvent) => void
     /** A hit landed and dealt damage. */
     onHit?: (event: MeleeHitAudioEvent) => void
     /** A raised shield caught a hit (no damage dealt). */
-    onBlock?: (event: MeleeAudioEvent) => void
+    onBlock?: (event: MeleeBlockAudioEvent) => void
+    /** A hit/block response applied stun or stagger. */
+    onStun?: (event: MeleeStunAudioEvent) => void
 }
 
 export function createMeleeCombatSystem(opts: MeleeCombatSystemOptions = {}): System {
@@ -197,24 +224,27 @@ function applyMeleeHit(gw: GameWorld, attack: ActiveMeleeAttack, target: MeleeTa
     attack.hitTargets.add(target.key)
     if (target.kind === 'player') {
         const eid = target.eid!
-        if (blockedByShield(gw, eid, attack)) {
+        const block = shieldBlockResult(gw, eid, attack)
+        if (block) {
+            applyShieldBlockResponse(gw, attack, target, block.kind, opts)
             opts.onBlock?.({
                 x: target.x,
                 y: target.y,
                 z: target.z,
                 attackId: attack.def.id,
                 attacker: attack.attacker.kind,
+                blockKind: block.kind,
             })
             return
         }
         applyDamage(gw, eid, attack.def.damage)
         applyTargetPush(gw, { kind: 'player', eid }, attack, target)
-        applyTargetStun(gw, { kind: 'player', eid }, attack)
+        applyTargetStun(gw, { kind: 'player', eid }, attack, target, opts, 'attack')
     } else {
         const npc = target.npc!
         damageNpc(npc, attack.def.damage)
         applyTargetPush(gw, { kind: 'npc', id: npc.id }, attack, target)
-        applyTargetStun(gw, { kind: 'npc', id: npc.id }, attack)
+        applyTargetStun(gw, { kind: 'npc', id: npc.id }, attack, target, opts, 'attack')
     }
     opts.onHit?.({
         x: target.x,
@@ -235,16 +265,108 @@ function applyTargetPush(gw: GameWorld, actor: MeleeActorRef, attack: ActiveMele
     applyActorPush(gw, actor, dir.x, dir.z, speed, seconds)
 }
 
-function applyTargetStun(gw: GameWorld, actor: MeleeActorRef, attack: ActiveMeleeAttack): void {
+function applyTargetStun(
+    gw: GameWorld,
+    actor: MeleeActorRef,
+    attack: ActiveMeleeAttack,
+    target: MeleeTarget,
+    opts: MeleeCombatSystemOptions,
+    reason: MeleeStunReason,
+): void {
     const seconds = attack.def.stunSeconds
     if (!(seconds > 0)) return
+    if (!applyActorStun(gw, actor, seconds)) return
+    opts.onStun?.({
+        x: target.x,
+        y: target.y,
+        z: target.z,
+        attackId: attack.def.id,
+        attacker: attack.attacker.kind,
+        target: target.kind,
+        reason,
+    })
+}
+
+function applyShieldBlockResponse(
+    gw: GameWorld,
+    attack: ActiveMeleeAttack,
+    target: MeleeTarget,
+    blockKind: MeleeBlockKind,
+    opts: MeleeCombatSystemOptions,
+): void {
+    const eid = target.eid!
+    const defender: MeleeActorRef = { kind: 'player', eid }
+    const defenderDir = directionFromHitSource(attack, target)
+    if (blockKind === 'perfect') {
+        applyActorPush(
+            gw,
+            defender,
+            defenderDir.x,
+            defenderDir.z,
+            PERFECT_BLOCK_DEFENDER_PUSH_SPEED,
+            PERFECT_BLOCK_DEFENDER_PUSH_SECONDS,
+        )
+        const attackerDir = directionAwayFromPoint(gw, attack.attacker, target)
+        applyActorPush(
+            gw,
+            attack.attacker,
+            attackerDir.x,
+            attackerDir.z,
+            PERFECT_BLOCK_ATTACKER_PUSH_SPEED,
+            PERFECT_BLOCK_ATTACKER_PUSH_SECONDS,
+        )
+        if (applyActorStun(gw, attack.attacker, PERFECT_BLOCK_ATTACKER_STUN_SECONDS)) {
+            opts.onStun?.({
+                x: target.x,
+                y: target.y,
+                z: target.z,
+                attackId: attack.def.id,
+                attacker: attack.attacker.kind,
+                target: attack.attacker.kind,
+                reason: 'perfect-block',
+            })
+        }
+        Shield.perfect[eid] = 0
+        return
+    }
+    applyActorPush(
+        gw,
+        defender,
+        defenderDir.x,
+        defenderDir.z,
+        ORDINARY_BLOCK_DEFENDER_PUSH_SPEED,
+        ORDINARY_BLOCK_DEFENDER_PUSH_SECONDS,
+    )
+    const defenderStunSeconds = attack.def.id === 'hammer-slam'
+        ? ORDINARY_HAMMER_BLOCK_STUN_SECONDS
+        : ORDINARY_BLOCK_STUN_SECONDS
+    if (applyActorStun(gw, defender, defenderStunSeconds)) {
+        opts.onStun?.({
+            x: target.x,
+            y: target.y,
+            z: target.z,
+            attackId: attack.def.id,
+            attacker: attack.attacker.kind,
+            target: target.kind,
+            reason: 'ordinary-block',
+        })
+    }
+    Shield.reloadSeconds[eid] = ORDINARY_BLOCK_RELOAD_SECONDS
+    Shield.raised[eid] = 0
+    Shield.perfect[eid] = 0
+}
+
+function applyActorStun(gw: GameWorld, actor: MeleeActorRef, seconds: number): boolean {
+    if (!(seconds > 0)) return false
     if (actor.kind === 'player') {
         addComponent(gw, actor.eid, Stunned)
         Stunned.seconds[actor.eid] = Math.max(Stunned.seconds[actor.eid] ?? 0, seconds)
-        return
+        return true
     }
     const npc = gw.npcRuntimeById.get(actor.id)
-    if (npc && !npc.dying) npc.stunSeconds = Math.max(npc.stunSeconds ?? 0, seconds)
+    if (!npc || npc.dying) return false
+    npc.stunSeconds = Math.max(npc.stunSeconds ?? 0, seconds)
+    return true
 }
 
 function updatePlayerStunRuntime(gw: GameWorld, dt: number): void {
@@ -287,19 +409,22 @@ function applyActorPush(
     }
 }
 
+function directionAwayFromPoint(gw: GameWorld, actor: MeleeActorRef, point: MeleeVec3): { x: number; z: number } {
+    const pose = currentActorPose(gw, actor)
+    if (!pose) return { x: 0, z: 1 }
+    const dx = pose.x - point.x
+    const dz = pose.z - point.z
+    const dist = Math.hypot(dx, dz)
+    if (dist < 1e-3) return { x: Math.sin(pose.yaw), z: Math.cos(pose.yaw) }
+    return { x: dx / dist, z: dz / dist }
+}
+
 function candidatesForAttack(gw: GameWorld, attack: ActiveMeleeAttack): MeleeTarget[] {
     if (attack.attacker.kind === 'player') {
         const out: MeleeTarget[] = []
         for (const npc of gw.npcRuntimeById.values()) {
             if (npc.dying) continue
-            out.push({
-                key: `npc:${npc.id}`,
-                kind: 'npc',
-                npc,
-                x: npc.position.x,
-                y: npc.position.y,
-                z: npc.position.z,
-            })
+            out.push(npcTarget(npc))
         }
         return out
     }
@@ -310,14 +435,7 @@ function candidatesForAttack(gw: GameWorld, attack: ActiveMeleeAttack): MeleeTar
     out.push(...playerTargets(gw))
     for (const npc of gw.npcRuntimeById.values()) {
         if (npc.id === attack.attacker.id || npc.dying) continue
-        out.push({
-            key: `npc:${npc.id}`,
-            kind: 'npc',
-            npc,
-            x: npc.position.x,
-            y: npc.position.y,
-            z: npc.position.z,
-        })
+        out.push(npcTarget(npc))
     }
     return out
 }
@@ -327,19 +445,16 @@ function targetCandidate(gw: GameWorld, targetId: string | undefined): MeleeTarg
     if (targetId === NPC_TARGET_PLAYER) return playerTargets(gw)
     const npc = gw.npcRuntimeById.get(targetId)
     if (!npc || npc.dying) return []
-    return [{
-        key: `npc:${npc.id}`,
-        kind: 'npc',
-        npc,
-        x: npc.position.x,
-        y: npc.position.y,
-        z: npc.position.z,
-    }]
+    return [npcTarget(npc)]
 }
 
 function playerTargets(gw: GameWorld): MeleeTarget[] {
     const out: MeleeTarget[] = []
     for (const eid of query(gw, [PlayerControlled, Position])) {
+        const hasBox = hasComponent(gw, eid, BoxCollider)
+        const radius = hasBox ? Math.max(BoxCollider.x[eid]!, BoxCollider.z[eid]!) : 0
+        const minY = Position.y[eid]!
+        const maxY = hasBox ? Position.y[eid]! + BoxCollider.y[eid]! * 2 : Position.y[eid]!
         out.push({
             key: `player:${eid}`,
             kind: 'player',
@@ -347,9 +462,26 @@ function playerTargets(gw: GameWorld): MeleeTarget[] {
             x: Position.x[eid]!,
             y: Position.y[eid]!,
             z: Position.z[eid]!,
+            radius,
+            minY,
+            maxY,
         })
     }
     return out
+}
+
+function npcTarget(npc: NpcRuntimeState): MeleeTarget {
+    return {
+        key: `npc:${npc.id}`,
+        kind: 'npc',
+        npc,
+        x: npc.position.x,
+        y: npc.position.y,
+        z: npc.position.z,
+        radius: npc.colliderRadius,
+        minY: npc.position.y,
+        maxY: npc.position.y + npc.colliderHeight,
+    }
 }
 
 function distanceInsideShape(attack: ActiveMeleeAttack, target: MeleeTarget): number | null {
@@ -362,41 +494,63 @@ function distanceInsideShape(attack: ActiveMeleeAttack, target: MeleeTarget): nu
 }
 
 function distanceInsideWedge(origin: MeleeVec3, yaw: number, shape: Extract<MeleeShape, { kind: 'wedge' }>, target: MeleeTarget): number | null {
-    const dy = target.y - origin.y
-    if (dy < shape.minY || dy > shape.maxY) return null
+    if (!verticalBandsOverlap(target, origin.y + shape.minY, origin.y + shape.maxY)) return null
     const dx = target.x - origin.x
     const dz = target.z - origin.z
     const dist = Math.hypot(dx, dz)
-    if (dist > shape.range || dist < 1e-3) return null
-    const dot = (Math.sin(yaw) * dx + Math.cos(yaw) * dz) / dist
-    if (dot < Math.cos(shape.arcRadians * 0.5)) return null
-    return dist
+    if (dist > shape.range + target.radius) return null
+    if (dist < 1e-4) return 0
+    const forwardProjection = Math.sin(yaw) * dx + Math.cos(yaw) * dz
+    if (forwardProjection < -target.radius) return null
+    const angle = Math.atan2(dx, dz)
+    const angleDelta = Math.abs(shortestAngleDelta(angle, yaw))
+    const angularSlack = Math.asin(Math.min(1, target.radius / Math.max(dist, target.radius, 1e-4)))
+    if (angleDelta > shape.arcRadians * 0.5 + angularSlack) return null
+    return Math.max(0, dist - target.radius)
 }
 
 function distanceInsideCircle(origin: MeleeVec3, yaw: number, shape: Extract<MeleeShape, { kind: 'circle' }>, target: MeleeTarget): number | null {
     const center = circleCenter(origin, yaw, shape)
-    const dy = target.y - center.y
-    if (dy < shape.minY || dy > shape.maxY) return null
+    if (!verticalBandsOverlap(target, center.y + shape.minY, center.y + shape.maxY)) return null
     const dx = target.x - center.x
     const dz = target.z - center.z
-    const d2 = dx * dx + dz * dz
-    return d2 <= shape.radius * shape.radius ? Math.sqrt(d2) : null
+    const dist = Math.hypot(dx, dz)
+    return dist <= shape.radius + target.radius ? Math.max(0, dist - target.radius) : null
 }
 
-function blockedByShield(gw: GameWorld, playerEid: number, attack: ActiveMeleeAttack): boolean {
-    if (!hasComponent(gw, playerEid, Shield) || Shield.raised[playerEid] !== 1) return false
+function verticalBandsOverlap(target: MeleeTarget, minY: number, maxY: number): boolean {
+    return target.maxY >= minY && target.minY <= maxY
+}
+
+function shortestAngleDelta(a: number, b: number): number {
+    let delta = a - b
+    while (delta > Math.PI) delta -= Math.PI * 2
+    while (delta < -Math.PI) delta += Math.PI * 2
+    return delta
+}
+
+interface ShieldBlockResult {
+    kind: MeleeBlockKind
+}
+
+function shieldBlockResult(gw: GameWorld, playerEid: number, attack: ActiveMeleeAttack): ShieldBlockResult | null {
+    if (!hasComponent(gw, playerEid, Shield) || Shield.raised[playerEid] !== 1) return null
     const source = hitSourcePoint(attack)
-    if (!source) return false
+    if (!source) return null
     const blockYaw = Rotation.y[playerEid]! + Shield.blockYawOffset[playerEid]!
     const fx = Math.sin(blockYaw)
     const fz = Math.cos(blockYaw)
     const ax = source.x - Position.x[playerEid]!
     const az = source.z - Position.z[playerEid]!
     const ad = Math.hypot(ax, az)
-    if (ad < 1e-3) return false
-    if ((fx * ax + fz * az) / ad < Shield.blockArcCos[playerEid]!) return false
+    if (ad < 1e-3) return null
+    if ((fx * ax + fz * az) / ad < Shield.blockArcCos[playerEid]!) return null
     const dy = source.y - Position.y[playerEid]!
-    return dy >= Shield.minY[playerEid]! && dy <= Shield.maxY[playerEid]!
+    if (dy < Shield.minY[playerEid]! || dy > Shield.maxY[playerEid]!) return null
+    const kind = Shield.perfect[playerEid] === 1 && Math.abs(Shield.blockYawOffset[playerEid]!) < 1e-4
+        ? 'perfect'
+        : 'ordinary'
+    return { kind }
 }
 
 function directionFromHitSource(attack: ActiveMeleeAttack, target: MeleeTarget): { x: number; z: number } {

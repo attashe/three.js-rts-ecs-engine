@@ -4,6 +4,7 @@ import {
     MeshStandardMaterial,
 } from 'three'
 import {
+    sharedBoxGeometry,
     sharedConeGeometry,
     sharedCylinderGeometry,
     sharedMaterial,
@@ -93,6 +94,52 @@ export function createQuestShard(): Group {
     const ring = new Mesh(sharedTorusGeometry(0.16, 0.012, 6, 16), brass)
     ring.name = 'ShardRing'
     ring.position.y = 0.08
+    ring.rotation.x = Math.PI * 0.5
+    root.add(ring)
+
+    return shadows(root)
+}
+
+export function createHighJumpBootsProp(): Group {
+    const root = new Group()
+    root.name = 'HighJumpBootsProp'
+
+    const leather = material(0x2c2531, 0.74)
+    const sole = material(0x151720, 0.68)
+    const brass = material(0xd2a64b, 0.34, 0.26)
+    const glow = material(0x65d7ff, 0.4, 0.1)
+
+    for (const [x, angle] of [[-0.12, -0.08], [0.12, 0.08]] as const) {
+        const base = new Mesh(sharedBoxGeometry(0.18, 0.055, 0.32), sole)
+        base.name = x < 0 ? 'HighJumpBootPropSoleL' : 'HighJumpBootPropSoleR'
+        base.position.set(x, 0.04, 0.02)
+        base.rotation.y = angle
+
+        const upper = new Mesh(sharedBoxGeometry(0.15, 0.2, 0.2), leather)
+        upper.name = x < 0 ? 'HighJumpBootPropUpperL' : 'HighJumpBootPropUpperR'
+        upper.position.set(x, 0.16, -0.03)
+        upper.rotation.y = angle
+
+        const toe = new Mesh(sharedBoxGeometry(0.17, 0.085, 0.15), leather)
+        toe.name = x < 0 ? 'HighJumpBootPropToeL' : 'HighJumpBootPropToeR'
+        toe.position.set(x, 0.09, 0.13)
+        toe.rotation.y = angle
+
+        const spring = new Mesh(sharedCylinderGeometry(0.022, 0.022, 0.22, 8), brass)
+        spring.name = x < 0 ? 'HighJumpBootPropSpringL' : 'HighJumpBootPropSpringR'
+        spring.position.set(x, 0.12, -0.16)
+        spring.rotation.x = Math.PI * 0.5
+
+        const gem = new Mesh(sharedSphereGeometry(0.035, 8, 6), glow)
+        gem.name = x < 0 ? 'HighJumpBootPropGlowL' : 'HighJumpBootPropGlowR'
+        gem.position.set(x, 0.18, 0.12)
+
+        root.add(base, upper, toe, spring, gem)
+    }
+
+    const ring = new Mesh(sharedTorusGeometry(0.24, 0.012, 6, 18), brass)
+    ring.name = 'HighJumpBootsPropRing'
+    ring.position.y = 0.04
     ring.rotation.x = Math.PI * 0.5
     root.add(ring)
 

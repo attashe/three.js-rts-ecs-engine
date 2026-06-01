@@ -7,6 +7,12 @@ import type { System } from '../engine/ecs/systems/system'
 import type { ActionMap } from '../engine/input/actions'
 import type { Input } from '../engine/input/input'
 import { PLAYER_ABILITY_KEYS, PLAYER_ABILITY_LABELS } from './player-settings'
+import {
+    HIGH_JUMP_BOOTS_ITEM_ID,
+    HIGH_JUMP_BOOTS_NAME,
+    hasEquippedHighJumpBoots,
+    playerCanHighJump,
+} from './high-jump-boots'
 import { GameAction } from './actions'
 import { setWeaponStance } from './weapon-stance-system'
 import { syncPlayerHeldTorchVisibility, syncPlayerVisuals } from './player'
@@ -65,6 +71,15 @@ export function consumeHealPotion(world: GameWorld): boolean {
     if (!removeInventoryItem(world.inventory.items, HEAL_POTION_ITEM_ID, 1)) return false
     Health.current[player] = Math.min(max, current + HEAL_POTION_RESTORE_HP)
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+    return true
+}
+
+export function setHighJumpBootsEquipped(world: GameWorld, equipped: boolean): boolean {
+    const next = equipped ? HIGH_JUMP_BOOTS_ITEM_ID : null
+    if (equipped && inventoryItemCount(world.inventory.items, HIGH_JUMP_BOOTS_ITEM_ID) <= 0) return false
+    if (world.playerSettings.equipment.boots === next) return false
+    world.playerSettings.equipment.boots = next
+    syncPlayerVisuals(world)
     return true
 }
 
@@ -519,6 +534,20 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
             },
         })
     }
+    if (item.id === HIGH_JUMP_BOOTS_ITEM_ID) {
+        const active = hasEquippedHighJumpBoots(world.playerSettings)
+        return menuCard({
+            icon: item.icon,
+            name: item.name || HIGH_JUMP_BOOTS_NAME,
+            detail: active ? 'Equipped' : 'Select',
+            title: item.description ? `${item.name}\n${item.description}` : `Equip ${HIGH_JUMP_BOOTS_NAME}.`,
+            active,
+            disabled: item.quantity <= 0,
+            onClick: () => {
+                if (setHighJumpBootsEquipped(world, !active)) renderInventory(dom, world)
+            },
+        })
+    }
     return menuCard({
         icon: item.icon,
         name: item.name,
@@ -640,7 +669,9 @@ function statsSection(world: GameWorld): HTMLElement[] {
     nodes.push(abilityTitle)
 
     for (const key of PLAYER_ABILITY_KEYS) {
-        const enabled = world.playerSettings.abilities[key]
+        const enabled = key === 'highJump'
+            ? playerCanHighJump(world.playerSettings)
+            : world.playerSettings.abilities[key]
         nodes.push(statRow(PLAYER_ABILITY_LABELS[key], enabled ? 'On' : 'Off', enabled))
     }
     return nodes
@@ -695,6 +726,7 @@ function iconBackground(icon: InventoryIconId): string {
         case 'quest-shard': return 'linear-gradient(145deg, #2f4d5f, #77d0c9)'
         case 'heal-potion': return 'linear-gradient(145deg, #472333, #c95772)'
         case 'torch': return 'linear-gradient(145deg, #4a2b18, #d28b37)'
+        case 'boots': return 'linear-gradient(145deg, #192a3a, #65d7ff)'
         case 'hat': return 'linear-gradient(145deg, #20372f, #7ac7a2)'
         case 'hat-arcane': return 'linear-gradient(145deg, #18234f, #5f7dff)'
         case 'hat-ranger': return 'linear-gradient(145deg, #203d24, #9fd179)'
@@ -752,6 +784,16 @@ function glyphStyle(icon: InventoryIconId): Partial<CSSStyleDeclaration> {
             background: '#4a2715',
             transform: 'rotate(18deg)',
             boxShadow: '0 -10px 0 4px #ffb05f, 0 -14px 0 1px #fff0a8',
+        }
+    }
+    if (icon === 'boots') {
+        return {
+            width: '23px',
+            height: '18px',
+            borderRadius: '3px 3px 7px 7px',
+            background: '#eef6f2',
+            clipPath: 'polygon(4% 0, 42% 0, 44% 48%, 62% 48%, 64% 0, 96% 0, 96% 58%, 76% 58%, 76% 100%, 52% 100%, 52% 62%, 48% 62%, 48% 100%, 24% 100%, 24% 58%, 4% 58%)',
+            boxShadow: '0 0 9px rgba(101, 215, 255, 0.55)',
         }
     }
     if (icon === 'hat') {

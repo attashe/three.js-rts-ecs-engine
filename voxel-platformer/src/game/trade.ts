@@ -14,6 +14,10 @@ import {
     removeInventoryItem,
 } from './inventory'
 import { PLAYER_INVENTORY_LIMITS } from './player-settings'
+import {
+    HIGH_JUMP_BOOTS_ITEM_ID,
+    HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+} from './high-jump-boots'
 
 export interface NormalizedTradeItem {
     id: string
@@ -196,6 +200,7 @@ export function resourceLabel(resource: TradeResource): string {
     switch (resource) {
         case 'arrows': return 'arrows'
         case 'heal-potion': return 'healing potions'
+        case HIGH_JUMP_BOOTS_ITEM_ID: return 'high jump boots'
     }
 }
 
@@ -218,13 +223,14 @@ function normalizeTradeItem(raw: TradeItem): NormalizedTradeItem | null {
 }
 
 function isTradeResource(value: string): value is TradeResource {
-    return value === 'arrows' || value === 'heal-potion'
+    return value === 'arrows' || value === 'heal-potion' || value === HIGH_JUMP_BOOTS_ITEM_ID
 }
 
 function resourceAmount(resource: TradeResource, inventory: TradeInventorySnapshot): number {
     switch (resource) {
         case 'arrows': return inventory.arrows
         case 'heal-potion': return inventoryItemCount(inventory.items, resource)
+        case HIGH_JUMP_BOOTS_ITEM_ID: return inventoryItemCount(inventory.items, resource)
     }
 }
 
@@ -236,6 +242,7 @@ function resourceCapacity(
     switch (resource) {
         case 'arrows': return Math.max(0, limits.arrows - inventory.arrows)
         case 'heal-potion': return Math.max(0, limits.items - inventoryItemCount(inventory.items, resource))
+        case HIGH_JUMP_BOOTS_ITEM_ID: return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
     }
 }
 
@@ -244,17 +251,19 @@ function tradeItemsAfterResourceChange(
     resource: TradeResource,
     delta: number,
 ): InventoryItemMap | undefined {
-    if (resource !== 'heal-potion') {
+    if (resource !== 'heal-potion' && resource !== HIGH_JUMP_BOOTS_ITEM_ID) {
         return inventory.items === undefined ? undefined : copyInventoryItems(inventory.items)
     }
     const items = copyInventoryItems(inventory.items)
     if (delta > 0) {
-        addInventoryItem(items, resource, delta, {
-            name: 'Healing Potion',
-            description: 'Restores health when potion use is wired into combat.',
-            category: 'consumables',
-            icon: 'heal-potion',
-        })
+        addInventoryItem(items, resource, delta, resource === HIGH_JUMP_BOOTS_ITEM_ID
+            ? HIGH_JUMP_BOOTS_ITEM_OPTIONS
+            : {
+                name: 'Healing Potion',
+                description: 'Restores health when potion use is wired into combat.',
+                category: 'consumables',
+                icon: 'heal-potion',
+            })
     } else if (delta < 0) {
         removeInventoryItem(items, resource, -delta)
     }

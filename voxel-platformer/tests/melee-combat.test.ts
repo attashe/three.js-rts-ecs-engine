@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponents, hasComponent } from 'bitecs'
 import { createEntity } from '../src/engine/ecs/entity'
-import { Grounded, Health, PlayerControlled, Position, Rotation, Stunned, Velocity } from '../src/engine/ecs/components'
+import { BoxCollider, Grounded, Health, PlayerControlled, Position, Rotation, Shield, Stunned, Velocity } from '../src/engine/ecs/components'
 import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
 import type { ActionMap } from '../src/engine/input/actions'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
@@ -25,13 +25,24 @@ function onePressAction(): ActionMap {
 
 function spawnPlayer(world: GameWorld, x = 0, z = 0): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, Velocity, PlayerControlled, Grounded, Health])
+    addComponents(world, eid, [Position, Rotation, Velocity, BoxCollider, PlayerControlled, Grounded, Health, Shield])
     Position.x[eid] = x
     Position.y[eid] = 1
     Position.z[eid] = z
     Rotation.y[eid] = 0
+    BoxCollider.x[eid] = 0.35
+    BoxCollider.y[eid] = 0.8
+    BoxCollider.z[eid] = 0.35
     Health.current[eid] = 4
     Health.max[eid] = 4
+    Shield.raised[eid] = 0
+    Shield.perfect[eid] = 0
+    Shield.heldSeconds[eid] = 0
+    Shield.reloadSeconds[eid] = 0
+    Shield.blockArcCos[eid] = Math.cos((60 * Math.PI) / 180)
+    Shield.blockYawOffset[eid] = 0
+    Shield.minY[eid] = 0
+    Shield.maxY[eid] = 1.6
     return eid
 }
 
@@ -53,6 +64,24 @@ function spawnNpc(world: GameWorld, id: string, x: number, z: number): NpcRuntim
     }
     world.npcRuntimeById.set(id, rt)
     return rt
+}
+
+function raiseFrontShield(eid: number, perfect = false): void {
+    Shield.raised[eid] = 1
+    Shield.perfect[eid] = perfect ? 1 : 0
+    Shield.blockYawOffset[eid] = 0
+    Shield.blockArcCos[eid] = Math.cos((60 * Math.PI) / 180)
+    Shield.minY[eid] = 0
+    Shield.maxY[eid] = 1.6
+}
+
+function raiseLeftShield(eid: number): void {
+    Shield.raised[eid] = 1
+    Shield.perfect[eid] = 1
+    Shield.blockYawOffset[eid] = -Math.PI / 2
+    Shield.blockArcCos[eid] = Math.cos((45 * Math.PI) / 180)
+    Shield.minY[eid] = 0
+    Shield.maxY[eid] = 1.6
 }
 
 test('player melee schedules damage for the active window and hits once', () => {
@@ -87,6 +116,27 @@ test('player thrust hits only the nearest target in its wedge', () => {
 
     assert.equal(near.hp, 1)
     assert.equal(far.hp, 2)
+})
+
+test('player melee uses target collision volume for reach and vertical overlap', () => {
+    const edgeWorld = createGameWorld()
+    const edgePlayer = spawnPlayer(edgeWorld)
+    const edgeTarget = spawnNpc(edgeWorld, 'edge-target', 0, 2.55)
+    const edgeCombat = createMeleeCombatSystem()
+
+    assert.equal(startMeleeAttack(edgeWorld, { kind: 'player', eid: edgePlayer }, MELEE_ATTACK_DEFS['player-thrust']), true)
+    edgeCombat.update(edgeWorld, MELEE_ATTACK_DEFS['player-thrust'].startupSeconds + 0.02)
+    assert.equal(edgeTarget.hp, 1, 'target radius should extend melee reach beyond its origin point')
+
+    const highWorld = createGameWorld()
+    const highPlayer = spawnPlayer(highWorld)
+    const highTarget = spawnNpc(highWorld, 'high-target', 0, 1.4)
+    highTarget.position.y = 4
+    const highCombat = createMeleeCombatSystem()
+
+    assert.equal(startMeleeAttack(highWorld, { kind: 'player', eid: highPlayer }, MELEE_ATTACK_DEFS['player-thrust']), true)
+    highCombat.update(highWorld, MELEE_ATTACK_DEFS['player-thrust'].startupSeconds + 0.02)
+    assert.equal(highTarget.hp, 2, 'target volume should still respect the attack vertical band')
 })
 
 test('player swing and staff slam cleave targets in the active wedge', () => {
@@ -144,6 +194,120 @@ test('NPC melee damages and pushes the player at active time', () => {
     assert.equal(hasComponent(world, player, Stunned), false)
 })
 
+test('NPC hammer slam uses the player target volume for circle hits', () => {
+    const world = createGameWorld()
+    const player = spawnPlayer(world, 0, 2.85)
+    spawnNpc(world, 'guardian', 0, 0)
+    const combat = createMeleeCombatSystem()
+
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'guardian' },
+        MELEE_ATTACK_DEFS['hammer-slam'],
+    ), true)
+
+    combat.update(world, MELEE_ATTACK_DEFS['hammer-slam'].startupSeconds + 0.02)
+
+    assert.equal(Health.current[player], 3, 'player collider radius should extend the hammer circle hit')
+})
+
+test('ordinary shield block staggers the defender and enters reload', () => {
+    const world = createGameWorld()
+    const player = spawnPlayer(world)
+    const guard = spawnNpc(world, 'guard', 0, 1)
+    guard.yaw = Math.PI
+    raiseFrontShield(player, false)
+    const blocks: string[] = []
+    const stuns: string[] = []
+    const combat = createMeleeCombatSystem({
+        onBlock: (e) => blocks.push(e.blockKind),
+        onStun: (e) => stuns.push(e.reason),
+    })
+
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+
+    combat.update(world, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+
+    assert.equal(Health.current[player], 4)
+    assert.deepEqual(blocks, ['ordinary'])
+    assert.deepEqual(stuns, ['ordinary-block'])
+    assert.equal(hasComponent(world, player, Stunned), true)
+    assert.ok(Velocity.z[player] < 0, `expected defender pushback, got vz=${Velocity.z[player]}`)
+    assert.ok(Shield.reloadSeconds[player]! > 0.5)
+    assert.equal(Shield.raised[player], 0)
+
+    const secondGuard = spawnNpc(world, 'second-guard', 0, 1)
+    secondGuard.yaw = Math.PI
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'second-guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+    combat.update(world, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+    assert.equal(Health.current[player], 3, 'shield reload should leave the player open to the next hit')
+})
+
+test('perfect shield block staggers the attacker with reduced defender pushback', () => {
+    const world = createGameWorld()
+    const player = spawnPlayer(world)
+    const guard = spawnNpc(world, 'guard', 0, 1)
+    guard.yaw = Math.PI
+    raiseFrontShield(player, true)
+    const blocks: string[] = []
+    const stuns: string[] = []
+    const combat = createMeleeCombatSystem({
+        onBlock: (e) => blocks.push(e.blockKind),
+        onStun: (e) => stuns.push(`${e.reason}:${e.target}`),
+    })
+
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+
+    combat.update(world, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+
+    assert.equal(Health.current[player], 4)
+    assert.deepEqual(blocks, ['perfect'])
+    assert.deepEqual(stuns, ['perfect-block:npc'])
+    assert.ok((guard.stunSeconds ?? 0) > 0, 'attacker should be staggered')
+    assert.ok(guard.push && guard.push.vz > 0, 'attacker should be pushed away from the defender')
+    assert.ok(Velocity.z[player] < 0 && Velocity.z[player] > -1, `expected small defender pushback, got vz=${Velocity.z[player]}`)
+    assert.equal(Shield.reloadSeconds[player], 0)
+    assert.equal(hasComponent(world, player, Stunned), false)
+})
+
+test('passive shield block is ordinary even if the perfect flag is stale', () => {
+    const world = createGameWorld()
+    const player = spawnPlayer(world)
+    const guard = spawnNpc(world, 'guard', -1, 0)
+    guard.yaw = Math.PI / 2
+    raiseLeftShield(player)
+    const blocks: string[] = []
+    const combat = createMeleeCombatSystem({ onBlock: (e) => blocks.push(e.blockKind) })
+
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+
+    combat.update(world, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+
+    assert.equal(Health.current[player], 4)
+    assert.deepEqual(blocks, ['ordinary'])
+    assert.equal((guard.stunSeconds ?? 0), 0)
+})
+
 test('default hammer slam stuns the player briefly', () => {
     const world = createGameWorld()
     const player = spawnPlayer(world, 0, 1.35)
@@ -163,6 +327,29 @@ test('default hammer slam stuns the player briefly', () => {
 
     combat.update(world, MELEE_ATTACK_DEFS['hammer-slam'].stunSeconds + 0.02)
     assert.equal(hasComponent(world, player, Stunned), false)
+})
+
+test('blocked hammer slam does not apply attack stun but heavily staggers ordinary block', () => {
+    const world = createGameWorld()
+    const player = spawnPlayer(world, 0, 1)
+    const guardian = spawnNpc(world, 'guardian', 0, 0)
+    guardian.yaw = 0
+    raiseFrontShield(player, false)
+    const stuns: string[] = []
+    const combat = createMeleeCombatSystem({ onStun: (e) => stuns.push(`${e.attackId}:${e.reason}`) })
+
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'guardian' },
+        MELEE_ATTACK_DEFS['hammer-slam'],
+    ), true)
+
+    combat.update(world, MELEE_ATTACK_DEFS['hammer-slam'].startupSeconds + 0.02)
+
+    assert.equal(Health.current[player], 4)
+    assert.ok(!stuns.includes('hammer-slam:attack'), 'hammer stun feedback should not fire for a blocked hammer hit')
+    assert.ok(stuns.includes('hammer-slam:ordinary-block'), 'ordinary hammer block should still emit a block stagger event')
+    assert.ok(Stunned.seconds[player]! > 1, `ordinary hammer block should heavily stagger the defender, got ${Stunned.seconds[player]}`)
 })
 
 test('configured melee recoil, NPC push, and NPC stun are applied', () => {

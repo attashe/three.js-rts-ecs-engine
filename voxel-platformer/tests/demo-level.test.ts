@@ -29,6 +29,8 @@ test('generatePlatformerLevel exposes a stable level name for the script engine'
     const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
     assert.equal(meta.name, DEMO_LEVEL_ID)
     assert.equal(meta.size, 24)
+    assert.equal(meta.player.abilities.highJump, false)
+    assert.equal(meta.player.inventory.items['heal-potion']?.quantity, 2)
 })
 
 test('demo level has a portal and safe return arrival for travel tests', () => {

@@ -77,6 +77,7 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'sundial':   return buildSundial()
         case 'haste-shrine': return buildHasteShrine()
         case 'portal-shrine': return buildPortalShrine()
+        case 'high-jump-boots': return buildHighJumpBoots()
     }
 }
 
@@ -225,6 +226,39 @@ function buildMushroom(variant: 1 | 2 | 3): BufferGeometry {
             spotted: false,
         }),
     ])
+}
+
+function buildHighJumpBoots(): BufferGeometry {
+    const parts: BufferGeometry[] = []
+    for (const [x, yaw] of [[-0.12, -0.08], [0.12, 0.08]] as const) {
+        const sole = new BoxGeometry(0.18, 0.055, 0.32)
+        sole.rotateY(yaw)
+        sole.translate(x, 0.04, 0.02)
+        paintVertexColor(sole, 0.08, 0.09, 0.13)
+
+        const upper = new BoxGeometry(0.15, 0.20, 0.20)
+        upper.rotateY(yaw)
+        upper.translate(x, 0.16, -0.03)
+        paintVertexColor(upper, 0.17, 0.14, 0.19)
+
+        const toe = new BoxGeometry(0.17, 0.085, 0.15)
+        toe.rotateY(yaw)
+        toe.translate(x, 0.09, 0.13)
+        paintVertexColor(toe, 0.17, 0.14, 0.19)
+
+        const spring = new CylinderGeometry(0.022, 0.022, 0.22, 8)
+        spring.rotateX(Math.PI * 0.5)
+        spring.rotateY(yaw)
+        spring.translate(x, 0.12, -0.16)
+        paintVertexColor(spring, 0.82, 0.65, 0.29)
+
+        const gem = new SphereGeometry(0.035, 8, 6)
+        gem.translate(x, 0.18, 0.12)
+        paintVertexColor(gem, 0.40, 0.84, 1.0)
+
+        parts.push(sole, upper, toe, spring, gem)
+    }
+    return mergeAndCleanup(parts)
 }
 
 function buildTable(variant: 1 | 2): BufferGeometry {

@@ -5,6 +5,9 @@ import { deserializeLevel } from '../src/engine/voxel/level-serializer'
 import { createProceduralEditorLevel } from '../src/editor/procedural-level-export'
 import type { EditorLevelMeta } from '../src/editor/editor-state'
 import {
+    ARENA_FROM_DEMO_ARRIVAL_ID,
+    COMBAT_ARENA_LEVEL_ID,
+    DEMO_FROM_ARENA_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
@@ -44,18 +47,17 @@ test('procedural demo export preserves scripts and travel metadata', () => {
     assert.ok(garden.editorMeta.zones?.some((zone) => zone.portal?.targetLevelId === DEMO_LEVEL_ID))
 })
 
-test('procedural demo includes an aggressive hammer troll guardian', () => {
+test('procedural demo has no immediate combat encounters but keeps opt-in sentry hostility', () => {
     const demo = createProceduralEditorLevel(DEMO_LEVEL_ID, FAKE_SCRIPT_SOURCES)
-    const npc = demo.runtimeMeta.npcs.find((candidate) => candidate.id === 'demo:troll-guardian')
+    const ids = demo.runtimeMeta.npcs.map((npc) => npc.id)
+    const sentry = demo.runtimeMeta.npcs.find((npc) => npc.id === 'demo-sentry')
 
-    assert.ok(npc, 'demo should place the troll guardian')
-    assert.equal(npc!.model, 'large-troll')
-    assert.equal(npc!.variant, 'guardian')
-    assert.equal(npc!.collisionEnabled, true)
-    assert.deepEqual(npc!.equipment, { handR: 'battle-hammer', handL: null })
-    assert.match(npc!.scriptSource, /npc\.setHostile\(NPC_ID, 'player', true\)/)
-    assert.match(npc!.scriptSource, /npc\.setPerceptionRadius\(NPC_ID, 8\)/)
-    assert.equal(demo.chunks.getVoxel(Math.floor(npc!.position.x), npc!.position.y - 1, Math.floor(npc!.position.z)), BLOCK.grass)
+    assert.ok(!ids.includes('demo-guard'), 'demo should not place the hostile patrol guard')
+    assert.ok(!ids.includes('demo-troll-guardian'), 'demo should not place the hostile hammer guardian')
+    assert.ok(sentry, 'demo should keep Sentry Voss')
+    assert.deepEqual(sentry!.equipment, { handR: 'sword', handL: null })
+    assert.match(sentry!.scriptSource, /choiceId === 'insult'/)
+    assert.match(sentry!.scriptSource, /npc\.setHostile\(NPC_ID, 'player', true\)/)
 })
 
 test('demo <-> large-town portals resolve to existing arrival zones', () => {
@@ -77,6 +79,57 @@ test('demo <-> large-town portals resolve to existing arrival zones', () => {
         demo.editorMeta.zones?.some((zone) => zone.id === DEMO_FROM_TOWN_ARRIVAL_ID && zone.kind === 'arrival'),
         'demo should expose the arrival zone the town return portal targets',
     )
+})
+
+test('demo <-> combat arena portals resolve to existing arrival zones', () => {
+    const demo = createProceduralEditorLevel(DEMO_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const arena = createProceduralEditorLevel(COMBAT_ARENA_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+
+    const toArena = demo.editorMeta.zones?.find((zone) => zone.portal?.targetLevelId === COMBAT_ARENA_LEVEL_ID)
+    assert.ok(toArena, 'demo should have a portal into the combat arena')
+    assert.equal(toArena!.portal?.targetArrivalId, ARENA_FROM_DEMO_ARRIVAL_ID)
+    assert.ok(
+        arena.editorMeta.zones?.some((zone) => zone.id === ARENA_FROM_DEMO_ARRIVAL_ID && zone.kind === 'arrival'),
+        'combat arena should expose the arrival zone the demo portal targets',
+    )
+
+    const backToDemo = arena.editorMeta.zones?.find((zone) => zone.portal?.targetLevelId === DEMO_LEVEL_ID)
+    assert.ok(backToDemo, 'combat arena should have a return portal to the demo')
+    assert.equal(backToDemo!.portal?.targetArrivalId, DEMO_FROM_ARENA_ARRIVAL_ID)
+    assert.ok(
+        demo.editorMeta.zones?.some((zone) => zone.id === DEMO_FROM_ARENA_ARRIVAL_ID && zone.kind === 'arrival'),
+        'demo should expose the arrival zone the arena return portal targets',
+    )
+})
+
+test('combat arena includes hostile guards, target dummies, and hammer bystanders', () => {
+    const arena = createProceduralEditorLevel(COMBAT_ARENA_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const byId = new Map(arena.runtimeMeta.npcs.map((npc) => [npc.id, npc]))
+    const sword = byId.get('arena-sword-guard')
+    const hammer = byId.get('arena-hammer-guardian')
+    const smallDummy = byId.get('arena-volume-dummy-small')
+    const largeDummy = byId.get('arena-volume-dummy-large')
+    const bystanderA = byId.get('arena-friendly-fire-a')
+    const bystanderB = byId.get('arena-friendly-fire-b')
+    const bootsScript = arena.runtimeMeta.scripts.find((script) => script.id === 'combat-arena-high-jump-boots')
+
+    assert.equal(arena.runtimeMeta.player.abilities.highJump, false)
+    assert.equal(arena.runtimeMeta.player.inventory.items['heal-potion']?.quantity, 2)
+    assert.ok(bootsScript, 'arena should spawn the high jump boots pickup')
+    assert.match(bootsScript!.source, /pickups\.spawn\(BOOTS_ID, PICKUP_POS/)
+    assert.match(bootsScript!.source, /"icon":"boots"/)
+    assert.ok(sword, 'arena should place a sword guard')
+    assert.deepEqual(sword!.equipment, { handR: 'sword', handL: null })
+    assert.match(sword!.scriptSource, /npc\.setHostile\(NPC_ID, 'player', true\)/)
+    assert.ok(hammer, 'arena should place a hammer guardian')
+    assert.equal(hammer!.model, 'large-troll')
+    assert.equal(hammer!.variant, 'guardian')
+    assert.deepEqual(hammer!.equipment, { handR: 'battle-hammer', handL: null })
+    assert.match(hammer!.scriptSource, /npc\.setPerceptionRadius\(NPC_ID, 9\)/)
+    assert.ok(smallDummy && largeDummy, 'arena should include volume-check target dummies')
+    assert.equal(largeDummy!.colliderRadius, 0.78)
+    assert.ok(bystanderA && bystanderB, 'arena should include non-target bystanders for hammer area checks')
+    assert.equal(arena.chunks.getVoxel(Math.floor(hammer!.position.x), hammer!.position.y - 1, Math.floor(hammer!.position.z)), BLOCK.stone2)
 })
 
 test('large town includes a long rideable rail line', () => {

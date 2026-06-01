@@ -15,8 +15,9 @@ const WOBBLE_INTERVAL = 0.12
 const WOBBLE_STRENGTH = 5
 
 export interface ElectricOrbOptions {
-    /** Fired when an orb zaps a character (for an SFX). */
-    onZap?: () => void
+    /** Fired when an orb zaps a character, at the orb's position (for a
+     *  spatial SFX). */
+    onZap?: (position: { x: number; y: number; z: number }) => void
 }
 
 /**
@@ -72,7 +73,7 @@ export function createElectricOrbSystem(opts: ElectricOrbOptions = {}): System {
                         Position.z[pe]! - BoxCollider.z[pe]!, Position.z[pe]! + BoxCollider.z[pe]!)) continue
                     ready.set(key, now + ZAP_COOLDOWN)
                     applyDamage(gw, pe, ZAP_DAMAGE)
-                    opts.onZap?.()
+                    opts.onZap?.({ x: ox, y: oy, z: oz })
                 }
 
                 // NPCs.
@@ -87,7 +88,7 @@ export function createElectricOrbSystem(opts: ElectricOrbOptions = {}): System {
                     ready.set(key, now + ZAP_COOLDOWN)
                     if (!npc.invulnerable) {
                         damageNpc(npc, ZAP_DAMAGE)
-                        opts.onZap?.()
+                        opts.onZap?.({ x: ox, y: oy, z: oz })
                     }
                 }
 

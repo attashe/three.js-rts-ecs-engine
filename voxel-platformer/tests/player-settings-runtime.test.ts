@@ -15,6 +15,7 @@ import { MovingObjectKind } from '../src/game/moving-objects'
 import { createPlayerTorchSystem } from '../src/game/player-torch-system'
 import { createPlayerShieldSystem } from '../src/game/player-shield-system'
 import {
+    BOOT_EQUIPMENT_KINDS,
     HEAD_EQUIPMENT_KINDS,
     HAMMER_EQUIPMENT_KINDS,
     STAFF_EQUIPMENT_KINDS,
@@ -23,6 +24,7 @@ import {
     isHammerEquipmentKind,
     isStaffEquipmentKind,
 } from '../src/game/anim/equipment'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 import { HUMANOID_ANIM_TIMINGS } from '../src/game/anim/clip-timings'
 import { partCharacterClips } from '../src/game/anim/part-clips'
 import {
@@ -147,6 +149,7 @@ test('player equipment settings normalize, copy, and drive visible hand loadouts
     const settings = normalizePlayerSettings({
         equipment: {
             head: 'hat-ranger',
+            boots: HIGH_JUMP_BOOTS_ITEM_ID,
             melee: { handR: 'staff-lantern', handL: 'book' },
             ranged: { handR: 'bogus', handL: 'bow' },
             magic: { handR: 'staff-crystal' },
@@ -154,14 +157,17 @@ test('player equipment settings normalize, copy, and drive visible hand loadouts
     } as never)
 
     assert.equal(settings.equipment.head, 'hat-ranger')
+    assert.equal(settings.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
     assert.deepEqual(settings.equipment.melee, { handR: 'staff-lantern', handL: 'book' })
     assert.deepEqual(settings.equipment.ranged, { handR: 'arrow', handL: 'bow' })
     assert.deepEqual(settings.equipment.magic, { handR: 'staff-crystal', handL: null })
 
     const copied = copyPlayerSettings(settings)
     copied.equipment.head = 'hat-sun'
+    copied.equipment.boots = null
     copied.equipment.melee.handR = 'sword'
     assert.equal(settings.equipment.head, 'hat-ranger')
+    assert.equal(settings.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
     assert.equal(settings.equipment.melee.handR, 'staff-lantern')
 
     const world = createGameWorld()
@@ -169,6 +175,7 @@ test('player equipment settings normalize, copy, and drive visible hand loadouts
     const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings })
     const root = world.object3DByEid.get(eid)!
     assert.ok(findObjectByName(root, 'equip:hat-ranger'))
+    assert.equal(countObjectsByName(root, 'equip:high-jump-boots'), 2)
     assert.ok(findObjectByName(root, 'equip:staff-lantern'))
     assert.ok(findObjectByName(root, 'equip:book'))
 
@@ -199,6 +206,7 @@ test('syncPlayerVisuals applies live equipment changes without model swaps', () 
     assert.ok(findObjectByName(root, 'equip:hat'))
     assert.ok(findObjectByName(root, 'equip:sword'))
     world.playerSettings.equipment.head = 'hat-sun'
+    world.playerSettings.equipment.boots = HIGH_JUMP_BOOTS_ITEM_ID
     world.playerSettings.equipment.melee = { handR: 'staff-crystal', handL: null }
     syncPlayerVisuals(world)
 
@@ -206,6 +214,11 @@ test('syncPlayerVisuals applies live equipment changes without model swaps', () 
     assert.ok(findObjectByName(root, 'equip:hat-sun'))
     assert.equal(findObjectByName(root, 'equip:sword'), null)
     assert.ok(findObjectByName(root, 'equip:staff-crystal'))
+    assert.equal(countObjectsByName(root, 'equip:high-jump-boots'), 2)
+
+    world.playerSettings.equipment.boots = null
+    syncPlayerVisuals(world)
+    assert.equal(countObjectsByName(root, 'equip:high-jump-boots'), 0)
 })
 
 test('weapon stance shows bow and quiver only in ranged mode', () => {
@@ -277,6 +290,17 @@ test('battle hammer builds as a selectable heavy hand item', () => {
         assert.ok(carriedAxis.z > 0.9, `${kind} heavy head should point forward while carried`)
         assert.ok(Math.abs(frame.offset?.[1] ?? 1) < 0.12, `${kind} grip should stay near hand height`)
         assert.ok((frame.offset?.[2] ?? 0) > 0.12, `${kind} should be carried forward of the wrist`)
+    }
+})
+
+test('high jump boots build as selectable foot equipment', () => {
+    for (const kind of BOOT_EQUIPMENT_KINDS) {
+        const item = createEquipment(kind)
+        assert.equal(item.name, `equip:${kind}`)
+        assert.ok(findObjectByName(item, 'HighJumpBootSpring'), `${kind} should show a spring-assisted silhouette`)
+        assert.ok(findObjectByName(item, 'HighJumpBootGlow'), `${kind} should show the high-jump glow accent`)
+        assert.deepEqual(equipmentSocketFrame(kind, 'footL').offset, [0, 0, 0])
+        assert.deepEqual(equipmentSocketFrame(kind, 'footR').offset, [0, 0, 0])
     }
 })
 
@@ -381,6 +405,33 @@ test('passive shield guard uses the left-side yaw offset', () => {
 
     assert.equal(Shield.raised[player], 1)
     assert.ok(Shield.blockYawOffset[player]! < 0, 'passive shield should cover the left side, not the right')
+})
+
+test('front shield uses a short perfect window and reload disables guard', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.weaponStance = 'melee'
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    const action = heldAction(true)
+    const system = createPlayerShieldSystem(action.actions)
+
+    system.update(world, 0.10)
+    assert.equal(Shield.raised[player], 1)
+    assert.equal(Shield.perfect[player], 1)
+
+    system.update(world, 0.13)
+    assert.equal(Shield.raised[player], 1)
+    assert.equal(Shield.perfect[player], 0)
+
+    Shield.reloadSeconds[player] = 0.55
+    system.update(world, 0.10)
+    assert.equal(Shield.raised[player], 0)
+    assert.ok(Shield.reloadSeconds[player]! > 0)
+
+    system.update(world, 0.50)
+    assert.equal(Shield.raised[player], 1)
+    assert.equal(Shield.perfect[player], 0, 'holding through reload should not recreate a perfect block')
 })
 
 test('default hand equipment frames point sword forward, nock arrow, keep shield on the hand, and ground the staff', () => {
@@ -604,4 +655,12 @@ function findObjectByName(root: Object3D, name: string): Object3D | null {
         if (!found && obj.name === name) found = obj
     })
     return found
+}
+
+function countObjectsByName(root: Object3D, name: string): number {
+    let count = 0
+    root.traverse((obj) => {
+        if (obj.name === name) count++
+    })
+    return count
 }

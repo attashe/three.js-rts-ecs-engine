@@ -119,6 +119,59 @@ writeWav('npc-hurt.wav', mix(0.22, [
     filteredNoise(0.00, 0.10, 0.10, 1400, 8231),
 ]))
 
+// ── Spells ───────────────────────────────────────────────────────────
+// Each of the three staff spells gets a distinct cast cue (played as the
+// staff fires) and an impact cue (played where it lands). The families
+// read by timbre: Arcane Bolt = bright tonal "magic"; Frost Nova = cold,
+// airy, crystalline; Electric Orb = buzzy crackle. Casts rise/launch;
+// impacts are short and punchy so a flurry stays legible.
+
+// Arcane Bolt — bright rising zip with a tonal shimmer.
+writeWav('bolt-cast.wav', mix(0.30, [
+    chirp(0.00, 0.16, 320, 820, 0.22), // rising launch pitch
+    note(0.02, 0.24, 1047, 0.14),      // C6 shimmer
+    note(0.05, 0.26, 1568, 0.09),      // G6 overtone
+    filteredNoise(0.00, 0.12, 0.06, 4200, 8301),
+]))
+// Bolt impact — bright zap-pop with a quick downward chirp.
+writeWav('bolt-hit.wav', mix(0.26, [
+    noiseBurst(0.00, 0.04, 0.45, 8371),
+    note(0.00, 0.20, 1318, 0.18),       // E6 ring
+    note(0.01, 0.22, 1760, 0.10),       // A6
+    chirp(0.00, 0.14, 1200, 300, 0.12), // zap down
+    filteredNoise(0.00, 0.10, 0.08, 3500, 8381),
+]))
+
+// Frost Nova — cold airy sweep (the ring expanding) over a held tone.
+writeWav('nova-cast.wav', mix(0.50, [
+    chirpNoise(0.00, 0.42, 5000, 1200, 0.18, 8311), // frost sweep, cutoff falls
+    note(0.00, 0.40, 784, 0.10),                     // G5 cold tone
+    note(0.03, 0.42, 1175, 0.07),                    // D6
+    filteredNoise(0.00, 0.30, 0.06, 6000, 8321),     // crystalline hiss
+    bubble(0.00, 0.18, 300, 0.10, 8331),             // soft burst body
+]))
+// Nova chill — a high icy "tink" of crystal as the front touches a foe.
+writeWav('nova-hit.wav', mix(0.24, [
+    pluck(0.00, 0.18, 1568, 0.22),  // G6 ice ping
+    pluck(0.005, 0.20, 2349, 0.14), // D7 shimmer
+    pluck(0.01, 0.16, 1175, 0.12),  // D6
+    filteredNoise(0.00, 0.08, 0.06, 6000, 8391),
+]))
+
+// Electric Orb — rising buzzy crackle as it leaves the staff.
+writeWav('orb-cast.wav', mix(0.34, [
+    chirpNoise(0.00, 0.28, 900, 2200, 0.22, 8341), // rising electric buzz
+    crackle(0.00, 0.30, 0.50, 0.22, 8351),          // sparks
+    chirp(0.00, 0.18, 300, 700, 0.12),              // launch pitch
+    filteredNoise(0.00, 0.10, 0.06, 3000, 8361),
+]))
+// Orb zap — a sharp discharge when it arcs into something.
+writeWav('orb-zap.wav', mix(0.20, [
+    noiseBurst(0.00, 0.03, 0.50, 8401),
+    chirpNoise(0.00, 0.16, 3000, 600, 0.28, 8411), // discharge
+    crackle(0.00, 0.18, 0.60, 0.28, 8421),          // sparks
+]))
+
 // ── Character footsteps (per surface) ────────────────────────────────
 // Five surface families × 2 variants each. The locomotion system
 // detects the voxel under the player's feet and picks the matching
@@ -1081,7 +1134,8 @@ function ambStartLoop(duration) {
     // High bell glints, octave up, very quiet — the "stars" over the bed.
     pianoNote(0.28 * duration, 0.28 * duration + 1.2, 659, 0.05)(signal)  // E5
     pianoNote(0.72 * duration, 0.72 * duration + 1.4, 587, 0.045)(signal) // D5
-    filteredNoise(0, duration, 0.03, 5000, 7001)(signal) // faint air/reverb hiss
+    // No noise bed — piano + pad carry it. A continuous high-cutoff hiss
+    // reads as white noise and fatigues over a long session.
     crossfadeEnds(signal, 0.5)
     return signal
 }
@@ -1112,7 +1166,6 @@ function ambGardenLoop(duration) {
     }
     pianoNote(0.22 * duration, 0.22 * duration + 1.0, 698, 0.045)(signal) // F5 glint
     pianoNote(0.66 * duration, 0.66 * duration + 1.2, 880, 0.04)(signal)  // A5 glint
-    filteredNoise(0, duration, 0.03, 5200, 7011)(signal)
     crossfadeEnds(signal, 0.5)
     return signal
 }
@@ -1144,7 +1197,6 @@ function ambTownLoop(duration) {
             pianoNote(s, s + 2.4, c.notes[k], 0.11)(signal)
         }
     }
-    filteredNoise(0, duration, 0.03, 5200, 7021)(signal)
     crossfadeEnds(signal, 0.5)
     return signal
 }
@@ -1314,7 +1366,10 @@ function magicLoop(duration) {
             note(0, end - duration, hz, 0.07)(signal)
         }
     }
-    filteredNoise(0, duration, 0.04, 6000, 5601)(signal)
+    // Soft, dark shimmer — a low cutoff and low amplitude so it adds a hint
+    // of "air" without the bright 6 kHz hiss that fatigues when a magic zone
+    // (e.g. the demo portal) loops next to the player for minutes.
+    filteredNoise(0, duration, 0.022, 2600, 5601)(signal)
     crossfadeEnds(signal, 0.30)
     return signal
 }

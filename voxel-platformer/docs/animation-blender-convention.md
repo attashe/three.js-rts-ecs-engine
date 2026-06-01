@@ -60,6 +60,8 @@ disables that slot.
 | `handR`  | `socket_hand_R`   | right forearm | main-hand weapon           |
 | `handL`  | `socket_hand_L`   | left forearm  | off-hand weapon / shield   |
 | `back`   | `socket_back`     | spine/chest   | bow, quiver, cloak pin     |
+| `footR`  | `socket_foot_R`   | right leg     | boots / foot accessories   |
+| `footL`  | `socket_foot_L`   | left leg      | boots / foot accessories   |
 
 **Use underscores, not dots**, in socket names. three's glTF loader strips
 reserved characters (`.`, `:`, `/`, `[]`) from node names while binding

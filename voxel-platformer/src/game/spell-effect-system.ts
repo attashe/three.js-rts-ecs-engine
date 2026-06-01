@@ -16,7 +16,17 @@ import { damageNpc } from './npcs/npc-types'
  * it has fully expanded and faded. Pure + deterministic so it can run in the
  * fixed step and be unit-tested directly.
  */
-export function advanceSpellWaves(world: GameWorld, dt: number): void {
+export interface SpellEffectOptions {
+    /** Fired when a frost wave's front sweeps over (and chills) an NPC, at
+     *  that NPC's position — for a spatial impact SFX. */
+    onWaveHit?: (position: { x: number; y: number; z: number }) => void
+}
+
+export function advanceSpellWaves(
+    world: GameWorld,
+    dt: number,
+    onWaveHit?: (position: { x: number; y: number; z: number }) => void,
+): void {
     const effects = world.spellEffects
     for (let i = effects.length - 1; i >= 0; i--) {
         const fx = effects[i]!
@@ -32,19 +42,20 @@ export function advanceSpellWaves(world: GameWorld, dt: number): void {
             if (Math.abs(npc.position.y - fx.y) > fx.vertical) continue
             fx.hit.push(npc.id)
             damageNpc(npc, fx.damage)
+            onWaveHit?.({ x: npc.position.x, y: npc.position.y, z: npc.position.z })
         }
         if (fx.age >= fx.ttl) effects.splice(i, 1)
     }
 }
 
 /** Fixed-step driver for {@link advanceSpellWaves}. */
-export function createSpellEffectSystem(): System {
+export function createSpellEffectSystem(opts: SpellEffectOptions = {}): System {
     return {
         name: 'spellEffects',
         fixed: true,
         order: FixedOrder.postPhysics,
         update(world, dt) {
-            advanceSpellWaves(world as GameWorld, dt)
+            advanceSpellWaves(world as GameWorld, dt, opts.onWaveHit)
         },
     }
 }

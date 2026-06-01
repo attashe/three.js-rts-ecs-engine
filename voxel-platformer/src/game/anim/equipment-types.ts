@@ -1,4 +1,5 @@
 import type { EquipSlot } from '../../engine/anim'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from '../high-jump-boots'
 
 export const EQUIPMENT_KINDS = [
     'hat',
@@ -15,6 +16,7 @@ export const EQUIPMENT_KINDS = [
     'staff-crystal',
     'battle-hammer',
     'book',
+    HIGH_JUMP_BOOTS_ITEM_ID,
 ] as const
 
 export type EquipmentKind = (typeof EQUIPMENT_KINDS)[number]
@@ -57,6 +59,12 @@ export const HAMMER_EQUIPMENT_KINDS = [
 
 export type HammerEquipmentKind = (typeof HAMMER_EQUIPMENT_KINDS)[number]
 
+export const BOOT_EQUIPMENT_KINDS = [
+    HIGH_JUMP_BOOTS_ITEM_ID,
+] as const satisfies readonly EquipmentKind[]
+
+export type BootEquipmentKind = (typeof BOOT_EQUIPMENT_KINDS)[number]
+
 export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
     hat: 'Traveler Hat',
     'hat-arcane': 'Arcane Hat',
@@ -72,6 +80,7 @@ export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
     'staff-crystal': 'Staff C - Crystal',
     'battle-hammer': 'Battle Hammer',
     book: 'Book',
+    [HIGH_JUMP_BOOTS_ITEM_ID]: 'High Jump Boots',
 }
 
 export type HandEquipmentSlot = Extract<EquipSlot, 'handR' | 'handL'>
@@ -83,6 +92,7 @@ export interface EquipmentHandLoadout {
 
 export interface PlayerEquipmentSettings {
     head: HeadEquipmentKind | null
+    boots: BootEquipmentKind | null
     melee: EquipmentHandLoadout
     ranged: EquipmentHandLoadout
     magic: EquipmentHandLoadout
@@ -95,6 +105,7 @@ export const EMPTY_HAND_LOADOUT: EquipmentHandLoadout = {
 
 export const DEFAULT_PLAYER_EQUIPMENT: PlayerEquipmentSettings = {
     head: 'hat',
+    boots: null,
     melee: {
         handR: 'sword',
         handL: 'shield',
@@ -128,12 +139,14 @@ export function normalizeHandLoadout(
 
 export function normalizePlayerEquipment(input?: {
     head?: unknown
+    boots?: unknown
     melee?: Partial<EquipmentHandLoadout> | null
     ranged?: Partial<EquipmentHandLoadout> | null
     magic?: Partial<EquipmentHandLoadout> | null
 } | null): PlayerEquipmentSettings {
     return {
         head: normalizeHeadEquipmentKind(input?.head, DEFAULT_PLAYER_EQUIPMENT.head),
+        boots: normalizeBootEquipmentKind(input?.boots, DEFAULT_PLAYER_EQUIPMENT.boots),
         melee: normalizeHandLoadout(input?.melee, DEFAULT_PLAYER_EQUIPMENT.melee),
         ranged: normalizeHandLoadout(input?.ranged, DEFAULT_PLAYER_EQUIPMENT.ranged),
         magic: normalizeHandLoadout(input?.magic, DEFAULT_PLAYER_EQUIPMENT.magic),
@@ -142,11 +155,23 @@ export function normalizePlayerEquipment(input?: {
 
 export function copyPlayerEquipment(settings?: {
     head?: unknown
+    boots?: unknown
     melee?: Partial<EquipmentHandLoadout> | null
     ranged?: Partial<EquipmentHandLoadout> | null
     magic?: Partial<EquipmentHandLoadout> | null
 } | null): PlayerEquipmentSettings {
     return normalizePlayerEquipment(settings)
+}
+
+export function normalizeBootEquipmentKind(
+    value: unknown,
+    fallback: BootEquipmentKind | null = null,
+): BootEquipmentKind | null {
+    if (value === undefined) return fallback
+    if (value === null || value === '' || value === 'none') return null
+    return (BOOT_EQUIPMENT_KINDS as readonly string[]).includes(String(value))
+        ? value as BootEquipmentKind
+        : fallback
 }
 
 export function normalizeHandEquipmentKind(
@@ -184,7 +209,7 @@ export function handLoadoutKey(loadout: EquipmentHandLoadout): string {
 }
 
 export function playerEquipmentKey(settings: PlayerEquipmentSettings): string {
-    return `${settings.head ?? '-'}|${handLoadoutKey(settings.melee)}|${handLoadoutKey(settings.ranged)}|${handLoadoutKey(settings.magic)}`
+    return `${settings.head ?? '-'}|${settings.boots ?? '-'}|${handLoadoutKey(settings.melee)}|${handLoadoutKey(settings.ranged)}|${handLoadoutKey(settings.magic)}`
 }
 
 export function describeHandLoadout(loadout: EquipmentHandLoadout): string {

@@ -69,6 +69,7 @@ import { createPropRenderSystem } from './game/props/prop-system'
 import { createNpcRenderSystem } from './game/npcs/npc-render-system'
 import { createNpcBehaviourSystem } from './engine/ecs/systems/npc-behaviour-system'
 import { createPlayerShieldSystem } from './game/player-shield-system'
+import { createPlayerStunBlinkSystem } from './game/player-stun-blink-system'
 import { registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-runtime'
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
@@ -479,15 +480,16 @@ async function main(): Promise<void> {
         useCheckpoint: true,
     })
 
-    // Melee SFX — staff/hammer attacks get the beefier swing/hit samples;
-    // everything else uses the light pair. Spatial so a brawl across the
-    // plaza is positioned, not flat. The player's own swings originate at
-    // the listener, so they land at full volume.
+    // Positioned one-shot SFX helper (melee hits, spell impacts, …). Spatial
+    // so a brawl or a bolt across the plaza is placed in the world, not flat;
+    // events at the player originate on the listener, so they're full volume.
+    // Staff/hammer melee attacks get the beefier swing/hit samples; lighter
+    // weapons use the light pair.
     const HEAVY_MELEE_ATTACKS = new Set(['staff-slam', 'hammer-slam'])
-    const playMeleeCue = (id: string, x: number, y: number, z: number, priority: number): void => {
+    const playSpatialSfx = (id: string, x: number, y: number, z: number, priority: number, rate?: number): void => {
         audio.playSpatial(id, { x, y, z }, {
             deferUntilUnlocked: true,
-            rate: 0.94 + Math.random() * 0.12,
+            rate: rate ?? 0.94 + Math.random() * 0.12,
             refDistance: 4,
             maxDistance: 30,
             rolloffModel: 'linear',
@@ -506,21 +508,34 @@ async function main(): Promise<void> {
         .addSystem(slots.propRender.system, 'propRender')
         .addSystem(slots.npcRender.system, 'npcRender')
         .addSystem(createStuckArrowSystem(), 'stuckArrows')
-        .addSystem(createSpellEffectSystem(), 'spellEffects')
+        .addSystem(createSpellEffectSystem({
+            onWaveHit: (p) => playSpatialSfx(GameAudio.SpellNovaHit, p.x, p.y, p.z, 2),
+        }), 'spellEffects')
         .addSystem(createSpellEffectRenderSystem(renderer.scene), 'spellEffectsRender')
         .addSystem(createHealthBarSystem(renderer.scene, () => renderer.iso.camera), 'healthBars')
         .addSystem(createPlayerShieldSystem(actions, { actionId: GameAction.RaiseShield }), 'playerShield')
         .addSystem(createNpcBehaviourSystem(chunks), 'npcBehaviour')
         .addSystem(createMeleeCombatSystem({
-            onSwing: (e) => playMeleeCue(
+            onSwing: (e) => playSpatialSfx(
                 HEAVY_MELEE_ATTACKS.has(e.attackId) ? GameAudio.HeavySwing : GameAudio.SwordSwing,
                 e.x, e.y, e.z, 2,
             ),
-            onHit: (e) => playMeleeCue(
+            onHit: (e) => playSpatialSfx(
                 HEAVY_MELEE_ATTACKS.has(e.attackId) ? GameAudio.MeleeHitHeavy : GameAudio.MeleeHit,
                 e.x, e.y, e.z, 3,
             ),
-            onBlock: (e) => playMeleeCue(GameAudio.ShieldBlock, e.x, e.y, e.z, 4),
+            onBlock: (e) => playSpatialSfx(
+                GameAudio.ShieldBlock,
+                e.x,
+                e.y,
+                e.z,
+                e.blockKind === 'perfect' ? 5 : 4,
+                e.blockKind === 'perfect' ? 1.22 : undefined,
+            ),
+            onStun: (e) => {
+                if (e.reason !== 'attack' || e.attackId !== 'hammer-slam') return
+                playSpatialSfx(GameAudio.AirPush, e.x, e.y, e.z, 5, 0.82)
+            },
         }), 'meleeCombat')
         .addSystem(createPlayerHurtAudioSystem({
             onHurt: () => audio.play(GameAudio.PlayerHurt, {
@@ -554,12 +569,19 @@ async function main(): Promise<void> {
             // C casts the selected spell — magician only (the staff channels it).
             actionId: GameAction.CastSpell,
             canUse: (world) => world.weaponStance === 'magic',
-            onCast: () => audio.play(GameAudio.AirPush, { deferUntilUnlocked: true, rate: 1.1 }),
+            // Distinct cast cue per spell (flat — you're the caster).
+            onCast: (spell) => audio.play(
+                spell.id === 'nova' ? GameAudio.SpellNovaCast
+                    : spell.id === 'orb' ? GameAudio.SpellOrbCast
+                        : GameAudio.SpellBoltCast,
+                { deferUntilUnlocked: true, rate: 0.97 + Math.random() * 0.06 },
+            ),
         }), 'spellCast')
         .addSystem(createArrowHitSystem(chunks, {
             onArrowLand: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
             onArrowHitNpc: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
-            onBoltHit: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true, rate: 1.25 }),
+            // Arcane Bolt gets its own spatial impact, not the arrow thunk.
+            onBoltHit: (_eid, p) => playSpatialSfx(GameAudio.SpellBoltHit, p.x, p.y, p.z, 3),
         }), 'arrowHit')
         .addSystem(createHighJumpSystem(actions, {
             actionId: GameAction.HighJump,
@@ -613,7 +635,7 @@ async function main(): Promise<void> {
             onHit: () => audio.play(GameAudio.StoneImpact, { deferUntilUnlocked: true, volume: 0.7, rate: 0.9 }),
         }), 'stoneDamage')
         .addSystem(createElectricOrbSystem({
-            onZap: () => audio.play(GameAudio.AirPush, { deferUntilUnlocked: true, volume: 0.7, rate: 1.4 }),
+            onZap: (p) => playSpatialSfx(GameAudio.SpellOrbZap, p.x, p.y, p.z, 3),
         }), 'electricOrb')
         .addSystem(createDynamicCollisionSystem(chunks), 'dynamicCollision')
         .addSystem(createPlayerDeathSystem({
@@ -626,6 +648,7 @@ async function main(): Promise<void> {
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
         .addSystem(createPlayerDeathAnimSystem(), 'playerDeathAnim')
         .addSystem(createAnimationSystem(), 'animation')
+        .addSystem(createPlayerStunBlinkSystem(), 'playerStunBlink')
         .addSystem(slots.blockLights.system, 'blockLights')
         .addSystem(slots.chunkRender.system, 'chunkRender')
         .addSystem(slots.indoorCut.system, 'indoorCut')

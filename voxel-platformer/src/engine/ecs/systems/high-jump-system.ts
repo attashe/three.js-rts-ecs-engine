@@ -7,6 +7,7 @@ import { pushLog } from '../world'
 import type { ChunkManager } from '../../voxel/chunk-manager'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
 import { movementEnvironmentForAABB } from '../../voxel/movement-effects'
+import { playerCanHighJump } from '../../../game/high-jump-boots'
 
 export interface HighJumpOptions {
     actionId?: ActionId
@@ -45,7 +46,7 @@ export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions =
             const player = players[0]!
             if (!actions.consumePressed(actionId, player)) return
             if (hasComponent(world, player, RidingCart)) return
-            if (!world.playerSettings.abilities.highJump) {
+            if (!playerCanHighJump(world.playerSettings)) {
                 pushLog(world, 'High Jump is disabled.')
                 return
             }

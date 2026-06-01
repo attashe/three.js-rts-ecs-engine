@@ -8,9 +8,17 @@ import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './so
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
 import type { EditorProp } from './props/prop-types'
 import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
-import type { PlayerSettings } from './player-settings'
+import {
+    applyPlayerSettingsPatch,
+    copyPlayerSettings,
+    DEFAULT_PLAYER_SETTINGS,
+    type PlayerSettings,
+} from './player-settings'
 import type { ScriptEntry } from '../engine/script/types'
 import {
+    ARENA_FROM_DEMO_ARRIVAL_ID,
+    COMBAT_ARENA_LEVEL_ID,
+    DEMO_FROM_ARENA_ARRIVAL_ID,
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
     LARGE_TOWN_LEVEL_ID,
@@ -76,6 +84,12 @@ export function levelMetaWithSpawn(meta: LevelMeta, spawn: { x: number; y: numbe
         ...meta,
         spawn: { x: spawn.x, y: spawn.y, z: spawn.z },
     }
+}
+
+export function playerSettingsWithHighJumpDisabled(): PlayerSettings {
+    return applyPlayerSettingsPatch(copyPlayerSettings(DEFAULT_PLAYER_SETTINGS), {
+        abilities: { highJump: false },
+    })
 }
 
 /**
@@ -192,6 +206,13 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         .fill([19, 19], [groundY + 1, groundY + 3], [23, 23], BLOCK.brick)
         .fill([22, 22], [groundY + 1, groundY + 3], [21, 21], BLOCK.brick)
 
+    // Direct combat test gate, active by default and separate from the
+    // quest-gated garden portal.
+    t.fill([21, 23], [groundY, groundY], [10, 12], BLOCK.stone)
+        .fill([22, 22], [groundY, groundY], [11, 11], BLOCK.door)
+        .fill([21, 21], [groundY + 1, groundY + 3], [10, 10], BLOCK.brick)
+        .fill([23, 23], [groundY + 1, groundY + 3], [12, 12], BLOCK.brick)
+
     // Quest / test zones. The interact spots derive their AABB + prompt
     // anchor from a single center (= the matching prop's position); the
     // trigger / portal / arrival volumes stay explicit min/max regions.
@@ -307,6 +328,25 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             min: { x: 18.25, y: groundY + 1, z: 21.25 },
             max: { x: 19.75, y: groundY + 2.8, z: 22.75 },
         },
+        {
+            id: 'zone.demo.portal.combat-arena',
+            kind: 'portal',
+            label: 'Gate to the Combat Arena',
+            min: { x: 21, y: groundY + 1, z: 10 },
+            max: { x: 23, y: groundY + 3, z: 12 },
+            triggerSources: ['player'],
+            portal: {
+                targetLevelId: COMBAT_ARENA_LEVEL_ID,
+                targetArrivalId: ARENA_FROM_DEMO_ARRIVAL_ID,
+            },
+        },
+        {
+            id: DEMO_FROM_ARENA_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Return from the Combat Arena',
+            min: { x: 20.25, y: groundY + 1, z: 12.75 },
+            max: { x: 21.75, y: groundY + 2.8, z: 14.25 },
+        },
     ]
 
     const npcs: NpcConfig[] = [
@@ -395,6 +435,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         name: 'demo',
         size,
         spawn: t.stand(size / 2, size / 2),
+        player: playerSettingsWithHighJumpDisabled(),
         stoneSpawners,
         coinPiles,
         pistons,

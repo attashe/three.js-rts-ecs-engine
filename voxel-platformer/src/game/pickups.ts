@@ -10,8 +10,9 @@ import {
 } from '../engine/ecs/components'
 import { createEntity, despawnEntity } from '../engine/ecs/entity'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
-import { createCoinPile, createQuestShard, mergeGroupByMaterial } from './assets'
+import { createCoinPile, createHighJumpBootsProp, createQuestShard, mergeGroupByMaterial } from './assets'
 import type { InventoryCategoryId, InventoryIconId } from './inventory'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from './high-jump-boots'
 
 export interface CoinPileOptions {
     /** World-space position; the pile's base sits at this Y. */
@@ -79,7 +80,7 @@ export function spawnScriptPickup(world: GameWorld, opts: ScriptPickupOptions): 
     const itemAmount = safePickupAmount(opts.amount)
     const eid = kind === 'coin'
         ? spawnCoinPile(world, { position: opts.position, amount: coinAmount })
-        : spawnQuestItem(world, opts.position, itemAmount)
+        : spawnQuestItem(world, opts.position, itemAmount, kind)
 
     world.pickupMetaByEid.set(eid, {
         kind,
@@ -131,7 +132,12 @@ export function scriptPickupExists(world: GameWorld, scriptId: string): boolean 
     return hasComponent(world, eid, Pickup)
 }
 
-function spawnQuestItem(world: GameWorld, position: { x: number; y: number; z: number }, amount = 1): number {
+function spawnQuestItem(
+    world: GameWorld,
+    position: { x: number; y: number; z: number },
+    amount = 1,
+    kind = 'item',
+): number {
     const eid = createEntity(world)
     addComponents(world, eid, [Position, Rotation, Renderable, StaticRenderable, Pickup, PickupValue])
     Position.x[eid] = position.x
@@ -142,7 +148,9 @@ function spawnQuestItem(world: GameWorld, position: { x: number; y: number; z: n
     PickupValue.kind[eid] = PickupKind.ScriptItem
     PickupValue.amount[eid] = safePickupAmount(amount)
 
-    world.object3DByEid.set(eid, mergeGroupByMaterial(createQuestShard()))
+    world.object3DByEid.set(eid, mergeGroupByMaterial(
+        kind === HIGH_JUMP_BOOTS_ITEM_ID ? createHighJumpBootsProp() : createQuestShard(),
+    ))
     return eid
 }
 

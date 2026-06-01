@@ -31,6 +31,7 @@ export const MAIN_CHARACTER_COLLIDER_HALF_HEIGHT = MAIN_CHARACTER_COLLIDER_HEIGH
  *         ├─ Body / Head / Hair / Nose / pauldrons / cloak
  *         ├─ UpperArmL / UpperArmR (shoulder pivots, + hand sockets)
  *         └─ socket_head / socket_back
+ *      └─ LegL / LegR carry socket_foot_L / socket_foot_R
  *
  * Joint pivots sit at the anatomical joint so a clip rotating the pivot swings
  * the limb about it. Each limb mesh keeps a local offset (rest world position
@@ -206,8 +207,8 @@ export function createMainCharacter(opts: MainCharacterOptions = {}): Group {
 
     addBeard(chest, cy, opts.beard ?? 'none', beard)
 
-    // Equipment sockets (empty, identity-oriented). Hand sockets are added inside
-    // the arm pivots; head/back ride the chest so they follow the torso.
+    // Equipment sockets (empty, identity-oriented). Hand/foot sockets are added
+    // inside limb pivots; head/back ride the chest so they follow the torso.
     chest.add(socket('socket_head', 0, cy(1.56), 0.02))
     chest.add(socket('socket_back', 0, cy(1.1), -0.18))
 
@@ -294,5 +295,6 @@ function legPivot(name: string, x: number, mat: MeshStandardMaterial): Group {
     const boot = setShadow(new Mesh(sharedBoxGeometry(0.17, 0.32, 0.22), mat))
     boot.position.set(0, J.bootY - J.hipY, 0)
     pivot.add(boot)
+    pivot.add(socket(name === 'LegL' ? 'socket_foot_L' : 'socket_foot_R', 0, J.bootY - J.hipY, 0.02))
     return pivot
 }
