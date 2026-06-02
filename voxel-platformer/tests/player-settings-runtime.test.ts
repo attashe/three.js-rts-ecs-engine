@@ -11,7 +11,7 @@ import { createProjectileLaunchSystem } from '../src/engine/ecs/systems/projecti
 import { createGameWorld } from '../src/engine/ecs/world'
 import type { ActionMap } from '../src/engine/input/actions'
 import { PLAYER_TORCH_FLAME, PLAYER_TORCH_LIGHT } from '../src/game/assets'
-import { MAIN_CHARACTER_COLLIDER_HEIGHT, MAIN_CHARACTER_COLLIDER_RADIUS } from '../src/game/assets/main-character'
+import { MAIN_CHARACTER_COLLIDER_HEIGHT, MAIN_CHARACTER_COLLIDER_RADIUS, MAIN_CHARACTER_JOINTS } from '../src/game/assets/main-character'
 import { MovingObjectKind } from '../src/game/moving-objects'
 import { createPlayerTorchSystem } from '../src/game/player-torch-system'
 import { createPlayerShieldSystem } from '../src/game/player-shield-system'
@@ -458,6 +458,8 @@ test('spear builds as a selectable long hand item', () => {
     const spearDir = new Vector3(0, 1, 0).applyEuler(toEuler(frame.orient))
     assert.ok(spearDir.z > 0.96, 'right-hand spear should point forward')
     assert.ok((frame.offset?.[2] ?? 0) > 0.14, 'spear grip should sit forward of the wrist')
+    assert.ok((frame.offset?.[2] ?? 0) < 0.19, 'spear grip should stay close to the wrist')
+    assert.ok(Math.abs(frame.offset?.[1] ?? 0) < 0.15, 'spear grip should sit near the socket hand')
 })
 
 test('held shield action drives the shield block animation while grounded', () => {
@@ -602,6 +604,12 @@ test('spear attack impact keeps the point in a tight forward thrust', () => {
     const clip = partCharacterClips().find((candidate) => candidate.name === 'spearAttack')
     assert.ok(clip)
 
+    const startHand = rightHandSocketPositionAt(clip!, 0)
+    const anticipationHand = rightHandSocketPositionAt(clip!, 0.22)
+    const impactHand = rightHandSocketPositionAt(clip!, HUMANOID_ANIM_TIMINGS.spearImpact)
+    assert.ok(anticipationHand.z < startHand.z - 0.08, 'spear anticipation should pull the weapon hand back')
+    assert.ok(impactHand.z > anticipationHand.z + 0.16, 'spear impact should thrust the weapon hand forward')
+
     const spearHeadDir = new Vector3(0, 1, 0)
         .applyEuler(toEuler(spear.orient))
         .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'UpperArmR')!, HUMANOID_ANIM_TIMINGS.spearImpact))
@@ -653,6 +661,21 @@ function quaternionAt(
         track.values[offset + 2]!,
         track.values[offset + 3]!,
     )
+}
+
+function rightHandSocketPositionAt(
+    clip: { tracks: Array<{ target: string; times: number[]; values: number[] }> },
+    time: number,
+): Vector3 {
+    const shoulder = new Vector3(
+        MAIN_CHARACTER_JOINTS.armX,
+        MAIN_CHARACTER_JOINTS.shoulderY - MAIN_CHARACTER_JOINTS.chestY,
+        MAIN_CHARACTER_JOINTS.armZ,
+    )
+    const hand = new Vector3(0, MAIN_CHARACTER_JOINTS.handY, 0)
+        .applyQuaternion(quaternionAt(clip.tracks.find((track) => track.target === 'UpperArmR')!, time))
+    return shoulder.add(hand)
+        .applyQuaternion(quaternionAt(clip.tracks.find((track) => track.target === 'Chest')!, time))
 }
 
 test('indoorCutEnabled defaults on and round-trips through normalization', () => {

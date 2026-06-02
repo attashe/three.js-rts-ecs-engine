@@ -8,6 +8,7 @@ import type { ChunkManager } from '../../voxel/chunk-manager'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
 import { movementEnvironmentForAABB } from '../../voxel/movement-effects'
 import { playerCanHighJump } from '../../../game/high-jump-boots'
+import { HIGH_JUMP_MANA_COST, spendMana } from '../../../game/mana'
 
 export interface HighJumpOptions {
     actionId?: ActionId
@@ -25,9 +26,7 @@ export interface HighJumpOptions {
  * reaching platforms a normal jump can't clear. Refuses to fire mid-air so it
  * isn't a free double-jump.
  *
- * The parent engine gated this on PlayerResources mana cost; the platformer
- * foundation has no resource layer, so the action map cooldown alone gates
- * use frequency.
+ * Costs a small amount of player mana after the movement/ground gates pass.
  */
 export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions = {}): System {
     const actionId = opts.actionId ?? 'spell.highJump'
@@ -65,6 +64,10 @@ export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions =
 
             if (!hasComponent(world, player, Grounded)) {
                 pushLog(world, 'High Jump needs solid ground.')
+                return
+            }
+            if (!spendMana(player, HIGH_JUMP_MANA_COST)) {
+                pushLog(world, 'Not enough mana.')
                 return
             }
 

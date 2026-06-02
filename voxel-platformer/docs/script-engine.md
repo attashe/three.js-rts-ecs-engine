@@ -303,6 +303,8 @@ player.inventory.arrows     // number — getter
 player.inventory.count(id)  // durable item count, e.g. 'sun-shard'
 player.inventory.has(id, n) // true when at least n items are held
 player.inventory.list(category?) // snapshot of visible durable items
+player.mana                 // { current, max } in half-orb units
+player.restoreMana(amount?) // amount omitted ⇒ refill; amount is half-orb units
 player.settings             // PlayerSettings snapshot — mutate via setters below
 player.setSettings(patch)   // patch movement, inventory, torch, model/beard, abilities,
                             //   equipment.melee/ranged hand loadouts
@@ -854,6 +856,7 @@ on('level-start', async () => {
 | `weather.setRain/setSnow/setLightning/applyPreset` | — | — / 1.6 | hooks `AmbientWeather.setState` + presets |
 | Editor "Logic" tab (file loader + paste)      | — | — / 2 | ✅ live |
 | `player.setCheckpoint` / `clearCheckpoint`    | — | ✅ | Slice 3 — `world.lastCheckpoint` + session checkpoint store |
+| `player.mana` / `restoreMana`                 | — | ✅ | Script opt-in mana rest/refill hooks |
 | `pickups.despawn` / `pickups.exists`          | — | ✅ | Slice 3 — closes the stable-id lifecycle |
 | `pistons.setEnabled/isEnabled/flip/list`      | — | ✅ | Slice 3 — `world.pistonsById`, `pendingFlip` force-flip path |
 | `props.exists/isVisible/setVisible/setKind/list` | — | ✅ | Authored prop state for repair/reveal scripts |

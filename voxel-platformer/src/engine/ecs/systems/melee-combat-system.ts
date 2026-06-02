@@ -254,7 +254,7 @@ function applyMeleeHit(gw: GameWorld, attack: ActiveMeleeAttack, target: MeleeTa
             })
             return
         }
-        damageNpc(npc, attack.def.damage)
+        damageNpc(npc, attack.def.damage, { byPlayer: attack.attacker.kind === 'player' })
         applyTargetPush(gw, { kind: 'npc', id: npc.id }, attack, target)
         applyTargetStun(gw, { kind: 'npc', id: npc.id }, attack, target, opts, 'attack')
     }

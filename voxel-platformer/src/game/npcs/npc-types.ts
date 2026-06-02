@@ -2,6 +2,7 @@ import type { ScriptEntry } from '../../engine/script/types'
 import type { Zone } from '../../engine/ecs/zones'
 import type { AABB } from '../../engine/voxel/voxel-collide'
 import type { NpcImpactState } from '../../engine/ecs/melee-types'
+import { ensureAi } from './npc-ai'
 import {
     copyHandLoadout,
     handLoadoutKey,
@@ -94,6 +95,10 @@ export interface NpcConfig {
     /** When true the NPC ignores all damage (melee, arrows, spells, lava,
      *  falling stones) — useful for essential/quest characters. */
     invulnerable: boolean
+    /** When true the NPC never turns hostile from being hit by the player —
+     *  it cannot be provoked into combat. Use for essential/quest characters
+     *  (e.g. Keeper Arlen) so a stray swing doesn't make them fight back. */
+    unprovokable?: boolean
     equipment: EquipmentHandLoadout
     voice: DialogueVoiceRef
     scriptEnabled: boolean
@@ -152,6 +157,9 @@ export interface NpcRuntimeState {
     maxHp?: number
     /** Mirrors `NpcConfig.invulnerable`; damage helpers no-op when set. */
     invulnerable: boolean
+    /** Mirrors `NpcConfig.unprovokable`; when set, a player hit never flips the
+     *  NPC hostile (see `damageNpc`). */
+    unprovokable?: boolean
     requestAttack: boolean
     /** One-shot animation requested by behaviour/scripts. Defaults to the
      *  runtime's configured attack clip when omitted. */
@@ -211,14 +219,30 @@ export function npcDefaultHp(npc: Pick<NpcConfig, 'model'>): number {
     }
 }
 
+/** Optional context for a damage application. */
+export interface NpcDamageOptions {
+    /** The hit came from the player. A provokable NPC (not `unprovokable`,
+     *  not prey) turns hostile to the player and fights back. */
+    byPlayer?: boolean
+}
+
 /**
  * Apply `amount` damage to an NPC, honouring invulnerability. Flags the NPC to
  * die (death anim + despawn) when it drops to 0. The single damage entry point
  * for melee, arrows, spells, and falling stones. Returns true if this hit was
  * lethal.
+ *
+ * Retaliation: a player-dealt hit (`opts.byPlayer`) provokes the NPC into
+ * combat — it gains a brain (if it had none) and treats the player as an enemy
+ * — unless it is `unprovokable` (essential characters) or prey (which keeps
+ * fleeing). Invulnerable NPCs early-out before this, so they never retaliate.
  */
-export function damageNpc(npc: NpcRuntimeState, amount: number): boolean {
+export function damageNpc(npc: NpcRuntimeState, amount: number, opts: NpcDamageOptions = {}): boolean {
     if (npc.invulnerable || npc.dying || !(amount > 0)) return false
+    if (opts.byPlayer && !npc.unprovokable) {
+        const ai = ensureAi(npc)
+        if (!ai.flee) ai.hostileToPlayer = true
+    }
     npc.hp -= amount
     if (npc.hp <= 0) {
         npc.requestDie = true
@@ -252,6 +276,7 @@ export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     interactionRadius: 2.2,
     interactionPrompt: 'Interaction',
     invulnerable: false,
+    unprovokable: false,
     equipment: defaultNpcEquipment('keeper'),
     voice: defaultNpcVoice('keeper'),
     scriptEnabled: true,
@@ -458,6 +483,7 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         interactionRadius: safePositive(input.interactionRadius, DEFAULT_NPC.interactionRadius),
         interactionPrompt: input.interactionPrompt || DEFAULT_NPC.interactionPrompt,
         invulnerable: input.invulnerable ?? DEFAULT_NPC.invulnerable,
+        unprovokable: input.unprovokable ?? DEFAULT_NPC.unprovokable,
         equipment: normalizeHandLoadout(input.equipment, defaultNpcEquipment(model, variant)),
         voice: compactNpcVoice(normalizeDialogueVoice(input.voice, defaultNpcVoice(model))),
         scriptEnabled: input.scriptEnabled ?? DEFAULT_NPC.scriptEnabled,

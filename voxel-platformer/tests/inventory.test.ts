@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponents } from 'bitecs'
-import { Health, PlayerControlled } from '../src/engine/ecs/components'
+import { Health, Mana, PlayerControlled } from '../src/engine/ecs/components'
 import { HP_PER_HEART } from '../src/engine/ecs/combat'
 import { createEntity } from '../src/engine/ecs/entity'
 import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
@@ -14,16 +14,19 @@ import {
     normalizeInventoryItems,
     removeInventoryItem,
 } from '../src/game/inventory'
-import { consumeHealPotion, setBootsEquipped, setHeadEquipment, setHighJumpBootsEquipped, setMeleeHandEquipment } from '../src/game/inventory-system'
+import { consumeHealPotion, consumeManaPotion, setBootsEquipped, setHeadEquipment, setHighJumpBootsEquipped, setMeleeHandEquipment } from '../src/game/inventory-system'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 import { METAL_HELMET_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
+import { MANA_POTION_ITEM_ID, MANA_POTION_RESTORE, PLAYER_DEFAULT_MAX_MANA } from '../src/game/mana'
 
 function spawnInventoryPlayer(world: GameWorld, current: number, max: number): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [PlayerControlled, Health])
+    addComponents(world, eid, [PlayerControlled, Health, Mana])
     Health.current[eid] = current
     Health.max[eid] = max
+    Mana.current[eid] = PLAYER_DEFAULT_MAX_MANA
+    Mana.max[eid] = PLAYER_DEFAULT_MAX_MANA
     return eid
 }
 
@@ -41,17 +44,20 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.equal(removeInventoryItem(items, 'sun-shard', 2), true)
     assert.equal(inventoryItemCount(items, 'sun-shard'), 1)
     assert.equal(addInventoryItem(items, 'heal-potion', 3), true)
+    assert.equal(addInventoryItem(items, MANA_POTION_ITEM_ID, 2), true)
     assert.equal(addInventoryItem(items, HIGH_JUMP_BOOTS_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, HIGH_SPEED_BOOTS_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, METAL_HELMET_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, SPEAR_ITEM_ID, 1), true)
     assert.equal(defaultInventoryIcon('heal-potion'), 'heal-potion')
+    assert.equal(defaultInventoryIcon(MANA_POTION_ITEM_ID), 'mana-potion')
     assert.equal(defaultInventoryIcon(HIGH_JUMP_BOOTS_ITEM_ID), 'boots')
     assert.equal(defaultInventoryIcon(HIGH_SPEED_BOOTS_ITEM_ID), 'boots')
     assert.equal(defaultInventoryIcon(METAL_HELMET_ITEM_ID), 'metal-helmet')
     assert.equal(defaultInventoryIcon(SPEAR_ITEM_ID), 'spear')
     assert.deepEqual(listInventoryItems(items, 'consumables').map((item) => [item.id, item.quantity, item.icon]), [
         ['heal-potion', 3, 'heal-potion'],
+        [MANA_POTION_ITEM_ID, 2, 'mana-potion'],
     ])
     assert.deepEqual(listInventoryItems(items, 'accessories').map((item) => [item.id, item.quantity, item.icon]), [
         [HIGH_JUMP_BOOTS_ITEM_ID, 1, 'boots'],
@@ -172,4 +178,24 @@ test('heal potion consumption restores one heart and updates inventory settings'
     assert.equal(consumeHealPotion(world), false)
     assert.equal(world.inventory.items['heal-potion']?.quantity, 1)
     assert.equal(world.playerSettings.inventory.items['heal-potion']?.quantity, 1)
+})
+
+test('mana potion consumption restores two orbs and updates inventory settings', () => {
+    const world = createGameWorld()
+    const player = spawnInventoryPlayer(world, 4, 4)
+    Mana.current[player] = 2
+    world.inventory.items = normalizeInventoryItems({
+        [MANA_POTION_ITEM_ID]: { quantity: 2 },
+    })
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+
+    assert.equal(consumeManaPotion(world), true)
+    assert.equal(Mana.current[player], 2 + MANA_POTION_RESTORE)
+    assert.equal(world.inventory.items[MANA_POTION_ITEM_ID]?.quantity, 1)
+    assert.equal(world.playerSettings.inventory.items[MANA_POTION_ITEM_ID]?.quantity, 1)
+
+    Mana.current[player] = Mana.max[player]!
+    assert.equal(consumeManaPotion(world), false)
+    assert.equal(world.inventory.items[MANA_POTION_ITEM_ID]?.quantity, 1)
+    assert.equal(world.playerSettings.inventory.items[MANA_POTION_ITEM_ID]?.quantity, 1)
 })

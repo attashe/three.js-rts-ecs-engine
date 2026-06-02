@@ -136,37 +136,37 @@ export function partCharacterClips(): ProcClipDef[] {
             ],
         },
         {
-            // Spear thrust: a longer committed lunge. The held spear's +Y axis
-            // stays nearly level and forward at the authored impact moment.
+            // Spear thrust: pull the weapon hand back in startup, then snap the
+            // spear's +Y axis into a level forward line at the impact moment.
             name: 'spearAttack', duration: HUMANOID_ANIM_TIMINGS.spearAttack, tracks: [
                 neutralFigure(HUMANOID_ANIM_TIMINGS.spearAttack),
                 eulerQuatTrack('Chest', [
                     { t: 0, e: [0.02, -0.06, 0] },
-                    { t: 0.12, e: [-0.08, -0.2, -0.025] },
-                    { t: 0.22, e: [0.12, 0.025, 0.012] },
-                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [0.2, 0.01, 0] },
+                    { t: 0.12, e: [-0.12, -0.24, -0.035] },
+                    { t: 0.22, e: [-0.06, -0.18, -0.02] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [0.24, 0.01, 0] },
                     { t: 0.4, e: [0.06, -0.04, 0.01] },
                     { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0] },
                 ]),
                 eulerQuatTrack('Head', [
                     { t: 0, e: [0, 0.03, 0] },
-                    { t: 0.12, e: [0.04, -0.12, 0] },
+                    { t: 0.12, e: [0.04, -0.14, 0] },
                     { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.04, 0.02, 0] },
                     { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0] },
                 ]),
                 eulerQuatTrack('UpperArmR', [
                     { t: 0, e: [-0.18, 0.08, -0.08] },
-                    { t: 0.12, e: [-0.92, 0.16, -0.18] },
-                    { t: 0.22, e: [-0.36, 0.04, -0.06] },
-                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.12, 0.02, -0.02] },
+                    { t: 0.12, e: [0.1, 0.22, -0.22] },
+                    { t: 0.22, e: [0.2, 0.18, -0.18] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.4, 0.02, -0.02] },
                     { t: 0.4, e: [-0.34, 0.05, -0.06] },
                     { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, -0.04] },
                 ]),
                 eulerQuatTrack('UpperArmL', [
                     { t: 0, e: [-0.1, -0.08, 0.12] },
-                    { t: 0.14, e: [-0.42, -0.26, 0.22] },
-                    { t: 0.22, e: [-0.34, -0.16, 0.16] },
-                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.24, -0.08, 0.1] },
+                    { t: 0.14, e: [-0.5, -0.3, 0.24] },
+                    { t: 0.22, e: [-0.44, -0.22, 0.19] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.2, -0.06, 0.08] },
                     { t: 0.4, e: [-0.22, -0.08, 0.1] },
                     { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0.04] },
                 ]),

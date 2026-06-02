@@ -92,8 +92,8 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
         handL: { orient: [Math.PI / 2 - 0.08, 0, 0.16], offset: [-0.015, -0.045, 0.08] },
     },
     spear: {
-        handR: { orient: [Math.PI / 2 - 0.02, 0, -0.1], offset: [0.018, -0.16, 0.2] },
-        handL: { orient: [Math.PI / 2 - 0.02, 0, 0.1], offset: [-0.018, -0.16, 0.2] },
+        handR: { orient: [Math.PI / 2 - 0.02, 0, -0.1], offset: [0.018, -0.13, 0.18] },
+        handL: { orient: [Math.PI / 2 - 0.02, 0, 0.1], offset: [-0.018, -0.13, 0.18] },
     },
     shield: {
         handR: { orient: [0, Math.PI / 2 - 0.28, 0], offset: [0.13, -0.075, 0.015] },

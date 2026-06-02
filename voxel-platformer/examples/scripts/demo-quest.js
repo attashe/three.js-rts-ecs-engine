@@ -68,6 +68,16 @@ const KEEPER_SHOP = {
             stock: 8,
         },
         {
+            id: 'mana-potion',
+            name: 'Mana Potion',
+            description: 'A sealed blue draught for spellwork and high jumps.',
+            resource: 'mana-potion',
+            unitSize: 1,
+            buyPrice: 6,
+            sellPrice: 3,
+            stock: 8,
+        },
+        {
             id: 'high-jump-boots',
             name: 'High Jump Boots',
             description: 'Spring-soled boots. Equip them from Accessories to enable High Jump.',
@@ -272,7 +282,8 @@ async function openKeeperTrade() {
     const result = await trade.open(KEEPER_SHOP)
     if (result.status === 'bought') {
         const arrows = result.gained.arrows ?? 0
-        const potions = result.gained['heal-potion'] ?? 0
+        const healingPotions = result.gained['heal-potion'] ?? 0
+        const manaPotions = result.gained['mana-potion'] ?? 0
         const jumpBoots = result.gained['high-jump-boots'] ?? 0
         const speedBoots = result.gained['high-speed-boots'] ?? 0
         ui.say(KEEPER_ZONE, arrows > 0
@@ -281,11 +292,13 @@ async function openKeeperTrade() {
                 ? 'Packed the High Jump Boots. Equip them from Accessories.'
             : speedBoots > 0
                 ? 'Packed the Boots of High Speed. Equip them from Accessories.'
-            : `Packed ${potions} healing potion(s). Keep them close.`,
+            : manaPotions > 0
+                ? `Packed ${manaPotions} mana potion(s). Keep them close.`
+            : `Packed ${healingPotions} healing potion(s). Keep them close.`,
         { seconds: 3 })
     } else if (result.status === 'sold') {
         const arrows = result.removed.arrows ?? 0
-        const potions = result.removed['heal-potion'] ?? 0
+        const potions = (result.removed['heal-potion'] ?? 0) + (result.removed['mana-potion'] ?? 0)
         const boots = (result.removed['high-jump-boots'] ?? 0) + (result.removed['high-speed-boots'] ?? 0)
         ui.say(KEEPER_ZONE, arrows > 0
             ? `I can use those ${arrows} arrow(s). Take ${result.gained.gold} gold.`

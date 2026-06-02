@@ -1,5 +1,5 @@
 import { query } from 'bitecs'
-import { Health, PlayerControlled } from '../engine/ecs/components'
+import { Health, Mana, PlayerControlled } from '../engine/ecs/components'
 import { HP_PER_HEART } from '../engine/ecs/combat'
 import type { GameWorld, WeaponStance } from '../engine/ecs/world'
 import { RenderOrder } from '../engine/ecs/systems/orders'
@@ -33,6 +33,7 @@ import {
     isBuyableHeadEquipmentItemId,
 } from './equipment-items'
 import { SPELLS } from './spells'
+import { AIR_PUSH_MANA_COST, HIGH_JUMP_MANA_COST, MANA_PER_ORB, MANA_POTION_ITEM_ID, MANA_POTION_RESTORE, restoreMana } from './mana'
 import {
     INVENTORY_CATEGORIES,
     INVENTORY_CATEGORY_LABELS,
@@ -81,6 +82,18 @@ export function consumeHealPotion(world: GameWorld): boolean {
     if (inventoryItemCount(world.inventory.items, HEAL_POTION_ITEM_ID) <= 0) return false
     if (!removeInventoryItem(world.inventory.items, HEAL_POTION_ITEM_ID, 1)) return false
     Health.current[player] = Math.min(max, current + HEAL_POTION_RESTORE_HP)
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+    return true
+}
+
+export function consumeManaPotion(world: GameWorld): boolean {
+    const players = query(world, [PlayerControlled, Mana])
+    if (players.length === 0) return false
+    const player = players[0]!
+    if (inventoryItemCount(world.inventory.items, MANA_POTION_ITEM_ID) <= 0) return false
+    if (Mana.max[player]! <= 0 || Mana.current[player]! >= Mana.max[player]!) return false
+    if (!removeInventoryItem(world.inventory.items, MANA_POTION_ITEM_ID, 1)) return false
+    restoreMana(player, MANA_POTION_RESTORE)
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
     return true
 }
@@ -412,7 +425,7 @@ function spellSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
         button.appendChild(label)
 
         const sub = document.createElement('div')
-        sub.textContent = spell.hint
+        sub.textContent = `${spell.hint} Cost: ${manaCostLabel(spell.manaCost)}.`
         Object.assign(sub.style, {
             color: 'rgba(238, 246, 242, 0.58)',
             font: '600 11px ui-sans-serif, system-ui, sans-serif',
@@ -448,10 +461,11 @@ function groupInventoryItems(world: GameWorld): Map<InventoryCategoryId, Invento
         },
     )
     for (const item of listInventoryItems(world.inventory.items)) {
-        if (item.id === HEAL_POTION_ITEM_ID) continue
+        if (item.id === HEAL_POTION_ITEM_ID || item.id === MANA_POTION_ITEM_ID) continue
         if (isBuyableHeadEquipmentItemId(item.id) || isBuyableHandEquipmentItemId(item.id)) continue
         grouped.get(item.category)?.push(item)
     }
+    grouped.get('consumables')!.unshift(manaPotionItem(world))
     grouped.get('consumables')!.unshift(healPotionItem(world))
     return grouped
 }
@@ -464,6 +478,17 @@ function healPotionItem(world: GameWorld): InventorySnapshotItem {
         description: 'Restores one heart.',
         category: 'consumables',
         icon: 'heal-potion',
+    }
+}
+
+function manaPotionItem(world: GameWorld): InventorySnapshotItem {
+    return {
+        id: MANA_POTION_ITEM_ID,
+        quantity: inventoryItemCount(world.inventory.items, MANA_POTION_ITEM_ID),
+        name: 'Mana Potion',
+        description: 'Restores two mana orbs.',
+        category: 'consumables',
+        icon: 'mana-potion',
     }
 }
 
@@ -601,6 +626,20 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
             },
         })
     }
+    if (item.id === MANA_POTION_ITEM_ID) {
+        return menuCard({
+            icon: item.icon,
+            name: item.name,
+            detail: `x${item.quantity}`,
+            title: item.quantity > 0
+                ? `${item.name}\nDouble-click to drink. Restores two mana orbs.`
+                : item.name,
+            disabled: item.quantity <= 0,
+            onDoubleClick: () => {
+                if (consumeManaPotion(world)) renderInventory(dom, world)
+            },
+        })
+    }
     if (isBootEquipmentItemId(item.id)) {
         const bootId = item.id
         const active = world.playerSettings.equipment.boots === bootId
@@ -722,6 +761,9 @@ function statsSection(world: GameWorld): HTMLElement[] {
         ['Move speed', effectivePlayerMoveSpeed(world.playerSettings).toFixed(1)],
         ['Jump', world.playerSettings.jumpVelocity.toFixed(1)],
         ['High jump', world.playerSettings.highJumpVelocity.toFixed(1)],
+        ['High jump cost', manaCostLabel(HIGH_JUMP_MANA_COST)],
+        ['Air Push cost', manaCostLabel(AIR_PUSH_MANA_COST)],
+        ['Mana', playerManaLabel(world)],
         ['Arrow speed', effectivePlayerArrowSpeed(world.playerSettings).toFixed(1)],
         ['Torch range', world.playerSettings.torch.distance.toFixed(1)],
     ] as const
@@ -744,6 +786,20 @@ function statsSection(world: GameWorld): HTMLElement[] {
         nodes.push(statRow(PLAYER_ABILITY_LABELS[key], enabled ? 'On' : 'Off', enabled))
     }
     return nodes
+}
+
+function playerManaLabel(world: GameWorld): string {
+    const players = query(world, [PlayerControlled, Mana])
+    if (players.length === 0) return '0 / 0'
+    const player = players[0]!
+    return `${Math.max(0, Math.round(Mana.current[player]!))} / ${Math.max(0, Math.round(Mana.max[player]!))}`
+}
+
+function manaCostLabel(cost: number): string {
+    const units = Math.max(0, Math.floor(cost))
+    if (units === MANA_PER_ORB) return '1 orb'
+    if (units % MANA_PER_ORB === 0) return `${units / MANA_PER_ORB} orbs`
+    return `${units}/${MANA_PER_ORB} orb`
 }
 
 function statRow(label: string, value: string, positive?: boolean): HTMLElement {
@@ -794,6 +850,7 @@ function iconBackground(icon: InventoryIconId): string {
         case 'arrows': return 'linear-gradient(145deg, #39444d, #7aa3aa)'
         case 'quest-shard': return 'linear-gradient(145deg, #2f4d5f, #77d0c9)'
         case 'heal-potion': return 'linear-gradient(145deg, #472333, #c95772)'
+        case 'mana-potion': return 'linear-gradient(145deg, #17355f, #45b8ff)'
         case 'torch': return 'linear-gradient(145deg, #4a2b18, #d28b37)'
         case 'boots': return 'linear-gradient(145deg, #192a3a, #65d7ff)'
         case 'hat': return 'linear-gradient(145deg, #20372f, #7ac7a2)'
@@ -846,6 +903,15 @@ function glyphStyle(icon: InventoryIconId): Partial<CSSStyleDeclaration> {
             borderRadius: '5px 5px 7px 7px',
             background: 'linear-gradient(180deg, #ffd7de 0 22%, #e34c64 23% 100%)',
             boxShadow: '0 -6px 0 -2px #d9edf0, inset -3px -4px 0 rgba(85, 10, 22, 0.25)',
+        }
+    }
+    if (icon === 'mana-potion') {
+        return {
+            width: '16px',
+            height: '22px',
+            borderRadius: '5px 5px 7px 7px',
+            background: 'linear-gradient(180deg, #d7f1ff 0 22%, #45b8ff 23% 100%)',
+            boxShadow: '0 -6px 0 -2px #d9edf0, inset -3px -4px 0 rgba(10, 41, 85, 0.3), 0 0 10px rgba(69, 184, 255, 0.45)',
         }
     }
     if (icon === 'torch') {

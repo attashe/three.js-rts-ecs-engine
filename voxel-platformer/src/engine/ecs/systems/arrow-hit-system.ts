@@ -138,12 +138,12 @@ export function createArrowHitSystem(
                             continue
                         }
                         if (isBolt) {
-                            damageNpc(npcHit.npc, boltDamage)
+                            damageNpc(npcHit.npc, boltDamage, { byPlayer: true })
                             opts.onBoltHit?.(arrow, { x: hx, y: hy, z: hz })
                             despawnEntity(gw, arrow)
                         } else {
                             stickArrowInNpc(gw, arrow, npcHit.npc, hx, hy, hz)
-                            damageNpc(npcHit.npc, npcDamage)
+                            damageNpc(npcHit.npc, npcDamage, { byPlayer: true })
                             opts.onArrowHitNpc?.(arrow, npcHit.npc)
                         }
                         continue

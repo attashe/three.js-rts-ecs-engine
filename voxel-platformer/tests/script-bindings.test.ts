@@ -44,7 +44,7 @@ function stubs() {
         audioPlay: [], audioStop: [],
         chunksSet: [], chunksFill: [], chunksGet: [],
         playerTeleport: [], playerKill: [],
-        playerSettings: [], playerAbility: [], playerGold: [], playerArrows: [],
+        playerSettings: [], playerAbility: [], playerGold: [], playerArrows: [], playerManaRestore: [],
         playerItemAdd: [], playerItemRemove: [],
         pickupSpawn: [], pickupDespawn: [], pickupExists: [],
         pistonSetEnabled: [], pistonIsEnabled: [], pistonFlip: [], pistonSetDeployed: [], pistonList: [],
@@ -66,6 +66,7 @@ function stubs() {
     let playerPos: VoxelCoord | null = { x: 1, y: 2, z: 3 }
     let gold = 7
     let arrows = 3
+    let mana = { current: 3, max: 8 }
     let items: InventoryItemMap = {}
     addInventoryItem(items, 'sun-shard', 2, { name: 'Sun Shard', category: 'quest' })
     let playerSettings: PlayerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
@@ -84,6 +85,16 @@ function stubs() {
         getPosition() { return playerPos },
         getGold() { return gold },
         getArrows() { return arrows },
+        getMana() { return { ...mana } },
+        restoreMana(amount?: number) {
+            const before = mana.current
+            mana.current = amount === undefined
+                ? mana.max
+                : Math.min(mana.max, mana.current + Math.max(0, Math.floor(amount)))
+            const changed = mana.current !== before
+            calls.playerManaRestore.push({ amount, changed })
+            return changed
+        },
         getInventoryItemCount(itemId) { return inventoryItemCount(items, itemId) },
         getInventoryItems(category) { return listInventoryItems(items, category) },
         addInventoryItem(itemId: string, quantity?: number, opts?: InventoryItemOptions) {
@@ -378,6 +389,23 @@ test('player.position sentinel makes AABB checks fail naturally', () => {
     // sentinel propagates through it as "false, please skip".
     const inside = ctx.geom.box({ x: 0, y: 0, z: 0 }, { x: 10, y: 10, z: 10 }, pos)
     assert.equal(inside, false)
+})
+
+test('player mana API reads a snapshot and restores via the facade', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+
+    assert.deepEqual(ctx.player.mana, { current: 3, max: 8 })
+    assert.equal(ctx.player.restoreMana(2), true)
+    assert.deepEqual(ctx.player.mana, { current: 5, max: 8 })
+    assert.equal(ctx.player.restoreMana(), true)
+    assert.deepEqual(ctx.player.mana, { current: 8, max: 8 })
+    assert.equal(ctx.player.restoreMana(), false)
+    assert.deepEqual(s.calls.playerManaRestore, [
+        { amount: 2, changed: true },
+        { amount: undefined, changed: true },
+        { amount: undefined, changed: false },
+    ])
 })
 
 test('time.delta is the most recent advance(dt) input', () => {

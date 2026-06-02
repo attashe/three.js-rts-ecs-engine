@@ -6,8 +6,9 @@ export const NPC_TARGET_PLAYER = 'player'
 
 const DEFAULT_PERCEPTION_RADIUS = 8
 
-/** Lazily create a default brain anchored at the NPC's current post. */
-function ensureAi(runtime: NpcRuntimeState): NpcAiState {
+/** Lazily create a default brain anchored at the NPC's current post. Exported so
+ *  the damage path can give a provoked NPC a brain on the spot (see `damageNpc`). */
+export function ensureAi(runtime: NpcRuntimeState): NpcAiState {
     if (runtime.ai) return runtime.ai
     const ai: NpcAiState = {
         waypoints: [],

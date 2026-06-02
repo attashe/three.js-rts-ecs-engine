@@ -36,6 +36,7 @@ import { createNpcHazardSystem } from './engine/ecs/systems/npc-hazard-system'
 import { createStuckArrowSystem } from './game/stuck-arrow-system'
 import { createHealthBarSystem } from './game/health-bar-system'
 import { createHealthHudSystem } from './game/health-hud-system'
+import { createManaHudSystem } from './game/mana-hud-system'
 import { createStoneDamageSystem } from './game/stone-damage-system'
 import { createElectricOrbSystem } from './game/electric-orb-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
@@ -738,6 +739,7 @@ async function main(): Promise<void> {
             renderElement: renderer.webgpu.domElement,
         }), 'debugOverlay')
         .addSystem(createHealthHudSystem(), 'healthHud')
+        .addSystem(createManaHudSystem(), 'manaHud')
         .addSystem(createInventorySystem(engine.input, actions), 'inventory')
         .addSystem(createGameMenuSystem(engine.input, actions, audio, {
             renderElement: renderer.webgpu.domElement,

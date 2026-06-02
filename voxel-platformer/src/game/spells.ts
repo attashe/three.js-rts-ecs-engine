@@ -5,6 +5,7 @@ import type { System } from '../engine/ecs/systems/system'
 import { FixedOrder } from '../engine/ecs/systems/orders'
 import { pushLog, type GameWorld } from '../engine/ecs/world'
 import { spawnElectricOrb, spawnMagicBolt } from './moving-objects'
+import { spendMana } from './mana'
 
 /** A castable spell. `cast` runs the gameplay effect; `anim` is the combat
  *  overlay param played on the caster; `castLog` is the flavour line. */
@@ -12,6 +13,8 @@ export interface Spell {
     id: string
     label: string
     hint: string
+    /** Integer half-orb units. 1 = half a mana orb. */
+    manaCost: number
     /** Combat overlay param to trigger on the caster's rig. */
     anim: 'shoot' | 'staffAttack' | 'attackWide'
     castLog: string
@@ -35,6 +38,7 @@ export const SPELLS: readonly Spell[] = [
         id: 'bolt',
         label: 'Arcane Bolt',
         hint: 'A single bolt of force fired where you aim.',
+        manaCost: 1,
         anim: 'shoot',
         castLog: 'A bolt of force leaps from the staff.',
         cast(world, player) {
@@ -52,6 +56,7 @@ export const SPELLS: readonly Spell[] = [
         id: 'nova',
         label: 'Frost Nova',
         hint: 'A slow ring of frost that chills every enemy it rolls over.',
+        manaCost: 3,
         anim: 'attackWide',
         castLog: 'A ring of frost rolls outward.',
         cast(world, player) {
@@ -77,6 +82,7 @@ export const SPELLS: readonly Spell[] = [
         id: 'orb',
         label: 'Electric Orb',
         hint: 'A crackling orb that arcs and ricochets, zapping what it touches.',
+        manaCost: 2,
         anim: 'shoot',
         castLog: 'An electric orb leaps from the staff, crackling.',
         cast(world, player) {
@@ -130,6 +136,10 @@ export function createSpellCastSystem(actions: ActionMap, opts: SpellCastOptions
             if (!actions.consumePressed(actionId, player)) return
 
             const spell = getSpell(gw.selectedSpell)
+            if (!spendMana(player, spell.manaCost)) {
+                pushLog(gw, 'Not enough mana.')
+                return
+            }
             spell.cast(gw, player)
             gw.animControllerByEid.get(player)?.machine.setParam(spell.anim, 1)
             pushLog(gw, spell.castLog)

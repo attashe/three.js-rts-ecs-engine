@@ -155,6 +155,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
                     list(category?: InventoryCategoryId) { return player.getInventoryItems?.(category) ?? [] },
                 }
             },
+            get mana() { return player.getMana?.() ?? { current: 0, max: 0 } },
             get settings() { return player.getSettings() },
             get checkpoint() { return player.getCheckpoint() },
             teleport(x, y, z) { player.teleport(x, y, z) },
@@ -170,6 +171,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             setAbility(ability, enabled) { player.setAbility(ability, enabled) },
             setGold(amount) { player.setGold(amount) },
             setArrows(amount) { player.setArrows(amount) },
+            restoreMana(amount) { return player.restoreMana?.(amount) ?? false },
             addInventoryItem(itemId, quantity, opts) {
                 return player.addInventoryItem?.(itemId, quantity, opts) ?? false
             },

@@ -96,6 +96,8 @@ export interface PlayerFacade {
     getPosition(): VoxelCoord | null
     getGold(): number
     getArrows(): number
+    getMana?(): { current: number; max: number }
+    restoreMana?(amount?: number): boolean
     getInventoryItemCount?(itemId: string): number
     getInventoryItems?(category?: InventoryCategoryId): InventorySnapshotItem[]
     addInventoryItem?(itemId: string, quantity?: number, opts?: InventoryItemOptions): boolean
@@ -382,6 +384,7 @@ export interface PlayerApi {
      *  "skip while dead" gates: `if (!player.alive) return`. */
     readonly alive: boolean
     readonly inventory: PlayerInventoryApi
+    readonly mana: { current: number; max: number }
     readonly settings: PlayerSettings
     /** Current respawn point set via `setCheckpoint`, or `null` when none
      *  is set this session. Survives a death-triggered reload but not a
@@ -401,6 +404,9 @@ export interface PlayerApi {
     setAbility(ability: PlayerAbilityKey, enabled: boolean): void
     setGold(amount: number): void
     setArrows(amount: number): void
+    /** Restore player mana. With no amount, refills to max; otherwise restores
+     *  that many half-orb units. Returns true when mana changed. */
+    restoreMana(amount?: number): boolean
     addInventoryItem(itemId: string, quantity?: number, opts?: InventoryItemOptions): boolean
     removeInventoryItem(itemId: string, quantity?: number): boolean
 }
@@ -601,6 +607,7 @@ export type TradeCurrency = 'gold'
 export type TradeResource =
     | 'arrows'
     | 'heal-potion'
+    | 'mana-potion'
     | 'high-jump-boots'
     | 'high-speed-boots'
     | 'hat-arcane'

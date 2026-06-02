@@ -16,6 +16,7 @@ import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushLog, type GameWorld } from '../world'
 import { MovementStateId } from '../movement-state'
+import { AIR_PUSH_MANA_COST, spendMana } from '../../../game/mana'
 
 export interface AirPushOptions {
     /** Half-angle of the cone in radians. Default ≈ 58° (Math.PI * 0.32). */
@@ -48,9 +49,8 @@ export interface AirPushOptions {
  * stones above or below the player at close range still get caught (matching
  * a real gust of wind rather than a laser).
  *
- * The parent engine had mana cost + path-follower interruption hooks. Neither
- * applies to the platformer foundation (no PlayerResources, no AI movers);
- * both branches were stripped on extraction.
+ * Costs player mana after the ability gate passes. Static props remain
+ * untouched; Air Push is for physical objects, not scenery.
  */
 export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {}): System {
     const halfAngle = opts.halfAngle ?? Math.PI * 0.32
@@ -72,6 +72,10 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             if (hasComponent(world, player, RidingCart)) return
             if (!world.playerSettings.abilities.airPush) {
                 pushLog(world, 'Air Push is disabled.')
+                return
+            }
+            if (!spendMana(player, AIR_PUSH_MANA_COST)) {
+                pushLog(world, 'Not enough mana.')
                 return
             }
 

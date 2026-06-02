@@ -30,6 +30,7 @@ import { playerEquipmentKey, type EquipmentHandLoadout } from './anim/equipment-
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
 import { disposeObject3D } from '../engine/render/dispose-object'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from './player-settings'
+import { initMana, PLAYER_DEFAULT_MAX_MANA } from './mana'
 
 export interface PlayerOptions {
     spawn: { x: number; y: number; z: number }
@@ -42,7 +43,7 @@ export interface PlayerOptions {
  *  (each heart = `HP_PER_HEART` HP), and the default enemy hit takes half a
  *  heart — so four hits down the player. Scripts can raise `Health.max` per
  *  level if a tougher player is wanted. Mana starts as an empty pool — scripts
- *  opt in by setting `Mana.max` when they define a spell. */
+ *  opt in through the game-level mana helpers, which spend half-orb units. */
 export const PLAYER_DEFAULT_MAX_HEALTH = 2 * HP_PER_HEART
 
 export const PLAYER_MODEL_KIND_USER_DATA = 'playerModelKind'
@@ -92,8 +93,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
 
     Health.max[eid] = PLAYER_DEFAULT_MAX_HEALTH
     Health.current[eid] = PLAYER_DEFAULT_MAX_HEALTH
-    Mana.max[eid] = 0
-    Mana.current[eid] = 0
+    initMana(eid, PLAYER_DEFAULT_MAX_MANA)
     // Directional block covering the body height. Lowered by default; the
     // player-shield-system drives `raised`, the arc width, and the arc
     // direction (front when T is held, left-flank when passive).

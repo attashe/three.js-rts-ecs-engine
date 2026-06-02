@@ -18,6 +18,7 @@ import {
     isBuyableEquipmentItemId,
     isBuyableHeadEquipmentItemId,
 } from './equipment-items'
+import { MANA_POTION_ITEM_ID } from './mana'
 
 interface TradeControllerOptions {
     input: Input
@@ -258,7 +259,7 @@ export function createTradeController(opts: TradeControllerOptions): TradeContro
         const speaker = current.request.npc ?? { name: 'Merchant', avatar: 'npc' }
         d.title.textContent = current.request.title ?? 'Trade'
         d.npcName.textContent = speaker.name
-        const potions = current.inventory.items?.['heal-potion']?.quantity ?? 0
+        const potions = (current.inventory.items?.['heal-potion']?.quantity ?? 0) + (current.inventory.items?.[MANA_POTION_ITEM_ID]?.quantity ?? 0)
         const boots = BOOT_EQUIPMENT_ITEM_IDS.reduce((sum, id) => sum + (current.inventory.items?.[id]?.quantity ?? 0), 0)
         const gear = BUYABLE_EQUIPMENT_ITEM_IDS.reduce((sum, id) => sum + (current.inventory.items?.[id]?.quantity ?? 0), 0)
         d.inventory.textContent = `Gold ${current.inventory.gold}  |  Arrows ${current.inventory.arrows}  |  Potions ${potions}  |  Boots ${boots}  |  Gear ${gear}`
@@ -658,6 +659,8 @@ function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLEle
             return arrowBundleIcon(size)
         case 'heal-potion':
             return healPotionIcon(size)
+        case MANA_POTION_ITEM_ID:
+            return manaPotionIcon(size)
         case HIGH_JUMP_BOOTS_ITEM_ID:
             return bootsIcon(size)
         case SPEAR_ITEM_ID:
@@ -741,6 +744,21 @@ function healPotionIcon(size: 'small' | 'large'): HTMLElement {
         borderRadius: isLarge ? '7px 7px 10px 10px' : '5px 5px 7px 7px',
         background: 'linear-gradient(180deg, #ffd7de 0 22%, #e34c64 23% 100%)',
         boxShadow: '0 -7px 0 -2px #d9edf0, inset -4px -5px 0 rgba(85, 10, 22, 0.25), 0 0 8px rgba(227, 76, 100, 0.22)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function manaPotionIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '26px' : '18px',
+        height: isLarge ? '34px' : '24px',
+        display: 'block',
+        borderRadius: isLarge ? '7px 7px 10px 10px' : '5px 5px 7px 7px',
+        background: 'linear-gradient(180deg, #d7f1ff 0 22%, #45b8ff 23% 100%)',
+        boxShadow: '0 -7px 0 -2px #d9edf0, inset -4px -5px 0 rgba(10, 41, 85, 0.3), 0 0 8px rgba(69, 184, 255, 0.3)',
     } satisfies Partial<CSSStyleDeclaration>)
     return root
 }

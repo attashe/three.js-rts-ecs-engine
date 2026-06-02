@@ -87,7 +87,7 @@ export function createElectricOrbSystem(opts: ElectricOrbOptions = {}): System {
                         npc.position.z - npc.colliderRadius, npc.position.z + npc.colliderRadius)) continue
                     ready.set(key, now + ZAP_COOLDOWN)
                     if (!npc.invulnerable) {
-                        damageNpc(npc, ZAP_DAMAGE)
+                        damageNpc(npc, ZAP_DAMAGE, { byPlayer: true })
                         opts.onZap?.({ x: ox, y: oy, z: oz })
                     }
                 }

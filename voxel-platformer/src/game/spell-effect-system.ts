@@ -41,7 +41,7 @@ export function advanceSpellWaves(
             if (dx * dx + dz * dz > r2) continue
             if (Math.abs(npc.position.y - fx.y) > fx.vertical) continue
             fx.hit.push(npc.id)
-            damageNpc(npc, fx.damage)
+            damageNpc(npc, fx.damage, { byPlayer: true })
             onWaveHit?.({ x: npc.position.x, y: npc.position.y, z: npc.position.z })
         }
         if (fx.age >= fx.ttl) effects.splice(i, 1)

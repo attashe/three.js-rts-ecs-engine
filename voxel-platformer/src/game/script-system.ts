@@ -62,6 +62,7 @@ import {
     removeInventoryItem as removeInventoryItemFromMap,
 } from './inventory'
 import { isBootEquipmentItemId } from './high-jump-boots'
+import { readMana, restoreMana as restorePlayerMana } from './mana'
 import { setPhysicalPistonDeployed } from './mechanisms'
 import { PROP_KINDS, type EditorProp } from './props/prop-types'
 
@@ -171,6 +172,14 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         getPosition: () => playerPosition(opts.world),
         getGold: () => opts.world.inventory.gold,
         getArrows: () => opts.world.inventory.arrows,
+        getMana() {
+            const eid = playerEid(opts.world)
+            return eid === null ? { current: 0, max: 0 } : readMana(eid)
+        },
+        restoreMana(amount) {
+            const eid = playerEid(opts.world)
+            return eid !== null && restorePlayerMana(eid, amount)
+        },
         getInventoryItemCount: (itemId) => inventoryItemCount(opts.world.inventory.items, itemId),
         getInventoryItems: (category) => listInventoryItems(opts.world.inventory.items, category),
         addInventoryItem(itemId, quantity, itemOpts) {

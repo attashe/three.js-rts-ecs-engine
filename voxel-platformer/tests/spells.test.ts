@@ -1,17 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { query } from 'bitecs'
+import { addComponents, query } from 'bitecs'
 import { createGameWorld } from '../src/engine/ecs/world'
 import { createEntity } from '../src/engine/ecs/entity'
-import { MovingObject, Position, Rotation } from '../src/engine/ecs/components'
+import { Grounded, Mana, MovingObject, PlayerControlled, Position, Rotation } from '../src/engine/ecs/components'
 import { MovingObjectKind } from '../src/game/moving-objects'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { DEFAULT_PALETTE } from '../src/engine/voxel/palette'
 import { createArrowHitSystem } from '../src/engine/ecs/systems/arrow-hit-system'
 import { createMovingObjectSystem } from '../src/engine/ecs/systems/moving-object-system'
-import { SPELLS, getSpell, DEFAULT_SPELL_ID } from '../src/game/spells'
+import { SPELLS, createSpellCastSystem, getSpell, DEFAULT_SPELL_ID } from '../src/game/spells'
 import { advanceSpellWaves } from '../src/game/spell-effect-system'
 import type { NpcRuntimeState } from '../src/game/npcs/npc-types'
+import { PLAYER_DEFAULT_MAX_MANA } from '../src/game/mana'
+import type { ActionMap } from '../src/engine/input/actions'
 
 function makeNpc(id: string, x: number, z: number, hp = 2): NpcRuntimeState {
     return {
@@ -31,12 +33,63 @@ function makeNpc(id: string, x: number, z: number, hp = 2): NpcRuntimeState {
     }
 }
 
+function onePressAction(): ActionMap {
+    let pressed = true
+    return {
+        consumePressed() {
+            if (!pressed) return null
+            pressed = false
+            return { actionId: 'spell.cast' }
+        },
+    } as unknown as ActionMap
+}
+
+function spawnCastingPlayer(mana = PLAYER_DEFAULT_MAX_MANA) {
+    const world = createGameWorld()
+    const player = createEntity(world)
+    addComponents(world, player, [PlayerControlled, Position, Rotation, Grounded, Mana])
+    Position.x[player] = 0
+    Position.y[player] = 0
+    Position.z[player] = 0
+    Rotation.y[player] = 0
+    Mana.max[player] = PLAYER_DEFAULT_MAX_MANA
+    Mana.current[player] = mana
+    return { world, player }
+}
+
 test('spell registry has at least two distinct variants and a stable default', () => {
     assert.ok(SPELLS.length >= 2, 'expected multiple spells to choose between')
     const ids = new Set(SPELLS.map((s) => s.id))
     assert.equal(ids.size, SPELLS.length, 'spell ids are unique')
     assert.equal(getSpell(DEFAULT_SPELL_ID).id, DEFAULT_SPELL_ID)
     assert.equal(getSpell('does-not-exist').id, SPELLS[0]!.id, 'unknown id falls back to first spell')
+    assert.deepEqual(SPELLS.map((s) => [s.id, s.manaCost]), [
+        ['bolt', 1],
+        ['nova', 3],
+        ['orb', 2],
+    ])
+})
+
+test('spell cast system spends mana before spawning the selected spell', () => {
+    const { world, player } = spawnCastingPlayer()
+    world.selectedSpell = 'bolt'
+
+    createSpellCastSystem(onePressAction()).update(world, 1 / 60)
+
+    assert.equal(Mana.current[player], PLAYER_DEFAULT_MAX_MANA - getSpell('bolt').manaCost)
+    const bolts = [...query(world, [MovingObject])].filter((eid) => MovingObject.kind[eid] === MovingObjectKind.MagicBolt)
+    assert.equal(bolts.length, 1)
+})
+
+test('spell cast system consumes the press but does not cast without enough mana', () => {
+    const { world, player } = spawnCastingPlayer(0)
+    world.selectedSpell = 'bolt'
+
+    createSpellCastSystem(onePressAction()).update(world, 1 / 60)
+
+    assert.equal(Mana.current[player], 0)
+    assert.equal([...query(world, [MovingObject])].length, 0)
+    assert.ok(world.log.includes('Not enough mana.'))
 })
 
 test('Arcane Bolt cast spawns a magic-bolt projectile', () => {

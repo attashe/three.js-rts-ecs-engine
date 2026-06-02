@@ -978,7 +978,17 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
                     sellPrice: 2,
                     stock: 12,
                 },
-            ], 'Drink the red one only after you get hurt.'),
+                {
+                    id: 'mana-potion',
+                    name: 'Mana Potion',
+                    description: 'A sealed blue draught for spellwork and high jumps.',
+                    resource: 'mana-potion',
+                    unitSize: 1,
+                    buyPrice: 6,
+                    sellPrice: 3,
+                    stock: 12,
+                },
+            ], 'Red mends blood; blue mends spellwork. Keep both stoppered.'),
         )],
         coinPiles: [
             { position: { x: 80, y: groundY + 1, z: roadZ }, amount: 3 },

@@ -29,6 +29,7 @@ export type InventoryIconId =
     | 'quest-shard'
     | 'consumable'
     | 'heal-potion'
+    | 'mana-potion'
     | 'accessory'
     | 'boots'
     | 'hat'
@@ -175,6 +176,7 @@ export function defaultInventoryIcon(itemId: string, category = defaultInventory
     if (itemId === 'gold' || itemId === 'coin') return 'gold'
     if (itemId === 'arrow' || itemId === 'arrows') return 'arrows'
     if (itemId === 'heal-potion' || itemId === 'health-potion') return 'heal-potion'
+    if (itemId === 'mana-potion') return 'mana-potion'
     if (itemId === HIGH_JUMP_BOOTS_ITEM_ID || itemId === HIGH_SPEED_BOOTS_ITEM_ID || itemId.includes('boots')) return 'boots'
     if (itemId === METAL_HELMET_ITEM_ID) return 'metal-helmet'
     if (itemId === SPEAR_ITEM_ID) return 'spear'
@@ -270,6 +272,7 @@ function isInventoryIcon(value: unknown): value is InventoryIconId {
         'quest-shard',
         'consumable',
         'heal-potion',
+        'mana-potion',
         'accessory',
         'boots',
         'hat',

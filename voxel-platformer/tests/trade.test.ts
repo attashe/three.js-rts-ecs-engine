@@ -7,6 +7,7 @@ import {
 } from '../src/game/trade'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 import { METAL_HELMET_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
+import { MANA_POTION_ITEM_ID } from '../src/game/mana'
 
 const SHOP = normalizeTradeRequest({
     title: 'Field Supplies',
@@ -121,6 +122,41 @@ test('trade buy and sell can mutate durable healing potions', () => {
     if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
     assert.equal(sold.inventory.items?.['heal-potion']?.quantity, 1)
     assert.deepEqual(sold.removed, { 'heal-potion': 1 })
+})
+
+test('trade buy and sell can mutate durable mana potions', () => {
+    const shop = normalizeTradeRequest({
+        title: 'Field Supplies',
+        items: [{
+            id: MANA_POTION_ITEM_ID,
+            name: 'Mana Potion',
+            resource: MANA_POTION_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 6,
+            sellPrice: 3,
+        }],
+    })
+
+    const bought = applyTradeSelection(shop, { gold: 12, arrows: 0, items: {} }, {
+        action: 'buy',
+        itemId: MANA_POTION_ITEM_ID,
+        quantity: 2,
+    })
+
+    if (bought.status !== 'bought') throw new Error(`expected bought, got ${bought.status}`)
+    assert.equal(bought.inventory.items?.[MANA_POTION_ITEM_ID]?.quantity, 2)
+    assert.equal(bought.inventory.items?.[MANA_POTION_ITEM_ID]?.icon, 'mana-potion')
+    assert.deepEqual(bought.gained, { [MANA_POTION_ITEM_ID]: 2 })
+
+    const sold = applyTradeSelection(shop, bought.inventory, {
+        action: 'sell',
+        itemId: MANA_POTION_ITEM_ID,
+        quantity: 1,
+    })
+
+    if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
+    assert.equal(sold.inventory.items?.[MANA_POTION_ITEM_ID]?.quantity, 1)
+    assert.deepEqual(sold.removed, { [MANA_POTION_ITEM_ID]: 1 })
 })
 
 test('trade buy and sell can mutate unique high jump boots', () => {

@@ -185,6 +185,7 @@ type InventoryIconId =
     | 'quest-shard'
     | 'consumable'
     | 'heal-potion'
+    | 'mana-potion'
     | 'accessory'
     | 'boots'
     | 'hat'
@@ -291,6 +292,7 @@ interface PlayerApi {
     /** True iff a live player entity exists. */
     readonly alive: boolean
     readonly inventory: PlayerInventoryApi
+    readonly mana: { current: number; max: number }
     readonly settings: PlayerSettings
     /** Current respawn point, or null when unset this session. */
     readonly checkpoint: VoxelCoord | null
@@ -304,6 +306,8 @@ interface PlayerApi {
     setAbility(ability: PlayerAbilityKey, enabled: boolean): void
     setGold(amount: number): void
     setArrows(amount: number): void
+    /** Restore mana. Omit amount to refill; otherwise restores half-orb units. */
+    restoreMana(amount?: number): boolean
     addInventoryItem(itemId: string, quantity?: number, opts?: InventoryItemOptions): boolean
     removeInventoryItem(itemId: string, quantity?: number): boolean
 }
@@ -659,6 +663,7 @@ type TradeCurrency = 'gold'
 type TradeResource =
     | 'arrows'
     | 'heal-potion'
+    | 'mana-potion'
     | 'high-jump-boots'
     | 'high-speed-boots'
     | 'hat-arcane'
