@@ -49,8 +49,9 @@ export interface ArrowHitOptions {
     /** Fires once when an enemy arrow lands a clean (unblocked) hit on the
      *  player, at the impact point — e.g. for an impact SFX. */
     onArrowHitPlayer?: (eid: number, position: { x: number; y: number; z: number }) => void
-    /** Fires once when the player's raised shield deflects an enemy arrow, at
-     *  the impact point — e.g. for a block clang. */
+    /** Fires once when a raised shield deflects an arrow, at the impact point —
+     *  the player's shield stopping an enemy arrow, or a guarding NPC's shield
+     *  stopping a player arrow. E.g. for a block clang. */
     onArrowBlocked?: (eid: number, position: { x: number; y: number; z: number }) => void
     /** Damage a magic bolt deals to an NPC it strikes. Default 1. */
     boltDamage?: number
@@ -124,12 +125,24 @@ export function createArrowHitSystem(
                     const npcHit = nearestNpcHit(gw, sx, sy, sz, dirX, dirY, dirZ, segLen)
                     if (npcHit) {
                         landed.add(arrow)
+                        const hx = sx + dirX * npcHit.t
+                        const hy = sy + dirY * npcHit.t
+                        const hz = sz + dirZ * npcHit.t
+                        // A shield-bearing NPC advancing with its guard up turns
+                        // away arrows in its front arc, just as it parries melee
+                        // (and as the player's shield stops enemy arrows). Magic
+                        // bolts punch through.
+                        if (!isBolt && npcShieldDeflectsArrow(npcHit.npc, dirX, dirZ, hy)) {
+                            opts.onArrowBlocked?.(arrow, { x: hx, y: hy, z: hz })
+                            despawnEntity(gw, arrow)
+                            continue
+                        }
                         if (isBolt) {
                             damageNpc(npcHit.npc, boltDamage)
-                            opts.onBoltHit?.(arrow, { x: sx + dirX * npcHit.t, y: sy + dirY * npcHit.t, z: sz + dirZ * npcHit.t })
+                            opts.onBoltHit?.(arrow, { x: hx, y: hy, z: hz })
                             despawnEntity(gw, arrow)
                         } else {
-                            stickArrowInNpc(gw, arrow, npcHit.npc, sx + dirX * npcHit.t, sy + dirY * npcHit.t, sz + dirZ * npcHit.t)
+                            stickArrowInNpc(gw, arrow, npcHit.npc, hx, hy, hz)
                             damageNpc(npcHit.npc, npcDamage)
                             opts.onArrowHitNpc?.(arrow, npcHit.npc)
                         }
@@ -234,6 +247,25 @@ function arrowBlockedByShield(gw: GameWorld, playerEid: number, dirX: number, di
     if (fx * sourceX + fz * sourceZ < Shield.blockArcCos[playerEid]!) return false
     const localY = hitY - Position.y[playerEid]!
     return localY >= Shield.minY[playerEid]! && localY <= Shield.maxY[playerEid]!
+}
+
+/** Whether a guarding NPC's raised shield turns away an arrow coming in along
+ *  `(dirX, dirZ)` at world height `hitY` — the NPC mirror of
+ *  `arrowBlockedByShield`, reusing the same front-arc + Y-band check as the
+ *  melee guard (`npcShieldGuardBlockResult`). */
+function npcShieldDeflectsArrow(npc: NpcRuntimeState, dirX: number, dirZ: number, hitY: number): boolean {
+    const guard = npc.shieldGuard
+    if (!guard?.raised) return false
+    const len = Math.hypot(dirX, dirZ)
+    if (len < 1e-4) return false
+    // The arrow approaches *from* -dir; that's the direction the shield must face.
+    const sourceX = -dirX / len
+    const sourceZ = -dirZ / len
+    const fx = Math.sin(npc.yaw)
+    const fz = Math.cos(npc.yaw)
+    if (fx * sourceX + fz * sourceZ < guard.arcCos) return false
+    const localY = hitY - npc.position.y
+    return localY >= guard.minY && localY <= guard.maxY
 }
 
 /**

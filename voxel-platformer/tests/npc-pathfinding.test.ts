@@ -357,6 +357,37 @@ test('a hostile arrow damages the player, but a raised frontal shield blocks it'
     }
 })
 
+test('a guarding NPC shield deflects a player arrow from the front', () => {
+    function setupGuard(world: GameWorld): NpcRuntimeState {
+        const npc = spawnRuntimeNpc(world, 'warrior', 8, 8)
+        npc.yaw = Math.PI / 2 // face +x, toward where the player arrow comes from
+        return npc
+    }
+
+    // Guard raised toward the incoming arrow: deflected, no damage.
+    {
+        const chunks = flatWorld(20)
+        const world = createGameWorld()
+        const npc = setupGuard(world)
+        npc.shieldGuard = { raised: true, arcCos: Math.cos((65 * Math.PI) / 180), minY: -0.2, maxY: 1.75 }
+        spawnArrowProjectile(world, { x: 8.6, y: 1.5, z: 8 }, { x: -30, y: 0, z: 0 }) // player arrow (non-hostile)
+        const sys = createArrowHitSystem(chunks)
+        sys.update!(world, 1 / 60)
+        assert.equal(npc.hp, 2, 'a raised front shield deflects the player arrow')
+    }
+
+    // Same arrow, no guard raised: it lands and damages the NPC.
+    {
+        const chunks = flatWorld(20)
+        const world = createGameWorld()
+        const npc = setupGuard(world)
+        spawnArrowProjectile(world, { x: 8.6, y: 1.5, z: 8 }, { x: -30, y: 0, z: 0 })
+        const sys = createArrowHitSystem(chunks)
+        sys.update!(world, 1 / 60)
+        assert.ok(npc.hp < 2, 'an unguarded NPC takes the player arrow')
+    }
+})
+
 test('NPC stops moving and turning once melee attack locks', () => {
     const chunks = flatWorld()
     const world = createGameWorld()
