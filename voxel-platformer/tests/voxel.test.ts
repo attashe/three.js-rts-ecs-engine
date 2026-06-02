@@ -7,7 +7,7 @@ import { voxelAABBOverlap, sweepAxis } from '../src/engine/voxel/voxel-collide'
 import { greedyMesh } from '../src/engine/voxel/greedy-mesher'
 import { liquidTopSurfaceMesh } from '../src/engine/voxel/liquid-surface-mesher'
 import { movementEnvironmentForAABB } from '../src/engine/voxel/movement-effects'
-import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, isRenderableVoxel, liquidBlockKind, voxelOpacity } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, isRenderableVoxel, liquidBlockKind, voxelHeightForBlock, voxelOpacity } from '../src/engine/voxel/palette'
 import { voxelRaycast } from '../src/engine/voxel/voxel-raycast'
 import { Vector3 } from 'three'
 
@@ -87,6 +87,36 @@ test('voxelAABBOverlap treats max boundary as exclusive', () => {
         maxY: 1,
         maxZ: 1,
     }), true)
+})
+
+test('stairs use a half-height collision and render shape', () => {
+    assert.equal(voxelHeightForBlock(DEFAULT_PALETTE, BLOCK.stairs), 0.5)
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 1, 0, BLOCK.stairs)
+
+    assert.equal(voxelAABBOverlap(chunks, {
+        minX: 0.1,
+        minY: 1.49,
+        minZ: 0.1,
+        maxX: 0.9,
+        maxY: 1.9,
+        maxZ: 0.9,
+    }), true)
+    assert.equal(voxelAABBOverlap(chunks, {
+        minX: 0.1,
+        minY: 1.5,
+        minZ: 0.1,
+        maxX: 0.9,
+        maxY: 1.9,
+        maxZ: 0.9,
+    }), false)
+
+    const mesh = greedyMesh((x, y, z) => (
+        x === 0 && y === 0 && z === 0 ? BLOCK.stairs : BLOCK.air
+    ), 1, DEFAULT_PALETTE)
+    const ys = [...mesh.positions].filter((_, i) => i % 3 === 1)
+    assert.equal(Math.max(...ys), 0.5)
+    assert.equal(Math.min(...ys), 0)
 })
 
 test('water, lava, and cloud are non-physical visible blocks', () => {

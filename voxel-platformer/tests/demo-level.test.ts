@@ -195,8 +195,8 @@ test('teleport garden is authored as a small park destination', () => {
     assert.equal(chunks.getVoxel(8, 4, 9), BLOCK.water, 'pond water should sit in the carved ground layer')
     assert.equal(chunks.getVoxel(8, 5, 9), BLOCK.air, 'pond should not float one layer above the terrain')
     assert.equal(chunks.getVoxel(10, 4, 10), BLOCK.water, 'pond center should stay open for liquid-surface previews')
-    assert.equal(chunks.getVoxel(7, 4, 8), BLOCK.water, 'pond should be wider than the original compact oval')
-    assert.equal(chunks.getVoxel(13, 4, 8), BLOCK.water, 'pond should be wider than the original compact oval')
+    assert.equal(chunks.getVoxel(7, 4, 8), BLOCK.stairs, 'pond border should use stairs for walk-out access')
+    assert.equal(chunks.getVoxel(13, 4, 8), BLOCK.stairs, 'pond border should use stairs for walk-out access')
 })
 
 test('procedural travel markers do not create per-voxel point lights', () => {

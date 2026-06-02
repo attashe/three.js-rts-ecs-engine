@@ -198,6 +198,56 @@ test('isGrounded: centre-anchored body probes below its bottom face', () => {
     assert.equal(isGrounded(chunks, airbornePos, half, 0.08, null, undefined, 'center'), false)
 })
 
+test('PhysicsSystem: grounded actors auto-step onto stairs blocks without jumping', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 1, 0, BLOCK.stairs)
+    const world = createGameWorld()
+    const eid = addMovableActor(world, 0.5, 1, 0.5)
+    Velocity.x[eid] = 3
+
+    createPhysicsSystem(chunks, { gravity: 0 }).update(world, 0.35)
+
+    assert.ok(Position.x[eid] > 1.3, `expected actor to keep moving over the stair, got x=${Position.x[eid]}`)
+    assert.equal(Position.y[eid], 1.5)
+    assert.equal(Velocity.x[eid], 3)
+})
+
+test('PhysicsSystem: actors can step from a half-height stair onto the next shore block', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 1, 0, BLOCK.stairs)
+    chunks.setVoxel(2, 0, 0, BLOCK.stone)
+    chunks.setVoxel(2, 1, 0, BLOCK.stone)
+    const world = createGameWorld()
+    const eid = addMovableActor(world, 1.5, 1.5, 0.5)
+    Velocity.x[eid] = 3
+
+    createPhysicsSystem(chunks, { gravity: 0 }).update(world, 0.35)
+
+    assert.ok(Position.x[eid] > 2.3, `expected actor to keep moving from stair to shore, got x=${Position.x[eid]}`)
+    assert.equal(Position.y[eid], 2)
+    assert.equal(Velocity.x[eid], 3)
+})
+
+test('PhysicsSystem: ordinary one-block ledges still block actors', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 1, 0, BLOCK.stone)
+    const world = createGameWorld()
+    const eid = addMovableActor(world, 0.5, 1, 0.5)
+    Velocity.x[eid] = 3
+
+    createPhysicsSystem(chunks, { gravity: 0 }).update(world, 0.35)
+
+    assert.ok(Position.x[eid] < 0.7, `expected actor to stop before the ledge, got x=${Position.x[eid]}`)
+    assert.equal(Position.y[eid], 1)
+    assert.equal(Velocity.x[eid], 0)
+})
+
 test('sweepAxis: actor pair-separation displacement is capped by voxel walls (regression)', () => {
     // Regression for: dynamic-collision-system used to write Position directly
     // when separating overlapping actor AABBs, which let one actor shove

@@ -77,6 +77,7 @@ export function surfaceForBlock(block: number): FootstepSurface {
         case BLOCK.brick: return 'stone'
         case BLOCK.glow:  return 'stone'
         case BLOCK.noWalk: return 'stone'
+        case BLOCK.stairs: return 'stone'
         case BLOCK.door:  return 'wood'
         case BLOCK.wood:  return 'wood'
         case BLOCK.plank: return 'wood'
@@ -126,6 +127,7 @@ export function createPlayerLocomotionAudioSystem(
         // below.
         const foot = chunks.getVoxel(px, py, pz)
         if (foot === BLOCK.water) return 'water'
+        if (foot === BLOCK.stairs) return surfaceForBlock(foot)
         // Otherwise the voxel directly below the foot (the actual
         // contact surface).
         const below = chunks.getVoxel(px, py - 1, pz)

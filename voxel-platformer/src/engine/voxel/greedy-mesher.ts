@@ -4,6 +4,7 @@ import {
     occludesFaces,
     paletteTileIndex,
     voxelEmissive,
+    voxelHeightForBlock,
     voxelOpacity,
     type Palette,
     type PaletteEntry,
@@ -100,6 +101,17 @@ export function greedyMesh(
     const indices: number[] = []
     let vertexBase = 0
 
+    vertexBase = appendPartialHeightVoxels(sample, dim, palette, opts, {
+        positions,
+        normals,
+        colors,
+        emissive,
+        uvs,
+        tileIndices,
+        indices,
+        vertexBase,
+    })
+
     const x: [number, number, number] = [0, 0, 0]
     const mask = new Int32Array(dim * dim)
 
@@ -119,8 +131,8 @@ export function greedyMesh(
                     x[d] = s
                     const cellPos = sample(x[0], x[1], x[2])
 
-                    const negRenderable = isRenderable(palette, cellNeg, opts)
-                    const posRenderable = isRenderable(palette, cellPos, opts)
+                    const negRenderable = isRenderable(palette, cellNeg, opts) && isFullHeightVoxel(palette, cellNeg)
+                    const posRenderable = isRenderable(palette, cellPos, opts) && isFullHeightVoxel(palette, cellPos)
                     const negOccludes = occludesFaces(palette, cellNeg)
                     const posOccludes = occludesFaces(palette, cellPos)
 
@@ -252,6 +264,151 @@ export function greedyMesh(
 function isRenderable(palette: Palette, index: number, opts: GreedyMeshOptions): boolean {
     if (isRenderableVoxel(palette, index)) return true
     return opts.debugVisibleBlocks === true && palette.entries[index]?.debugVisible === true
+}
+
+function isFullHeightVoxel(palette: Palette, index: number): boolean {
+    return voxelHeightForBlock(palette, index) >= 1
+}
+
+interface PartialMeshBuffers {
+    positions: number[]
+    normals: number[]
+    colors: number[]
+    emissive: number[]
+    uvs: number[]
+    tileIndices: number[]
+    indices: number[]
+    vertexBase: number
+}
+
+function appendPartialHeightVoxels(
+    sample: VoxelSampler,
+    dim: number,
+    palette: Palette,
+    opts: GreedyMeshOptions,
+    buffers: PartialMeshBuffers,
+): number {
+    for (let y = 0; y < dim; y++) {
+        for (let z = 0; z < dim; z++) {
+            for (let x = 0; x < dim; x++) {
+                const block = sample(x, y, z)
+                const height = voxelHeightForBlock(palette, block)
+                if (height <= 0 || height >= 1 || !isRenderable(palette, block, opts)) continue
+                buffers.vertexBase = appendPartialHeightVoxel(sample, palette, opts, buffers, x, y, z, block, height)
+            }
+        }
+    }
+    return buffers.vertexBase
+}
+
+function appendPartialHeightVoxel(
+    sample: VoxelSampler,
+    palette: Palette,
+    opts: GreedyMeshOptions,
+    buffers: PartialMeshBuffers,
+    x: number,
+    y: number,
+    z: number,
+    block: number,
+    height: number,
+): number {
+    const entry = palette.entries[block]
+    const [r, g, b] = faceColor(entry, opts)
+    const a = faceOpacity(entry, palette, block, opts)
+    const [er, eg, eb] = voxelEmissive(palette, block)
+    const tileIndex = paletteTileIndex(palette, block)
+    const yTop = y + height
+
+    appendFace(buffers, [0, 1, 0], [
+        x, yTop, z,
+        x, yTop, z + 1,
+        x + 1, yTop, z + 1,
+        x + 1, yTop, z,
+    ], [r, g, b, a], [er, eg, eb], tileIndex, 1, 1)
+
+    if (!coversBottomFace(sample, palette, x, y, z)) {
+        appendFace(buffers, [0, -1, 0], [
+            x, y, z,
+            x + 1, y, z,
+            x + 1, y, z + 1,
+            x, y, z + 1,
+        ], [r, g, b, a], [er, eg, eb], tileIndex, 1, 1)
+    }
+
+    if (!coversSideFace(sample, palette, opts, x + 1, y, z, height)) {
+        appendFace(buffers, [1, 0, 0], [
+            x + 1, y, z,
+            x + 1, yTop, z,
+            x + 1, yTop, z + 1,
+            x + 1, y, z + 1,
+        ], [r, g, b, a], [er, eg, eb], tileIndex, 1, height)
+    }
+    if (!coversSideFace(sample, palette, opts, x - 1, y, z, height)) {
+        appendFace(buffers, [-1, 0, 0], [
+            x, y, z,
+            x, y, z + 1,
+            x, yTop, z + 1,
+            x, yTop, z,
+        ], [r, g, b, a], [er, eg, eb], tileIndex, 1, height)
+    }
+    if (!coversSideFace(sample, palette, opts, x, y, z + 1, height)) {
+        appendFace(buffers, [0, 0, 1], [
+            x, y, z + 1,
+            x + 1, y, z + 1,
+            x + 1, yTop, z + 1,
+            x, yTop, z + 1,
+        ], [r, g, b, a], [er, eg, eb], tileIndex, 1, height)
+    }
+    if (!coversSideFace(sample, palette, opts, x, y, z - 1, height)) {
+        appendFace(buffers, [0, 0, -1], [
+            x, y, z,
+            x, yTop, z,
+            x + 1, yTop, z,
+            x + 1, y, z,
+        ], [r, g, b, a], [er, eg, eb], tileIndex, 1, height)
+    }
+    return buffers.vertexBase
+}
+
+function coversBottomFace(sample: VoxelSampler, palette: Palette, x: number, y: number, z: number): boolean {
+    const below = sample(x, y - 1, z)
+    return occludesFaces(palette, below) && voxelHeightForBlock(palette, below) >= 1
+}
+
+function coversSideFace(
+    sample: VoxelSampler,
+    palette: Palette,
+    opts: GreedyMeshOptions,
+    x: number,
+    y: number,
+    z: number,
+    height: number,
+): boolean {
+    const neighbor = sample(x, y, z)
+    if (voxelHeightForBlock(palette, neighbor) < height) return false
+    if (occludesFaces(palette, neighbor)) return true
+    return voxelHeightForBlock(palette, neighbor) < 1 && isRenderable(palette, neighbor, opts)
+}
+
+function appendFace(
+    buffers: PartialMeshBuffers,
+    normal: [number, number, number],
+    corners: readonly number[],
+    color: [number, number, number, number],
+    emissiveColor: [number, number, number],
+    tileIndex: number,
+    uSpan: number,
+    vSpan: number,
+): void {
+    buffers.positions.push(...corners)
+    buffers.uvs.push(0, 0, uSpan, 0, uSpan, vSpan, 0, vSpan)
+    for (let k = 0; k < 4; k++) buffers.normals.push(normal[0], normal[1], normal[2])
+    for (let k = 0; k < 4; k++) buffers.colors.push(color[0], color[1], color[2], color[3])
+    for (let k = 0; k < 4; k++) buffers.emissive.push(emissiveColor[0], emissiveColor[1], emissiveColor[2])
+    for (let k = 0; k < 4; k++) buffers.tileIndices.push(tileIndex)
+    const base = buffers.vertexBase
+    buffers.indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+    buffers.vertexBase += 4
 }
 
 function faceColor(entry: PaletteEntry | undefined, opts: GreedyMeshOptions): [number, number, number] {

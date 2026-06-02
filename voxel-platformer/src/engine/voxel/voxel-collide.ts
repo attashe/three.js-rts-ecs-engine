@@ -1,5 +1,5 @@
 import type { ChunkManager } from './chunk-manager'
-import { isCollidable } from './palette'
+import { isCollidable, voxelHeightForBlock } from './palette'
 
 export interface AABB {
     minX: number
@@ -33,7 +33,20 @@ export function voxelAABBOverlap(chunks: ChunkManager, aabb: AABB): boolean {
     for (let y = y0; y <= y1; y++) {
         for (let z = z0; z <= z1; z++) {
             for (let x = x0; x <= x1; x++) {
-                if (isCollidable(palette, chunks.getVoxel(x, y, z))) return true
+                const block = chunks.getVoxel(x, y, z)
+                if (!isCollidable(palette, block)) continue
+                const height = voxelHeightForBlock(palette, block)
+                if (height <= 0) continue
+                if (
+                    aabb.maxX > x &&
+                    aabb.minX < x + 1 &&
+                    aabb.maxY > y &&
+                    aabb.minY < y + height &&
+                    aabb.maxZ > z &&
+                    aabb.minZ < z + 1
+                ) {
+                    return true
+                }
             }
         }
     }

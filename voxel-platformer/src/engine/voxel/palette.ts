@@ -34,6 +34,10 @@ export interface PaletteEntry {
     debugOpacity?: number
     /** Movement effects applied while a character overlaps this voxel. */
     movement?: BlockMovementTraits
+    /** Render/collision height in voxel units. Defaults to 1 for full blocks. */
+    height?: number
+    /** Height a grounded foot-anchored actor may step upward when blocked by this voxel. */
+    stepHeight?: number
     /** Linear-space emissive RGB self-glow (added on top of lit colour by
      *  the chunk material). [0,0,0] / undefined => no glow. */
     emissive?: [number, number, number]
@@ -138,6 +142,7 @@ export const BLOCK = {
     autumnLeafDark: 43,
     autumnLeafLight: 44,
     fence: 45,
+    stairs: 46,
 } as const
 
 /**
@@ -351,6 +356,7 @@ export const DEFAULT_PALETTE: Palette = {
             opacity: 0,
             renderAs: 'fence',
         },
+        { name: 'stairs', color: [0.52, 0.52, 0.55], solid: true, textureKey: 'stone', height: 0.5, stepHeight: 0.5 },
     ],
 }
 
@@ -381,6 +387,7 @@ export function isCollidable(palette: Palette, index: number): boolean {
 }
 
 export function occludesFaces(palette: Palette, index: number): boolean {
+    if (voxelHeightForBlock(palette, index) < 1) return false
     const entry = paletteEntry(palette, index)
     return entry.occludesFaces ?? entry.solid
 }
@@ -444,6 +451,20 @@ export function voxelOpacity(palette: Palette, index: number): number {
     if (index === AIR) return 0
     const opacity = paletteEntry(palette, index).opacity ?? 1
     return Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1
+}
+
+export function voxelHeightForBlock(palette: Palette, index: number): number {
+    if (index === AIR) return 0
+    const height = paletteEntry(palette, index).height ?? 1
+    if (!Number.isFinite(height)) return 1
+    return Math.max(0, Math.min(1, height))
+}
+
+export function stepHeightForBlock(palette: Palette, index: number): number {
+    if (index === AIR) return 0
+    const height = paletteEntry(palette, index).stepHeight ?? 0
+    if (!Number.isFinite(height)) return 0
+    return Math.max(0, Math.min(1, height))
 }
 
 /**
@@ -518,6 +539,8 @@ export function clonePalette(palette: Palette): Palette {
             color: [...entry.color] as [number, number, number],
             debugColor: entry.debugColor ? [...entry.debugColor] as [number, number, number] : undefined,
             movement: entry.movement ? { ...entry.movement } : undefined,
+            height: entry.height,
+            stepHeight: entry.stepHeight,
             emissive: entry.emissive ? [...entry.emissive] as [number, number, number] : undefined,
             lightColor: entry.lightColor ? [...entry.lightColor] as [number, number, number] : undefined,
         })),
@@ -534,6 +557,7 @@ export function appendMissingDefaultPaletteEntries(palette: Palette): void {
     appendMissingStructureBlocks(palette)
     appendMissingSpecialBlock(palette, BLOCK.rail)
     appendMissingSpecialBlock(palette, BLOCK.fence)
+    appendMissingDefaultBlockByName(palette, BLOCK.stairs)
 }
 
 function normalizeNoWalkBlock(palette: Palette): void {

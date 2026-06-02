@@ -30,6 +30,8 @@ export {
     occludesFaces,
     paletteEntry,
     paletteTileIndex,
+    stepHeightForBlock,
+    voxelHeightForBlock,
     voxelOpacity,
     voxelEmissive,
     voxelLightSpec,

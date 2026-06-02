@@ -287,6 +287,7 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
             shoreBlock: BLOCK.sand,
             bedBlock: BLOCK.sand,
         })
+    placePondBorderStairs(chunks, size, pondWaterY)
 
     t
         // Arrival pad from the demo - outside the return portal so the player
@@ -372,6 +373,32 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
             { id: 'teleport-garden:book', kind: 'book-2', position: t.stand(5.2, 14.4), yaw: Math.PI * 0.2, scale: 0.9, gridAligned: false },
         ],
     })
+}
+
+function placePondBorderStairs(chunks: ChunkManager, size: number, waterY: number): void {
+    const cells: Array<{ x: number; z: number }> = []
+    for (let z = 1; z < size - 1; z++) {
+        for (let x = 1; x < size - 1; x++) {
+            if (chunks.getVoxel(x, waterY, z) !== BLOCK.water) continue
+            if (!hasNonWaterCardinalNeighbor(chunks, x, waterY, z)) continue
+            cells.push({ x, z })
+        }
+    }
+    for (const cell of cells) chunks.setVoxel(cell.x, waterY, cell.z, BLOCK.stairs)
+}
+
+function hasNonWaterCardinalNeighbor(chunks: ChunkManager, x: number, y: number, z: number): boolean {
+    return (
+        isSolidShoreCell(chunks, x + 1, y, z) ||
+        isSolidShoreCell(chunks, x - 1, y, z) ||
+        isSolidShoreCell(chunks, x, y, z + 1) ||
+        isSolidShoreCell(chunks, x, y, z - 1)
+    )
+}
+
+function isSolidShoreCell(chunks: ChunkManager, x: number, y: number, z: number): boolean {
+    const block = chunks.getVoxel(x, y, z)
+    return block !== BLOCK.air && block !== BLOCK.water
 }
 
 export function generateCombatArenaLevel(chunks: ChunkManager): LevelMeta {

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
-import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, paletteTileIndex, voxelLightSpec } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, paletteTileIndex, stepHeightForBlock, voxelHeightForBlock, voxelLightSpec } from '../src/engine/voxel/palette'
 import {
     generateStructureScene,
     generateWallSegment,
@@ -825,13 +825,18 @@ test('structure palette entries append after existing stable block ids', () => {
     assert.equal(BLOCK.rail, 41)
     assert.equal(BLOCK.autumnLeaf, 42)
     assert.equal(BLOCK.fence, 45)
+    assert.equal(BLOCK.stairs, 46)
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.woodDark]?.name, 'dark wood')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.fire]?.name, 'fire')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.autumnLeaf]?.name, 'autumn leaf')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.fence]?.name, 'fence')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.stairs]?.name, 'stairs')
+    assert.equal(voxelHeightForBlock(DEFAULT_PALETTE, BLOCK.stairs), 0.5)
+    assert.equal(stepHeightForBlock(DEFAULT_PALETTE, BLOCK.stairs), 0.5)
     assert.ok(paletteTileIndex(DEFAULT_PALETTE, BLOCK.roof) > 0)
     assert.ok(paletteTileIndex(DEFAULT_PALETTE, BLOCK.glass) > 0)
     assert.ok(paletteTileIndex(DEFAULT_PALETTE, BLOCK.metal) > 0)
+    assert.ok(paletteTileIndex(DEFAULT_PALETTE, BLOCK.stairs) > 0)
 })
 
 test('old palettes receive missing structure materials without overwriting custom tail entries', () => {
@@ -848,4 +853,5 @@ test('old palettes receive missing structure materials without overwriting custo
     assert.equal(chunks.palette.entries[BLOCK.woodDark]?.name, 'custom after lava')
     assert.ok(chunks.palette.entries.some((entry) => entry.name === 'dark wood'))
     assert.ok(chunks.palette.entries.some((entry) => entry.name === 'fire'))
+    assert.ok(chunks.palette.entries.some((entry) => entry.name === 'stairs' && entry.height === 0.5 && entry.stepHeight === 0.5))
 })

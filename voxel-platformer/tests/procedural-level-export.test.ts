@@ -47,6 +47,35 @@ test('procedural demo export preserves scripts and travel metadata', () => {
     assert.ok(garden.editorMeta.zones?.some((zone) => zone.portal?.targetLevelId === DEMO_LEVEL_ID))
 })
 
+test('teleport garden places stairs around the pond border', () => {
+    const garden = createProceduralEditorLevel(TELEPORT_GARDEN_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const waterY = 4
+    let stairCount = 0
+    let waterNeighborCount = 0
+    let shoreNeighborCount = 0
+
+    for (let z = 0; z < 20; z++) {
+        for (let x = 0; x < 20; x++) {
+            if (garden.chunks.getVoxel(x, waterY, z) !== BLOCK.stairs) continue
+            stairCount++
+            const neighbors = [
+                garden.chunks.getVoxel(x + 1, waterY, z),
+                garden.chunks.getVoxel(x - 1, waterY, z),
+                garden.chunks.getVoxel(x, waterY, z + 1),
+                garden.chunks.getVoxel(x, waterY, z - 1),
+            ]
+            if (neighbors.some((block) => block === BLOCK.water)) waterNeighborCount++
+            if (neighbors.some((block) => block !== BLOCK.air && block !== BLOCK.water && block !== BLOCK.stairs)) {
+                shoreNeighborCount++
+            }
+        }
+    }
+
+    assert.ok(stairCount >= 12, `expected a visible stair ring around the pond, got ${stairCount}`)
+    assert.ok(waterNeighborCount > 0, 'stairs should border remaining pond water')
+    assert.ok(shoreNeighborCount > 0, 'stairs should connect to shore blocks')
+})
+
 test('procedural demo has no immediate combat encounters but keeps opt-in sentry hostility', () => {
     const demo = createProceduralEditorLevel(DEMO_LEVEL_ID, FAKE_SCRIPT_SOURCES)
     const ids = demo.runtimeMeta.npcs.map((npc) => npc.id)

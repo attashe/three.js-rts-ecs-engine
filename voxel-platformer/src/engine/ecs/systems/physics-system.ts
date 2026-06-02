@@ -1,6 +1,7 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import type { ChunkManager } from '../../voxel/chunk-manager'
-import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis, voxelAABBOverlap, type AABB, type ColliderAnchor } from '../../voxel/voxel-collide'
+import { isCollidable, stepHeightForBlock, voxelHeightForBlock } from '../../voxel/palette'
+import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis, voxelAABBOverlap, type AABB, type ColliderAnchor, type ObstacleSource } from '../../voxel/voxel-collide'
 import {
     BoxCollider,
     Grounded,
@@ -75,8 +76,8 @@ export interface PhysicsOptions {
  * Per entity:
  *   1. Gravity (scaled by RigidBody.gravityScale if present).
  *   2. Swept-AABB X → Z → Y against voxels AND the world's obstacle registry.
- *      Y-last so horizontal motion happens before the ground sweep — that's
- *      what gives characters a free 1-voxel "step up" onto ledges.
+ *      Grounded foot-anchored actors may step up onto palette blocks that
+ *      explicitly opt in with `stepHeight`.
  *   3. Restitution on Y-block: if restitution>0 and the Y-block was a real
  *      slam (vy < -IMPACT_MIN_SPEED), bounce; emit an Impact event for
  *      damage/sound/FX downstream.
@@ -140,14 +141,27 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                 const dx = Velocity.x[eid] * dt
                 const dz = Velocity.z[eid] * dt
                 const dy = vy * dt
+                const startY = pos.y
+                const wasGrounded = hasComponent(world, eid, Grounded)
 
                 const sweepX = sweepAxis(chunks, pos, half, 'x', dx, obstacles, eid, anchor)
-                if (sweepX.blocked) Velocity.x[eid] = 0
 
                 const sweepZ = sweepAxis(chunks, pos, half, 'z', dz, obstacles, eid, anchor)
-                if (sweepZ.blocked) Velocity.z[eid] = 0
 
-                const horizontalBlocked = sweepX.blocked || sweepZ.blocked
+                let horizontalBlocked = sweepX.blocked || sweepZ.blocked
+                if (
+                    horizontalBlocked &&
+                    !hasRb &&
+                    anchor === 'foot' &&
+                    (wasGrounded || wasGroundedAt(chunks, obstacles, eid, startX, startY, startZ, half, anchor)) &&
+                    tryStepUp(chunks, obstacles, eid, pos, half, dx, dz, startX + dx, startZ + dz, sweepX.blocked, sweepZ.blocked)
+                ) {
+                    horizontalBlocked = false
+                }
+                if (horizontalBlocked) {
+                    if (sweepX.blocked) Velocity.x[eid] = 0
+                    if (sweepZ.blocked) Velocity.z[eid] = 0
+                }
                 const hadBlocked = hasComponent(world, eid, HorizontalBlocked)
                 if (horizontalBlocked && !hadBlocked) addComponent(world, eid, HorizontalBlocked)
                 else if (!horizontalBlocked && hadBlocked) removeComponent(world, eid, HorizontalBlocked)
@@ -295,7 +309,13 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
 const tmpAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 const tmpOther: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 const tmpRecoveryAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpStepAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+const tmpStepSupportAABB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
 const tmpRecoveryPos = { x: 0, y: 0, z: 0 }
+const tmpStepPos = { x: 0, y: 0, z: 0 }
+const tmpGroundProbePos = { x: 0, y: 0, z: 0 }
+const STEP_PROBE_DISTANCE = 0.08
+const STEP_EPS = 1e-6
 const HORIZONTAL_RECOVERY_DIRS = [
     { x: 1, z: 0 },
     { x: -1, z: 0 },
@@ -307,6 +327,138 @@ const HORIZONTAL_RECOVERY_DIRS = [
     { x: -Math.SQRT1_2, z: -Math.SQRT1_2 },
 ] as const
 
+function wasGroundedAt(
+    chunks: ChunkManager,
+    obstacles: ObstacleSource | null | undefined,
+    eid: number,
+    x: number,
+    y: number,
+    z: number,
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+): boolean {
+    tmpGroundProbePos.x = x
+    tmpGroundProbePos.y = y
+    tmpGroundProbePos.z = z
+    return isGrounded(chunks, tmpGroundProbePos, half, 0.08, obstacles, eid, anchor)
+}
+
+function tryStepUp(
+    chunks: ChunkManager,
+    obstacles: ObstacleSource | null | undefined,
+    eid: number,
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    dx: number,
+    dz: number,
+    desiredX: number,
+    desiredZ: number,
+    blockedX: boolean,
+    blockedZ: boolean,
+): boolean {
+    tmpStepPos.x = pos.x + (blockedX && dx !== 0 ? Math.sign(dx) * STEP_PROBE_DISTANCE : 0)
+    tmpStepPos.y = pos.y
+    tmpStepPos.z = pos.z + (blockedZ && dz !== 0 ? Math.sign(dz) * STEP_PROBE_DISTANCE : 0)
+    aabbFromFoot(tmpStepPos, half, tmpStepAABB)
+    const step = stepHeightForBlockingVoxels(chunks, tmpStepAABB, pos.y)
+    const allowedStepHeight = Math.max(step.allowedHeight, supportStepHeight(chunks, pos, half))
+    if (step.requiredHeight <= 0 || step.requiredHeight - allowedStepHeight > STEP_EPS) return false
+
+    tmpStepPos.x = pos.x
+    tmpStepPos.y = pos.y + step.requiredHeight
+    tmpStepPos.z = pos.z
+    aabbFromFoot(tmpStepPos, half, tmpStepAABB)
+    if (voxelAABBOverlap(chunks, tmpStepAABB)) return false
+    if (obstacles && obstacles.intersects(tmpStepAABB, eid)) return false
+
+    const sweepX = sweepAxis(chunks, tmpStepPos, half, 'x', desiredX - tmpStepPos.x, obstacles, eid, 'foot')
+    if (sweepX.blocked) return false
+    const sweepZ = sweepAxis(chunks, tmpStepPos, half, 'z', desiredZ - tmpStepPos.z, obstacles, eid, 'foot')
+    if (sweepZ.blocked) return false
+
+    pos.x = tmpStepPos.x
+    pos.y = tmpStepPos.y
+    pos.z = tmpStepPos.z
+    return true
+}
+
+interface StepCandidate {
+    requiredHeight: number
+    allowedHeight: number
+}
+
+function stepHeightForBlockingVoxels(chunks: ChunkManager, aabb: AABB, footY: number): StepCandidate {
+    const x0 = Math.floor(aabb.minX)
+    const y0 = Math.floor(aabb.minY)
+    const z0 = Math.floor(aabb.minZ)
+    const x1 = Math.floor(aabb.maxX - STEP_EPS)
+    const y1 = Math.floor(aabb.maxY - STEP_EPS)
+    const z1 = Math.floor(aabb.maxZ - STEP_EPS)
+
+    const palette = chunks.palette
+    let requiredHeight = 0
+    let allowedHeight = 0
+    let sawStepBlock = false
+    for (let y = y0; y <= y1; y++) {
+        for (let z = z0; z <= z1; z++) {
+            for (let x = x0; x <= x1; x++) {
+                const block = chunks.getVoxel(x, y, z)
+                if (!isCollidable(palette, block)) continue
+                const blockHeight = voxelHeightForBlock(palette, block)
+                if (blockHeight <= 0 || !blockAabbOverlaps(aabb, x, y, z, blockHeight)) continue
+                requiredHeight = Math.max(requiredHeight, y + blockHeight - footY)
+                allowedHeight = Math.max(allowedHeight, stepHeightForBlock(palette, block))
+                sawStepBlock = true
+            }
+        }
+    }
+    return sawStepBlock ? { requiredHeight, allowedHeight } : { requiredHeight: 0, allowedHeight: 0 }
+}
+
+function supportStepHeight(
+    chunks: ChunkManager,
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+): number {
+    tmpStepSupportAABB.minX = pos.x - half.x
+    tmpStepSupportAABB.maxX = pos.x + half.x
+    tmpStepSupportAABB.minY = pos.y - STEP_PROBE_DISTANCE
+    tmpStepSupportAABB.maxY = pos.y
+    tmpStepSupportAABB.minZ = pos.z - half.z
+    tmpStepSupportAABB.maxZ = pos.z + half.z
+
+    const x0 = Math.floor(tmpStepSupportAABB.minX)
+    const y0 = Math.floor(tmpStepSupportAABB.minY)
+    const z0 = Math.floor(tmpStepSupportAABB.minZ)
+    const x1 = Math.floor(tmpStepSupportAABB.maxX - STEP_EPS)
+    const y1 = Math.floor(tmpStepSupportAABB.maxY - STEP_EPS)
+    const z1 = Math.floor(tmpStepSupportAABB.maxZ - STEP_EPS)
+    const palette = chunks.palette
+    let height = 0
+    for (let y = y0; y <= y1; y++) {
+        for (let z = z0; z <= z1; z++) {
+            for (let x = x0; x <= x1; x++) {
+                const block = chunks.getVoxel(x, y, z)
+                if (!isCollidable(palette, block)) continue
+                const blockHeight = voxelHeightForBlock(palette, block)
+                if (blockHeight <= 0 || !blockAabbOverlaps(tmpStepSupportAABB, x, y, z, blockHeight)) continue
+                height = Math.max(height, stepHeightForBlock(palette, block))
+            }
+        }
+    }
+    return height
+}
+
+function blockAabbOverlaps(aabb: AABB, x: number, y: number, z: number, height: number): boolean {
+    return (
+        aabb.maxX > x &&
+        aabb.minX < x + 1 &&
+        aabb.maxY > y &&
+        aabb.minY < y + height &&
+        aabb.maxZ > z &&
+        aabb.minZ < z + 1
+    )
+}
 
 function isHorizontallyStalled(
     intendedX: number,
