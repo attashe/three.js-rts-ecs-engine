@@ -121,55 +121,62 @@ writeWav('npc-hurt.wav', mix(0.22, [
 
 // ── Spells ───────────────────────────────────────────────────────────
 // Each of the three staff spells gets a distinct cast cue (played as the
-// staff fires) and an impact cue (played where it lands). The families
-// read by timbre: Arcane Bolt = bright tonal "magic"; Frost Nova = cold,
-// airy, crystalline; Electric Orb = buzzy crackle. Casts rise/launch;
-// impacts are short and punchy so a flurry stays legible.
+// staff fires) and an impact cue (played where it lands). Built on the
+// `shimmer` voice (a smooth sine bell with a glassy inharmonic partial and
+// gentle vibrato) and `sineChirp` (a clean sine glide) instead of square
+// `note`/`chirp` — square waves read as buzzy chiptune blips, not magic.
+// Families read by timbre: Arcane Bolt = warm chime; Frost Nova = high cold
+// glass; Electric Orb = a tonal zap with just a touch of spark.
 
-// Arcane Bolt — bright rising zip with a tonal shimmer.
-writeWav('bolt-cast.wav', mix(0.30, [
-    chirp(0.00, 0.16, 320, 820, 0.22), // rising launch pitch
-    note(0.02, 0.24, 1047, 0.14),      // C6 shimmer
-    note(0.05, 0.26, 1568, 0.09),      // G6 overtone
-    filteredNoise(0.00, 0.12, 0.06, 4200, 8301),
+// Arcane Bolt — a rising sine zip topped with a consonant chime stack.
+writeWav('bolt-cast.wav', mix(0.34, [
+    sineChirp(0.00, 0.15, 440, 1000, 0.24), // smooth rising "zip"
+    shimmer(0.02, 0.32, 988, 0.20),         // B5 bell
+    shimmer(0.04, 0.32, 1480, 0.12),        // ~fifth — sparkle
+    shimmer(0.06, 0.30, 1976, 0.07),        // octave shimmer
+    filteredNoise(0.00, 0.08, 0.03, 3000, 8301), // soft airy onset, not hiss
 ]))
-// Bolt impact — bright zap-pop with a quick downward chirp.
-writeWav('bolt-hit.wav', mix(0.26, [
-    noiseBurst(0.00, 0.04, 0.45, 8371),
-    note(0.00, 0.20, 1318, 0.18),       // E6 ring
-    note(0.01, 0.22, 1760, 0.10),       // A6
-    chirp(0.00, 0.14, 1200, 300, 0.12), // zap down
-    filteredNoise(0.00, 0.10, 0.08, 3500, 8381),
-]))
-
-// Frost Nova — cold airy sweep (the ring expanding) over a held tone.
-writeWav('nova-cast.wav', mix(0.50, [
-    chirpNoise(0.00, 0.42, 5000, 1200, 0.18, 8311), // frost sweep, cutoff falls
-    note(0.00, 0.40, 784, 0.10),                     // G5 cold tone
-    note(0.03, 0.42, 1175, 0.07),                    // D6
-    filteredNoise(0.00, 0.30, 0.06, 6000, 8321),     // crystalline hiss
-    bubble(0.00, 0.18, 300, 0.10, 8331),             // soft burst body
-]))
-// Nova chill — a high icy "tink" of crystal as the front touches a foe.
-writeWav('nova-hit.wav', mix(0.24, [
-    pluck(0.00, 0.18, 1568, 0.22),  // G6 ice ping
-    pluck(0.005, 0.20, 2349, 0.14), // D7 shimmer
-    pluck(0.01, 0.16, 1175, 0.12),  // D6
-    filteredNoise(0.00, 0.08, 0.06, 6000, 8391),
+// Bolt impact — a bright chime burst with a quick soft zap-down.
+writeWav('bolt-hit.wav', mix(0.30, [
+    shimmer(0.00, 0.26, 1318, 0.22),        // E6 ring
+    shimmer(0.01, 0.26, 1760, 0.13),        // A6
+    shimmer(0.02, 0.22, 2637, 0.07),        // E7 sparkle
+    sineChirp(0.00, 0.10, 1500, 480, 0.12), // soft zap down
+    filteredNoise(0.00, 0.05, 0.03, 3500, 8381),
 ]))
 
-// Electric Orb — rising buzzy crackle as it leaves the staff.
-writeWav('orb-cast.wav', mix(0.34, [
-    chirpNoise(0.00, 0.28, 900, 2200, 0.22, 8341), // rising electric buzz
-    crackle(0.00, 0.30, 0.50, 0.22, 8351),          // sparks
-    chirp(0.00, 0.18, 300, 700, 0.12),              // launch pitch
-    filteredNoise(0.00, 0.10, 0.06, 3000, 8361),
+// Frost Nova — a cold descending glide (the ring rolling out) under a
+// stack of high glassy bells.
+writeWav('nova-cast.wav', mix(0.54, [
+    sineChirp(0.00, 0.48, 1300, 480, 0.15), // cold descending sweep
+    shimmer(0.00, 0.48, 784, 0.12),         // G5 cold tone
+    shimmer(0.03, 0.48, 1175, 0.08),        // D6
+    shimmer(0.06, 0.44, 1568, 0.05),        // G6 high glass
+    filteredNoise(0.00, 0.30, 0.04, 2600, 8321), // soft frost air (darkened)
 ]))
-// Orb zap — a sharp discharge when it arcs into something.
-writeWav('orb-zap.wav', mix(0.20, [
-    noiseBurst(0.00, 0.03, 0.50, 8401),
-    chirpNoise(0.00, 0.16, 3000, 600, 0.28, 8411), // discharge
-    crackle(0.00, 0.18, 0.60, 0.28, 8421),          // sparks
+// Nova chill — a high icy glass "tink" as the front touches a foe.
+writeWav('nova-hit.wav', mix(0.28, [
+    shimmer(0.00, 0.24, 1568, 0.20),  // G6 ice
+    shimmer(0.005, 0.24, 2349, 0.12), // D7 shimmer
+    shimmer(0.01, 0.20, 3136, 0.06),  // G7 sparkle
+    filteredNoise(0.00, 0.04, 0.025, 4500, 8391), // tiny frost shiver
+]))
+
+// Electric Orb — a rising sine whine with a light spark crackle and a
+// tonal body, so it reads as "charged magic", not static.
+writeWav('orb-cast.wav', mix(0.36, [
+    sineChirp(0.00, 0.22, 380, 1150, 0.22), // rising charge whine
+    shimmer(0.02, 0.30, 660, 0.10),         // tonal body
+    shimmer(0.04, 0.28, 990, 0.07),         // overtone
+    crackle(0.00, 0.26, 0.30, 0.12, 8351),  // light sparks
+    filteredNoise(0.00, 0.09, 0.04, 2600, 8361),
+]))
+// Orb zap — a sharp tonal discharge with a spark snap.
+writeWav('orb-zap.wav', mix(0.22, [
+    sineChirp(0.00, 0.12, 1500, 420, 0.22), // zap down
+    shimmer(0.00, 0.20, 1318, 0.13),        // tonal snap
+    crackle(0.00, 0.16, 0.34, 0.14, 8421),  // sparks
+    filteredNoise(0.00, 0.035, 0.05, 4000, 8411), // bright tick
 ]))
 
 // ── Character footsteps (per surface) ────────────────────────────────
@@ -324,6 +331,14 @@ writeWav('amb-garden-loop.wav',  ambGardenLoop(13.0))
 writeWav('amb-town-loop.wav',    ambTownLoop(14.0))
 writeWav('amb-tension-loop.wav', ambTensionLoop(10.0))
 writeWav('amb-cave-loop.wav',    ambCaveLoop(16.0))
+
+// Themed music set — richer, more "composed" location/screen themes than
+// the always-on ambient beds: a hopeful Menu title theme, a merry Tavern
+// jig, a stately Royal processional, and a solemn Cathedral organ + choir.
+writeWav('theme-menu-loop.wav',      menuTheme(16.0))
+writeWav('theme-tavern-loop.wav',    tavernTheme(8.0))
+writeWav('theme-royal-loop.wav',     royalTheme(12.0))
+writeWav('theme-cathedral-loop.wav', cathedralTheme(16.0))
 
 // ── Weather (new) ────────────────────────────────────────────────────
 
@@ -756,6 +771,92 @@ function pianoNote(start, end, hz, amp) {
                 sample += Math.sin(twoPi * hz * h.mult * t) * h.amp * Math.exp(-p * h.decay)
             }
             signal[i] += sample * amp * attack * 0.42
+        }
+    }
+}
+
+/**
+ * Magic bell / glass voice. Sine fundamental + an octave + a 2.76× *inharmonic*
+ * partial (the ratio that gives struck glass/crystal its shimmer rather than a
+ * plain musical tone), under an exponential decay, with a soft ~10 ms attack
+ * and a gentle 5.5 Hz vibrato so it sparkles instead of sitting flat. This is
+ * the core "magic" timbre — smooth and ringing where `note`/`pluck` (square)
+ * read as buzzy chiptune blips.
+ */
+function shimmer(start, end, hz, amp) {
+    return (signal) => {
+        const a = Math.floor(start * sampleRate)
+        const b = Math.min(signal.length, Math.floor(end * sampleRate))
+        const len = Math.max(1, b - a)
+        const twoPi = Math.PI * 2
+        const partials = [
+            { mult: 1.00, amp: 1.00, decay: 2.2 },
+            { mult: 2.00, amp: 0.45, decay: 3.0 },
+            { mult: 2.76, amp: 0.20, decay: 4.2 }, // inharmonic → glass shimmer
+        ]
+        for (let i = a; i < b; i++) {
+            const t = (i - a) / sampleRate
+            const p = (i - a) / len
+            const attack = Math.min(1, p / 0.01)            // ~10 ms soft attack
+            const vib = 1 + 0.006 * Math.sin(twoPi * 5.5 * t) // subtle vibrato
+            let s = 0
+            for (const h of partials) {
+                s += Math.sin(twoPi * hz * h.mult * vib * t) * h.amp * Math.exp(-p * h.decay)
+            }
+            signal[i] += s * amp * attack * 0.5
+        }
+    }
+}
+
+/**
+ * Smooth sine pitch glide — a clean glissando for magical zips and sweeps,
+ * the sine counterpart of the square `chirp`. Uses the shared `envelope` so
+ * the start and end don't click.
+ */
+function sineChirp(start, end, fromHz, toHz, amp) {
+    return (signal) => {
+        const a = Math.floor(start * sampleRate)
+        const b = Math.min(signal.length, Math.floor(end * sampleRate))
+        const len = Math.max(1, b - a)
+        const twoPi = Math.PI * 2
+        let phase = 0
+        for (let i = a; i < b; i++) {
+            const p = (i - a) / len
+            const hz = fromHz + (toHz - fromHz) * p
+            phase += hz / sampleRate
+            signal[i] += Math.sin(twoPi * phase) * amp * envelope(p)
+        }
+    }
+}
+
+/**
+ * Pipe-organ voice — additive sine "drawbars" (fundamental + octave + twelfth
+ * + two octaves) held at a FLAT sustain with a soft attack/release plateau (no
+ * decay). The twelfth (3×) is what gives a chapel organ its hollow, sacred
+ * colour. Steady where `pianoNote` decays and `padNote` swells; the body of
+ * the Royal and Cathedral themes.
+ */
+function organNote(start, end, hz, amp) {
+    return (signal) => {
+        const a = Math.floor(start * sampleRate)
+        const b = Math.min(signal.length, Math.floor(end * sampleRate))
+        const len = Math.max(1, b - a)
+        const twoPi = Math.PI * 2
+        const drawbars = [
+            { mult: 1, amp: 1.00 },
+            { mult: 2, amp: 0.55 },
+            { mult: 3, amp: 0.30 }, // twelfth → organ colour
+            { mult: 4, amp: 0.22 },
+        ]
+        for (let i = a; i < b; i++) {
+            const t = (i - a) / sampleRate
+            const p = (i - a) / len
+            const attack = Math.min(1, p / 0.04)
+            const release = Math.min(1, (1 - p) / 0.10)
+            const env = Math.max(0, Math.min(attack, release))
+            let s = 0
+            for (const db of drawbars) s += Math.sin(twoPi * hz * db.mult * t) * db.amp
+            signal[i] += s * amp * env * 0.45
         }
     }
 }
@@ -1255,6 +1356,148 @@ function ambCaveLoop(duration) {
     for (const d of drops) waterDrop(d.at * duration, d.hz, 0.20)(signal)
     filteredNoise(0, duration, 0.04, 300, 7041)(signal) // deep underground hum
     crossfadeEnds(signal, 0.6)
+    return signal
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Themed music set
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Menu — "Title". Warm and hopeful: the classic I–V–vi–IV (C–G–Am–F)
+ * progression on a pad bed with a flowing piano melody and a couple of
+ * high shimmer glints. More melodic than the ambient beds — you sit on it
+ * while deciding, so it has an actual tune.
+ */
+function menuTheme(duration) {
+    const signal = make(duration)
+    const d = duration
+    // Bass roots, one chord per quarter of the loop (I–V–vi–IV).
+    padNote(0.00 * d, 0.28 * d, 65, 0.06)(signal)  // C2
+    padNote(0.25 * d, 0.53 * d, 98, 0.06)(signal)  // G2
+    padNote(0.50 * d, 0.78 * d, 110, 0.06)(signal) // A2 (vi)
+    padNote(0.75 * d, 1.00 * d, 87, 0.06)(signal)  // F2 (IV)
+    padNote(0, d, 196, 0.022)(signal)              // G3 inner warmth
+    const melody = [
+        { at: 0.03, hz: 330, dur: 1.6 }, // E4
+        { at: 0.12, hz: 392, dur: 1.4 }, // G4
+        { at: 0.22, hz: 523, dur: 2.0 }, // C5
+        { at: 0.34, hz: 494, dur: 1.6 }, // B4
+        { at: 0.44, hz: 440, dur: 1.6 }, // A4
+        { at: 0.54, hz: 392, dur: 1.6 }, // G4
+        { at: 0.64, hz: 440, dur: 1.4 }, // A4
+        { at: 0.72, hz: 523, dur: 2.0 }, // C5
+        { at: 0.82, hz: 587, dur: 1.6 }, // D5
+        { at: 0.90, hz: 523, dur: 2.4 }, // C5 — resolve
+    ]
+    for (const n of melody) pianoNote(n.at * d, n.at * d + n.dur, n.hz, 0.15)(signal)
+    shimmer(0.28 * d, 0.28 * d + 1.0, 1047, 0.05)(signal)  // C6 glint
+    shimmer(0.78 * d, 0.78 * d + 1.2, 1319, 0.045)(signal) // E6 glint
+    crossfadeEnds(signal, 0.6)
+    return signal
+}
+
+/**
+ * Tavern — "Merry". A bouncing folk jig in G major: an oom-pah bass
+ * (root on the beat, fifth off it), a light off-beat hi-hat, a soft kick
+ * on the downbeats, and a jaunty triangle-wave fiddle tune over the top.
+ * The lively one — actual rhythm, unlike the calm beds.
+ */
+function tavernTheme(duration) {
+    const signal = make(duration)
+    const d = duration
+    const step = d / 16
+    const barRoot = [98, 131, 147, 98]   // G  C  D  G
+    const barFifth = [147, 196, 220, 147] // D  G  A  D
+    for (let i = 0; i < 16; i++) {
+        const bar = Math.floor(i / 4)
+        const bassHz = (i % 2 === 0 ? barRoot[bar] : barFifth[bar]) * 0.5 // octave-down oom-pah
+        triNote(i * step, i * step + step * 0.55, bassHz, 0.16)(signal)
+        if (i % 2 === 1) hihat(i * step, 0.05, 200 + i)(signal)        // off-beat tap
+        if (i % 4 === 0) kick(i * step, 0.10)(signal)                 // downbeat bounce
+    }
+    // Merry fiddle line (triangle), one note per step with a couple of rests.
+    const mel = [392, 440, 494, 587, 494, 440, 392, 440, 523, 494, 440, 392, 440, 392, 294, 0]
+    for (let i = 0; i < mel.length; i++) {
+        if (mel[i] === 0) continue
+        triNote(i * step, i * step + step * 0.9, mel[i], 0.12)(signal)
+    }
+    crossfadeEnds(signal, 0.12)
+    return signal
+}
+
+/**
+ * Royal — "Court". A stately processional in D major: a sustained organ
+ * brass-pad tracing I–IV–V–I (D–G–A–D), a marching octave bass pulse, a
+ * soft timpani-ish kick on the downbeats, and a noble dotted horn call on
+ * the triangle lead, capped with a shimmer fanfare sparkle.
+ */
+function royalTheme(duration) {
+    const signal = make(duration)
+    const d = duration
+    const step = d / 16
+    const barRoot = [73, 98, 110, 73] // D2 G2 A2 D2
+    for (let bar = 0; bar < 4; bar++) {
+        // Sustained organ pad chord (root + fifth) across the bar.
+        organNote(bar * 4 * step, (bar * 4 + 4) * step, barRoot[bar], 0.05)(signal)
+        organNote(bar * 4 * step, (bar * 4 + 4) * step, barRoot[bar] * 1.5, 0.035)(signal)
+    }
+    for (let i = 0; i < 16; i++) {
+        const bar = Math.floor(i / 4)
+        triNote(i * step, i * step + step * 0.5, barRoot[bar], 0.13)(signal) // march bass
+        if (i % 4 === 0) kick(i * step, 0.18)(signal)                       // processional pulse
+    }
+    // Noble horn call (triangle), dotted rhythm — a proud rising motif.
+    const call = [
+        { at: 0.02, hz: 294, dur: 0.9 }, // D4
+        { at: 0.10, hz: 440, dur: 0.7 }, // A4
+        { at: 0.16, hz: 587, dur: 1.3 }, // D5 (rise of an octave)
+        { at: 0.28, hz: 494, dur: 0.7 }, // B4
+        { at: 0.34, hz: 587, dur: 1.4 }, // D5
+        { at: 0.52, hz: 440, dur: 0.9 }, // A4
+        { at: 0.60, hz: 587, dur: 0.7 }, // D5
+        { at: 0.66, hz: 659, dur: 1.6 }, // E5
+        { at: 0.80, hz: 587, dur: 0.8 }, // D5
+        { at: 0.87, hz: 440, dur: 1.6 }, // A4 — settle
+    ]
+    for (const n of call) triNote(n.at * d, n.at * d + n.dur, n.hz, 0.12)(signal)
+    shimmer(0.16 * d, 0.16 * d + 0.9, 1175, 0.05)(signal) // D6 fanfare sparkle
+    crossfadeEnds(signal, 0.4)
+    return signal
+}
+
+/**
+ * Cathedral — "Sanctum". Solemn and sacred: deep pipe-organ triads on a
+ * slow Aeolian hymn (Dm–Bb–F–C) over a held low pedal, with a high choir
+ * line (vibrato shimmer) drifting above. Very slow and legato; long
+ * crossfade so the loop is seamless. Awe, not action.
+ */
+function cathedralTheme(duration) {
+    const signal = make(duration)
+    const d = duration
+    // Low pedal organ — the cathedral's foundation, held throughout.
+    organNote(0, d, 73, 0.05)(signal) // D2
+    // Sustained triads, one chord per quarter of the loop (i–VI–III–VII).
+    const chords = [
+        [147, 175, 220], // Dm:  D3 F3 A3
+        [117, 147, 175], // Bb:  Bb2 D3 F3
+        [175, 220, 262], // F:   F3 A3 C4
+        [131, 165, 196], // C:   C3 E3 G3
+    ]
+    for (let c = 0; c < 4; c++) {
+        const s = (c * 0.25) * d
+        const e = (c * 0.25 + 0.27) * d // slight overlap so chords melt together
+        for (const hz of chords[c]) organNote(s, e, hz, 0.04)(signal)
+    }
+    // High choir line above (vibrato shimmer), a slow descending hymn.
+    const choir = [
+        { at: 0.02, hz: 587, dur: 2.4 }, // D5
+        { at: 0.27, hz: 523, dur: 2.4 }, // C5
+        { at: 0.52, hz: 440, dur: 2.4 }, // A4
+        { at: 0.77, hz: 392, dur: 2.8 }, // G4 — settle
+    ]
+    for (const n of choir) shimmer(n.at * d, n.at * d + n.dur, n.hz, 0.06)(signal)
+    crossfadeEnds(signal, 0.8)
     return signal
 }
 

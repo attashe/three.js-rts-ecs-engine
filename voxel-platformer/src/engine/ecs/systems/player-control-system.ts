@@ -10,6 +10,7 @@ import { makeRay, screenToWorldRay } from '../../input/pointer'
 import type { ChunkManager } from '../../voxel/chunk-manager'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
 import { DEFAULT_MOVEMENT_ENVIRONMENT, movementEnvironmentForAABB } from '../../voxel/movement-effects'
+import { effectivePlayerMoveSpeed } from '../../../game/equipment-effects'
 
 export interface PlayerControlOptions {
     /** Horizontal speed (world units / second). Default 5. */
@@ -109,7 +110,7 @@ export function createPlayerControlSystem(
             // Plain walk speed. Original engine modulated this by armor
             // weight via world.playerStats; the platformer foundation drops
             // that hook with the inventory layer.
-            const moveSpeed = moveSpeedOverride ?? playerSettings.moveSpeed
+            const moveSpeed = moveSpeedOverride ?? effectivePlayerMoveSpeed(playerSettings)
             const baseTargetVx = dirX * moveSpeed
             const baseTargetVz = dirZ * moveSpeed
 

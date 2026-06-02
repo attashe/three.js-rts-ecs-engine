@@ -47,12 +47,12 @@ const expected = {
     'npc-hurt.wav':        { bytes: 4895, sha256: '3ca8fd63bc357837ab0f5a8efc60b6cc3efadb32ede334402cb60431f00a21d5' },
 
     // ── Spells (cast + impact per spell) ──────────────────────────
-    'bolt-cast.wav': { bytes: 6659,  sha256: '5b1c7bace6ecbba2b787f01906e215f5d490f29e451a702c25b7261cab27c055' },
-    'bolt-hit.wav':  { bytes: 5777,  sha256: '0c988e8931e40c67b7a99627926b6ec5e926ad214fcdd0f48c5e8073a8f08d74' },
-    'nova-cast.wav': { bytes: 11069, sha256: 'd8d2a85fdc2ba1de6c0b673128784b6c90ddf8d6b56cb665a7038b68f39bd4e1' },
-    'nova-hit.wav':  { bytes: 5336,  sha256: 'e280bf3f303160e06d36f3bd68e7cb9ade0a26c0847a1bebd56afa46092489dc' },
-    'orb-cast.wav':  { bytes: 7541,  sha256: '2ff3f619df00123a928c075e99b7b53c5220652beae8dbf6fd778c304de6c5cf' },
-    'orb-zap.wav':   { bytes: 4454,  sha256: '45154902dc69f5a723c19132d3f0381deb519247440595e36f1883c85da3fa72' },
+    'bolt-cast.wav': { bytes: 7541,  sha256: '5bb33b4b2ecf0363bbbfde19b4bd5c88c877906269d121bfcd0e1f34ddf0d226' },
+    'bolt-hit.wav':  { bytes: 6659,  sha256: 'e0bdb27e953ba6072218b83da84dd535d9257459d905e163da32a4fe25e4734c' },
+    'nova-cast.wav': { bytes: 11951, sha256: 'd6d3e068de11920c9c65df95853e2d15dbcd77297fa3b36e6f4f99d2169fcd10' },
+    'nova-hit.wav':  { bytes: 6218,  sha256: '900efe7a9eea47de9c0b3a62a3c7013011a60f1ac1bdd4cd4e13e2e6b4250f7a' },
+    'orb-cast.wav':  { bytes: 7982,  sha256: 'be6d0bb97b8bbdb9fd4eb5c49da0416ddd1dbfcac76352b61104051be47e4e3f' },
+    'orb-zap.wav':   { bytes: 4895,  sha256: 'de68dc91099c5b21bc2c96322b106da5a070e34d8ff88560b01539023e5071f0' },
 
     // ── Player locomotion ─────────────────────────────────────────
     // Surface-aware footsteps: 5 families × 2 variants. Volumes vary
@@ -120,6 +120,12 @@ const expected = {
     'amb-town-loop.wav':    { bytes: 308744, sha256: '9d50543c9081afb4b8e81868f4cdd674c01cd4352496c2e7703d842b00d9e6d7' },
     'amb-tension-loop.wav': { bytes: 220544, sha256: 'a7eb748191f2e480ec97fc8c4a396c6c0167948e59632c64e863999f8a1fc216' },
     'amb-cave-loop.wav':    { bytes: 352844, sha256: '5778625c4a604784fb089c8fab08aa08bc67f17f6cf5c91b4230efd9bab8be5d' },
+
+    // ── Themed music set ──────────────────────────────────────────
+    'theme-menu-loop.wav':      { bytes: 352844, sha256: '7a7a33dbc5368ee878c420bc17699c35865d4acab96e7e0342595e44b06eeefc' },
+    'theme-tavern-loop.wav':    { bytes: 176444, sha256: 'd3ca2585b43dd8dbb1f60f93d968af1f2d6b3acd5c317a2e228754620942b622' },
+    'theme-royal-loop.wav':     { bytes: 264644, sha256: 'd60f05cb0d5857154a1a8e06a20026b3438e639b151346e565e6ff24d640acc4' },
+    'theme-cathedral-loop.wav': { bytes: 352844, sha256: 'ec5463be4695a80c634373ee88db0d3a4ba6cab6f2411b4fda9dc7ad37350634' },
 
     // ── Weather ───────────────────────────────────────────────────
     'rain-loop.wav': {

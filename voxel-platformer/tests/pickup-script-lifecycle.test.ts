@@ -12,6 +12,8 @@ import {
     HIGH_JUMP_BOOTS_ITEM_ID,
     HIGH_JUMP_BOOTS_ITEM_OPTIONS,
     HIGH_JUMP_BOOTS_NAME,
+    HIGH_SPEED_BOOTS_ITEM_ID,
+    HIGH_SPEED_BOOTS_ITEM_OPTIONS,
 } from '../src/game/high-jump-boots'
 
 test('spawnScriptPickup + scriptPickupExists round-trip a stable id', () => {
@@ -73,6 +75,23 @@ test('spawnScriptPickup renders high jump boots with the boots pickup prop', () 
         id: HIGH_JUMP_BOOTS_ITEM_ID,
         quantity: 1,
         options: HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+    })
+})
+
+test('spawnScriptPickup defaults boot pickup metadata to accessory options', () => {
+    const world = createGameWorld()
+    spawnScriptPickup(world, {
+        kind: HIGH_SPEED_BOOTS_ITEM_ID,
+        position: { x: 1, y: 2, z: 3 },
+        id: 'speed-boots.meta',
+    })
+
+    const eid = world.pickupEntityByScriptId.get('speed-boots.meta')!
+    assert.equal(world.object3DByEid.get(eid)?.name, 'HighJumpBootsProp')
+    assert.deepEqual(world.pickupMetaByEid.get(eid)?.inventoryItem, {
+        id: HIGH_SPEED_BOOTS_ITEM_ID,
+        quantity: 1,
+        options: HIGH_SPEED_BOOTS_ITEM_OPTIONS,
     })
 })
 

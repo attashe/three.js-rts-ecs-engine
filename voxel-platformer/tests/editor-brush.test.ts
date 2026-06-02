@@ -47,6 +47,36 @@ test('brushFootprint: disk5 is a flat 5×5 patch (25 cells)', () => {
     for (const c of cells) assert.equal(c.y, 9)
 })
 
+test('brushFootprint: column rises from the cursor with adjustable height', () => {
+    const cells = brushFootprint('column', { x: 2, y: 5, z: -1 }, { columnHeight: 4 })
+    assert.deepEqual(cells, [
+        { x: 2, y: 5, z: -1 },
+        { x: 2, y: 6, z: -1 },
+        { x: 2, y: 7, z: -1 },
+        { x: 2, y: 8, z: -1 },
+    ])
+})
+
+test('brushFootprint: wallX paints a 1×N line along X', () => {
+    const cells = brushFootprint('wallX', { x: 10, y: 2, z: 4 }, { wallLength: 5 })
+    assert.equal(cells.length, 5)
+    assert.deepEqual(cells.map((c) => c.x), [8, 9, 10, 11, 12])
+    assert.ok(cells.every((c) => c.y === 2 && c.z === 4))
+})
+
+test('brushFootprint: wallZ paints a 1×N line along Z and keeps exact even lengths', () => {
+    const cells = brushFootprint('wallZ', { x: 1, y: 3, z: 8 }, { wallLength: 4 })
+    assert.equal(cells.length, 4)
+    assert.deepEqual(cells.map((c) => c.z), [7, 8, 9, 10])
+    assert.ok(cells.every((c) => c.x === 1 && c.y === 3))
+})
+
+test('brushFootprint: pattern dimensions clamp to safe integer ranges', () => {
+    assert.equal(brushFootprint('column', ORIGIN, { columnHeight: 0 }).length, 1)
+    assert.equal(brushFootprint('wallX', ORIGIN, { wallLength: 999 }).length, 64)
+    assert.equal(brushFootprint('wallZ', ORIGIN, { wallLength: 2.8 }).length, 2)
+})
+
 test('brushFootprint: centre offset propagates correctly to every cell', () => {
     const cells = brushFootprint('cube3', { x: 10, y: 20, z: 30 })
     for (const c of cells) {
@@ -66,5 +96,8 @@ test('brushDragFootprint: box fills inclusive bounds in either drag direction', 
 
 test('isDragBrush only marks box brush as drag-defined', () => {
     assert.equal(isDragBrush('box'), true)
+    assert.equal(isDragBrush('column'), false)
+    assert.equal(isDragBrush('wallX'), false)
+    assert.equal(isDragBrush('wallZ'), false)
     assert.equal(isDragBrush('single'), false)
 })

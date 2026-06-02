@@ -283,26 +283,72 @@ function keeperSocket(name: string, x: number, y: number, z: number): Group {
 function createLargeTrollModel(beard: CharacterBeardKind, variant: NpcVariantKind): Group {
     const root = new Group()
     const trollVariant = normalizeNpcVariant('large-troll', variant)
+    const colors = largeTrollColors(trollVariant)
     root.name = 'NpcModel:large-troll'
 
     const figure = createMainCharacter({
-        tunicColor: trollVariant === 'guardian' ? 0x262e32 : 0x394b4f,
-        cloakColor: 0x4f2430,
+        tunicColor: colors.tunic,
+        cloakColor: colors.cloak,
         skinColor: 0x6f8d6b,
-        metalColor: trollVariant === 'guardian' ? 0x9ea9b0 : 0xd2b45f,
+        metalColor: colors.metal,
         bootColor: 0x251f19,
         beard,
-        beardColor: trollVariant === 'guardian' ? 0x8f9696 : 0x47553c,
-        cloak: trollVariant === 'guardian' ? 'none' : 'default',
+        beardColor: colors.beard,
+        cloak: colors.cloakKind,
     })
     figure.name = 'LargeTrollFigure'
-    figure.scale.setScalar(1.85)
+    figure.scale.setScalar(trollVariant === 'child' ? 1.28 : 1.85)
     root.add(figure)
 
-    if (trollVariant === 'guardian') addGuardianTrollDetails(root)
-    else addWiseTrollDetails(root)
+    switch (trollVariant) {
+        case 'guardian':
+            addGuardianTrollDetails(root)
+            break
+        case 'king':
+            addKingTrollDetails(root)
+            break
+        case 'princess':
+            addPrincessTrollDetails(root)
+            break
+        case 'trader':
+            addTraderTrollDetails(root)
+            break
+        case 'child':
+            addChildTrollDetails(root)
+            break
+        case 'wise':
+        case 'default':
+            addWiseTrollDetails(root)
+            break
+    }
 
     return root
+}
+
+interface LargeTrollColors {
+    tunic: number
+    cloak: number
+    metal: number
+    beard: number
+    cloakKind: CharacterCloakKind
+}
+
+function largeTrollColors(variant: NpcVariantKind): LargeTrollColors {
+    switch (variant) {
+        case 'guardian':
+            return { tunic: 0x262e32, cloak: 0x4f2430, metal: 0x9ea9b0, beard: 0x8f9696, cloakKind: 'none' }
+        case 'king':
+            return { tunic: 0x42203d, cloak: 0x6f1f38, metal: 0xf0c967, beard: 0x68523a, cloakKind: 'default' }
+        case 'princess':
+            return { tunic: 0x674875, cloak: 0x294566, metal: 0xf1d98b, beard: 0x47553c, cloakKind: 'default' }
+        case 'trader':
+            return { tunic: 0x4f432f, cloak: 0x2f3e33, metal: 0xc8913c, beard: 0x5d4a35, cloakKind: 'none' }
+        case 'child':
+            return { tunic: 0x4d7a67, cloak: 0x4f2430, metal: 0xd2b45f, beard: 0x47553c, cloakKind: 'none' }
+        case 'wise':
+        case 'default':
+            return { tunic: 0x394b4f, cloak: 0x4f2430, metal: 0xd2b45f, beard: 0x47553c, cloakKind: 'default' }
+    }
 }
 
 function addWiseTrollDetails(root: Group): void {
@@ -367,6 +413,177 @@ function addWiseTrollDetails(root: Group): void {
     reparentInModel(root, 'Chest', bridge)
     reparentInModel(root, 'Chest', sash)
     reparentInModel(root, 'Figure', robe)
+}
+
+function addKingTrollDetails(root: Group): void {
+    const gold = sharedMaterial(0xf0c967, 0.34, 0.42)
+    const royal = sharedMaterial(0x6f1f38, 0.7, 0.04)
+    const velvet = sharedMaterial(0x27152d, 0.82)
+    const gem = sharedMaterial(0x5ec2ff, 0.3, 0.18, 0.45)
+
+    const crown = shadowed(new Mesh(sharedCylinderGeometry(0.35, 0.32, 0.13, 10), gold))
+    crown.name = 'LargeTrollKingCrown'
+    crown.position.set(0, 2.86, 0.02)
+    crown.scale.z = 0.82
+
+    const crownFront = shadowed(new Mesh(sharedBoxGeometry(0.17, 0.2, 0.045), gold))
+    crownFront.name = 'LargeTrollKingCrownFront'
+    crownFront.position.set(0, 2.98, 0.28)
+    const crownL = shadowed(new Mesh(sharedBoxGeometry(0.12, 0.17, 0.04), gold))
+    crownL.name = 'LargeTrollKingCrownL'
+    crownL.position.set(-0.19, 2.95, 0.18)
+    crownL.rotation.z = -0.18
+    const crownR = shadowed(new Mesh(sharedBoxGeometry(0.12, 0.17, 0.04), gold))
+    crownR.name = 'LargeTrollKingCrownR'
+    crownR.position.set(0.19, 2.95, 0.18)
+    crownR.rotation.z = 0.18
+
+    const jewel = shadowed(new Mesh(sharedSphereGeometry(0.055, 8, 6), gem))
+    jewel.name = 'LargeTrollKingCrownJewel'
+    jewel.position.set(0, 2.92, 0.34)
+    jewel.scale.set(1, 0.78, 0.42)
+
+    const mantle = shadowed(new Mesh(sharedCylinderGeometry(0.62, 0.48, 0.22, 8), royal))
+    mantle.name = 'LargeTrollKingMantle'
+    mantle.position.set(0, 1.72, 0.02)
+    mantle.scale.z = 0.78
+
+    const frontPanel = shadowed(new Mesh(sharedBoxGeometry(0.28, 0.78, 0.08), velvet))
+    frontPanel.name = 'LargeTrollKingFrontPanel'
+    frontPanel.position.set(0, 1.24, 0.5)
+
+    const medallion = shadowed(new Mesh(sharedSphereGeometry(0.09, 10, 6), gold))
+    medallion.name = 'LargeTrollKingMedallion'
+    medallion.position.set(0, 1.53, 0.56)
+    medallion.scale.set(1, 0.82, 0.35)
+
+    for (const part of [crown, crownFront, crownL, crownR, jewel, mantle, frontPanel, medallion]) {
+        root.add(part)
+        reparentInModel(root, 'Chest', part)
+    }
+}
+
+function addPrincessTrollDetails(root: Group): void {
+    const silver = sharedMaterial(0xe6d7a2, 0.32, 0.36)
+    const dress = sharedMaterial(0x7a4b83, 0.76)
+    const sashMat = sharedMaterial(0xd6a7cb, 0.62, 0.04)
+    const gem = sharedMaterial(0xff9fd1, 0.28, 0.12, 0.5)
+
+    const tiaraBand = shadowed(new Mesh(sharedBoxGeometry(0.46, 0.06, 0.06), silver))
+    tiaraBand.name = 'LargeTrollPrincessTiaraBand'
+    tiaraBand.position.set(0, 2.82, 0.28)
+    tiaraBand.rotation.x = -0.08
+
+    const tiaraPeak = shadowed(new Mesh(sharedBoxGeometry(0.1, 0.22, 0.045), silver))
+    tiaraPeak.name = 'LargeTrollPrincessTiaraPeak'
+    tiaraPeak.position.set(0, 2.93, 0.29)
+    const tiaraGem = shadowed(new Mesh(sharedSphereGeometry(0.048, 8, 6), gem))
+    tiaraGem.name = 'LargeTrollPrincessTiaraGem'
+    tiaraGem.position.set(0, 2.88, 0.34)
+    tiaraGem.scale.set(1, 0.76, 0.38)
+
+    const skirt = shadowed(new Mesh(sharedCylinderGeometry(0.66, 0.42, 0.28, 8), dress))
+    skirt.name = 'LargeTrollPrincessSkirtHem'
+    skirt.position.set(0, 0.55, 0.02)
+    skirt.scale.z = 0.78
+
+    const sash = shadowed(new Mesh(sharedBoxGeometry(0.74, 0.09, 0.08), sashMat))
+    sash.name = 'LargeTrollPrincessSash'
+    sash.position.set(0, 1.24, 0.5)
+    sash.rotation.z = -0.26
+
+    const necklace = shadowed(new Mesh(sharedBoxGeometry(0.34, 0.045, 0.055), silver))
+    necklace.name = 'LargeTrollPrincessNecklace'
+    necklace.position.set(0, 1.58, 0.48)
+    const pendant = shadowed(new Mesh(sharedSphereGeometry(0.052, 8, 6), gem))
+    pendant.name = 'LargeTrollPrincessPendant'
+    pendant.position.set(0, 1.51, 0.53)
+    pendant.scale.set(1, 0.8, 0.35)
+
+    for (const part of [tiaraBand, tiaraPeak, tiaraGem, skirt, sash, necklace, pendant]) {
+        root.add(part)
+        reparentInModel(root, part.name.includes('Tiara') ? 'Chest' : part.name.includes('Skirt') ? 'Figure' : 'Chest', part)
+    }
+}
+
+function addTraderTrollDetails(root: Group): void {
+    const leather = sharedMaterial(0x3b2415, 0.78)
+    const cloth = sharedMaterial(0x8a6a3b, 0.72)
+    const brass = sharedMaterial(0xc8913c, 0.44, 0.2)
+    const canvas = sharedMaterial(0x6c5940, 0.84)
+
+    const apron = shadowed(new Mesh(sharedBoxGeometry(0.52, 0.78, 0.08), cloth))
+    apron.name = 'LargeTrollTraderApron'
+    apron.position.set(0, 1.12, 0.5)
+
+    const strapL = shadowed(new Mesh(sharedBoxGeometry(0.07, 0.82, 0.07), leather))
+    strapL.name = 'LargeTrollTraderStrapL'
+    strapL.position.set(-0.19, 1.37, 0.52)
+    strapL.rotation.z = 0.18
+    const strapR = shadowed(new Mesh(sharedBoxGeometry(0.07, 0.82, 0.07), leather))
+    strapR.name = 'LargeTrollTraderStrapR'
+    strapR.position.set(0.19, 1.37, 0.52)
+    strapR.rotation.z = -0.18
+
+    const pack = shadowed(new Mesh(sharedBoxGeometry(0.56, 0.62, 0.24), canvas))
+    pack.name = 'LargeTrollTraderPack'
+    pack.position.set(0, 1.38, -0.5)
+    const bedroll = shadowed(new Mesh(sharedCylinderGeometry(0.16, 0.16, 0.55, 8), sharedMaterial(0x394b4f, 0.8)))
+    bedroll.name = 'LargeTrollTraderBedroll'
+    bedroll.position.set(0, 1.76, -0.58)
+    bedroll.rotation.z = Math.PI * 0.5
+
+    const belt = shadowed(new Mesh(sharedBoxGeometry(0.78, 0.1, 0.09), leather))
+    belt.name = 'LargeTrollTraderBelt'
+    belt.position.set(0, 0.88, 0.49)
+    const buckle = shadowed(new Mesh(sharedBoxGeometry(0.15, 0.12, 0.05), brass))
+    buckle.name = 'LargeTrollTraderBuckle'
+    buckle.position.set(0, 0.88, 0.56)
+    const pouch = shadowed(new Mesh(sharedBoxGeometry(0.18, 0.22, 0.12), leather))
+    pouch.name = 'LargeTrollTraderCoinPouch'
+    pouch.position.set(0.34, 0.78, 0.52)
+
+    for (const part of [apron, strapL, strapR, pack, bedroll, belt, buckle, pouch]) {
+        root.add(part)
+        reparentInModel(root, 'Chest', part)
+    }
+}
+
+function addChildTrollDetails(root: Group): void {
+    const capMat = sharedMaterial(0x284a67, 0.78)
+    const scarfMat = sharedMaterial(0xd48a36, 0.64)
+    const patchMat = sharedMaterial(0xf0c967, 0.52, 0.08)
+    const satchelMat = sharedMaterial(0x4a2d18, 0.78)
+
+    const cap = shadowed(new Mesh(sharedCylinderGeometry(0.24, 0.22, 0.08, 10), capMat))
+    cap.name = 'LargeTrollChildCap'
+    cap.position.set(0, 1.94, 0.02)
+    cap.scale.z = 0.82
+    const brim = shadowed(new Mesh(sharedBoxGeometry(0.26, 0.045, 0.12), capMat))
+    brim.name = 'LargeTrollChildCapBrim'
+    brim.position.set(0, 1.9, 0.2)
+    brim.rotation.x = -0.08
+
+    const scarf = shadowed(new Mesh(sharedBoxGeometry(0.34, 0.08, 0.08), scarfMat))
+    scarf.name = 'LargeTrollChildScarf'
+    scarf.position.set(0, 1.12, 0.34)
+    const scarfTail = shadowed(new Mesh(sharedBoxGeometry(0.09, 0.28, 0.06), scarfMat))
+    scarfTail.name = 'LargeTrollChildScarfTail'
+    scarfTail.position.set(0.16, 0.98, 0.35)
+    scarfTail.rotation.z = -0.18
+
+    const patch = shadowed(new Mesh(sharedBoxGeometry(0.18, 0.16, 0.05), patchMat))
+    patch.name = 'LargeTrollChildTunicPatch'
+    patch.position.set(-0.12, 0.9, 0.35)
+
+    const satchel = shadowed(new Mesh(sharedBoxGeometry(0.22, 0.2, 0.12), satchelMat))
+    satchel.name = 'LargeTrollChildSatchel'
+    satchel.position.set(-0.34, 0.78, 0.12)
+
+    for (const part of [cap, brim, scarf, scarfTail, patch, satchel]) {
+        root.add(part)
+        reparentInModel(root, 'Chest', part)
+    }
 }
 
 function addGuardianTrollDetails(root: Group): void {

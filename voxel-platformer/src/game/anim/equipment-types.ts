@@ -1,5 +1,5 @@
 import type { EquipSlot } from '../../engine/anim'
-import { HIGH_JUMP_BOOTS_ITEM_ID } from '../high-jump-boots'
+import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../high-jump-boots'
 
 export const EQUIPMENT_KINDS = [
     'hat',
@@ -17,6 +17,7 @@ export const EQUIPMENT_KINDS = [
     'battle-hammer',
     'book',
     HIGH_JUMP_BOOTS_ITEM_ID,
+    HIGH_SPEED_BOOTS_ITEM_ID,
 ] as const
 
 export type EquipmentKind = (typeof EQUIPMENT_KINDS)[number]
@@ -61,6 +62,7 @@ export type HammerEquipmentKind = (typeof HAMMER_EQUIPMENT_KINDS)[number]
 
 export const BOOT_EQUIPMENT_KINDS = [
     HIGH_JUMP_BOOTS_ITEM_ID,
+    HIGH_SPEED_BOOTS_ITEM_ID,
 ] as const satisfies readonly EquipmentKind[]
 
 export type BootEquipmentKind = (typeof BOOT_EQUIPMENT_KINDS)[number]
@@ -81,6 +83,7 @@ export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
     'battle-hammer': 'Battle Hammer',
     book: 'Book',
     [HIGH_JUMP_BOOTS_ITEM_ID]: 'High Jump Boots',
+    [HIGH_SPEED_BOOTS_ITEM_ID]: 'Boots of High Speed',
 }
 
 export type HandEquipmentSlot = Extract<EquipSlot, 'handR' | 'handL'>

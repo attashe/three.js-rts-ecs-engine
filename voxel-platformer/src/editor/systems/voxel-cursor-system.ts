@@ -228,9 +228,15 @@ function brushAffectedCells(state: EditorState, cursor: { x: number; y: number; 
         state.brushDragAnchor &&
         isDragBrush(state.brush)
     ) {
-        return brushDragFootprint(state.brush, state.brushDragAnchor, cursor)
+        return brushDragFootprint(state.brush, state.brushDragAnchor, cursor, {
+            columnHeight: state.brushColumnHeight,
+            wallLength: state.brushWallLength,
+        })
     }
-    return brushFootprint(state.brush, cursor)
+    return brushFootprint(state.brush, cursor, {
+        columnHeight: state.brushColumnHeight,
+        wallLength: state.brushWallLength,
+    })
 }
 
 function intersectGroundPlane(

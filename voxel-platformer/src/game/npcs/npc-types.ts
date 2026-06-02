@@ -36,6 +36,10 @@ export const NPC_MODEL_LABELS: Record<NpcModelKind, string> = {
 export const TROLL_OUTFIT_KINDS = [
     'wise',
     'guardian',
+    'king',
+    'princess',
+    'trader',
+    'child',
 ] as const
 
 export type TrollOutfitKind = (typeof TROLL_OUTFIT_KINDS)[number]
@@ -44,6 +48,10 @@ export type NpcVariantKind = 'default' | TrollOutfitKind
 export const TROLL_OUTFIT_LABELS: Record<TrollOutfitKind, string> = {
     wise: 'Wise Troll',
     guardian: 'Troll Guardian',
+    king: 'Troll King',
+    princess: 'Troll Princess',
+    trader: 'Troll Trader',
+    child: 'Troll Child',
 }
 
 export type NpcAttackClip = 'attack' | 'staffAttack' | 'hammerAttack'
@@ -53,7 +61,7 @@ export interface NpcConfig {
     name: string
     model: NpcModelKind
     /** Model-specific outfit/variant selector. Non-variant models use
-     *  `'default'`; large trolls use `'wise'` or `'guardian'`. */
+     *  `'default'`; large trolls use the `TROLL_OUTFIT_KINDS` set. */
     variant: NpcVariantKind
     beard: CharacterBeardKind
     position: { x: number; y: number; z: number }
@@ -121,6 +129,7 @@ export interface NpcRuntimeState {
     colliderRadius: number
     colliderHeight: number
     hp: number
+    maxHp?: number
     /** Mirrors `NpcConfig.invulnerable`; damage helpers no-op when set. */
     invulnerable: boolean
     requestAttack: boolean
@@ -161,6 +170,11 @@ export interface StuckArrow {
 }
 
 export const NPC_DEFAULT_HP = 2
+export const TROLL_DEFAULT_HP = 5
+
+export function npcDefaultHp(npc: Pick<NpcConfig, 'model'>): number {
+    return npc.model === 'large-troll' ? TROLL_DEFAULT_HP : NPC_DEFAULT_HP
+}
 
 /**
  * Apply `amount` damage to an NPC, honouring invulnerability. Flags the NPC to
@@ -226,7 +240,18 @@ export function defaultNpcBeard(model: NpcModelKind, variant: NpcVariantKind = d
         case 'keeper-arlen':
             return 'full'
         case 'large-troll':
-            return normalizeNpcVariant(model, variant) === 'guardian' ? 'full' : 'pointed'
+            switch (normalizeNpcVariant(model, variant)) {
+                case 'guardian':
+                case 'king':
+                case 'trader':
+                    return 'full'
+                case 'child':
+                case 'princess':
+                    return 'none'
+                case 'default':
+                case 'wise':
+                    return 'pointed'
+            }
         case 'player':
             return 'none'
     }
@@ -238,9 +263,20 @@ export function defaultNpcEquipment(model: NpcModelKind, variant: NpcVariantKind
         case 'keeper-arlen':
             return { handR: 'staff', handL: null }
         case 'large-troll':
-            return normalizeNpcVariant(model, variant) === 'guardian'
-                ? { handR: 'battle-hammer', handL: null }
-                : { handR: null, handL: 'book' }
+            switch (normalizeNpcVariant(model, variant)) {
+                case 'guardian':
+                    return { handR: 'battle-hammer', handL: null }
+                case 'king':
+                    return { handR: 'staff-crystal', handL: null }
+                case 'trader':
+                case 'wise':
+                    return { handR: null, handL: 'book' }
+                case 'child':
+                case 'princess':
+                    return { handR: null, handL: null }
+                case 'default':
+                    return { handR: null, handL: 'book' }
+            }
         case 'player':
             return { handR: null, handL: null }
     }

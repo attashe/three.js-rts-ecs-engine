@@ -5,6 +5,7 @@ import type { System } from './system'
 import { FixedOrder } from './orders'
 import { pushLog } from '../world'
 import { spawnArrowProjectile } from '../../../game/moving-objects'
+import { effectivePlayerArrowLift, effectivePlayerArrowSpeed } from '../../../game/equipment-effects'
 
 export interface ProjectileLaunchOptions {
     arrowSpeed?: number
@@ -44,8 +45,8 @@ export function createProjectileLaunchSystem(actions: ActionMap, opts: Projectil
             const yaw = Rotation.y[player]
             const forwardX = Math.sin(yaw)
             const forwardZ = Math.cos(yaw)
-            const arrowSpeed = arrowSpeedOverride ?? world.playerSettings.arrowSpeed
-            const arrowLift = arrowLiftOverride ?? world.playerSettings.arrowLift
+            const arrowSpeed = arrowSpeedOverride ?? effectivePlayerArrowSpeed(world.playerSettings)
+            const arrowLift = arrowLiftOverride ?? effectivePlayerArrowLift(world.playerSettings)
             spawnArrowProjectile(
                 world,
                 {

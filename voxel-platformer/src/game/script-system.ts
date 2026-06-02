@@ -3,7 +3,8 @@ import type { AudioEngine, AudioManifest, SoundHandle } from '../engine/audio'
 import { PlayerControlled, Position, Velocity } from '../engine/ecs/components'
 import { pushLog, pushPopupClear, pushPopupMessage, type GameWorld, type VoxelCoord } from '../engine/ecs/world'
 import { isPointInZone, isZoneActive, setZoneActive } from '../engine/ecs/zones'
-import { WEATHER_PRESETS, type WeatherSystem } from '../engine/fx'
+import { WEATHER_PRESETS } from '../engine/fx/presets/weather-presets'
+import type { AmbientWeatherState } from '../engine/fx/core/types'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { npcGoTo, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc } from './npcs/npc-ai'
 import { createScriptEngineSystem } from '../engine/script/script-engine-system'
@@ -58,7 +59,14 @@ import {
     listInventoryItems,
     removeInventoryItem as removeInventoryItemFromMap,
 } from './inventory'
-import { HIGH_JUMP_BOOTS_ITEM_ID } from './high-jump-boots'
+import { isBootEquipmentItemId } from './high-jump-boots'
+
+interface ScriptWeatherSystem {
+    ambient: {
+        state?: Partial<AmbientWeatherState>
+        setState(patch: Partial<AmbientWeatherState>): void
+    }
+}
 
 export interface GameScriptSystemOptions {
     world: GameWorld
@@ -68,7 +76,7 @@ export interface GameScriptSystemOptions {
     /** The WeatherSystem from `createEnvironmentFxSystem`. Required for
      *  the `weather.*` and `dayCycle.*` bindings; pass `null` if the
      *  level has no ambient weather and scripts shouldn't touch it. */
-    weatherSystem?: WeatherSystem | null
+    weatherSystem?: ScriptWeatherSystem | null
     /** Controller for level-authored FX zones — backs `weather.setZoneEnabled`
      *  / `setZonePreset` / `isZoneEnabled`. Pass `null` (the default) on
      *  levels with no FX zones; scripts then see the no-op fallback that
@@ -473,7 +481,7 @@ function stoneConfigFromScript(pos: { x: number; y: number; z: number }, opts?: 
 
 function applyPlayerPatch(world: GameWorld, patch: PlayerSettingsPatch) {
     const next = applyPlayerSettingsPatch(world.playerSettings, patch)
-    unequipMissingHighJumpBoots(next)
+    unequipMissingBoots(next)
     world.inventory.gold = next.inventory.gold
     world.inventory.arrows = next.inventory.arrows
     world.inventory.items = copyInventoryItems(next.inventory.items)
@@ -495,17 +503,17 @@ function applyTradeInventory(world: GameWorld, inventory: { gold: number; arrows
     world.playerSettings.inventory.gold = inventory.gold
     world.playerSettings.inventory.arrows = inventory.arrows
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
-    if (unequipMissingHighJumpBoots(world.playerSettings)) syncPlayerVisuals(world)
+    if (unequipMissingBoots(world.playerSettings)) syncPlayerVisuals(world)
 }
 
 function syncInventoryItems(world: GameWorld): void {
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
-    if (unequipMissingHighJumpBoots(world.playerSettings)) syncPlayerVisuals(world)
+    if (unequipMissingBoots(world.playerSettings)) syncPlayerVisuals(world)
 }
 
-function unequipMissingHighJumpBoots(settings: { equipment: { boots?: string | null }; inventory: { items?: InventoryItemMap } }): boolean {
-    if (settings.equipment.boots !== HIGH_JUMP_BOOTS_ITEM_ID) return false
-    if (inventoryItemCount(settings.inventory.items, HIGH_JUMP_BOOTS_ITEM_ID) > 0) return false
+function unequipMissingBoots(settings: { equipment: { boots?: string | null }; inventory: { items?: InventoryItemMap } }): boolean {
+    if (!isBootEquipmentItemId(settings.equipment.boots)) return false
+    if (inventoryItemCount(settings.inventory.items, settings.equipment.boots) > 0) return false
     settings.equipment.boots = null
     return true
 }
@@ -518,7 +526,7 @@ function isPlayerAbilityKey(value: string): value is PlayerAbilityKey {
     return (PLAYER_ABILITY_KEYS as readonly string[]).includes(value)
 }
 
-function buildDayCycleFacade(weather: WeatherSystem): DayCycleFacade {
+function buildDayCycleFacade(weather: ScriptWeatherSystem): DayCycleFacade {
     return {
         getHour() {
             return readAmbientField(weather, 'timeOfDay', 12)
@@ -540,7 +548,7 @@ function buildDayCycleFacade(weather: WeatherSystem): DayCycleFacade {
     }
 }
 
-function buildWeatherFacade(weather: WeatherSystem, zones: VisualFxZoneController | null): WeatherFacade {
+function buildWeatherFacade(weather: ScriptWeatherSystem, zones: VisualFxZoneController | null): WeatherFacade {
     return {
         setRain(on) { weather.ambient.setState({ rainOn: on }) },
         setSnow(on) { weather.ambient.setState({ snowOn: on }) },
@@ -564,15 +572,13 @@ function wrapHour(hour: number): number {
 }
 
 function readAmbientField<K extends 'timeOfDay' | 'cycleEnabled'>(
-    weather: WeatherSystem,
+    weather: ScriptWeatherSystem,
     field: K,
     fallback: K extends 'timeOfDay' ? number : boolean,
 ): K extends 'timeOfDay' ? number : boolean {
-    // The DisabledAmbientWeather branch has no `state`; widen via
-    // unknown before narrowing so we don't lie about the type when
-    // ambient was turned off.
-    const ambient = weather.ambient as unknown as { state?: Record<string, unknown> }
-    const value = ambient.state?.[field]
+    // Tests may pass a facade stub with no readable state; real weather
+    // runtimes expose the ambient snapshot directly.
+    const value = weather.ambient.state?.[field]
     if (field === 'timeOfDay') {
         return (typeof value === 'number' && Number.isFinite(value) ? value : fallback) as K extends 'timeOfDay' ? number : boolean
     }

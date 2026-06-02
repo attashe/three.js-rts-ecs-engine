@@ -77,6 +77,16 @@ const KEEPER_SHOP = {
             sellPrice: 5,
             stock: 1,
         },
+        {
+            id: 'high-speed-boots',
+            name: 'Boots of High Speed',
+            description: 'Light courier boots. Equip them from Accessories to increase movement speed.',
+            resource: 'high-speed-boots',
+            unitSize: 1,
+            buyPrice: 12,
+            sellPrice: 6,
+            stock: 1,
+        },
     ],
 }
 
@@ -263,17 +273,20 @@ async function openKeeperTrade() {
     if (result.status === 'bought') {
         const arrows = result.gained.arrows ?? 0
         const potions = result.gained['heal-potion'] ?? 0
-        const boots = result.gained['high-jump-boots'] ?? 0
+        const jumpBoots = result.gained['high-jump-boots'] ?? 0
+        const speedBoots = result.gained['high-speed-boots'] ?? 0
         ui.say(KEEPER_ZONE, arrows > 0
             ? `Wrapped ${arrows} arrow(s). Spend them with care.`
-            : boots > 0
+            : jumpBoots > 0
                 ? 'Packed the High Jump Boots. Equip them from Accessories.'
+            : speedBoots > 0
+                ? 'Packed the Boots of High Speed. Equip them from Accessories.'
             : `Packed ${potions} healing potion(s). Keep them close.`,
         { seconds: 3 })
     } else if (result.status === 'sold') {
         const arrows = result.removed.arrows ?? 0
         const potions = result.removed['heal-potion'] ?? 0
-        const boots = result.removed['high-jump-boots'] ?? 0
+        const boots = (result.removed['high-jump-boots'] ?? 0) + (result.removed['high-speed-boots'] ?? 0)
         ui.say(KEEPER_ZONE, arrows > 0
             ? `I can use those ${arrows} arrow(s). Take ${result.gained.gold} gold.`
             : boots > 0

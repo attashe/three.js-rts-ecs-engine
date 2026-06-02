@@ -280,6 +280,10 @@ export interface EditorState {
     activeBlock: number
     /** Currently-selected brush. */
     brush: BrushKind
+    /** Height for the column paint brush. */
+    brushColumnHeight: number
+    /** Length for the 1×N wall-line paint brushes. */
+    brushWallLength: number
     /** Drag-brush anchor cell while a drag brush stroke is active. */
     brushDragAnchor: VoxelCoord | null
     /** Terrain sculpting tool used in `terrain` mode. */
@@ -624,6 +628,8 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
     return {
         activeBlock: grass,
         brush: 'single',
+        brushColumnHeight: 4,
+        brushWallLength: 5,
         brushDragAnchor: null,
         terrainTool: 'sculpt',
         terrainBrushShape: 'circle',

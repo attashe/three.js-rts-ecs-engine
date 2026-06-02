@@ -30,6 +30,7 @@ const HELP_GROUPS: readonly HelpGroup[] = [
             'LMB — primary action for the current mode',
             'RMB — secondary (erase / undo last placement)',
             'Box drag brush — press, drag, release to fill',
+            'Column / Wall X / Wall Z — use Brush size fields in Paint mode',
             'Terrain sculpt — LMB raises, RMB lowers',
             'Terrain ramp — drag XZ path; Target Y sets the end height',
             'Select mode — click movable editor objects, drag gizmo by grid cells',

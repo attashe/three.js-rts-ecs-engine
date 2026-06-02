@@ -546,14 +546,35 @@ function buildBrushPanel(state: EditorState): RefreshableElement {
         btn.title = brush.hint
         btn.onclick = () => {
             state.brush = brush.kind
-            for (const { btn: b } of buttons) b.classList.remove('active')
-            btn.classList.add('active')
+            refresh()
         }
-        if (brush.kind === state.brush) btn.classList.add('active')
         buttons.push({ kind: brush.kind, btn })
         row.appendChild(btn)
     }
-    return { element: section, refresh: () => {} }
+
+    // Each pattern brush has exactly one size knob; show only the one that
+    // applies to the selected brush so the panel never lists controls that
+    // do nothing for the current tool.
+    const columnField = numberField('Column height', state.brushColumnHeight, 1, 64, 1, (value) => {
+        state.brushColumnHeight = clampInt(value, 1, 64)
+    })
+    const wallField = numberField('Wall length', state.brushWallLength, 1, 64, 1, (value) => {
+        state.brushWallLength = clampInt(value, 1, 64)
+    })
+    const sizeSection = document.createElement('div')
+    sizeSection.style.display = 'grid'
+    sizeSection.style.gap = '4px'
+    sizeSection.append(columnField, wallField)
+    section.appendChild(sizeSection)
+
+    function refresh(): void {
+        for (const { kind, btn } of buttons) btn.classList.toggle('active', kind === state.brush)
+        columnField.style.display = state.brush === 'column' ? '' : 'none'
+        wallField.style.display = state.brush === 'wallX' || state.brush === 'wallZ' ? '' : 'none'
+    }
+    refresh()
+
+    return { element: section, refresh }
 }
 
 function buildSelectPanel(): RefreshableElement {
@@ -1037,6 +1058,11 @@ function numberField(
     }
     row.append(span, input)
     return row
+}
+
+function clampInt(value: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) return min
+    return Math.max(min, Math.min(max, Math.floor(value)))
 }
 
 function textField(

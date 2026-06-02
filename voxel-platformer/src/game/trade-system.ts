@@ -10,7 +10,7 @@ import {
     type NormalizedTradeRequest,
     type TradeSelection,
 } from './trade'
-import { HIGH_JUMP_BOOTS_ITEM_ID } from './high-jump-boots'
+import { BOOT_EQUIPMENT_ITEM_IDS, HIGH_JUMP_BOOTS_ITEM_ID, isBootEquipmentItemId } from './high-jump-boots'
 
 interface TradeControllerOptions {
     input: Input
@@ -244,20 +244,21 @@ export function createTradeController(opts: TradeControllerOptions): TradeContro
 
     function render(): void {
         if (!active || !dom) return
-        if (active.selectedIndex >= active.request.items.length) active.selectedIndex = 0
+        const current = active
+        if (current.selectedIndex >= current.request.items.length) current.selectedIndex = 0
         const item = currentItem()
         const d = dom
-        const speaker = active.request.npc ?? { name: 'Merchant', avatar: 'npc' }
-        d.title.textContent = active.request.title ?? 'Trade'
+        const speaker = current.request.npc ?? { name: 'Merchant', avatar: 'npc' }
+        d.title.textContent = current.request.title ?? 'Trade'
         d.npcName.textContent = speaker.name
-        const potions = active.inventory.items?.['heal-potion']?.quantity ?? 0
-        const boots = active.inventory.items?.[HIGH_JUMP_BOOTS_ITEM_ID]?.quantity ?? 0
-        d.inventory.textContent = `Gold ${active.inventory.gold}  |  Arrows ${active.inventory.arrows}  |  Potions ${potions}  |  Boots ${boots}`
+        const potions = current.inventory.items?.['heal-potion']?.quantity ?? 0
+        const boots = BOOT_EQUIPMENT_ITEM_IDS.reduce((sum, id) => sum + (current.inventory.items?.[id]?.quantity ?? 0), 0)
+        d.inventory.textContent = `Gold ${current.inventory.gold}  |  Arrows ${current.inventory.arrows}  |  Potions ${potions}  |  Boots ${boots}`
         paintAvatar(d.avatar, d.avatarImage, d.avatarInitial, speaker)
 
         d.itemList.innerHTML = ''
-        active.request.items.forEach((candidate, index) => {
-            d.itemList.appendChild(itemButton(candidate, index, index === active!.selectedIndex))
+        current.request.items.forEach((candidate, index) => {
+            d.itemList.appendChild(itemButton(candidate, index, index === current.selectedIndex))
         })
 
         if (!item) {
@@ -651,6 +652,9 @@ function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLEle
             return healPotionIcon(size)
         case HIGH_JUMP_BOOTS_ITEM_ID:
             return bootsIcon(size)
+        default:
+            if (isBootEquipmentItemId(resource)) return bootsIcon(size)
+            return document.createElement('span')
     }
 }
 

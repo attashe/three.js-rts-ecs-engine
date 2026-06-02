@@ -37,6 +37,14 @@ export const GameAudio = {
     MusicTension: 'music.amb.tension',
     MusicCave: 'music.amb.cave',
 
+    /** Themed location/screen music — richer, composed pieces (vs the
+     *  always-on ambient beds). Set as a level `environment` bed, the title
+     *  screen track, or play from a script. */
+    ThemeMenu: 'music.theme.menu',
+    ThemeTavern: 'music.theme.tavern',
+    ThemeRoyal: 'music.theme.royal',
+    ThemeCathedral: 'music.theme.cathedral',
+
     PickupGold: 'sfx.pickup.gold',
     PickupArrow: 'sfx.pickup.arrow',
     Bow: 'sfx.bow',
@@ -226,6 +234,11 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.MusicTown,        url: path('amb-town-loop.wav'),         volume: 0.30, loop: true, priority: 1 },
         { id: GameAudio.MusicTension,     url: path('amb-tension-loop.wav'),      volume: 0.40, loop: true, priority: 1 },
         { id: GameAudio.MusicCave,        url: path('amb-cave-loop.wav'),         volume: 0.40, loop: true, priority: 1 },
+        // Themed location/screen music.
+        { id: GameAudio.ThemeMenu,        url: path('theme-menu-loop.wav'),       volume: 0.34, loop: true, priority: 1 },
+        { id: GameAudio.ThemeTavern,      url: path('theme-tavern-loop.wav'),     volume: 0.32, loop: true, priority: 1 },
+        { id: GameAudio.ThemeRoyal,       url: path('theme-royal-loop.wav'),      volume: 0.32, loop: true, priority: 1 },
+        { id: GameAudio.ThemeCathedral,   url: path('theme-cathedral-loop.wav'),  volume: 0.34, loop: true, priority: 1 },
     ],
     stingers: [
         { id: GameAudio.DeathStinger, url: path('death-stinger.wav'), volume: 0.78, priority: 9 },

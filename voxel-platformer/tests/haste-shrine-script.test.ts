@@ -21,6 +21,10 @@ import {
     pushScriptTriggerEvent,
     type GameWorld,
 } from '../src/engine/ecs/world'
+import type { AudioEngine, AudioManifest } from '../src/engine/audio'
+import type { ChunkManager } from '../src/engine/voxel/chunk-manager'
+import { createGameScriptSystem } from '../src/game/script-system'
+import { createMemoryCheckpointStore } from '../src/game/checkpoint-store'
 import {
     applyPlayerSettingsPatch,
     copyPlayerSettings,
@@ -203,4 +207,46 @@ test('haste shrine restores speed when scripts are reapplied mid-effect', async 
 
     assert.equal(h.getSettings().moveSpeed, DEFAULT_PLAYER_SETTINGS.moveSpeed)
     assert.equal(h.sys.broken.size, 0)
+})
+
+test('game script system player.setSettings does not trip boot cleanup when haste shrine runs', async () => {
+    const world = createGameWorld()
+    const chunks = {
+        getVoxel: () => 0,
+        setVoxel() {},
+        withBulkEdit(fn: () => void) { fn() },
+    } as unknown as ChunkManager
+    const audio = {
+        play(id: string) { return { id } },
+        stopMusic() {},
+    } as unknown as AudioEngine
+    const sys = createGameScriptSystem({
+        world,
+        chunks,
+        audio,
+        audioManifest: { sounds: [], music: [], stingers: [] } satisfies AudioManifest,
+        level: { name: 'demo', size: 32, spawn: { x: 0, y: 0, z: 0 } },
+        checkpointStore: createMemoryCheckpointStore(),
+        getScripts: () => [{
+            id: 'haste-shrine',
+            name: 'haste-shrine.js',
+            source: SCRIPT_SOURCE,
+        }],
+    })
+
+    sys.init?.(world)
+    pushScriptTriggerEvent(world, {
+        kind: 'input',
+        action: 'interact',
+        edge: 'pressed',
+        targetId: SHRINE_ZONE,
+        zoneId: SHRINE_ZONE,
+        point: { x: 14.5, y: 5, z: 9.5 },
+        entityId: 1,
+    })
+    sys.update(world, 0.05)
+    await flushMicrotasks()
+
+    assert.equal(world.playerSettings.moveSpeed, 8.25)
+    assert.equal(world.log.some((line) => line.includes('unequipMissingHighJumpBoots')), false)
 })

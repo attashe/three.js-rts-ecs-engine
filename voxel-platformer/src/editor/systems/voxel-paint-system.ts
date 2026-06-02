@@ -22,6 +22,13 @@ interface StrokeCell {
     after: number
 }
 
+function brushOptions(state: EditorState) {
+    return {
+        columnHeight: state.brushColumnHeight,
+        wallLength: state.brushWallLength,
+    }
+}
+
 /**
  * Continuous voxel editing while the mouse button is held. LMB paints with
  * the active block; RMB erases. Only runs in `paint` / `erase` modes — the
@@ -90,7 +97,7 @@ export function createVoxelPaintSystem(
 
     function applyDragStroke(world: GameWorld): void {
         if (!strokeDrag || !dragAnchor || !dragLast) return
-        recordFootprint(world, brushDragFootprint(strokeBrush, dragAnchor, dragLast), strokeValue, strokeErase)
+        recordFootprint(world, brushDragFootprint(strokeBrush, dragAnchor, dragLast, brushOptions(editorState)), strokeValue, strokeErase)
     }
 
     function endStroke(): void {
@@ -133,7 +140,7 @@ export function createVoxelPaintSystem(
                     strokeCells.clear()
                     recordFootprint(
                         world as GameWorld,
-                        brushFootprint(editorState.brush, editorState.cursor),
+                        brushFootprint(editorState.brush, editorState.cursor, brushOptions(editorState)),
                         value,
                         erase,
                     )
@@ -186,7 +193,7 @@ export function createVoxelPaintSystem(
 
             recordFootprint(
                 world as GameWorld,
-                brushFootprint(editorState.brush, editorState.cursor),
+                brushFootprint(editorState.brush, editorState.cursor, brushOptions(editorState)),
                 value,
                 erase,
             )

@@ -2,10 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponent, query } from 'bitecs'
 import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Vector3, type Object3D } from 'three'
-import { BoxCollider, Grounded, MovingObject, Shield } from '../src/engine/ecs/components'
+import { BoxCollider, Grounded, MovingObject, Shield, Velocity } from '../src/engine/ecs/components'
 import { computeLocomotionParams } from '../src/engine/anim/core'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
 import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
+import { createPlayerControlSystem } from '../src/engine/ecs/systems/player-control-system'
 import { createProjectileLaunchSystem } from '../src/engine/ecs/systems/projectile-launch-system'
 import { createGameWorld } from '../src/engine/ecs/world'
 import type { ActionMap } from '../src/engine/input/actions'
@@ -24,7 +25,12 @@ import {
     isHammerEquipmentKind,
     isStaffEquipmentKind,
 } from '../src/game/anim/equipment'
-import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
+import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
+import {
+    HIGH_SPEED_BOOTS_MOVE_SPEED_BONUS,
+    RANGER_HAT_ARROW_LIFT_BONUS,
+    RANGER_HAT_ARROW_SPEED_BONUS,
+} from '../src/game/equipment-effects'
 import { HUMANOID_ANIM_TIMINGS } from '../src/game/anim/clip-timings'
 import { partCharacterClips } from '../src/game/anim/part-clips'
 import {
@@ -97,6 +103,45 @@ test('projectile launch consumes starting arrow inventory and spawns an arrow', 
     assert.equal(world.playerSettings.inventory.arrows, 1)
     const arrows = query(world, [MovingObject]).filter((eid) => MovingObject.kind[eid] === MovingObjectKind.Arrow)
     assert.equal(arrows.length, 1)
+})
+
+test('ranger hat shoots arrows farther by increasing launch velocity', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.head = 'hat-ranger'
+    world.inventory.arrows = 2
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+
+    createProjectileLaunchSystem(onePressAction()).update(world, 1 / 60)
+
+    const arrow = query(world, [MovingObject]).find((eid) => MovingObject.kind[eid] === MovingObjectKind.Arrow)
+    assert.ok(arrow)
+    assert.equal(Velocity.z[arrow!], DEFAULT_PLAYER_SETTINGS.arrowSpeed + RANGER_HAT_ARROW_SPEED_BONUS)
+    assert.equal(Velocity.y[arrow!], DEFAULT_PLAYER_SETTINGS.arrowLift + RANGER_HAT_ARROW_LIFT_BONUS)
+})
+
+test('high speed boots increase player control base speed', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.boots = HIGH_SPEED_BOOTS_ITEM_ID
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    const actions = {
+        isHeld: (id: string) => id === 'move.forward',
+        hasBufferedPress: () => false,
+        consumePressed: () => null,
+    } as unknown as ActionMap
+    const input = { getPointer: () => null } as never
+    const iso = {
+        camera: {},
+        getPanForward(out: Vector3) { return out.set(0, 0, -1) },
+        getPanRight(out: Vector3) { return out.set(1, 0, 0) },
+    } as never
+
+    createPlayerControlSystem(input, actions, iso, { accel: 1000 }).update(world, 1 / 60)
+
+    assert.ok(Velocity.z[player]! > DEFAULT_PLAYER_SETTINGS.moveSpeed)
+    assert.ok(Velocity.z[player]! <= DEFAULT_PLAYER_SETTINGS.moveSpeed + HIGH_SPEED_BOOTS_MOVE_SPEED_BONUS)
 })
 
 test('projectile launch respects disabled bow ability', () => {
@@ -293,12 +338,17 @@ test('battle hammer builds as a selectable heavy hand item', () => {
     }
 })
 
-test('high jump boots build as selectable foot equipment', () => {
+test('boots build as selectable foot equipment', () => {
     for (const kind of BOOT_EQUIPMENT_KINDS) {
         const item = createEquipment(kind)
         assert.equal(item.name, `equip:${kind}`)
-        assert.ok(findObjectByName(item, 'HighJumpBootSpring'), `${kind} should show a spring-assisted silhouette`)
-        assert.ok(findObjectByName(item, 'HighJumpBootGlow'), `${kind} should show the high-jump glow accent`)
+        if (kind === HIGH_JUMP_BOOTS_ITEM_ID) {
+            assert.ok(findObjectByName(item, 'HighJumpBootSpring'), `${kind} should show a spring-assisted silhouette`)
+            assert.ok(findObjectByName(item, 'HighJumpBootGlow'), `${kind} should show the high-jump glow accent`)
+        } else {
+            assert.ok(findObjectByName(item, 'HighSpeedBootWingL'), `${kind} should show a speed wing silhouette`)
+            assert.ok(findObjectByName(item, 'HighSpeedBootGlow'), `${kind} should show the speed glow accent`)
+        }
         assert.deepEqual(equipmentSocketFrame(kind, 'footL').offset, [0, 0, 0])
         assert.deepEqual(equipmentSocketFrame(kind, 'footR').offset, [0, 0, 0])
     }

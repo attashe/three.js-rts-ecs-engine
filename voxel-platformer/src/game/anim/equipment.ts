@@ -65,6 +65,7 @@ export function createEquipment(kind: EquipmentKind): Group {
         case 'battle-hammer': return buildBattleHammer()
         case 'book': return buildBook()
         case 'high-jump-boots': return buildHighJumpBoot()
+        case 'high-speed-boots': return buildHighSpeedBoot()
     }
 }
 
@@ -149,6 +150,10 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
         head: { offset: [0, -0.045, 0] },
     },
     'high-jump-boots': {
+        footR: { offset: [0, 0, 0] },
+        footL: { offset: [0, 0, 0] },
+    },
+    'high-speed-boots': {
         footR: { offset: [0, 0, 0] },
         footL: { offset: [0, 0, 0] },
     },
@@ -606,4 +611,46 @@ function buildHighJumpBoot(): Group {
     crystal.position.set(0, 0.015, 0.12)
 
     return addParts(g, [sole, upper, toe, cuff, spring, crystal])
+}
+
+function buildHighSpeedBoot(): Group {
+    const g = new Group()
+    g.name = 'equip:high-speed-boots'
+    const leather = mat(0x22272b, 0.72)
+    const soleMat = mat(0x12161a, 0.66)
+    const silver = mat(0xaec0c8, 0.34, 0.34)
+    const glow = glowMat(0x8cff7a, 0.58)
+
+    const sole = new Mesh(new BoxGeometry(0.23, 0.052, 0.36), soleMat)
+    sole.name = 'HighSpeedBootSole'
+    sole.position.set(0, -0.16, 0.025)
+
+    const upper = new Mesh(new BoxGeometry(0.18, 0.22, 0.21), leather)
+    upper.name = 'HighSpeedBootUpper'
+    upper.position.set(0, -0.025, -0.03)
+
+    const toe = new Mesh(new BoxGeometry(0.22, 0.085, 0.19), leather)
+    toe.name = 'HighSpeedBootToe'
+    toe.position.set(0, -0.09, 0.14)
+
+    const ankleBand = new Mesh(new CylinderGeometry(0.116, 0.106, 0.042, 10), silver)
+    ankleBand.name = 'HighSpeedBootAnkleBand'
+    ankleBand.position.set(0, 0.105, -0.025)
+    ankleBand.scale.z = 0.7
+
+    const finL = new Mesh(new BoxGeometry(0.035, 0.13, 0.17), silver)
+    finL.name = 'HighSpeedBootWingL'
+    finL.position.set(-0.115, -0.015, 0.02)
+    finL.rotation.z = -0.38
+
+    const finR = new Mesh(new BoxGeometry(0.035, 0.13, 0.17), silver)
+    finR.name = 'HighSpeedBootWingR'
+    finR.position.set(0.115, -0.015, 0.02)
+    finR.rotation.z = 0.38
+
+    const stripe = new Mesh(new BoxGeometry(0.19, 0.022, 0.035), glow)
+    stripe.name = 'HighSpeedBootGlow'
+    stripe.position.set(0, 0.02, 0.125)
+
+    return addParts(g, [sole, upper, toe, ankleBand, finL, finR, stripe])
 }

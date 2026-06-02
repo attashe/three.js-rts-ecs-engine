@@ -98,7 +98,7 @@ export function createHealthBarSystem(scene: Scene, camera: () => Camera): Syste
         }
         for (const npc of world.npcRuntimeById.values()) {
             if (npc.dying) continue
-            const max = NPC_DEFAULT_HP
+            const max = npc.maxHp ?? NPC_DEFAULT_HP
             targets.push({
                 id: npc.id,
                 x: npc.position.x,

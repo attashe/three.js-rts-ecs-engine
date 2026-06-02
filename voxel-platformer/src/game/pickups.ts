@@ -12,7 +12,7 @@ import { createEntity, despawnEntity } from '../engine/ecs/entity'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import { createCoinPile, createHighJumpBootsProp, createQuestShard, mergeGroupByMaterial } from './assets'
 import type { InventoryCategoryId, InventoryIconId } from './inventory'
-import { HIGH_JUMP_BOOTS_ITEM_ID } from './high-jump-boots'
+import { BOOT_EQUIPMENT_ITEM_OPTIONS, isBootEquipmentItemId } from './high-jump-boots'
 
 export interface CoinPileOptions {
     /** World-space position; the pile's base sits at this Y. */
@@ -78,6 +78,7 @@ export function spawnScriptPickup(world: GameWorld, opts: ScriptPickupOptions): 
     const kind = normalizeScriptKind(opts.kind)
     const coinAmount = opts.amount === undefined ? undefined : safePickupAmount(opts.amount)
     const itemAmount = safePickupAmount(opts.amount)
+    const bootDefaults = isBootEquipmentItemId(kind) ? BOOT_EQUIPMENT_ITEM_OPTIONS[kind] : undefined
     const eid = kind === 'coin'
         ? spawnCoinPile(world, { position: opts.position, amount: coinAmount })
         : spawnQuestItem(world, opts.position, itemAmount, kind)
@@ -92,10 +93,10 @@ export function spawnScriptPickup(world: GameWorld, opts: ScriptPickupOptions): 
                 id: opts.inventoryItem?.id ?? kind,
                 quantity: itemAmount,
                 options: {
-                    name: opts.inventoryItem?.name ?? opts.label ?? defaultPickupLabel(kind),
-                    description: opts.inventoryItem?.description,
-                    category: opts.inventoryItem?.category ?? 'quest',
-                    icon: opts.inventoryItem?.icon ?? 'quest-shard',
+                    name: opts.inventoryItem?.name ?? opts.label ?? bootDefaults?.name ?? defaultPickupLabel(kind),
+                    description: opts.inventoryItem?.description ?? bootDefaults?.description,
+                    category: opts.inventoryItem?.category ?? bootDefaults?.category ?? 'quest',
+                    icon: opts.inventoryItem?.icon ?? bootDefaults?.icon ?? 'quest-shard',
                 },
             },
     })
@@ -149,7 +150,7 @@ function spawnQuestItem(
     PickupValue.amount[eid] = safePickupAmount(amount)
 
     world.object3DByEid.set(eid, mergeGroupByMaterial(
-        kind === HIGH_JUMP_BOOTS_ITEM_ID ? createHighJumpBootsProp() : createQuestShard(),
+        isBootEquipmentItemId(kind) ? createHighJumpBootsProp() : createQuestShard(),
     ))
     return eid
 }

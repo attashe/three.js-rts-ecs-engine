@@ -8,14 +8,20 @@ import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 import {
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
+    NPC_DEFAULT_HP,
+    TROLL_DEFAULT_HP,
+    TROLL_OUTFIT_KINDS,
+    TROLL_OUTFIT_LABELS,
     defaultNpcBeard,
     defaultNpcEquipment,
     defaultNpcVariant,
     normalizeNpcConfig,
     npcAttackClip,
+    npcDefaultHp,
     npcInteractionZoneId,
     npcObstacleId,
     type NpcConfig,
+    type TrollOutfitKind,
 } from '../src/game/npcs/npc-types'
 
 function npc(id: string): NpcConfig {
@@ -33,8 +39,11 @@ function npc(id: string): NpcConfig {
 
 test('NPC model registry exposes dwarf, Keeper Arlen, player, and troll models', () => {
     assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll'])
+    assert.deepEqual([...TROLL_OUTFIT_KINDS], ['wise', 'guardian', 'king', 'princess', 'trader', 'child'])
     assert.equal(NPC_MODEL_LABELS.keeper, 'Dwarf')
     assert.equal(NPC_MODEL_LABELS['keeper-arlen'], 'Keeper Arlen')
+    assert.equal(TROLL_OUTFIT_LABELS.king, 'Troll King')
+    assert.equal(TROLL_OUTFIT_LABELS.princess, 'Troll Princess')
     for (const kind of NPC_MODEL_KINDS) {
         assert.ok(NPC_MODEL_LABELS[kind].length > 0)
         const model = createNpcModel(kind)
@@ -56,6 +65,19 @@ test('NPC model registry exposes dwarf, Keeper Arlen, player, and troll models',
     assert.ok(findByName(guardian, 'CharacterBeardFull'), 'Guardian troll defaults to a full beard')
     assert.equal(findByName(guardian, 'LargeTrollLeftLens'), null, 'Guardian troll has no Wise Troll glasses')
     assert.equal(findByName(guardian, 'Cloak'), null, 'Guardian troll has no cloak')
+
+    const markers: Record<TrollOutfitKind, string> = {
+        wise: 'LargeTrollLeftLens',
+        guardian: 'LargeTrollGuardianBreastplate',
+        king: 'LargeTrollKingCrown',
+        princess: 'LargeTrollPrincessTiaraBand',
+        trader: 'LargeTrollTraderPack',
+        child: 'LargeTrollChildCap',
+    }
+    for (const variant of TROLL_OUTFIT_KINDS) {
+        const model = createNpcModel('large-troll', { variant })
+        assert.ok(findByName(model, markers[variant]), `${variant} troll has a distinct marker mesh`)
+    }
 })
 
 test('NPC appearance and equipment normalize from model defaults and custom choices', () => {
@@ -95,6 +117,47 @@ test('NPC appearance and equipment normalize from model defaults and custom choi
     assert.equal(guardian.beard, defaultNpcBeard('large-troll', 'guardian'))
     assert.deepEqual(guardian.equipment, { handR: 'battle-hammer', handL: null })
     assert.equal(npcAttackClip(guardian), 'hammerAttack')
+
+    const king = normalizeNpcConfig({
+        id: 'king',
+        model: 'large-troll',
+        variant: 'king',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(king.beard, 'full')
+    assert.deepEqual(king.equipment, { handR: 'staff-crystal', handL: null })
+    assert.equal(npcAttackClip(king), 'staffAttack')
+
+    const princess = normalizeNpcConfig({
+        id: 'princess',
+        model: 'large-troll',
+        variant: 'princess',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(princess.beard, 'none')
+    assert.deepEqual(princess.equipment, { handR: null, handL: null })
+
+    const trader = normalizeNpcConfig({
+        id: 'trader',
+        model: 'large-troll',
+        variant: 'trader',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(trader.beard, 'full')
+    assert.deepEqual(trader.equipment, { handR: null, handL: 'book' })
+
+    const child = normalizeNpcConfig({
+        id: 'child',
+        model: 'large-troll',
+        variant: 'child',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(child.beard, 'none')
+    assert.deepEqual(child.equipment, { handR: null, handL: null })
+
+    assert.equal(npcDefaultHp(dwarf), NPC_DEFAULT_HP)
+    assert.equal(npcDefaultHp(troll), TROLL_DEFAULT_HP)
+    assert.equal(npcDefaultHp(guardian), TROLL_DEFAULT_HP)
 
     const custom = normalizeNpcConfig({
         id: 'custom',
@@ -137,6 +200,23 @@ test('registerRuntimeNpcs adds interaction zones, collision obstacles, and scrip
     runtime.dispose()
     assert.equal(world.zones.has(zoneId), false)
     assert.equal(world.obstacles.has(obstacleId), false)
+})
+
+test('registerRuntimeNpcs gives large trolls the troll default HP pool', () => {
+    const world = createGameWorld()
+    const config = normalizeNpcConfig({
+        id: 'guardian',
+        model: 'large-troll',
+        variant: 'guardian',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    const runtime = registerRuntimeNpcs(world, [config])
+    const npc = world.npcRuntimeById.get('guardian')
+
+    assert.equal(npc?.hp, TROLL_DEFAULT_HP)
+    assert.equal(npc?.maxHp, TROLL_DEFAULT_HP)
+
+    runtime.dispose()
 })
 
 test('NPC renderer tracks add, move, and remove changes', () => {

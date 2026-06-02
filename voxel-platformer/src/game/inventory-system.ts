@@ -10,9 +10,12 @@ import { PLAYER_ABILITY_KEYS, PLAYER_ABILITY_LABELS } from './player-settings'
 import {
     HIGH_JUMP_BOOTS_ITEM_ID,
     HIGH_JUMP_BOOTS_NAME,
-    hasEquippedHighJumpBoots,
+    BOOT_EQUIPMENT_ITEM_OPTIONS,
+    isBootEquipmentItemId,
     playerCanHighJump,
 } from './high-jump-boots'
+import { effectivePlayerArrowSpeed, effectivePlayerMoveSpeed } from './equipment-effects'
+import type { BootEquipmentKind } from './anim/equipment-types'
 import { GameAction } from './actions'
 import { setWeaponStance } from './weapon-stance-system'
 import { syncPlayerHeldTorchVisibility, syncPlayerVisuals } from './player'
@@ -75,8 +78,13 @@ export function consumeHealPotion(world: GameWorld): boolean {
 }
 
 export function setHighJumpBootsEquipped(world: GameWorld, equipped: boolean): boolean {
-    const next = equipped ? HIGH_JUMP_BOOTS_ITEM_ID : null
-    if (equipped && inventoryItemCount(world.inventory.items, HIGH_JUMP_BOOTS_ITEM_ID) <= 0) return false
+    return setBootsEquipped(world, HIGH_JUMP_BOOTS_ITEM_ID, equipped)
+}
+
+export function setBootsEquipped(world: GameWorld, boots: BootEquipmentKind, equipped: boolean): boolean {
+    if (equipped && inventoryItemCount(world.inventory.items, boots) <= 0) return false
+    if (!equipped && world.playerSettings.equipment.boots !== boots) return false
+    const next = equipped ? boots : null
     if (world.playerSettings.equipment.boots === next) return false
     world.playerSettings.equipment.boots = next
     syncPlayerVisuals(world)
@@ -534,17 +542,19 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
             },
         })
     }
-    if (item.id === HIGH_JUMP_BOOTS_ITEM_ID) {
-        const active = hasEquippedHighJumpBoots(world.playerSettings)
+    if (isBootEquipmentItemId(item.id)) {
+        const bootId = item.id
+        const active = world.playerSettings.equipment.boots === bootId
+        const bootInfo = BOOT_EQUIPMENT_ITEM_OPTIONS[bootId]
         return menuCard({
             icon: item.icon,
-            name: item.name || HIGH_JUMP_BOOTS_NAME,
+            name: item.name || bootInfo.name || HIGH_JUMP_BOOTS_NAME,
             detail: active ? 'Equipped' : 'Select',
-            title: item.description ? `${item.name}\n${item.description}` : `Equip ${HIGH_JUMP_BOOTS_NAME}.`,
+            title: item.description ? `${item.name}\n${item.description}` : `Equip ${bootInfo.name || item.name}.`,
             active,
             disabled: item.quantity <= 0,
             onClick: () => {
-                if (setHighJumpBootsEquipped(world, !active)) renderInventory(dom, world)
+                if (setBootsEquipped(world, bootId, !active)) renderInventory(dom, world)
             },
         })
     }
@@ -650,10 +660,10 @@ function statsSection(world: GameWorld): HTMLElement[] {
     nodes.push(title)
 
     const stats = [
-        ['Move speed', world.playerSettings.moveSpeed.toFixed(1)],
+        ['Move speed', effectivePlayerMoveSpeed(world.playerSettings).toFixed(1)],
         ['Jump', world.playerSettings.jumpVelocity.toFixed(1)],
         ['High jump', world.playerSettings.highJumpVelocity.toFixed(1)],
-        ['Arrow speed', world.playerSettings.arrowSpeed.toFixed(1)],
+        ['Arrow speed', effectivePlayerArrowSpeed(world.playerSettings).toFixed(1)],
         ['Torch range', world.playerSettings.torch.distance.toFixed(1)],
     ] as const
     for (const [label, value] of stats) nodes.push(statRow(label, value))

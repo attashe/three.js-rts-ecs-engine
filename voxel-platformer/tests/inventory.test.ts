@@ -14,9 +14,9 @@ import {
     normalizeInventoryItems,
     removeInventoryItem,
 } from '../src/game/inventory'
-import { consumeHealPotion, setHighJumpBootsEquipped } from '../src/game/inventory-system'
+import { consumeHealPotion, setBootsEquipped, setHighJumpBootsEquipped } from '../src/game/inventory-system'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
-import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
+import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 
 function spawnInventoryPlayer(world: GameWorld, current: number, max: number): number {
     const eid = createEntity(world)
@@ -41,13 +41,16 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.equal(inventoryItemCount(items, 'sun-shard'), 1)
     assert.equal(addInventoryItem(items, 'heal-potion', 3), true)
     assert.equal(addInventoryItem(items, HIGH_JUMP_BOOTS_ITEM_ID, 1), true)
+    assert.equal(addInventoryItem(items, HIGH_SPEED_BOOTS_ITEM_ID, 1), true)
     assert.equal(defaultInventoryIcon('heal-potion'), 'heal-potion')
     assert.equal(defaultInventoryIcon(HIGH_JUMP_BOOTS_ITEM_ID), 'boots')
+    assert.equal(defaultInventoryIcon(HIGH_SPEED_BOOTS_ITEM_ID), 'boots')
     assert.deepEqual(listInventoryItems(items, 'consumables').map((item) => [item.id, item.quantity, item.icon]), [
         ['heal-potion', 3, 'heal-potion'],
     ])
     assert.deepEqual(listInventoryItems(items, 'accessories').map((item) => [item.id, item.quantity, item.icon]), [
         [HIGH_JUMP_BOOTS_ITEM_ID, 1, 'boots'],
+        [HIGH_SPEED_BOOTS_ITEM_ID, 1, 'boots'],
     ])
 })
 
@@ -93,6 +96,28 @@ test('high jump boots equip from durable accessory inventory without being consu
     world.inventory.items = {}
     assert.equal(setHighJumpBootsEquipped(world, true), false)
     assert.equal(world.playerSettings.equipment.boots, null)
+})
+
+test('boots accessories share one equipment slot and require owned inventory', () => {
+    const world = createGameWorld()
+    world.inventory.items = normalizeInventoryItems({
+        [HIGH_JUMP_BOOTS_ITEM_ID]: { quantity: 1 },
+        [HIGH_SPEED_BOOTS_ITEM_ID]: { quantity: 1 },
+    })
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+
+    assert.equal(setBootsEquipped(world, HIGH_JUMP_BOOTS_ITEM_ID, true), true)
+    assert.equal(world.playerSettings.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
+
+    assert.equal(setBootsEquipped(world, HIGH_SPEED_BOOTS_ITEM_ID, true), true)
+    assert.equal(world.playerSettings.equipment.boots, HIGH_SPEED_BOOTS_ITEM_ID)
+    assert.equal(world.inventory.items[HIGH_SPEED_BOOTS_ITEM_ID]?.quantity, 1)
+
+    assert.equal(setBootsEquipped(world, HIGH_SPEED_BOOTS_ITEM_ID, false), true)
+    assert.equal(world.playerSettings.equipment.boots, null)
+
+    world.inventory.items = {}
+    assert.equal(setBootsEquipped(world, HIGH_SPEED_BOOTS_ITEM_ID, true), false)
 })
 
 test('heal potion consumption restores one heart and updates inventory settings', () => {

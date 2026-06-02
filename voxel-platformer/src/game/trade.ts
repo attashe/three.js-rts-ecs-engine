@@ -15,8 +15,9 @@ import {
 } from './inventory'
 import { PLAYER_INVENTORY_LIMITS } from './player-settings'
 import {
+    BOOT_EQUIPMENT_ITEM_OPTIONS,
     HIGH_JUMP_BOOTS_ITEM_ID,
-    HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+    isBootEquipmentItemId,
 } from './high-jump-boots'
 
 export interface NormalizedTradeItem {
@@ -201,6 +202,7 @@ export function resourceLabel(resource: TradeResource): string {
         case 'arrows': return 'arrows'
         case 'heal-potion': return 'healing potions'
         case HIGH_JUMP_BOOTS_ITEM_ID: return 'high jump boots'
+        case 'high-speed-boots': return 'boots of high speed'
     }
 }
 
@@ -223,7 +225,7 @@ function normalizeTradeItem(raw: TradeItem): NormalizedTradeItem | null {
 }
 
 function isTradeResource(value: string): value is TradeResource {
-    return value === 'arrows' || value === 'heal-potion' || value === HIGH_JUMP_BOOTS_ITEM_ID
+    return value === 'arrows' || value === 'heal-potion' || isBootEquipmentItemId(value)
 }
 
 function resourceAmount(resource: TradeResource, inventory: TradeInventorySnapshot): number {
@@ -231,6 +233,7 @@ function resourceAmount(resource: TradeResource, inventory: TradeInventorySnapsh
         case 'arrows': return inventory.arrows
         case 'heal-potion': return inventoryItemCount(inventory.items, resource)
         case HIGH_JUMP_BOOTS_ITEM_ID: return inventoryItemCount(inventory.items, resource)
+        case 'high-speed-boots': return inventoryItemCount(inventory.items, resource)
     }
 }
 
@@ -243,6 +246,7 @@ function resourceCapacity(
         case 'arrows': return Math.max(0, limits.arrows - inventory.arrows)
         case 'heal-potion': return Math.max(0, limits.items - inventoryItemCount(inventory.items, resource))
         case HIGH_JUMP_BOOTS_ITEM_ID: return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
+        case 'high-speed-boots': return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
     }
 }
 
@@ -251,13 +255,13 @@ function tradeItemsAfterResourceChange(
     resource: TradeResource,
     delta: number,
 ): InventoryItemMap | undefined {
-    if (resource !== 'heal-potion' && resource !== HIGH_JUMP_BOOTS_ITEM_ID) {
+    if (resource !== 'heal-potion' && !isBootEquipmentItemId(resource)) {
         return inventory.items === undefined ? undefined : copyInventoryItems(inventory.items)
     }
     const items = copyInventoryItems(inventory.items)
     if (delta > 0) {
-        addInventoryItem(items, resource, delta, resource === HIGH_JUMP_BOOTS_ITEM_ID
-            ? HIGH_JUMP_BOOTS_ITEM_OPTIONS
+        addInventoryItem(items, resource, delta, isBootEquipmentItemId(resource)
+            ? BOOT_EQUIPMENT_ITEM_OPTIONS[resource]
             : {
                 name: 'Healing Potion',
                 description: 'Restores health when potion use is wired into combat.',

@@ -3,7 +3,7 @@ import { defineZone, removeZone } from '../../engine/ecs/zones'
 import type { ScriptEntry } from '../../engine/script/types'
 import type { NpcConfig } from './npc-types'
 import {
-    NPC_DEFAULT_HP,
+    npcDefaultHp,
     npcAttackClip,
     npcCollisionAabb,
     npcInteractionZone,
@@ -36,13 +36,15 @@ export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]
         // Combat/animation runtime. NPCs aren't ECS entities, so this side-table
         // is their gameplay state: melee + scripts write the request flags, the
         // npc-render system reads them to drive animation and despawn on death.
+        const maxHp = npcDefaultHp(npc)
         world.npcRuntimeById.set(npc.id, {
             id: npc.id,
             position: { ...npc.position },
             yaw: npc.yaw,
             colliderRadius: npc.colliderRadius,
             colliderHeight: npc.colliderHeight,
-            hp: NPC_DEFAULT_HP,
+            hp: maxHp,
+            maxHp,
             invulnerable: npc.invulnerable,
             requestAttack: false,
             attackClip: npcAttackClip(npc),
