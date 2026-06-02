@@ -607,8 +607,9 @@ test('spear attack impact keeps the point in a tight forward thrust', () => {
     const startHand = rightHandSocketPositionAt(clip!, 0)
     const anticipationHand = rightHandSocketPositionAt(clip!, 0.22)
     const impactHand = rightHandSocketPositionAt(clip!, HUMANOID_ANIM_TIMINGS.spearImpact)
-    assert.ok(anticipationHand.z < startHand.z - 0.08, 'spear anticipation should pull the weapon hand back')
-    assert.ok(impactHand.z > anticipationHand.z + 0.16, 'spear impact should thrust the weapon hand forward')
+    assert.ok(anticipationHand.z < startHand.z - 0.38, 'spear anticipation should pull the weapon hand far behind the body')
+    assert.ok(impactHand.z > startHand.z + 0.12, 'spear impact should reach past the starting hand line')
+    assert.ok(impactHand.z > anticipationHand.z + 0.54, 'spear impact should thrust the weapon hand far forward')
 
     const spearHeadDir = new Vector3(0, 1, 0)
         .applyEuler(toEuler(spear.orient))
