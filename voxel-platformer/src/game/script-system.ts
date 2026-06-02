@@ -6,7 +6,7 @@ import { isPointInZone, isZoneActive, setZoneActive } from '../engine/ecs/zones'
 import { WEATHER_PRESETS } from '../engine/fx/presets/weather-presets'
 import type { AmbientWeatherState } from '../engine/fx/core/types'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
-import { npcGoTo, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc } from './npcs/npc-ai'
+import { npcGoTo, setNpcFlee, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc } from './npcs/npc-ai'
 import { createScriptEngineSystem } from '../engine/script/script-engine-system'
 import type {
     AudioFacade,
@@ -373,6 +373,9 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         },
         setHostile(id, target, hostile) {
             return setNpcHostile(opts.world, id, target, hostile)
+        },
+        setFlee(id, on) {
+            return setNpcFlee(opts.world, id, on)
         },
     }
 

@@ -8,6 +8,7 @@ import {
     npcCollisionAabb,
     npcInteractionZone,
     npcObstacleId,
+    npcShieldGuardState,
     npcScriptEntries,
 } from './npc-types'
 
@@ -50,6 +51,7 @@ export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]
             attackClip: npcAttackClip(npc),
             requestDie: false,
             dying: false,
+            shieldGuard: npcShieldGuardState(npc),
             ai: null,
             zoneId,
             obstacleId,

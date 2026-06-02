@@ -42,6 +42,9 @@ export const MovingObject = {
     kind: new Uint8Array(MAX_ENTITIES),
     /** Seconds since spawn. */
     age: new Float32Array(MAX_ENTITIES),
+    /** 1 for an enemy-fired arrow (eligible to hit the player); 0 for
+     *  player-fired arrows. Always written at spawn so reused eids are clean. */
+    hostile: new Uint8Array(MAX_ENTITIES),
 }
 
 /** Tag for kinematic rideable rail carts. Runtime state lives in

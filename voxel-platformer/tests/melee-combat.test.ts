@@ -155,6 +155,49 @@ test('player swing and staff slam cleave targets in the active wedge', () => {
     }
 })
 
+test('NPC shield guard blocks frontal player melee but stays open from the side', () => {
+    const frontWorld = createGameWorld()
+    const frontPlayer = spawnPlayer(frontWorld, 0, 0)
+    const frontGuard = spawnNpc(frontWorld, 'spearman-front', 0, 1)
+    frontGuard.yaw = Math.PI
+    frontGuard.shieldGuard = {
+        raised: true,
+        arcCos: Math.cos((65 * Math.PI) / 180),
+        minY: -0.2,
+        maxY: 1.75,
+    }
+    const blocks: string[] = []
+    const frontCombat = createMeleeCombatSystem({ onBlock: (e) => blocks.push(`${e.attackId}:${e.blockKind}`) })
+    assert.equal(startMeleeAttack(frontWorld, { kind: 'player', eid: frontPlayer }, MELEE_ATTACK_DEFS['player-thrust']), true)
+    frontCombat.update(frontWorld, MELEE_ATTACK_DEFS['player-thrust'].startupSeconds + 0.02)
+
+    assert.equal(frontGuard.hp, 2)
+    assert.deepEqual(blocks, ['player-thrust:ordinary'])
+
+    const sideWorld = createGameWorld()
+    const sidePlayer = spawnPlayer(sideWorld, -1, 1)
+    Rotation.y[sidePlayer] = Math.PI / 2
+    const sideGuard = spawnNpc(sideWorld, 'spearman-side', 0, 1)
+    sideGuard.yaw = Math.PI
+    sideGuard.shieldGuard = { ...frontGuard.shieldGuard, raised: true }
+    const sideCombat = createMeleeCombatSystem()
+    assert.equal(startMeleeAttack(sideWorld, { kind: 'player', eid: sidePlayer }, MELEE_ATTACK_DEFS['player-thrust']), true)
+    sideCombat.update(sideWorld, MELEE_ATTACK_DEFS['player-thrust'].startupSeconds + 0.02)
+
+    assert.equal(sideGuard.hp, 1, 'side attacks should bypass the raised front shield')
+
+    const attackWorld = createGameWorld()
+    const attackPlayer = spawnPlayer(attackWorld, 0, 0)
+    const attackingGuard = spawnNpc(attackWorld, 'spearman-attacking', 0, 1)
+    attackingGuard.yaw = Math.PI
+    attackingGuard.shieldGuard = { ...frontGuard.shieldGuard, raised: false }
+    const attackCombat = createMeleeCombatSystem()
+    assert.equal(startMeleeAttack(attackWorld, { kind: 'player', eid: attackPlayer }, MELEE_ATTACK_DEFS['player-thrust']), true)
+    attackCombat.update(attackWorld, MELEE_ATTACK_DEFS['player-thrust'].startupSeconds + 0.02)
+
+    assert.equal(attackingGuard.hp, 1, 'lowered shield during attack should leave the spearman vulnerable')
+})
+
 test('player melee keeps locked yaw and origin through active hit', () => {
     const world = createGameWorld()
     const player = spawnPlayer(world)

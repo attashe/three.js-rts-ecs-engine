@@ -8,6 +8,8 @@
 export const HUMANOID_ANIM_TIMINGS = {
     land: 0.24,
     attack: 0.44,
+    spearAttack: 0.54,
+    spearImpact: 0.28,
     attackWide: 0.56,
     staffAttack: 0.64,
     hammerAttack: 0.78,

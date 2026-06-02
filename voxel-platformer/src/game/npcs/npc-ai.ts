@@ -23,6 +23,7 @@ function ensureAi(runtime: NpcRuntimeState): NpcAiState {
         repathCooldown: 0,
         attackCooldown: 0,
         thinkCooldown: 0,
+        flee: false,
     }
     runtime.ai = ai
     return ai
@@ -68,6 +69,18 @@ export function setNpcPerceptionRadius(world: GameWorld, id: string, radius: num
     const rt = npc(world, id)
     if (!rt) return false
     ensureAi(rt).perceptionRadius = Math.max(0, radius)
+    return true
+}
+
+/**
+ * Make an NPC prey: while `on`, it never attacks and instead flees any
+ * perceived threat (the player or hostile NPC ids) within its perception
+ * radius, wandering its post otherwise.
+ */
+export function setNpcFlee(world: GameWorld, id: string, on: boolean): boolean {
+    const rt = npc(world, id)
+    if (!rt) return false
+    ensureAi(rt).flee = on
     return true
 }
 

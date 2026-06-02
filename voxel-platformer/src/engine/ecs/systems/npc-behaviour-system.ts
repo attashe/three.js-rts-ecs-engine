@@ -8,15 +8,29 @@ import { findPath } from '../../voxel/voxel-path'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
 import { type NpcAiState, type NpcRuntimeState, type Vec3Like } from '../../../game/npcs/npc-types'
 import { NPC_TARGET_PLAYER } from '../../../game/npcs/npc-ai'
-import { isMeleeActorLocked, startMeleeAttack } from '../melee-combat'
+import { hasActiveMeleeAttack, isMeleeActorLocked, startMeleeAttack } from '../melee-combat'
 import { MELEE_ATTACK_DEFS } from '../melee-types'
+import { spawnArrowProjectile } from '../../../game/moving-objects'
+import { DEFAULT_PHYSICS_GRAVITY } from './physics-system'
 
 // Tuning — deliberately gentle so NPCs read as "simple guards", not RPG combat AI.
 const MOVE_SPEED = 2.6
 const ATTACK_RANGE = 1.7
 const ATTACK_COOLDOWN = 0.9
+const SPEAR_ATTACK_RANGE = 2.5
 const HAMMER_ATTACK_RANGE = 2.45
 const HAMMER_ATTACK_COOLDOWN = 1.25
+// Ranged (bow) tuning — archers hold distance and arc arrows at the target.
+const SHOOT_RANGE = 10
+const SHOOT_COOLDOWN = 1.5
+const SHOOT_SPEED = 16
+const ARROW_MUZZLE_FORWARD = 0.5
+const ARROW_MUZZLE_HEIGHT = 1.0
+const TARGET_TORSO_HEIGHT = 1.0
+// Prey (flee) tuning — rabbits sprint away and re-plan their escape often.
+const FLEE_SPEED = 3.7
+const FLEE_DISTANCE = 5
+const FLEE_REPATH = 0.4
 const THINK_INTERVAL = 0.25
 const REPATH_INTERVAL = 0.5
 const ARRIVE_EPS = 0.2
@@ -68,8 +82,17 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
         ai.repathCooldown -= dt
         ai.attackCooldown -= dt
 
-        if ((rt.stunSeconds ?? 0) > 0 || isMeleeActorLocked(gw, { kind: 'npc', id: rt.id })) {
+        const actor = { kind: 'npc' as const, id: rt.id }
+        const attacking = hasActiveMeleeAttack(gw, actor)
+        setShieldGuardRaised(rt, false)
+        if ((rt.stunSeconds ?? 0) > 0 || isMeleeActorLocked(gw, actor)) {
             ai.path = null
+            return
+        }
+
+        // Prey: flee the player on sight, otherwise wander the post. Never fight.
+        if (ai.flee) {
+            fleeUpdate(gw, rt, ai, player, dt)
             return
         }
 
@@ -102,13 +125,14 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
                 ai.path = null
                 return
             }
+            if (!attacking) setShieldGuardRaised(rt, true)
             const dx = target.x - rt.position.x
             const dz = target.z - rt.position.z
             const dist = Math.hypot(dx, dz)
             face(rt, dx, dz)
             if (dist <= attackRange(rt)) {
                 ai.path = null
-                tryAttack(gw, rt, ai, ai.targetId)
+                tryAttack(gw, rt, ai, ai.targetId, target)
             } else {
                 ensurePath(gw, rt, ai, target)
                 moveAlongPath(gw, rt, ai, dt)
@@ -149,7 +173,7 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
         ai.pathIndex = path && path.length > 1 ? 1 : 0
     }
 
-    function moveAlongPath(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, dt: number): void {
+    function moveAlongPath(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, dt: number, speed = MOVE_SPEED): void {
         if (!ai.path || ai.pathIndex >= ai.path.length) return
         const cell = ai.path[ai.pathIndex]!
         const tx = cell.x + 0.5
@@ -157,7 +181,7 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
         const dx = tx - rt.position.x
         const dz = tz - rt.position.z
         const dist = Math.hypot(dx, dz)
-        const step = MOVE_SPEED * dt
+        const step = speed * dt
         if (dist <= step || dist < 1e-4) {
             rt.position.x = tx
             rt.position.z = tz
@@ -193,19 +217,120 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
         gw.obstacles.add(rt.obstacleId, obstacleBox)
     }
 
-    function tryAttack(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, targetId: string): void {
+    function tryAttack(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, targetId: string, target: Vec3Like): void {
         if (ai.attackCooldown > 0) return
         const clip = rt.attackClip ?? 'attack'
-        const def = clip === 'hammerAttack' ? MELEE_ATTACK_DEFS['hammer-slam'] : MELEE_ATTACK_DEFS['npc-slash']
+        if (clip === 'shoot') {
+            fireArrow(gw, rt, target)
+            ai.attackCooldown = SHOOT_COOLDOWN
+            rt.requestAttack = true // npc-render plays the draw/release
+            rt.requestAttackClip = 'shoot'
+            return
+        }
+        const def = clip === 'hammerAttack'
+            ? MELEE_ATTACK_DEFS['hammer-slam']
+            : clip === 'spearAttack'
+                ? MELEE_ATTACK_DEFS['npc-spear-thrust']
+                : MELEE_ATTACK_DEFS['npc-slash']
         if (!startMeleeAttack(gw, { kind: 'npc', id: rt.id }, def, { targetId })) return
+        setShieldGuardRaised(rt, false)
         ai.attackCooldown = clip === 'hammerAttack' ? HAMMER_ATTACK_COOLDOWN : ATTACK_COOLDOWN
         rt.requestAttack = true // npc-render plays the swing
         rt.requestAttackClip = clip
     }
+
+    /** Prey behaviour: sprint directly away from the player when seen, else
+     *  wander the post. Re-plans the escape route often so corners don't trap. */
+    function fleeUpdate(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, player: PlayerSnapshot | null, dt: number): void {
+        const threat = nearestThreatPos(gw, rt, ai, player)
+        if (!threat) {
+            patrol(gw, rt, ai, dt)
+            return
+        }
+        ai.targetId = null
+        let awayX = rt.position.x - threat.x
+        let awayZ = rt.position.z - threat.z
+        const len = Math.hypot(awayX, awayZ)
+        if (len < 1e-3) { awayX = 1; awayZ = 0 } else { awayX /= len; awayZ /= len }
+        // A little lateral wobble (deterministic from position) so the flee line
+        // isn't a dead-straight retreat.
+        const lateral = Math.sin(rt.position.x * 1.7 + rt.position.z * 2.3) * 1.4
+        const goal: Vec3Like = {
+            x: Math.floor(rt.position.x + awayX * FLEE_DISTANCE - awayZ * lateral),
+            y: Math.floor(rt.position.y),
+            z: Math.floor(rt.position.z + awayZ * FLEE_DISTANCE + awayX * lateral),
+        }
+        face(rt, awayX, awayZ)
+        if (ai.repathCooldown <= 0 || !ai.path || ai.pathIndex >= ai.path.length) {
+            ai.repathCooldown = FLEE_REPATH
+            const start = { x: Math.floor(rt.position.x), y: Math.floor(rt.position.y), z: Math.floor(rt.position.z) }
+            const end = { x: goal.x, y: goal.y, z: goal.z }
+            const path = findPath(chunks, start, end, { isBlocked: (x, y, z) => cellBlocked(gw, rt, x, y, z) })
+            ai.path = path
+            ai.pathIndex = path && path.length > 1 ? 1 : 0
+        }
+        moveAlongPath(gw, rt, ai, dt, FLEE_SPEED)
+    }
+
+    /** Spawn a hostile arrow arced from the archer's muzzle at the target. */
+    function fireArrow(gw: GameWorld, rt: NpcRuntimeState, target: Vec3Like): void {
+        const fx = Math.sin(rt.yaw)
+        const fz = Math.cos(rt.yaw)
+        const mx = rt.position.x + fx * ARROW_MUZZLE_FORWARD
+        const my = rt.position.y + ARROW_MUZZLE_HEIGHT
+        const mz = rt.position.z + fz * ARROW_MUZZLE_FORWARD
+        const dx = target.x - mx
+        const dz = target.z - mz
+        const dist = Math.max(0.001, Math.hypot(dx, dz))
+        const flight = dist / SHOOT_SPEED
+        const dyTo = (target.y + TARGET_TORSO_HEIGHT) - my
+        spawnArrowProjectile(
+            gw,
+            { x: mx, y: my, z: mz },
+            {
+                x: (dx / dist) * SHOOT_SPEED,
+                // Ballistic arc: reach the target's torso under the world gravity.
+                y: dyTo / flight + 0.5 * DEFAULT_PHYSICS_GRAVITY * flight,
+                z: (dz / dist) * SHOOT_SPEED,
+            },
+            { hostile: true },
+        )
+    }
+}
+
+/** The closest threat to flee from — the player (when within perception) or any
+ *  script-set hostile NPC. Prey treat the player as a threat even though they
+ *  never set `hostileToPlayer` (that flag drives *attacking*, not fleeing). */
+function nearestThreatPos(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, player: PlayerSnapshot | null): Vec3Like | null {
+    const r2 = ai.perceptionRadius * ai.perceptionRadius
+    let best: Vec3Like | null = null
+    let bestDist = r2
+    const consider = (x: number, y: number, z: number) => {
+        if (Math.abs(y - rt.position.y) > PERCEPTION_VERTICAL) return
+        const dx = x - rt.position.x
+        const dz = z - rt.position.z
+        const d2 = dx * dx + dz * dz
+        if (d2 <= bestDist) { bestDist = d2; best = { x, y, z } }
+    }
+    if (player) consider(player.x, player.y, player.z)
+    for (const id of ai.hostileIds) {
+        const other = gw.npcRuntimeById.get(id)
+        if (other && !other.dying) consider(other.position.x, other.position.y, other.position.z)
+    }
+    return best
 }
 
 function attackRange(rt: NpcRuntimeState): number {
-    return (rt.attackClip ?? 'attack') === 'hammerAttack' ? HAMMER_ATTACK_RANGE : ATTACK_RANGE
+    switch (rt.attackClip ?? 'attack') {
+        case 'shoot': return SHOOT_RANGE
+        case 'spearAttack': return SPEAR_ATTACK_RANGE
+        case 'hammerAttack': return HAMMER_ATTACK_RANGE
+        default: return ATTACK_RANGE
+    }
+}
+
+function setShieldGuardRaised(rt: NpcRuntimeState, raised: boolean): void {
+    if (rt.shieldGuard) rt.shieldGuard.raised = raised
 }
 
 function nearestEnemy(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, player: PlayerSnapshot | null): string | null {

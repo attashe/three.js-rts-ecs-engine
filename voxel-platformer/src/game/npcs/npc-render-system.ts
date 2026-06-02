@@ -10,15 +10,16 @@ import {
 import type { System } from '../../engine/ecs/systems/system'
 import { RenderOrder } from '../../engine/ecs/systems/orders'
 import type { GameWorld } from '../../engine/ecs/world'
-import { createNpcModel } from './npc-models'
-import { npcAttackClip, npcCollisionAabb, npcEquipmentKey, type NpcConfig } from './npc-types'
+import { createNpcModel, npcModelUsesDefaultRig } from './npc-models'
+import { createCritterAnimator, type NpcAnimator } from './npc-critter-animator'
+import { npcAttackClip, npcCollisionAabb, npcEquipmentKey, type NpcAttackClip, type NpcConfig } from './npc-types'
 import { disposeNpc } from './npc-runtime'
 import type { AABB } from '../../engine/voxel/voxel-collide'
 import { getDebugInfoEnabled, subscribeDebugInfo } from '../../engine/render/render-settings'
 import { AnimationController, attachToSocket, partRigSource } from '../../engine/anim'
 import { createEquipment, equipmentSocketFrame } from '../anim/equipment'
 import { computeLocomotionParams } from '../../engine/anim/core'
-import { combatLocomotionGraph } from '../anim/graph-defaults'
+import { COMBAT_PARAM, combatLocomotionGraph } from '../anim/graph-defaults'
 import { partCharacterClips } from '../anim/part-clips'
 import { disposeObject3D } from '../../engine/render/dispose-object'
 
@@ -27,13 +28,24 @@ export interface NpcRenderSystemOptions {
     /** Fired when an NPC takes a non-lethal hit, at its world position, so
      *  the caller can play a spatial hurt cue. */
     onHurt?: (position: { x: number; y: number; z: number }) => void
+    /** Fired when an NPC launches an attack (the same frame the swing/draw
+     *  animation starts), with the attack clip and the NPC's world position —
+     *  e.g. to play the bow-release cue for the archer's `shoot`. */
+    onAttack?: (clip: NpcAttackClip, position: { x: number; y: number; z: number }) => void
 }
 
 interface RenderedNpc {
     root: Object3D
     visualKey: string
     equipmentKey: string
-    controller: AnimationController
+    /** Rig-agnostic pose driver: a humanoid `AnimationController` wrapper or a
+     *  bespoke critter animator (see `npcModelUsesDefaultRig`). */
+    animator: NpcAnimator
+    /** Last frame's XZ position + a smoothed speed, so a moving NPC plays the
+     *  walk/run/hop cycle instead of gliding in an idle pose. */
+    prevX: number
+    prevZ: number
+    speed: number
 }
 
 // NPCs are static, so they animate from a fixed idle signal; attack/die are
@@ -61,21 +73,50 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
     let unsubscribeDebugInfo: (() => void) | null = null
 
     function buildNpc(npc: NpcConfig): RenderedNpc {
-        const clipSet = partRigSource(() => createNpcModel(npc.model, { beard: npc.beard, variant: npc.variant }), partCharacterClips()).instantiate()
-        const controller = new AnimationController(clipSet, combatLocomotionGraph())
-        const root = clipSet.root
+        const animator = npcModelUsesDefaultRig(npc.model)
+            ? buildRiggedAnimator(npc)
+            : createCritterAnimator(createNpcModel(npc.model, { beard: npc.beard, variant: npc.variant }))
+        const root = animator.root
         root.name = `NPC:${npc.id}`
-        // Hold the model's items in its hands (per-hand loadout). Each socket is
-        // inside its arm pivot, so the item animates with that arm.
-        attachNpcEquipment(controller, root, npc)
         applyTransform(root, npc.position, npc.yaw, npc.scale)
         group.add(root)
-        return { root, visualKey: npcVisualKey(npc), equipmentKey: npcEquipmentKey(npc), controller }
+        return {
+            root,
+            visualKey: npcVisualKey(npc),
+            equipmentKey: npcEquipmentKey(npc),
+            animator,
+            prevX: npc.position.x,
+            prevZ: npc.position.z,
+            speed: 0,
+        }
+    }
+
+    /** Humanoid path: the shared rig + clip set + combat graph, wrapped behind
+     *  the rig-agnostic NpcAnimator the render loop drives. */
+    function buildRiggedAnimator(npc: NpcConfig): NpcAnimator {
+        const clipSet = partRigSource(() => createNpcModel(npc.model, { beard: npc.beard, variant: npc.variant }), partCharacterClips()).instantiate()
+        const controller = new AnimationController(clipSet, combatLocomotionGraph())
+        // Hold the model's items in its hands (per-hand loadout). Each socket is
+        // inside its arm pivot, so the item animates with that arm.
+        attachNpcEquipment(controller, clipSet.root, npc)
+        return {
+            root: clipSet.root,
+            setLocomotion(s) { controller.setParams(computeLocomotionParams({ ...IDLE_SIGNAL, speedXZ: s })) },
+            triggerAttack(clip) { controller.machine.setParam(clip, 1) },
+            triggerDie() { controller.machine.setParam('dead', 1) },
+            setShieldGuard(raised) { controller.machine.setParam(COMBAT_PARAM.shieldBlock, raised ? 1 : 0) },
+            update(dt) { controller.update(dt) },
+            deadSettled() {
+                return controller.machine.currentStateId === 'dead'
+                    && controller.machine.timeInCurrentState >= DESPAWN_AFTER_DEAD_SECONDS
+            },
+            dispose() { controller.dispose() },
+        }
     }
 
     function removeNpc(id: string, entry: RenderedNpc): void {
         group.remove(entry.root)
-        entry.controller.dispose()
+        entry.animator.dispose()
         disposeObject3D(entry.root)
         rendered.delete(id)
     }
@@ -118,27 +159,40 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
 
     function animate(world: GameWorld, dt: number): void {
         for (const [id, entry] of rendered) {
-            const controller = entry.controller
-            controller.setParams(computeLocomotionParams(IDLE_SIGNAL))
+            const animator = entry.animator
             const runtime = world.npcRuntimeById.get(id)
+            // Drive the walk/run/hop cycle from how fast the NPC actually moved
+            // this frame (the behaviour system slides `runtime.position`),
+            // smoothed so it doesn't flicker idle⇆run between fixed ticks.
+            if (runtime && dt > 1e-5) {
+                const moved = Math.hypot(runtime.position.x - entry.prevX, runtime.position.z - entry.prevZ)
+                entry.speed += (moved / dt - entry.speed) * Math.min(1, dt * 12)
+                entry.prevX = runtime.position.x
+                entry.prevZ = runtime.position.z
+            }
+            animator.setLocomotion(entry.speed)
+            if (runtime?.shieldGuard) {
+                animator.setShieldGuard(runtime.shieldGuard.raised && !runtime.requestAttack)
+            }
             if (runtime?.requestAttack) {
                 const npc = opts.getNpcs().find((candidate) => candidate.id === id)
-                controller.machine.setParam(runtime.requestAttackClip ?? runtime.attackClip ?? (npc ? npcAttackClip(npc) : 'attack'), 1)
+                const clip = runtime.requestAttackClip ?? runtime.attackClip ?? (npc ? npcAttackClip(npc) : 'attack')
+                animator.triggerAttack(clip)
+                opts.onAttack?.(clip, runtime.position)
                 runtime.requestAttack = false
                 runtime.requestAttackClip = undefined
             }
             if (runtime?.requestDie) {
-                controller.machine.setParam('dead', 1)
+                animator.triggerDie()
                 runtime.requestDie = false
             }
             if (runtime?.requestHurt) {
                 opts.onHurt?.(runtime.position)
                 runtime.requestHurt = false
             }
-            controller.update(dt)
-            // Despawn once the body has lain dead for a beat.
-            if (controller.machine.currentStateId === 'dead'
-                && controller.machine.timeInCurrentState >= DESPAWN_AFTER_DEAD_SECONDS) {
+            animator.update(dt)
+            // Despawn once the body has lain dead/settled for a beat.
+            if (animator.deadSettled()) {
                 removeNpc(id, entry)
                 despawned.add(id)
                 disposeNpc(world, id)

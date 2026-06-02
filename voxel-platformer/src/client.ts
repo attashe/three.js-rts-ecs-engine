@@ -448,6 +448,19 @@ async function main(): Promise<void> {
                 panningModel: 'equalpower',
                 priority: 2,
             }),
+            // Spatial bow-release cue when the archer looses an arrow.
+            onAttack: (clip, p) => {
+                if (clip !== 'shoot') return
+                audio.playSpatial(GameAudio.Bow, p, {
+                    deferUntilUnlocked: true,
+                    rate: 0.94 + Math.random() * 0.12,
+                    refDistance: 5,
+                    maxDistance: 32,
+                    rolloffModel: 'linear',
+                    panningModel: 'equalpower',
+                    priority: 2,
+                })
+            },
         }))
         slots.railCarts.set(createRailCartSystem(chunks, meta.railCarts, { actions }))
         slots.piston.set(createPistonSystem(chunks, {
@@ -638,6 +651,11 @@ async function main(): Promise<void> {
         .addSystem(createArrowHitSystem(chunks, {
             onArrowLand: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
             onArrowHitNpc: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
+            // Enemy arrow connecting with the player: the same thunk, but flat
+            // (it's happening to you, not out in the world).
+            onArrowHitPlayer: () => audio.play(GameAudio.ArrowHit, { deferUntilUnlocked: true }),
+            // Arrow turned away by the player's raised shield — the block clang.
+            onArrowBlocked: (_eid, p) => playSpatialSfx(GameAudio.ShieldBlock, p.x, p.y, p.z, 3),
             // Arcane Bolt gets its own spatial impact, not the arrow thunk.
             onBoltHit: (_eid, p) => playSpatialSfx(GameAudio.SpellBoltHit, p.x, p.y, p.z, 3),
         }), 'arrowHit')

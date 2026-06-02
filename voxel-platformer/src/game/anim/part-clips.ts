@@ -136,6 +136,55 @@ export function partCharacterClips(): ProcClipDef[] {
             ],
         },
         {
+            // Spear thrust: a longer committed lunge. The held spear's +Y axis
+            // stays nearly level and forward at the authored impact moment.
+            name: 'spearAttack', duration: HUMANOID_ANIM_TIMINGS.spearAttack, tracks: [
+                neutralFigure(HUMANOID_ANIM_TIMINGS.spearAttack),
+                eulerQuatTrack('Chest', [
+                    { t: 0, e: [0.02, -0.06, 0] },
+                    { t: 0.12, e: [-0.08, -0.2, -0.025] },
+                    { t: 0.22, e: [0.12, 0.025, 0.012] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [0.2, 0.01, 0] },
+                    { t: 0.4, e: [0.06, -0.04, 0.01] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('Head', [
+                    { t: 0, e: [0, 0.03, 0] },
+                    { t: 0.12, e: [0.04, -0.12, 0] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.04, 0.02, 0] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('UpperArmR', [
+                    { t: 0, e: [-0.18, 0.08, -0.08] },
+                    { t: 0.12, e: [-0.92, 0.16, -0.18] },
+                    { t: 0.22, e: [-0.36, 0.04, -0.06] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.12, 0.02, -0.02] },
+                    { t: 0.4, e: [-0.34, 0.05, -0.06] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, -0.04] },
+                ]),
+                eulerQuatTrack('UpperArmL', [
+                    { t: 0, e: [-0.1, -0.08, 0.12] },
+                    { t: 0.14, e: [-0.42, -0.26, 0.22] },
+                    { t: 0.22, e: [-0.34, -0.16, 0.16] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.24, -0.08, 0.1] },
+                    { t: 0.4, e: [-0.22, -0.08, 0.1] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0.04] },
+                ]),
+                eulerQuatTrack('LegR', [
+                    { t: 0, e: [0.02, 0, 0.02] },
+                    { t: 0.18, e: [-0.12, 0, 0.06] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [-0.26, 0, 0.08] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0] },
+                ]),
+                eulerQuatTrack('LegL', [
+                    { t: 0, e: [-0.02, 0, -0.02] },
+                    { t: 0.18, e: [0.2, 0, -0.06] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearImpact, e: [0.34, 0, -0.1] },
+                    { t: HUMANOID_ANIM_TIMINGS.spearAttack, e: [0, 0, 0] },
+                ]),
+            ],
+        },
+        {
             // Wide swing: a slower right-to-left cut that gives the sword a broad
             // readable arc in the iso camera.
             name: 'attackWide', duration: 0.56, tracks: [

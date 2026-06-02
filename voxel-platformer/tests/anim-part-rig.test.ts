@@ -15,7 +15,7 @@ test('part rig instantiates with all clips and sockets resolved', () => {
     const source = partRigSource(() => createMainCharacter(), partCharacterClips())
     const { root, clips, sockets } = source.instantiate()
 
-    const expectedClips = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'attackWide', 'staffAttack', 'hammerAttack', 'shoot', 'shieldBlock', 'die', 'dead']
+    const expectedClips = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'spearAttack', 'attackWide', 'staffAttack', 'hammerAttack', 'shoot', 'shieldBlock', 'die', 'dead']
     for (const id of expectedClips) assert.ok(clips.has(id), `clip ${id} present`)
     assert.equal(clips.size, expectedClips.length)
 

@@ -55,12 +55,14 @@ test('combat graph is valid, with a one-shot attack and a terminal dead state', 
     assert.equal(validateAnimGraph(g).ok, true)
 
     const stateIds = new Set(g.states.map((s) => s.id))
-    assert.ok(stateIds.has('attack') && stateIds.has('attackWide') && stateIds.has('staffAttack') && stateIds.has('hammerAttack') && stateIds.has('shoot') && stateIds.has('shieldBlock') && stateIds.has('die') && stateIds.has('dead'))
+    assert.ok(stateIds.has('attack') && stateIds.has('spearAttack') && stateIds.has('attackWide') && stateIds.has('staffAttack') && stateIds.has('hammerAttack') && stateIds.has('shoot') && stateIds.has('shieldBlock') && stateIds.has('die') && stateIds.has('dead'))
 
-    // `shoot` and `attackWide` are one-shot triggers that return to locomotion,
-    // like the base thrust attack.
+    // `shoot`, `spearAttack`, and `attackWide` are one-shot triggers that return
+    // to locomotion, like the base thrust attack.
     const shootParam = (g.params ?? []).find((p) => p.name === 'shoot')
     assert.equal(shootParam?.trigger, true)
+    const spearParam = (g.params ?? []).find((p) => p.name === 'spearAttack')
+    assert.equal(spearParam?.trigger, true)
     const wideParam = (g.params ?? []).find((p) => p.name === 'attackWide')
     assert.equal(wideParam?.trigger, true)
     const staffParam = (g.params ?? []).find((p) => p.name === 'staffAttack')
@@ -83,6 +85,7 @@ test('combat graph is valid, with a one-shot attack and a terminal dead state', 
     // priority ordering: dead > attack > airborne(jump/fall).
     const pri = (to: string) => Math.max(...g.transitions.filter((t) => t.to === to).map((t) => t.priority ?? 0))
     assert.ok(pri('dead') > pri('attack'))
+    assert.ok(pri('spearAttack') >= pri('attack'))
     assert.ok(pri('attack') > pri('jump'))
 })
 
@@ -95,6 +98,13 @@ test('combat graph: attack trigger plays once then returns, dead is absorbing', 
     sm.tick(0.05)
     assert.equal(sm.currentStateId, 'attack')
     // After the swing reads (minTime ~0.42s) it returns to idle.
+    for (let i = 0; i < 12; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'idle')
+
+    // Spear thrust has its own one-shot clip and returns to locomotion.
+    sm.setParam('spearAttack', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'spearAttack')
     for (let i = 0; i < 12; i++) { sm.setParams(idle); sm.tick(0.05) }
     assert.equal(sm.currentStateId, 'idle')
 
@@ -137,6 +147,18 @@ test('combat graph: attack trigger plays once then returns, dead is absorbing', 
     sm.tick(0.05)
     assert.equal(sm.currentStateId, 'idle')
 
+    // NPC shield guards can drop the held block directly into their spear thrust.
+    sm.setParam('shieldBlock', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'shieldBlock')
+    sm.setParam('shieldBlock', 0)
+    sm.setParam('spearAttack', 1)
+    sm.setParams(idle)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'spearAttack')
+    for (let i = 0; i < 12; i++) { sm.setParams(idle); sm.tick(0.05) }
+    assert.equal(sm.currentStateId, 'idle')
+
     // Death: first the `die` topple, then it settles into the absorbing `dead`.
     sm.setParam('dead', 1)
     sm.tick(0.05)
@@ -168,6 +190,11 @@ test('combat graph ignores attack and shoot triggers while airborne', () => {
     assert.equal(sm.currentStateId, 'jump')
 
     sm.setParams(jump)
+    sm.setParam('spearAttack', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'jump')
+
+    sm.setParams(jump)
     sm.setParam('attackWide', 1)
     sm.tick(0.05)
     assert.equal(sm.currentStateId, 'jump')
@@ -188,6 +215,11 @@ test('combat graph does not start attack or shoot from death states', () => {
 
     sm.setParams(idle)
     sm.setParam('dead', 1)
+    sm.tick(0.05)
+    assert.equal(sm.currentStateId, 'die')
+
+    sm.setParams(idle)
+    sm.setParam('spearAttack', 1)
     sm.tick(0.05)
     assert.equal(sm.currentStateId, 'die')
 

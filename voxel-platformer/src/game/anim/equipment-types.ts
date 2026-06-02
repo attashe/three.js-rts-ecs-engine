@@ -7,7 +7,9 @@ export const EQUIPMENT_KINDS = [
     'hat-ranger',
     'hat-guard',
     'hat-sun',
+    'metal-helmet',
     'sword',
+    'spear',
     'shield',
     'bow',
     'arrow',
@@ -28,12 +30,14 @@ export const HEAD_EQUIPMENT_KINDS = [
     'hat-ranger',
     'hat-guard',
     'hat-sun',
+    'metal-helmet',
 ] as const satisfies readonly EquipmentKind[]
 
 export type HeadEquipmentKind = (typeof HEAD_EQUIPMENT_KINDS)[number]
 
 export const HAND_EQUIPMENT_KINDS = [
     'sword',
+    'spear',
     'shield',
     'bow',
     'arrow',
@@ -60,6 +64,12 @@ export const HAMMER_EQUIPMENT_KINDS = [
 
 export type HammerEquipmentKind = (typeof HAMMER_EQUIPMENT_KINDS)[number]
 
+export const SPEAR_EQUIPMENT_KINDS = [
+    'spear',
+] as const satisfies readonly EquipmentKind[]
+
+export type SpearEquipmentKind = (typeof SPEAR_EQUIPMENT_KINDS)[number]
+
 export const BOOT_EQUIPMENT_KINDS = [
     HIGH_JUMP_BOOTS_ITEM_ID,
     HIGH_SPEED_BOOTS_ITEM_ID,
@@ -73,7 +83,9 @@ export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
     'hat-ranger': 'Ranger Cap',
     'hat-guard': 'Guard Helm',
     'hat-sun': 'Sun Crown',
+    'metal-helmet': 'Metal Helmet',
     sword: 'Sword',
+    spear: 'Spear',
     shield: 'Shield',
     bow: 'Bow',
     arrow: 'Arrow',
@@ -205,6 +217,15 @@ export function isStaffEquipmentKind(value: unknown): value is StaffEquipmentKin
 
 export function isHammerEquipmentKind(value: unknown): value is HammerEquipmentKind {
     return (HAMMER_EQUIPMENT_KINDS as readonly string[]).includes(String(value))
+}
+
+export function isSpearEquipmentKind(value: unknown): value is SpearEquipmentKind {
+    return (SPEAR_EQUIPMENT_KINDS as readonly string[]).includes(String(value))
+}
+
+/** A bow in either hand drives the ranged `shoot` attack clip. */
+export function isBowEquipmentKind(value: unknown): value is 'bow' {
+    return value === 'bow'
 }
 
 export function handLoadoutKey(loadout: EquipmentHandLoadout): string {

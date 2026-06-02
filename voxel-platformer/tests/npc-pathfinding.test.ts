@@ -1,19 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addComponents } from 'bitecs'
+import { addComponents, query } from 'bitecs'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { DEFAULT_PALETTE, BLOCK } from '../src/engine/voxel/palette'
 import { findPath } from '../src/engine/voxel/voxel-path'
 import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
 import { createEntity } from '../src/engine/ecs/entity'
-import { PlayerControlled, Position } from '../src/engine/ecs/components'
+import { BoxCollider, Health, MovingObject, PlayerControlled, Position, Rotation, Shield, Velocity } from '../src/engine/ecs/components'
 import { createNpcBehaviourSystem } from '../src/engine/ecs/systems/npc-behaviour-system'
 import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
+import { createArrowHitSystem } from '../src/engine/ecs/systems/arrow-hit-system'
+import { MovingObjectKind, spawnArrowProjectile } from '../src/game/moving-objects'
 import { __resetDebugInfoCache, setDebugInfoEnabled } from '../src/engine/render/render-settings'
 import type { NpcRuntimeState } from '../src/game/npcs/npc-types'
 import { HUMANOID_ANIM_TIMINGS } from '../src/game/anim/clip-timings'
 import {
-    NPC_TARGET_PLAYER, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc,
+    NPC_TARGET_PLAYER, setNpcFlee, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc,
 } from '../src/game/npcs/npc-ai'
 
 function flatWorld(size = 14): ChunkManager {
@@ -224,6 +226,135 @@ test('ordinary NPC slash can be avoided outside the locked wedge', () => {
     combat.update(world, 0.06)
 
     assert.equal(target.hp, 2)
+})
+
+test('shield spearman raises guard on sight and lowers it while thrusting', () => {
+    const chunks = flatWorld(18)
+    const world = createGameWorld()
+    const player = createEntity(world)
+    addComponents(world, player, [Position, PlayerControlled])
+    Position.x[player] = 9
+    Position.y[player] = 1
+    Position.z[player] = 4
+
+    const spearman = spawnRuntimeNpc(world, 'spearman', 4, 4)
+    spearman.attackClip = 'spearAttack'
+    spearman.shieldGuard = {
+        raised: false,
+        arcCos: Math.cos((65 * Math.PI) / 180),
+        minY: -0.2,
+        maxY: 1.75,
+    }
+    setNpcHostile(world, 'spearman', NPC_TARGET_PLAYER, true)
+    setNpcPerceptionRadius(world, 'spearman', 10)
+
+    const sys = createNpcBehaviourSystem(chunks)
+    sys.update!(world, 1 / 60)
+    assert.equal(spearman.shieldGuard.raised, true, 'spearman should raise shield when tracking a visible enemy')
+    assert.equal(world.meleeAttacks.has('npc:spearman'), false)
+
+    Position.x[player] = 4
+    Position.z[player] = 5
+    sys.update!(world, 1 / 60)
+
+    assert.equal(spearman.requestAttackClip, 'spearAttack')
+    assert.equal(spearman.shieldGuard.raised, false, 'spearman should drop the shield during its own attack')
+    assert.equal(world.meleeAttacks.get('npc:spearman')?.def.id, 'npc-spear-thrust')
+})
+
+// ── migrated NPC archetypes: archer (ranged) + rabbit (flee) ──
+
+test('an archer NPC fires a hostile arrow at a ranged target instead of meleeing', () => {
+    const chunks = flatWorld(18)
+    const world = createGameWorld()
+    const player = createEntity(world)
+    addComponents(world, player, [Position, PlayerControlled])
+    Position.x[player] = 4
+    Position.y[player] = 1
+    Position.z[player] = 10 // 6 units away from the archer — inside bow range, beyond melee
+
+    const archer = spawnRuntimeNpc(world, 'archer', 4, 4)
+    archer.attackClip = 'shoot'
+    setNpcHostile(world, 'archer', NPC_TARGET_PLAYER, true)
+    setNpcPerceptionRadius(world, 'archer', 14)
+
+    const sys = createNpcBehaviourSystem(chunks)
+    sys.update!(world, 1 / 60)
+
+    assert.equal(archer.requestAttackClip, 'shoot', 'archer plays the draw/release clip')
+    // It stays at range (does not path into melee) and spawns one hostile arrow.
+    assert.ok(archer.position.x === 4 && archer.position.z === 4, 'archer holds its ground at bow range')
+    const arrows = [...query(world, [MovingObject, Velocity])].filter(
+        (a) => MovingObject.kind[a] === MovingObjectKind.Arrow && MovingObject.hostile[a] === 1,
+    )
+    assert.equal(arrows.length, 1, 'archer fired exactly one hostile arrow')
+    assert.ok(Velocity.z[arrows[0]!]! > 0, 'the arrow flies toward the player (+z)')
+})
+
+test('a fleeing rabbit runs away from the player and never attacks', () => {
+    const chunks = flatWorld(24)
+    const world = createGameWorld()
+    const player = createEntity(world)
+    addComponents(world, player, [Position, PlayerControlled])
+    Position.x[player] = 4
+    Position.y[player] = 1
+    Position.z[player] = 12
+
+    const rabbit = spawnRuntimeNpc(world, 'rabbit', 9, 12) // 5 units +x from the player
+    setNpcFlee(world, 'rabbit', true)
+    setNpcPerceptionRadius(world, 'rabbit', 12)
+    const startX = rabbit.position.x
+
+    const sys = createNpcBehaviourSystem(chunks)
+    for (let i = 0; i < 120; i++) sys.update!(world, 1 / 60)
+
+    assert.ok(rabbit.position.x > startX + 1, `rabbit should flee away from the player (+x), x=${rabbit.position.x}`)
+    assert.equal(rabbit.requestAttack, false, 'prey never attacks')
+    assert.equal(world.meleeAttacks.has('npc:rabbit'), false)
+})
+
+test('a hostile arrow damages the player, but a raised frontal shield blocks it', () => {
+    function setupPlayer(world: GameWorld): number {
+        const player = createEntity(world)
+        addComponents(world, player, [Position, PlayerControlled, BoxCollider, Health, Rotation, Shield])
+        Position.x[player] = 8
+        Position.y[player] = 1
+        Position.z[player] = 8
+        BoxCollider.x[player] = 0.4
+        BoxCollider.y[player] = 0.9
+        BoxCollider.z[player] = 0.4
+        Health.max[player] = 6
+        Health.current[player] = 6
+        return player
+    }
+
+    // Unshielded: the incoming arrow lands.
+    {
+        const chunks = flatWorld(16)
+        const world = createGameWorld()
+        const player = setupPlayer(world)
+        spawnArrowProjectile(world, { x: 8.6, y: 2, z: 8 }, { x: -30, y: 0, z: 0 }, { hostile: true })
+        const sys = createArrowHitSystem(chunks)
+        sys.update!(world, 1 / 60)
+        assert.ok(Health.current[player]! < 6, 'a hostile arrow damages the unshielded player')
+    }
+
+    // Shielded toward the incoming arrow (+x): blocked, no damage.
+    {
+        const chunks = flatWorld(16)
+        const world = createGameWorld()
+        const player = setupPlayer(world)
+        Rotation.y[player] = Math.PI / 2 // face +x, toward where the arrow comes from
+        Shield.raised[player] = 1
+        Shield.blockArcCos[player] = Math.cos(Math.PI * 0.4)
+        Shield.blockYawOffset[player] = 0
+        Shield.minY[player] = 0.3
+        Shield.maxY[player] = 2.2
+        spawnArrowProjectile(world, { x: 8.6, y: 2, z: 8 }, { x: -30, y: 0, z: 0 }, { hostile: true })
+        const sys = createArrowHitSystem(chunks)
+        sys.update!(world, 1 / 60)
+        assert.equal(Health.current[player], 6, 'a raised frontal shield blocks the arrow')
+    }
 })
 
 test('NPC stops moving and turning once melee attack locks', () => {

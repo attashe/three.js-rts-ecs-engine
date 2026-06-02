@@ -23,6 +23,7 @@ import {
     HAMMER_EQUIPMENT_KINDS,
     HAND_EQUIPMENT_KINDS,
     HEAD_EQUIPMENT_KINDS,
+    SPEAR_EQUIPMENT_KINDS,
     STAFF_EQUIPMENT_KINDS,
     type EquipmentKind,
 } from './equipment-types'
@@ -34,8 +35,10 @@ export {
     HAND_EQUIPMENT_KINDS,
     HEAD_EQUIPMENT_KINDS,
     HAMMER_EQUIPMENT_KINDS,
+    SPEAR_EQUIPMENT_KINDS,
     STAFF_EQUIPMENT_KINDS,
     isHammerEquipmentKind,
+    isSpearEquipmentKind,
     isStaffEquipmentKind,
     type EquipmentKind,
     type EquipmentHandLoadout,
@@ -45,6 +48,7 @@ export {
     type HandEquipmentKind,
     type HandEquipmentSlot,
     type PlayerEquipmentSettings,
+    type SpearEquipmentKind,
     type StaffEquipmentKind,
 } from './equipment-types'
 
@@ -55,7 +59,9 @@ export function createEquipment(kind: EquipmentKind): Group {
         case 'hat-ranger': return buildRangerCap()
         case 'hat-guard': return buildGuardHelm()
         case 'hat-sun': return buildSunCrown()
+        case 'metal-helmet': return buildMetalHelmet()
         case 'sword': return buildSword()
+        case 'spear': return buildSpear()
         case 'shield': return buildShield()
         case 'bow': return buildBow()
         case 'arrow': return buildHeldArrow()
@@ -84,6 +90,10 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
         // points at the enemy rather than straight upward.
         handR: { orient: [Math.PI / 2 - 0.08, 0, -0.16], offset: [0.015, -0.045, 0.08] },
         handL: { orient: [Math.PI / 2 - 0.08, 0, 0.16], offset: [-0.015, -0.045, 0.08] },
+    },
+    spear: {
+        handR: { orient: [Math.PI / 2 - 0.02, 0, -0.1], offset: [0.018, -0.16, 0.2] },
+        handL: { orient: [Math.PI / 2 - 0.02, 0, 0.1], offset: [-0.018, -0.16, 0.2] },
     },
     shield: {
         handR: { orient: [0, Math.PI / 2 - 0.28, 0], offset: [0.13, -0.075, 0.015] },
@@ -148,6 +158,9 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
     },
     'hat-sun': {
         head: { offset: [0, -0.045, 0] },
+    },
+    'metal-helmet': {
+        head: { offset: [0, -0.055, 0] },
     },
     'high-jump-boots': {
         footR: { offset: [0, 0, 0] },
@@ -324,6 +337,34 @@ function buildGuardHelm(): Group {
     return addParts(g, [dome, rim, crest, nose, hornL, hornR])
 }
 
+function buildMetalHelmet(): Group {
+    const g = new Group()
+    g.name = 'equip:metal-helmet'
+    const steel = mat(0xb8c4ca, 0.34, 0.62)
+    const darkSteel = mat(0x5c6870, 0.38, 0.54)
+    const dome = new Mesh(new SphereGeometry(0.24, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.64), steel)
+    dome.position.y = 0.09
+    dome.scale.z = 0.92
+    const rim = new Mesh(new CylinderGeometry(0.26, 0.255, 0.045, 14), darkSteel)
+    rim.position.y = 0.035
+    rim.scale.z = 0.9
+    const brow = new Mesh(new BoxGeometry(0.34, 0.055, 0.06), darkSteel)
+    brow.position.set(0, 0.02, 0.215)
+    const nose = new Mesh(new BoxGeometry(0.04, 0.23, 0.04), darkSteel)
+    nose.position.set(0, -0.03, 0.24)
+    const cheekL = new Mesh(new BoxGeometry(0.075, 0.19, 0.05), steel)
+    cheekL.position.set(-0.16, -0.045, 0.18)
+    cheekL.rotation.z = -0.08
+    const cheekR = new Mesh(new BoxGeometry(0.075, 0.19, 0.05), steel)
+    cheekR.position.set(0.16, -0.045, 0.18)
+    cheekR.rotation.z = 0.08
+    const rivetL = new Mesh(new SphereGeometry(0.025, 7, 5), mat(0xe1c36e, 0.36, 0.45))
+    rivetL.position.set(-0.12, 0.05, 0.235)
+    const rivetR = new Mesh(new SphereGeometry(0.025, 7, 5), mat(0xe1c36e, 0.36, 0.45))
+    rivetR.position.set(0.12, 0.05, 0.235)
+    return addParts(g, [dome, rim, brow, nose, cheekL, cheekR, rivetL, rivetR])
+}
+
 function buildSunCrown(): Group {
     const g = new Group()
     g.name = 'equip:hat-sun'
@@ -359,6 +400,37 @@ function buildSword(): Group {
     blade.position.y = 0.46
     for (const m of [grip, guard, blade]) { m.castShadow = true; g.add(m) }
     return g
+}
+
+function buildSpear(): Group {
+    const g = new Group()
+    g.name = 'equip:spear'
+    const shaft = new Mesh(new CylinderGeometry(0.014, 0.018, 1.34, 6), mat(0x6b4422, 0.86))
+    shaft.name = 'SpearShaft'
+    shaft.position.y = 0.48
+    const grip = new Mesh(new CylinderGeometry(0.026, 0.026, 0.28, 6), mat(0x2b1a10, 0.78))
+    grip.name = 'SpearGrip'
+    grip.position.y = 0.02
+    const collar = new Mesh(new CylinderGeometry(0.046, 0.04, 0.05, 6), mat(0x8d6a2e, 0.36, 0.36))
+    collar.name = 'SpearCollar'
+    collar.position.y = 1.14
+    const head = new Mesh(new ConeGeometry(0.072, 0.28, 6), mat(0xd1dce4, 0.26, 0.68))
+    head.name = 'SpearHead'
+    head.position.y = 1.31
+    head.scale.z = 0.58
+    const barbL = new Mesh(new ConeGeometry(0.022, 0.12, 5), mat(0xaab8c0, 0.3, 0.6))
+    barbL.name = 'SpearBarbL'
+    barbL.position.set(-0.046, 1.14, 0)
+    barbL.rotation.z = Math.PI * 0.74
+    const barbR = new Mesh(new ConeGeometry(0.022, 0.12, 5), mat(0xaab8c0, 0.3, 0.6))
+    barbR.name = 'SpearBarbR'
+    barbR.position.set(0.046, 1.14, 0)
+    barbR.rotation.z = -Math.PI * 0.74
+    const butt = new Mesh(new ConeGeometry(0.032, 0.12, 6), mat(0x9daab3, 0.34, 0.58))
+    butt.name = 'SpearButtSpike'
+    butt.position.y = -0.24
+    butt.rotation.z = Math.PI
+    return addParts(g, [shaft, grip, collar, head, barbL, barbR, butt])
 }
 
 function buildShield(): Group {

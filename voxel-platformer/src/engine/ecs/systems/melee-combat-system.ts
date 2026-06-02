@@ -242,6 +242,18 @@ function applyMeleeHit(gw: GameWorld, attack: ActiveMeleeAttack, target: MeleeTa
         applyTargetStun(gw, { kind: 'player', eid }, attack, target, opts, 'attack')
     } else {
         const npc = target.npc!
+        const block = npcShieldGuardBlockResult(npc, attack)
+        if (block) {
+            opts.onBlock?.({
+                x: target.x,
+                y: target.y,
+                z: target.z,
+                attackId: attack.def.id,
+                attacker: attack.attacker.kind,
+                blockKind: block.kind,
+            })
+            return
+        }
         damageNpc(npc, attack.def.damage)
         applyTargetPush(gw, { kind: 'npc', id: npc.id }, attack, target)
         applyTargetStun(gw, { kind: 'npc', id: npc.id }, attack, target, opts, 'attack')
@@ -551,6 +563,23 @@ function shieldBlockResult(gw: GameWorld, playerEid: number, attack: ActiveMelee
         ? 'perfect'
         : 'ordinary'
     return { kind }
+}
+
+function npcShieldGuardBlockResult(npc: NpcRuntimeState, attack: ActiveMeleeAttack): ShieldBlockResult | null {
+    const guard = npc.shieldGuard
+    if (!guard?.raised) return null
+    const source = hitSourcePoint(attack)
+    if (!source) return null
+    const ax = source.x - npc.position.x
+    const az = source.z - npc.position.z
+    const ad = Math.hypot(ax, az)
+    if (ad < 1e-3) return null
+    const fx = Math.sin(npc.yaw)
+    const fz = Math.cos(npc.yaw)
+    if ((fx * ax + fz * az) / ad < guard.arcCos) return null
+    const dy = source.y - npc.position.y
+    if (dy < guard.minY || dy > guard.maxY) return null
+    return { kind: 'ordinary' }
 }
 
 function directionFromHitSource(attack: ActiveMeleeAttack, target: MeleeTarget): { x: number; z: number } {

@@ -9,6 +9,7 @@ import {
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
     NPC_DEFAULT_HP,
+    SHIELD_SPEARMAN_DEFAULT_HP,
     TROLL_DEFAULT_HP,
     TROLL_OUTFIT_KINDS,
     TROLL_OUTFIT_LABELS,
@@ -20,6 +21,7 @@ import {
     npcDefaultHp,
     npcInteractionZoneId,
     npcObstacleId,
+    npcShieldGuardState,
     type NpcConfig,
     type TrollOutfitKind,
 } from '../src/game/npcs/npc-types'
@@ -37,11 +39,15 @@ function npc(id: string): NpcConfig {
     })
 }
 
-test('NPC model registry exposes dwarf, Keeper Arlen, player, and troll models', () => {
-    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll'])
+test('NPC model registry exposes humanoid, troll, and creature models', () => {
+    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll', 'rabbit', 'archer', 'shield-warrior', 'shield-spearman'])
     assert.deepEqual([...TROLL_OUTFIT_KINDS], ['wise', 'guardian', 'king', 'princess', 'trader', 'child'])
     assert.equal(NPC_MODEL_LABELS.keeper, 'Dwarf')
     assert.equal(NPC_MODEL_LABELS['keeper-arlen'], 'Keeper Arlen')
+    assert.equal(NPC_MODEL_LABELS.rabbit, 'Rabbit')
+    assert.equal(NPC_MODEL_LABELS.archer, 'Archer')
+    assert.equal(NPC_MODEL_LABELS['shield-warrior'], 'Shield Warrior')
+    assert.equal(NPC_MODEL_LABELS['shield-spearman'], 'Shield Spearman')
     assert.equal(TROLL_OUTFIT_LABELS.king, 'Troll King')
     assert.equal(TROLL_OUTFIT_LABELS.princess, 'Troll Princess')
     for (const kind of NPC_MODEL_KINDS) {
@@ -60,6 +66,9 @@ test('NPC model registry exposes dwarf, Keeper Arlen, player, and troll models',
     assert.equal(findByName(arlen, 'KeeperArlenLeftLens')?.parent?.name, 'Head', 'glasses ride the animated head')
     assert.equal(findByName(arlen, 'KeeperArlenRobeHem')?.parent?.name, 'Figure', 'robe hem rides the animated body')
     assert.ok(findByName(createNpcModel('player', { beard: 'pointed' }), 'CharacterBeardPointed'), 'player NPC can opt into a beard')
+    const spearman = createNpcModel('shield-spearman')
+    assert.ok(findByName(spearman, 'ShieldSpearmanBrigandine'), 'shield spearman has a mail coat')
+    assert.ok(findByName(spearman, 'ShieldSpearmanVisor'), 'shield spearman has a guarded helm')
     const guardian = createNpcModel('large-troll', { variant: 'guardian' })
     assert.ok(findByName(guardian, 'LargeTrollGuardianBreastplate'), 'Guardian troll wears armor')
     assert.ok(findByName(guardian, 'CharacterBeardFull'), 'Guardian troll defaults to a full beard')
@@ -159,6 +168,36 @@ test('NPC appearance and equipment normalize from model defaults and custom choi
     assert.equal(npcDefaultHp(troll), TROLL_DEFAULT_HP)
     assert.equal(npcDefaultHp(guardian), TROLL_DEFAULT_HP)
 
+    const spearman = normalizeNpcConfig({
+        id: 'spearman',
+        model: 'shield-spearman',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(spearman.beard, 'short')
+    assert.deepEqual(spearman.equipment, { handR: 'spear', handL: 'shield' })
+    assert.equal(npcAttackClip(spearman), 'spearAttack')
+    assert.equal(npcDefaultHp(spearman), SHIELD_SPEARMAN_DEFAULT_HP)
+    assert.ok(npcShieldGuardState(spearman), 'shield spearman should use a raised front guard')
+
+    // The sword-and-board warrior carries a shield too, so it must fight behind
+    // a raised guard and advance defended (mirrors the player's block).
+    const warrior = normalizeNpcConfig({
+        id: 'warrior',
+        model: 'shield-warrior',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.deepEqual(warrior.equipment, { handR: 'sword', handL: 'shield' })
+    assert.ok(npcShieldGuardState(warrior), 'shield warrior should use a raised front guard')
+
+    // A shieldless humanoid never raises a guard.
+    const swordsman = normalizeNpcConfig({
+        id: 'swordsman',
+        model: 'keeper',
+        position: { x: 0, y: 0, z: 0 },
+        equipment: { handR: 'sword', handL: null },
+    })
+    assert.equal(npcShieldGuardState(swordsman), undefined, 'no shield, no guard')
+
     const custom = normalizeNpcConfig({
         id: 'custom',
         model: 'keeper',
@@ -215,6 +254,23 @@ test('registerRuntimeNpcs gives large trolls the troll default HP pool', () => {
 
     assert.equal(npc?.hp, TROLL_DEFAULT_HP)
     assert.equal(npc?.maxHp, TROLL_DEFAULT_HP)
+
+    runtime.dispose()
+})
+
+test('registerRuntimeNpcs enables shield guard state for spear and shield enemies', () => {
+    const world = createGameWorld()
+    const config = normalizeNpcConfig({
+        id: 'spearman',
+        model: 'shield-spearman',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    const runtime = registerRuntimeNpcs(world, [config])
+    const npc = world.npcRuntimeById.get('spearman')
+
+    assert.equal(npc?.attackClip, 'spearAttack')
+    assert.equal(npc?.shieldGuard?.raised, false)
+    assert.ok((npc?.shieldGuard?.arcCos ?? 1) < 0.5, 'front guard should cover a broad forward arc')
 
     runtime.dispose()
 })

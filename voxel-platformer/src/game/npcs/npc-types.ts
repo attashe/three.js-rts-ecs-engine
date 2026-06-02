@@ -5,7 +5,9 @@ import type { NpcImpactState } from '../../engine/ecs/melee-types'
 import {
     copyHandLoadout,
     handLoadoutKey,
+    isBowEquipmentKind,
     isHammerEquipmentKind,
+    isSpearEquipmentKind,
     isStaffEquipmentKind,
     normalizeHandLoadout,
     type EquipmentHandLoadout,
@@ -22,6 +24,10 @@ export const NPC_MODEL_KINDS = [
     'keeper-arlen',
     'player',
     'large-troll',
+    'rabbit',
+    'archer',
+    'shield-warrior',
+    'shield-spearman',
 ] as const
 
 export type NpcModelKind = (typeof NPC_MODEL_KINDS)[number]
@@ -31,6 +37,10 @@ export const NPC_MODEL_LABELS: Record<NpcModelKind, string> = {
     'keeper-arlen': 'Keeper Arlen',
     player: 'Player',
     'large-troll': 'Large Troll',
+    rabbit: 'Rabbit',
+    archer: 'Archer',
+    'shield-warrior': 'Shield Warrior',
+    'shield-spearman': 'Shield Spearman',
 }
 
 export const TROLL_OUTFIT_KINDS = [
@@ -54,7 +64,14 @@ export const TROLL_OUTFIT_LABELS: Record<TrollOutfitKind, string> = {
     child: 'Troll Child',
 }
 
-export type NpcAttackClip = 'attack' | 'staffAttack' | 'hammerAttack'
+export type NpcAttackClip = 'attack' | 'spearAttack' | 'staffAttack' | 'hammerAttack' | 'shoot'
+
+export interface NpcShieldGuardState {
+    raised: boolean
+    arcCos: number
+    minY: number
+    maxY: number
+}
 
 export interface NpcConfig {
     id: string
@@ -113,6 +130,9 @@ export interface NpcAiState {
     repathCooldown: number
     attackCooldown: number
     thinkCooldown: number
+    /** Prey behaviour: when true the NPC never attacks and instead flees any
+     *  perceived threat (the player / hostile ids). Default false. */
+    flee?: boolean
 }
 
 /** Per-NPC gameplay/animation runtime state, keyed by NPC id in
@@ -147,6 +167,8 @@ export interface NpcRuntimeState {
     push?: NpcImpactState
     /** Optional combat stun; default attacks leave it unset/zero. */
     stunSeconds?: number
+    /** Raised-front shield guard used by shield spearmen. */
+    shieldGuard?: NpcShieldGuardState
     /** Patrol/guard brain; null until a script assigns one. */
     ai: NpcAiState | null
     /** Registration handles, so a despawning NPC can free exactly its own zone +
@@ -171,9 +193,22 @@ export interface StuckArrow {
 
 export const NPC_DEFAULT_HP = 2
 export const TROLL_DEFAULT_HP = 5
+export const RABBIT_DEFAULT_HP = 1
+export const SHIELD_WARRIOR_DEFAULT_HP = 4
+export const SHIELD_SPEARMAN_DEFAULT_HP = 4
+
+export const NPC_SHIELD_GUARD_ARC_COS = Math.cos((65 * Math.PI) / 180)
+export const NPC_SHIELD_GUARD_MIN_Y = -0.2
+export const NPC_SHIELD_GUARD_MAX_Y = 1.75
 
 export function npcDefaultHp(npc: Pick<NpcConfig, 'model'>): number {
-    return npc.model === 'large-troll' ? TROLL_DEFAULT_HP : NPC_DEFAULT_HP
+    switch (npc.model) {
+        case 'large-troll': return TROLL_DEFAULT_HP
+        case 'rabbit': return RABBIT_DEFAULT_HP
+        case 'shield-spearman': return SHIELD_SPEARMAN_DEFAULT_HP
+        case 'shield-warrior': return SHIELD_WARRIOR_DEFAULT_HP
+        default: return NPC_DEFAULT_HP
+    }
 }
 
 /**
@@ -253,7 +288,12 @@ export function defaultNpcBeard(model: NpcModelKind, variant: NpcVariantKind = d
                     return 'pointed'
             }
         case 'player':
+        case 'rabbit':
+        case 'archer':
             return 'none'
+        case 'shield-spearman':
+        case 'shield-warrior':
+            return 'short'
     }
 }
 
@@ -278,7 +318,28 @@ export function defaultNpcEquipment(model: NpcModelKind, variant: NpcVariantKind
                     return { handR: null, handL: 'book' }
             }
         case 'player':
+        case 'rabbit':
             return { handR: null, handL: null }
+        case 'archer':
+            return { handR: null, handL: 'bow' }
+        case 'shield-spearman':
+            return { handR: 'spear', handL: 'shield' }
+        case 'shield-warrior':
+            return { handR: 'sword', handL: 'shield' }
+    }
+}
+
+export function npcShieldGuardState(npc: Pick<NpcConfig, 'model' | 'equipment' | 'colliderHeight'>): NpcShieldGuardState | undefined {
+    // Any NPC carrying a shield in its off-hand fights with the guard up and
+    // advances behind it — the spearman, the sword-and-board warrior, and any
+    // custom shield loadout alike (mirrors the player's block).
+    const carriesShield = npc.equipment.handL === 'shield' || npc.equipment.handR === 'shield'
+    if (npc.model !== 'shield-spearman' && !carriesShield) return undefined
+    return {
+        raised: false,
+        arcCos: NPC_SHIELD_GUARD_ARC_COS,
+        minY: NPC_SHIELD_GUARD_MIN_Y,
+        maxY: Math.min(Math.max(1.2, npc.colliderHeight), NPC_SHIELD_GUARD_MAX_Y),
     }
 }
 
@@ -409,8 +470,10 @@ export function npcEquipmentKey(npc: Pick<NpcConfig, 'equipment'>): string {
 }
 
 export function npcAttackClip(npc: Pick<NpcConfig, 'equipment'>): NpcAttackClip {
+    if (isBowEquipmentKind(npc.equipment.handR) || isBowEquipmentKind(npc.equipment.handL)) return 'shoot'
     if (isHammerEquipmentKind(npc.equipment.handR) || isHammerEquipmentKind(npc.equipment.handL)) return 'hammerAttack'
     if (isStaffEquipmentKind(npc.equipment.handR) || isStaffEquipmentKind(npc.equipment.handL)) return 'staffAttack'
+    if (isSpearEquipmentKind(npc.equipment.handR) || isSpearEquipmentKind(npc.equipment.handL)) return 'spearAttack'
     return 'attack'
 }
 

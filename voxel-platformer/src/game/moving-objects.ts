@@ -162,6 +162,7 @@ export function spawnArrowProjectile(
     world: GameWorld,
     position: { x: number; y: number; z: number },
     velocity: { x: number; y: number; z: number },
+    opts: { hostile?: boolean } = {},
 ): number {
     const eid = createEntity(world)
     addComponents(world, eid, [Position, Rotation, Velocity, BoxCollider, RigidBody, MovingObject])
@@ -187,6 +188,7 @@ export function spawnArrowProjectile(
 
     MovingObject.kind[eid] = MovingObjectKind.Arrow
     MovingObject.age[eid] = 0
+    MovingObject.hostile[eid] = opts.hostile ? 1 : 0
 
     const obj = mergeGroupByMaterial(createArrow())
     obj.scale.setScalar(0.9)

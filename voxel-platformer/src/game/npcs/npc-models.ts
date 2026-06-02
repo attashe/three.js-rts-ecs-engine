@@ -33,7 +33,229 @@ export function createNpcModel(kind: NpcModelKind, opts: NpcModelOptions = {}): 
             return createKeeperArlenNpcModel(beard)
         case 'large-troll':
             return createLargeTrollModel(beard, variant)
+        case 'rabbit':
+            return createRabbitNpcModel()
+        case 'archer':
+            return createArcherNpcModel(beard)
+        case 'shield-warrior':
+            return createShieldWarriorNpcModel(beard)
+        case 'shield-spearman':
+            return createShieldSpearmanNpcModel(beard)
     }
+}
+
+/**
+ * NPC models that DON'T use the shared humanoid rig + `partCharacterClips` +
+ * `combatLocomotionGraph`. The render system builds these as plain Groups and
+ * drives them with a bespoke animator (see `npc-critter-animator`) instead of
+ * an `AnimationController`. Quadrupeds and other non-humanoids opt out here.
+ */
+const NPC_MODELS_WITHOUT_DEFAULT_RIG: ReadonlySet<NpcModelKind> = new Set<NpcModelKind>(['rabbit'])
+
+export function npcModelUsesDefaultRig(kind: NpcModelKind): boolean {
+    return !NPC_MODELS_WITHOUT_DEFAULT_RIG.has(kind)
+}
+
+/**
+ * A real quadruped rabbit — NOT on the humanoid rig. Everything that hops lives
+ * under `RabbitBob`; the head, ears (`RabbitEarL/R`) and hind legs
+ * (`RabbitHindL/R`) are named groups the critter animator swings for a hop +
+ * idle twitch. Authored small (~0.4 units tall) so a `scale` of ~1.2 reads as
+ * prey from iso distance.
+ */
+function createRabbitNpcModel(): Group {
+    const root = new Group()
+    root.name = 'NpcModel:rabbit'
+
+    const fur = sharedMaterial(0xb7aa96, 0.88)
+    const cream = sharedMaterial(0xe1d6c4, 0.8)
+    const dark = sharedMaterial(0x241b18, 0.6)
+    const pink = sharedMaterial(0xd28d8d, 0.7)
+
+    const bob = new Group()
+    bob.name = 'RabbitBob'
+    root.add(bob)
+
+    const body = shadowed(new Mesh(sharedSphereGeometry(0.15, 10, 8), fur))
+    body.name = 'RabbitBody'
+    body.position.set(0, 0.16, -0.02)
+    body.scale.set(1, 0.92, 1.32) // long egg along forward (+Z)
+    const belly = shadowed(new Mesh(sharedSphereGeometry(0.115, 10, 8), cream))
+    belly.name = 'RabbitBelly'
+    belly.position.set(0, 0.12, 0.05)
+    belly.scale.set(0.86, 0.7, 1.05)
+    bob.add(body, belly)
+
+    const head = new Group()
+    head.name = 'RabbitHead'
+    head.position.set(0, 0.24, 0.18)
+    const skull = shadowed(new Mesh(sharedSphereGeometry(0.105, 10, 8), fur))
+    skull.name = 'RabbitSkull'
+    const snout = shadowed(new Mesh(sharedSphereGeometry(0.06, 8, 6), cream))
+    snout.name = 'RabbitSnout'
+    snout.position.set(0, -0.02, 0.08)
+    snout.scale.set(0.82, 0.7, 0.95)
+    const nose = shadowed(new Mesh(sharedSphereGeometry(0.018, 6, 5), pink))
+    nose.name = 'RabbitNose'
+    nose.position.set(0, -0.01, 0.14)
+    const eyeL = shadowed(new Mesh(sharedSphereGeometry(0.022, 6, 5), dark))
+    eyeL.name = 'RabbitEyeL'
+    eyeL.position.set(-0.06, 0.02, 0.07)
+    const eyeR = shadowed(new Mesh(sharedSphereGeometry(0.022, 6, 5), dark))
+    eyeR.name = 'RabbitEyeR'
+    eyeR.position.set(0.06, 0.02, 0.07)
+    head.add(skull, snout, nose, eyeL, eyeR, rabbitEar('RabbitEarL', -0.05), rabbitEar('RabbitEarR', 0.05))
+    bob.add(head)
+
+    const tail = shadowed(new Mesh(sharedSphereGeometry(0.058, 8, 6), cream))
+    tail.name = 'RabbitTail'
+    tail.position.set(0, 0.17, -0.21)
+    bob.add(tail)
+
+    const foreL = shadowed(new Mesh(sharedBoxGeometry(0.05, 0.1, 0.07), fur))
+    foreL.name = 'RabbitForeL'
+    foreL.position.set(-0.07, 0.05, 0.13)
+    const foreR = shadowed(new Mesh(sharedBoxGeometry(0.05, 0.1, 0.07), fur))
+    foreR.name = 'RabbitForeR'
+    foreR.position.set(0.07, 0.05, 0.13)
+    bob.add(foreL, foreR, rabbitHindLeg('RabbitHindL', -0.1), rabbitHindLeg('RabbitHindR', 0.1))
+
+    return root
+}
+
+function rabbitEar(name: string, x: number): Group {
+    const pivot = new Group()
+    pivot.name = name
+    pivot.position.set(x, 0.09, -0.01)
+    const ear = shadowed(new Mesh(sharedCylinderGeometry(0.012, 0.04, 0.2, 6), sharedMaterial(0xb7aa96, 0.88)))
+    ear.position.set(0, 0.1, 0)
+    ear.rotation.x = -0.12
+    pivot.add(ear)
+    return pivot
+}
+
+function rabbitHindLeg(name: string, x: number): Group {
+    const pivot = new Group()
+    pivot.name = name
+    pivot.position.set(x, 0.12, -0.05)
+    const thigh = shadowed(new Mesh(sharedBoxGeometry(0.07, 0.1, 0.17), sharedMaterial(0xb7aa96, 0.88)))
+    thigh.position.set(0, -0.04, -0.04)
+    pivot.add(thigh)
+    return pivot
+}
+
+/**
+ * A lean ranger humanoid. The bow + nocked arrow are NPC hand equipment
+ * (`handL: 'bow'`), so the model itself is just the ranger silhouette; the
+ * shared `shoot` clip animates the draw.
+ */
+function createArcherNpcModel(beard: CharacterBeardKind): Group {
+    const root = createMainCharacter({
+        tunicColor: 0x2f4a25,
+        cloakColor: 0x3b2a18,
+        skinColor: 0xd8a06a,
+        metalColor: 0x8b7355,
+        bootColor: 0x1a1410,
+        beard,
+        beardColor: 0x4a3a28,
+        cloak: 'default',
+    })
+    root.name = 'NpcModel:archer'
+
+    // Back quiver — a leather tube with arrow fletchings, riding the chest.
+    const quiver = shadowed(new Mesh(sharedCylinderGeometry(0.06, 0.07, 0.34, 8), sharedMaterial(0x4a3524, 0.82)))
+    quiver.name = 'ArcherQuiver'
+    quiver.position.set(-0.16, 1.18, -0.18)
+    quiver.rotation.set(0.2, 0, 0.42)
+    const fletch = shadowed(new Mesh(sharedBoxGeometry(0.05, 0.12, 0.05), sharedMaterial(0xcdd2d6, 0.7)))
+    fletch.name = 'ArcherQuiverFletch'
+    fletch.position.set(-0.22, 1.34, -0.18)
+    fletch.rotation.z = 0.42
+    root.add(quiver, fletch)
+    for (const part of [quiver, fletch]) reparentInModel(root, 'Chest', part)
+
+    return root
+}
+
+/**
+ * An armoured frontline humanoid. Sword + shield are NPC hand equipment
+ * (`handR: 'sword', handL: 'shield'`); the steel cuirass + plumed helm here
+ * give it the tank silhouette. Uses the shared melee `attack` clip.
+ */
+function createShieldWarriorNpcModel(beard: CharacterBeardKind): Group {
+    const root = createMainCharacter({
+        tunicColor: 0x355d8a,
+        cloakColor: 0x2b2f36,
+        skinColor: 0xc88758,
+        metalColor: 0x9aa4aa,
+        bootColor: 0x1a1410,
+        beard,
+        beardColor: 0x4a3a30,
+        cloak: 'none',
+    })
+    root.name = 'NpcModel:shield-warrior'
+
+    const steel = sharedMaterial(0x9aa4aa, 0.42, 0.22)
+    const accent = sharedMaterial(0xd5a24a, 0.5, 0.1)
+
+    const cuirass = shadowed(new Mesh(sharedBoxGeometry(0.4, 0.42, 0.26), steel))
+    cuirass.name = 'ShieldWarriorCuirass'
+    cuirass.position.set(0, 1.12, 0.02)
+    const helm = shadowed(new Mesh(sharedCylinderGeometry(0.2, 0.18, 0.16, 10), steel))
+    helm.name = 'ShieldWarriorHelm'
+    helm.position.set(0, 1.62, 0)
+    const crest = shadowed(new Mesh(sharedBoxGeometry(0.05, 0.14, 0.22), accent))
+    crest.name = 'ShieldWarriorCrest'
+    crest.position.set(0, 1.74, 0)
+    root.add(cuirass, helm, crest)
+    for (const part of [cuirass, helm, crest]) reparentInModel(root, 'Chest', part)
+
+    return root
+}
+
+/**
+ * Defensive spear guard. Spear + shield are hand equipment
+ * (`handR: 'spear', handL: 'shield'`); the model adds a compact mail coat and
+ * visor so it reads as a cautious blocker distinct from the sword warrior.
+ */
+function createShieldSpearmanNpcModel(beard: CharacterBeardKind): Group {
+    const root = createMainCharacter({
+        tunicColor: 0x496747,
+        cloakColor: 0x273528,
+        skinColor: 0xc88758,
+        metalColor: 0x9aa4aa,
+        bootColor: 0x1b1710,
+        beard,
+        beardColor: 0x564333,
+        cloak: 'none',
+    })
+    root.name = 'NpcModel:shield-spearman'
+
+    const mail = sharedMaterial(0x6f7d80, 0.46, 0.18)
+    const dark = sharedMaterial(0x273037, 0.54, 0.16)
+    const accent = sharedMaterial(0x9fc5a0, 0.62, 0.04)
+
+    const brigandine = shadowed(new Mesh(sharedBoxGeometry(0.36, 0.46, 0.24), mail))
+    brigandine.name = 'ShieldSpearmanBrigandine'
+    brigandine.position.set(0, 1.1, 0.02)
+    const skirt = shadowed(new Mesh(sharedCylinderGeometry(0.24, 0.3, 0.18, 8), dark))
+    skirt.name = 'ShieldSpearmanMailSkirt'
+    skirt.position.set(0, 0.82, 0)
+    skirt.scale.z = 0.78
+    const helm = shadowed(new Mesh(sharedCylinderGeometry(0.19, 0.17, 0.15, 10), mail))
+    helm.name = 'ShieldSpearmanHelm'
+    helm.position.set(0, 1.62, 0)
+    const visor = shadowed(new Mesh(sharedBoxGeometry(0.26, 0.045, 0.055), dark))
+    visor.name = 'ShieldSpearmanVisor'
+    visor.position.set(0, 1.59, 0.18)
+    const plume = shadowed(new Mesh(sharedBoxGeometry(0.045, 0.18, 0.1), accent))
+    plume.name = 'ShieldSpearmanPlume'
+    plume.position.set(0, 1.76, -0.015)
+    root.add(brigandine, skirt, helm, visor, plume)
+    for (const part of [brigandine, helm, visor, plume]) reparentInModel(root, 'Chest', part)
+    reparentInModel(root, 'Figure', skirt)
+
+    return root
 }
 
 function createPlayerNpcModel(beard: CharacterBeardKind, cloak: CharacterCloakKind = 'default'): Group {

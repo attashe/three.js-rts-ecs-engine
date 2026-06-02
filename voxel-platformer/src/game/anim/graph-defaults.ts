@@ -17,6 +17,7 @@ const RUN_ON = 3.2
 const RUN_OFF = 3.0
 const LAND_SECONDS = HUMANOID_ANIM_TIMINGS.land
 const ATTACK_SECONDS = HUMANOID_ANIM_TIMINGS.attack
+const SPEAR_ATTACK_SECONDS = HUMANOID_ANIM_TIMINGS.spearAttack
 const ATTACK_WIDE_SECONDS = HUMANOID_ANIM_TIMINGS.attackWide
 const STAFF_ATTACK_SECONDS = HUMANOID_ANIM_TIMINGS.staffAttack
 const HAMMER_ATTACK_SECONDS = HUMANOID_ANIM_TIMINGS.hammerAttack
@@ -26,20 +27,21 @@ const DIE_SECONDS = HUMANOID_ANIM_TIMINGS.die
 
 /** Living states death can interrupt. Enumerated (rather than `from: '*'`) so the
  *  terminal `dead` state can't re-trigger `die` on itself. */
-const LIVING_STATES = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'attackWide', 'staffAttack', 'hammerAttack', 'shoot', 'shieldBlock'] as const
+const LIVING_STATES = ['idle', 'walk', 'run', 'jump', 'fall', 'land', 'attack', 'spearAttack', 'attackWide', 'staffAttack', 'hammerAttack', 'shoot', 'shieldBlock'] as const
 /** States where player/NPC combat may start. Airborne and terminal states are
  *  deliberately excluded so attack/shoot clips do not fight jump/death poses. */
-const GROUNDED_COMBAT_START_STATES = ['idle', 'walk', 'run', 'land'] as const
+const GROUNDED_COMBAT_START_STATES = ['idle', 'walk', 'run', 'land', 'shieldBlock'] as const
 
 export const LOCOMOTION_GRAPH_ID = 'humanoid.locomotion'
 export const COMBAT_GRAPH_ID = 'humanoid.combatLocomotion'
 
-/** Param names for the combat overlay. `attack` (melee thrust), `attackWide`
- *  (wide slash), `staffAttack` (staff bonk), `hammerAttack` (heavy NPC slam),
- *  and `shoot` (bow) are one-shot triggers; `shieldBlock` is held while
- *  guarding; `dead` latches once set. */
+/** Param names for the combat overlay. `attack` (melee thrust), `spearAttack`
+ *  (long spear thrust), `attackWide` (wide slash), `staffAttack` (staff bonk),
+ *  `hammerAttack` (heavy NPC slam), and `shoot` (bow) are one-shot triggers;
+ *  `shieldBlock` is held while guarding; `dead` latches once set. */
 export const COMBAT_PARAM = {
     attack: 'attack',
+    spearAttack: 'spearAttack',
     attackWide: 'attackWide',
     staffAttack: 'staffAttack',
     hammerAttack: 'hammerAttack',
@@ -118,6 +120,7 @@ export function combatLocomotionGraph(): AnimGraphDef {
         params: [
             ...base.params ?? [],
             { name: C.attack, default: 0, trigger: true },
+            { name: C.spearAttack, default: 0, trigger: true },
             { name: C.attackWide, default: 0, trigger: true },
             { name: C.staffAttack, default: 0, trigger: true },
             { name: C.hammerAttack, default: 0, trigger: true },
@@ -128,6 +131,7 @@ export function combatLocomotionGraph(): AnimGraphDef {
         states: [
             ...base.states,
             { id: 'attack', loop: 'once' },
+            { id: 'spearAttack', loop: 'once' },
             { id: 'attackWide', loop: 'once' },
             { id: 'staffAttack', loop: 'once' },
             { id: 'hammerAttack', loop: 'once' },
@@ -155,6 +159,10 @@ export function combatLocomotionGraph(): AnimGraphDef {
                 conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.attack, op: '==' as const, value: 1 }],
             })),
             ...GROUNDED_COMBAT_START_STATES.map((from) => ({
+                from, to: 'spearAttack', priority: 205, blendSeconds: 0.06,
+                conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.spearAttack, op: '==' as const, value: 1 }],
+            })),
+            ...GROUNDED_COMBAT_START_STATES.map((from) => ({
                 from, to: 'attackWide', priority: 200, blendSeconds: 0.06,
                 conditions: [{ param: P.grounded, op: '==' as const, value: 1 }, { param: C.attackWide, op: '==' as const, value: 1 }],
             })),
@@ -176,6 +184,12 @@ export function combatLocomotionGraph(): AnimGraphDef {
             { from: 'attack', to: 'walk', priority: 11, minTimeInState: ATTACK_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
             { from: 'attack', to: 'idle', priority: 10, minTimeInState: ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
+            { from: 'spearAttack', to: 'run', priority: 12, minTimeInState: SPEAR_ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },
+            { from: 'spearAttack', to: 'walk', priority: 11, minTimeInState: SPEAR_ATTACK_SECONDS,
+                conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: WALK_ON }] },
+            { from: 'spearAttack', to: 'idle', priority: 10, minTimeInState: SPEAR_ATTACK_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '<=', value: WALK_ON }] },
             { from: 'attackWide', to: 'run', priority: 12, minTimeInState: ATTACK_WIDE_SECONDS,
                 conditions: [{ param: P.grounded, op: '==', value: 1 }, { param: P.speed, op: '>', value: RUN_ON }] },

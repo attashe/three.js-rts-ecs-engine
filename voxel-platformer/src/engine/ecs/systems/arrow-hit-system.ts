@@ -4,17 +4,25 @@ import type { ChunkManager } from '../../voxel/chunk-manager'
 import { voxelRaycast } from '../../voxel/voxel-raycast'
 import { isCollidable } from '../../voxel/palette'
 import {
+    BoxCollider,
     MovingObject,
+    PlayerControlled,
     Position,
+    Rotation,
+    Shield,
     Velocity,
 } from '../components'
 import { MovingObjectKind } from '../../../game/moving-objects'
 import { embedArrow } from './moving-object-system'
 import { despawnEntity } from '../entity'
+import { applyDamage, HALF_HEART } from '../combat'
 import { damageNpc, type NpcRuntimeState } from '../../../game/npcs/npc-types'
 import type { GameWorld } from '../world'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+
+/** Damage a single enemy arrow deals to the player on a clean (unblocked) hit. */
+const ARROW_PLAYER_DAMAGE = HALF_HEART
 
 /**
  * Per-step probe for arrows hitting something. Two targets:
@@ -38,6 +46,12 @@ export interface ArrowHitOptions {
     npcDamage?: number
     /** Fires once when an arrow strikes an NPC (e.g. for an impact SFX). */
     onArrowHitNpc?: (eid: number, npc: NpcRuntimeState) => void
+    /** Fires once when an enemy arrow lands a clean (unblocked) hit on the
+     *  player, at the impact point — e.g. for an impact SFX. */
+    onArrowHitPlayer?: (eid: number, position: { x: number; y: number; z: number }) => void
+    /** Fires once when the player's raised shield deflects an enemy arrow, at
+     *  the impact point — e.g. for a block clang. */
+    onArrowBlocked?: (eid: number, position: { x: number; y: number; z: number }) => void
     /** Damage a magic bolt deals to an NPC it strikes. Default 1. */
     boltDamage?: number
     /** Fires when a magic bolt hits a wall or NPC (just before it despawns),
@@ -87,22 +101,40 @@ export function createArrowHitSystem(
                 const dirY = vy / speed
                 const dirZ = vz / speed
 
-                // NPCs first: an arrow should bury itself in a body rather than
-                // pass through to the wall behind it. Sweep the tick's segment
-                // against each live NPC's AABB and take the nearest entry.
-                const npcHit = nearestNpcHit(gw, sx, sy, sz, dirX, dirY, dirZ, segLen)
-                if (npcHit) {
-                    landed.add(arrow)
-                    if (isBolt) {
-                        damageNpc(npcHit.npc, boltDamage)
-                        opts.onBoltHit?.(arrow, { x: sx + dirX * npcHit.t, y: sy + dirY * npcHit.t, z: sz + dirZ * npcHit.t })
+                // Enemy-fired arrows target the player only (no friendly fire on
+                // other NPCs); the player's raised frontal shield can block them.
+                if (!isBolt && MovingObject.hostile[arrow] === 1) {
+                    const playerHit = nearestPlayerHit(gw, sx, sy, sz, dirX, dirY, dirZ, segLen)
+                    if (playerHit) {
+                        landed.add(arrow)
+                        const hitY = sy + dirY * playerHit.t
+                        const hitPos = { x: sx + dirX * playerHit.t, y: hitY, z: sz + dirZ * playerHit.t }
+                        if (arrowBlockedByShield(gw, playerHit.eid, dirX, dirZ, hitY)) {
+                            opts.onArrowBlocked?.(arrow, hitPos)
+                        } else {
+                            applyDamage(gw, playerHit.eid, ARROW_PLAYER_DAMAGE)
+                            opts.onArrowHitPlayer?.(arrow, hitPos)
+                        }
                         despawnEntity(gw, arrow)
-                    } else {
-                        stickArrowInNpc(gw, arrow, npcHit.npc, sx + dirX * npcHit.t, sy + dirY * npcHit.t, sz + dirZ * npcHit.t)
-                        damageNpc(npcHit.npc, npcDamage)
-                        opts.onArrowHitNpc?.(arrow, npcHit.npc)
+                        continue
                     }
-                    continue
+                } else {
+                    // Player arrows / bolts bury themselves in the first NPC body
+                    // rather than passing through to the wall behind it.
+                    const npcHit = nearestNpcHit(gw, sx, sy, sz, dirX, dirY, dirZ, segLen)
+                    if (npcHit) {
+                        landed.add(arrow)
+                        if (isBolt) {
+                            damageNpc(npcHit.npc, boltDamage)
+                            opts.onBoltHit?.(arrow, { x: sx + dirX * npcHit.t, y: sy + dirY * npcHit.t, z: sz + dirZ * npcHit.t })
+                            despawnEntity(gw, arrow)
+                        } else {
+                            stickArrowInNpc(gw, arrow, npcHit.npc, sx + dirX * npcHit.t, sy + dirY * npcHit.t, sz + dirZ * npcHit.t)
+                            damageNpc(npcHit.npc, npcDamage)
+                            opts.onArrowHitNpc?.(arrow, npcHit.npc)
+                        }
+                        continue
+                    }
                 }
 
                 tmpOrigin.set(sx, sy, sz)
@@ -157,6 +189,51 @@ function nearestNpcHit(
         if (t !== null && (best === null || t < best.t)) best = { npc, t }
     }
     return best
+}
+
+interface PlayerSegmentHit {
+    eid: number
+    t: number
+}
+
+/** Nearest player whose (foot-anchored) AABB the arrow's tick-segment enters. */
+function nearestPlayerHit(
+    gw: GameWorld,
+    sx: number, sy: number, sz: number,
+    dx: number, dy: number, dz: number,
+    segLen: number,
+): PlayerSegmentHit | null {
+    let best: PlayerSegmentHit | null = null
+    for (const eid of query(gw, [PlayerControlled, Position, BoxCollider])) {
+        const hx = BoxCollider.x[eid]!
+        const hy = BoxCollider.y[eid]!
+        const hz = BoxCollider.z[eid]!
+        const t = segmentAabbEntry(
+            sx, sy, sz, dx, dy, dz, segLen,
+            Position.x[eid]! - hx, Position.y[eid]!, Position.z[eid]! - hz,
+            Position.x[eid]! + hx, Position.y[eid]! + hy * 2, Position.z[eid]! + hz,
+        )
+        if (t !== null && (best === null || t < best.t)) best = { eid, t }
+    }
+    return best
+}
+
+/** Whether the player's raised shield deflects an arrow coming in along
+ *  `(dirX, dirZ)` at world height `hitY` — mirrors the melee shield check:
+ *  the source must sit inside the front block arc and the configured Y band. */
+function arrowBlockedByShield(gw: GameWorld, playerEid: number, dirX: number, dirZ: number, hitY: number): boolean {
+    if (!hasComponent(gw, playerEid, Shield) || Shield.raised[playerEid] !== 1) return false
+    // The arrow approaches *from* -dir; that's the direction the shield must face.
+    const len = Math.hypot(dirX, dirZ)
+    if (len < 1e-4) return false
+    const sourceX = -dirX / len
+    const sourceZ = -dirZ / len
+    const blockYaw = Rotation.y[playerEid]! + Shield.blockYawOffset[playerEid]!
+    const fx = Math.sin(blockYaw)
+    const fz = Math.cos(blockYaw)
+    if (fx * sourceX + fz * sourceZ < Shield.blockArcCos[playerEid]!) return false
+    const localY = hitY - Position.y[playerEid]!
+    return localY >= Shield.minY[playerEid]! && localY <= Shield.maxY[playerEid]!
 }
 
 /**
