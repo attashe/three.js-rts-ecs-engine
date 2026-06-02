@@ -11,6 +11,13 @@ import {
     type TradeSelection,
 } from './trade'
 import { BOOT_EQUIPMENT_ITEM_IDS, HIGH_JUMP_BOOTS_ITEM_ID, isBootEquipmentItemId } from './high-jump-boots'
+import {
+    BUYABLE_EQUIPMENT_ITEM_IDS,
+    METAL_HELMET_ITEM_ID,
+    SPEAR_ITEM_ID,
+    isBuyableEquipmentItemId,
+    isBuyableHeadEquipmentItemId,
+} from './equipment-items'
 
 interface TradeControllerOptions {
     input: Input
@@ -253,7 +260,8 @@ export function createTradeController(opts: TradeControllerOptions): TradeContro
         d.npcName.textContent = speaker.name
         const potions = current.inventory.items?.['heal-potion']?.quantity ?? 0
         const boots = BOOT_EQUIPMENT_ITEM_IDS.reduce((sum, id) => sum + (current.inventory.items?.[id]?.quantity ?? 0), 0)
-        d.inventory.textContent = `Gold ${current.inventory.gold}  |  Arrows ${current.inventory.arrows}  |  Potions ${potions}  |  Boots ${boots}`
+        const gear = BUYABLE_EQUIPMENT_ITEM_IDS.reduce((sum, id) => sum + (current.inventory.items?.[id]?.quantity ?? 0), 0)
+        d.inventory.textContent = `Gold ${current.inventory.gold}  |  Arrows ${current.inventory.arrows}  |  Potions ${potions}  |  Boots ${boots}  |  Gear ${gear}`
         paintAvatar(d.avatar, d.avatarImage, d.avatarInitial, speaker)
 
         d.itemList.innerHTML = ''
@@ -652,8 +660,14 @@ function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLEle
             return healPotionIcon(size)
         case HIGH_JUMP_BOOTS_ITEM_ID:
             return bootsIcon(size)
+        case SPEAR_ITEM_ID:
+            return spearIcon(size)
+        case METAL_HELMET_ITEM_ID:
+            return helmetIcon(size)
         default:
             if (isBootEquipmentItemId(resource)) return bootsIcon(size)
+            if (isBuyableHeadEquipmentItemId(resource)) return hatIcon(size)
+            if (isBuyableEquipmentItemId(resource)) return gearIcon(size)
             return document.createElement('span')
     }
 }
@@ -743,6 +757,91 @@ function bootsIcon(size: 'small' | 'large'): HTMLElement {
         background: '#dff7ff',
         clipPath: 'polygon(4% 0, 42% 0, 44% 48%, 62% 48%, 64% 0, 96% 0, 96% 58%, 76% 58%, 76% 100%, 52% 100%, 52% 62%, 48% 62%, 48% 100%, 24% 100%, 24% 58%, 4% 58%)',
         boxShadow: '0 0 10px rgba(101, 215, 255, 0.45)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function hatIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '34px' : '23px',
+        height: isLarge ? '24px' : '16px',
+        display: 'block',
+        borderRadius: isLarge ? '12px 12px 6px 6px' : '8px 8px 4px 4px',
+        background: '#dff7ff',
+        boxShadow: '0 -10px 0 -5px #9fd179, inset 0 -5px 0 rgba(22, 39, 30, 0.36)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function helmetIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '34px' : '22px',
+        height: isLarge ? '28px' : '18px',
+        display: 'block',
+        borderRadius: '50% 50% 35% 35%',
+        background: 'linear-gradient(180deg, #e0e8ed, #78858d)',
+        clipPath: 'polygon(12% 42%, 24% 12%, 50% 0, 76% 12%, 88% 42%, 84% 100%, 62% 78%, 50% 100%, 38% 78%, 16% 100%)',
+        boxShadow: 'inset 0 -5px 0 rgba(43, 55, 63, 0.45)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function spearIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '38px' : '24px',
+        height: isLarge ? '32px' : '20px',
+        display: 'block',
+        position: 'relative',
+        transform: 'rotate(-26deg)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    const shaft = document.createElement('span')
+    Object.assign(shaft.style, {
+        position: 'absolute',
+        left: '2px',
+        top: '50%',
+        width: isLarge ? '30px' : '19px',
+        height: isLarge ? '3px' : '2px',
+        borderRadius: '999px',
+        background: '#b98650',
+        transform: 'translateY(-50%)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    const head = document.createElement('span')
+    Object.assign(head.style, {
+        position: 'absolute',
+        right: '0',
+        top: '50%',
+        width: '0',
+        height: '0',
+        borderTop: isLarge ? '7px solid transparent' : '5px solid transparent',
+        borderBottom: isLarge ? '7px solid transparent' : '5px solid transparent',
+        borderLeft: isLarge ? '12px solid #d8e2ea' : '8px solid #d8e2ea',
+        transform: 'translateY(-50%)',
+        filter: 'drop-shadow(-2px 0 0 #6f7d85)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    root.append(shaft, head)
+    return root
+}
+
+function gearIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '28px' : '18px',
+        height: isLarge ? '28px' : '18px',
+        display: 'block',
+        borderRadius: '50%',
+        background: '#dff7ff',
+        boxShadow: 'inset 0 -5px 0 rgba(43, 55, 63, 0.42)',
     } satisfies Partial<CSSStyleDeclaration>)
     return root
 }

@@ -167,9 +167,37 @@ declare function random(min: number, max: number): number
 
 type PlayerAbilityKey = 'movement' | 'jump' | 'bow' | 'highJump' | 'airPush' | 'interact' | 'torch'
 type PlayerModelKind = 'player' | 'keeper'
-type HandEquipmentKind = 'sword' | 'shield' | 'bow' | 'staff' | 'book'
+type HandEquipmentKind =
+    | 'sword'
+    | 'spear'
+    | 'shield'
+    | 'bow'
+    | 'arrow'
+    | 'staff-lantern'
+    | 'staff'
+    | 'staff-crystal'
+    | 'battle-hammer'
+    | 'book'
 type InventoryCategoryId = 'resources' | 'quest' | 'consumables' | 'accessories' | 'tools'
-type InventoryIconId = 'gold' | 'arrows' | 'quest-shard' | 'consumable' | 'accessory' | 'tool' | 'item'
+type InventoryIconId =
+    | 'gold'
+    | 'arrows'
+    | 'quest-shard'
+    | 'consumable'
+    | 'heal-potion'
+    | 'accessory'
+    | 'boots'
+    | 'hat'
+    | 'hat-arcane'
+    | 'hat-ranger'
+    | 'hat-guard'
+    | 'hat-sun'
+    | 'metal-helmet'
+    | 'sword'
+    | 'spear'
+    | 'tool'
+    | 'torch'
+    | 'item'
 
 interface PlayerAbilitySettings {
     movement: boolean
@@ -469,6 +497,9 @@ interface NpcApi {
     /** Mark `target` (`'player'` or another NPC id) as an enemy or not. There is
      *  no faction system — hostility is whatever scripts set. */
     setHostile(id: string, target: string, hostile: boolean): boolean
+    /** Make the NPC prey: while `on`, it flees perceived threats within its
+     *  perception radius instead of ever attacking. */
+    setFlee(id: string, on: boolean): boolean
 }
 
 declare const npc: NpcApi
@@ -625,11 +656,27 @@ declare const ui: UiApi
 // ─── trade (NPC shop transactions) ───────────────────────────────────
 
 type TradeCurrency = 'gold'
-type TradeResource = 'arrows'
+type TradeResource =
+    | 'arrows'
+    | 'heal-potion'
+    | 'high-jump-boots'
+    | 'high-speed-boots'
+    | 'hat-arcane'
+    | 'hat-ranger'
+    | 'hat-sun'
+    | 'metal-helmet'
+    | 'spear'
 
 interface TradeInventorySnapshot {
     gold: number
     arrows: number
+    items?: Record<string, {
+        quantity: number
+        name?: string
+        description?: string
+        category?: string
+        icon?: string
+    }>
 }
 
 interface TradeItem {

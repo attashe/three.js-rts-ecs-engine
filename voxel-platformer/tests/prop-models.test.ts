@@ -76,6 +76,30 @@ test('lift cabin variants are registered, distinct, and sized for a player lift'
     )
 })
 
+test('shop display props are registered as compact decorative assets', () => {
+    const shopKinds = [
+        'market-meat',
+        'market-apples',
+        'market-fish',
+        'spear-rack',
+        'arrow-barrel',
+        'helmet-stand',
+        'hat-display',
+        'boot-rack',
+        'potion-shelf',
+        'alchemy-cauldron',
+    ] as const
+    for (const kind of shopKinds) {
+        assert.ok(PROP_KINDS.includes(kind))
+        assert.ok(PROP_LABELS[kind].length > 0)
+        const geometry = getPropModel(kind).geometry
+        geometry.computeBoundingBox()
+        assert.ok(geometry.boundingBox)
+        assert.ok(geometry.boundingBox!.min.y >= -0.001, `${kind} should sit on its placement base`)
+        assert.ok(geometry.boundingBox!.max.y > 0.1, `${kind} should have a visible silhouette`)
+    }
+})
+
 test('disposePropModels clears the cache so the next lookup rebuilds', () => {
     const before = getPropModel('bush').geometry
     disposePropModels()

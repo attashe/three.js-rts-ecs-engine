@@ -5,6 +5,16 @@ import { WELL } from './well'
 import { BANNER_ARCH } from './banner-arch'
 import { TRAIN_STATION } from './train-station'
 import { FORGE } from './forge'
+import {
+    DWARF_ALCHEMY_STALL,
+    DWARF_CLOTHES_STORE,
+    DWARF_FORGE_SHOP,
+    DWARF_PRODUCT_MARKET,
+    TROLL_ALCHEMY_STALL,
+    TROLL_CLOTHES_STORE,
+    TROLL_FORGE_SHOP,
+    TROLL_PRODUCT_MARKET,
+} from './dwarf-shops'
 
 export type { StructurePrefab, StructurePrefabProp } from './prefab-types'
 
@@ -20,6 +30,14 @@ export const STRUCTURE_PREFABS: readonly StructurePrefab[] = [
     BANNER_ARCH,
     TRAIN_STATION,
     FORGE,
+    TROLL_PRODUCT_MARKET,
+    TROLL_FORGE_SHOP,
+    TROLL_CLOTHES_STORE,
+    TROLL_ALCHEMY_STALL,
+    DWARF_PRODUCT_MARKET,
+    DWARF_FORGE_SHOP,
+    DWARF_CLOTHES_STORE,
+    DWARF_ALCHEMY_STALL,
 ]
 
 const BY_ID = new Map<string, StructurePrefab>(STRUCTURE_PREFABS.map((p) => [p.id, p]))

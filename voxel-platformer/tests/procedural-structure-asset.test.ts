@@ -21,6 +21,10 @@ function signature(edits: { x: number; y: number; z: number; value: number }[]):
     return edits.map((e) => `${e.x},${e.y},${e.z}:${e.value}`).sort().join('|')
 }
 
+function localCellKey(cell: { x: number; y: number; z: number }): string {
+    return `${Math.floor(cell.x)},${Math.floor(cell.y)},${Math.floor(cell.z)}`
+}
+
 test('procedural asset is deterministic and normalised to a (0,0,0) min corner', () => {
     const source = proceduralSource('house', 7)
     const a = generateStructureAsset(source, { palette: DEFAULT_PALETTE })
@@ -81,6 +85,78 @@ test('station and forge prefabs bundle deterministic prop placements', () => {
 
     const forge = generateStructureAsset(prefabSource('forge'), { palette: DEFAULT_PALETTE })
     assert.ok(forge.voxels.some((v) => v.tag === 'forge-fire'), 'forge should include an active hearth')
+})
+
+test('dwarf shop prefabs bundle their shop-stock prop displays', () => {
+    const expected: Record<string, readonly string[]> = {
+        'dwarf-product-market': ['market-meat', 'market-apples', 'market-fish'],
+        'dwarf-forge-shop': ['spear-rack', 'arrow-barrel', 'helmet-stand'],
+        'dwarf-clothes-store': ['hat-display', 'boot-rack'],
+        'dwarf-alchemy-stall': ['potion-shelf', 'alchemy-cauldron'],
+    }
+
+    for (const [id, kinds] of Object.entries(expected)) {
+        const asset = generateStructureAsset(prefabSource(id), { palette: DEFAULT_PALETTE })
+        assert.ok(asset.stats.voxelCount > 0, `${id} should generate voxels`)
+        for (const kind of kinds) {
+            assert.ok(asset.decorationProps.some((prop) => prop.kind === kind), `${id} should include ${kind}`)
+        }
+        assert.match(asset.label, /Cozy Dwarf/)
+        assert.ok(asset.footprint.width <= 13, `${id} should stay cozy and dwarf-sized`)
+        assert.ok(asset.footprint.depth <= 11, `${id} should stay cozy and dwarf-sized`)
+    }
+})
+
+test('shop stock prop displays stay clear of structural voxels', () => {
+    const shopIds = [
+        'dwarf-product-market',
+        'dwarf-forge-shop',
+        'dwarf-clothes-store',
+        'dwarf-alchemy-stall',
+        'troll-product-market',
+        'troll-forge-shop',
+        'troll-clothes-store',
+        'troll-alchemy-stall',
+    ] as const
+    const stockKinds = new Set([
+        'market-meat',
+        'market-apples',
+        'market-fish',
+        'spear-rack',
+        'arrow-barrel',
+        'helmet-stand',
+        'hat-display',
+        'boot-rack',
+        'potion-shelf',
+        'alchemy-cauldron',
+    ])
+
+    for (const id of shopIds) {
+        const asset = generateStructureAsset(prefabSource(id), { palette: DEFAULT_PALETTE })
+        const occupied = new Set(asset.voxels.map(localCellKey))
+        for (const prop of asset.decorationProps.filter((p) => stockKinds.has(p.kind))) {
+            const key = localCellKey(prop)
+            assert.ok(!occupied.has(key), `${id}:${prop.id ?? prop.kind} should not be buried in structural voxel ${key}`)
+        }
+    }
+})
+
+test('troll shop prefabs keep the larger market scale under explicit troll ids', () => {
+    const pairs = [
+        ['dwarf-product-market', 'troll-product-market'],
+        ['dwarf-forge-shop', 'troll-forge-shop'],
+        ['dwarf-clothes-store', 'troll-clothes-store'],
+        ['dwarf-alchemy-stall', 'troll-alchemy-stall'],
+    ] as const
+
+    for (const [dwarfId, trollId] of pairs) {
+        const dwarf = generateStructureAsset(prefabSource(dwarfId), { palette: DEFAULT_PALETTE })
+        const troll = generateStructureAsset(prefabSource(trollId), { palette: DEFAULT_PALETTE })
+        assert.match(troll.label, /Troll-Sized/)
+        assert.ok(troll.footprint.width >= dwarf.footprint.width, `${trollId} should be at least as wide as ${dwarfId}`)
+        assert.ok(troll.footprint.depth >= dwarf.footprint.depth, `${trollId} should be at least as deep as ${dwarfId}`)
+        assert.ok(troll.stats.voxelCount > dwarf.stats.voxelCount, `${trollId} should keep the larger current shop build`)
+    }
 })
 
 test('portal gate prefab has a stable footprint and an emissive keystone', () => {

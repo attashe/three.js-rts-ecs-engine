@@ -1,4 +1,9 @@
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from './high-jump-boots'
+import {
+    METAL_HELMET_ITEM_ID,
+    SPEAR_ITEM_ID,
+    isBuyableHeadEquipmentItemId,
+} from './equipment-items'
 
 export const INVENTORY_CATEGORIES = [
     'resources',
@@ -31,6 +36,9 @@ export type InventoryIconId =
     | 'hat-ranger'
     | 'hat-guard'
     | 'hat-sun'
+    | 'metal-helmet'
+    | 'sword'
+    | 'spear'
     | 'tool'
     | 'torch'
     | 'item'
@@ -152,11 +160,13 @@ export function defaultInventoryCategory(itemId: string): InventoryCategoryId {
     if (
         itemId === HIGH_JUMP_BOOTS_ITEM_ID
         || itemId === HIGH_SPEED_BOOTS_ITEM_ID
+        || isBuyableHeadEquipmentItemId(itemId)
         || itemId.includes('charm')
         || itemId.includes('ring')
         || itemId.includes('amulet')
         || itemId.includes('boots')
     ) return 'accessories'
+    if (itemId === SPEAR_ITEM_ID || itemId.includes('weapon')) return 'tools'
     if (itemId.includes('key') || itemId.includes('tool')) return 'tools'
     return 'quest'
 }
@@ -166,6 +176,8 @@ export function defaultInventoryIcon(itemId: string, category = defaultInventory
     if (itemId === 'arrow' || itemId === 'arrows') return 'arrows'
     if (itemId === 'heal-potion' || itemId === 'health-potion') return 'heal-potion'
     if (itemId === HIGH_JUMP_BOOTS_ITEM_ID || itemId === HIGH_SPEED_BOOTS_ITEM_ID || itemId.includes('boots')) return 'boots'
+    if (itemId === METAL_HELMET_ITEM_ID) return 'metal-helmet'
+    if (itemId === SPEAR_ITEM_ID) return 'spear'
     if (itemId.includes('shard') || category === 'quest') return 'quest-shard'
     if (category === 'consumables') return 'consumable'
     if (category === 'accessories') return 'accessory'
@@ -265,6 +277,9 @@ function isInventoryIcon(value: unknown): value is InventoryIconId {
         'hat-ranger',
         'hat-guard',
         'hat-sun',
+        'metal-helmet',
+        'sword',
+        'spear',
         'tool',
         'torch',
         'item',

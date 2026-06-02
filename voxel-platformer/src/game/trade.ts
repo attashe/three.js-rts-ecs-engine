@@ -19,6 +19,10 @@ import {
     HIGH_JUMP_BOOTS_ITEM_ID,
     isBootEquipmentItemId,
 } from './high-jump-boots'
+import {
+    BUYABLE_EQUIPMENT_ITEM_OPTIONS,
+    isBuyableEquipmentItemId,
+} from './equipment-items'
 
 export interface NormalizedTradeItem {
     id: string
@@ -203,6 +207,9 @@ export function resourceLabel(resource: TradeResource): string {
         case 'heal-potion': return 'healing potions'
         case HIGH_JUMP_BOOTS_ITEM_ID: return 'high jump boots'
         case 'high-speed-boots': return 'boots of high speed'
+        default:
+            if (isBuyableEquipmentItemId(resource)) return BUYABLE_EQUIPMENT_ITEM_OPTIONS[resource].name?.toLowerCase() ?? resource
+            return resource
     }
 }
 
@@ -225,7 +232,7 @@ function normalizeTradeItem(raw: TradeItem): NormalizedTradeItem | null {
 }
 
 function isTradeResource(value: string): value is TradeResource {
-    return value === 'arrows' || value === 'heal-potion' || isBootEquipmentItemId(value)
+    return value === 'arrows' || value === 'heal-potion' || isBootEquipmentItemId(value) || isBuyableEquipmentItemId(value)
 }
 
 function resourceAmount(resource: TradeResource, inventory: TradeInventorySnapshot): number {
@@ -234,6 +241,9 @@ function resourceAmount(resource: TradeResource, inventory: TradeInventorySnapsh
         case 'heal-potion': return inventoryItemCount(inventory.items, resource)
         case HIGH_JUMP_BOOTS_ITEM_ID: return inventoryItemCount(inventory.items, resource)
         case 'high-speed-boots': return inventoryItemCount(inventory.items, resource)
+        default:
+            if (isBuyableEquipmentItemId(resource)) return inventoryItemCount(inventory.items, resource)
+            return 0
     }
 }
 
@@ -247,6 +257,9 @@ function resourceCapacity(
         case 'heal-potion': return Math.max(0, limits.items - inventoryItemCount(inventory.items, resource))
         case HIGH_JUMP_BOOTS_ITEM_ID: return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
         case 'high-speed-boots': return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
+        default:
+            if (isBuyableEquipmentItemId(resource)) return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
+            return 0
     }
 }
 
@@ -255,13 +268,15 @@ function tradeItemsAfterResourceChange(
     resource: TradeResource,
     delta: number,
 ): InventoryItemMap | undefined {
-    if (resource !== 'heal-potion' && !isBootEquipmentItemId(resource)) {
+    if (resource !== 'heal-potion' && !isBootEquipmentItemId(resource) && !isBuyableEquipmentItemId(resource)) {
         return inventory.items === undefined ? undefined : copyInventoryItems(inventory.items)
     }
     const items = copyInventoryItems(inventory.items)
     if (delta > 0) {
         addInventoryItem(items, resource, delta, isBootEquipmentItemId(resource)
             ? BOOT_EQUIPMENT_ITEM_OPTIONS[resource]
+            : isBuyableEquipmentItemId(resource)
+                ? BUYABLE_EQUIPMENT_ITEM_OPTIONS[resource]
             : {
                 name: 'Healing Potion',
                 description: 'Restores health when potion use is wired into combat.',

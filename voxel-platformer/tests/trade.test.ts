@@ -6,6 +6,7 @@ import {
     tradeAvailability,
 } from '../src/game/trade'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
+import { METAL_HELMET_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
 
 const SHOP = normalizeTradeRequest({
     title: 'Field Supplies',
@@ -192,4 +193,58 @@ test('trade buy and sell can mutate unique high speed boots', () => {
     if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
     assert.equal(sold.inventory.items?.[HIGH_SPEED_BOOTS_ITEM_ID], undefined)
     assert.deepEqual(sold.removed, { [HIGH_SPEED_BOOTS_ITEM_ID]: 1 })
+})
+
+test('trade buy and sell can mutate unique shop equipment', () => {
+    const shop = normalizeTradeRequest({
+        title: 'Forge',
+        items: [{
+            id: SPEAR_ITEM_ID,
+            name: 'Spear',
+            resource: SPEAR_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 18,
+            sellPrice: 8,
+        }, {
+            id: METAL_HELMET_ITEM_ID,
+            name: 'Metal Helmet',
+            resource: METAL_HELMET_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 14,
+            sellPrice: 6,
+        }],
+    })
+
+    const spear = applyTradeSelection(shop, { gold: 40, arrows: 0, items: {} }, {
+        action: 'buy',
+        itemId: SPEAR_ITEM_ID,
+        quantity: 1,
+    })
+
+    if (spear.status !== 'bought') throw new Error(`expected bought, got ${spear.status}`)
+    assert.equal(spear.inventory.items?.[SPEAR_ITEM_ID]?.quantity, 1)
+    assert.equal(spear.inventory.items?.[SPEAR_ITEM_ID]?.category, 'tools')
+    assert.equal(spear.inventory.items?.[SPEAR_ITEM_ID]?.icon, 'spear')
+    assert.equal(tradeAvailability(shop.items[0]!, 'buy', spear.inventory).maxQuantity, 0)
+
+    const helmet = applyTradeSelection(shop, spear.inventory, {
+        action: 'buy',
+        itemId: METAL_HELMET_ITEM_ID,
+        quantity: 1,
+    })
+
+    if (helmet.status !== 'bought') throw new Error(`expected bought, got ${helmet.status}`)
+    assert.equal(helmet.inventory.items?.[METAL_HELMET_ITEM_ID]?.quantity, 1)
+    assert.equal(helmet.inventory.items?.[METAL_HELMET_ITEM_ID]?.category, 'accessories')
+    assert.equal(helmet.inventory.items?.[METAL_HELMET_ITEM_ID]?.icon, 'metal-helmet')
+
+    const sold = applyTradeSelection(shop, helmet.inventory, {
+        action: 'sell',
+        itemId: SPEAR_ITEM_ID,
+        quantity: 1,
+    })
+
+    if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
+    assert.equal(sold.inventory.items?.[SPEAR_ITEM_ID], undefined)
+    assert.deepEqual(sold.removed, { [SPEAR_ITEM_ID]: 1 })
 })

@@ -6,6 +6,7 @@ import { hasComponent, query } from 'bitecs'
 import { Grounded, PlayerControlled, Position, Rotation, Stunned } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import { isStaffEquipmentKind } from '../../../game/anim/equipment-types'
+import { SPEAR_ITEM_ID } from '../../../game/equipment-items'
 import type { System } from './system'
 import { FixedOrder } from './orders'
 import { hasActiveMeleeAttack, startMeleeAttack } from '../melee-combat'
@@ -35,6 +36,7 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
     const thrust = playerAttackDef('player-thrust', baseRange + 0.5, Math.max(baseArcCos, 0.6), damage)
     const swing = playerAttackDef('player-swing', baseRange, 0, damage)
     const staffSlam = playerAttackDef('staff-slam', baseRange + 0.85, 0.25, damage)
+    const spearThrust = playerAttackDef('player-spear-thrust', baseRange + 1.3, 0.88, damage)
     let nextWideSwing = false
 
     return {
@@ -53,22 +55,28 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
             if (!actions.consumePressed(actionId, player)) return
 
             const useStaff = activeLoadoutUsesStaff(world)
-            const useWideSwing = !useStaff && nextWideSwing
-            const def = useStaff ? staffSlam : useWideSwing ? swing : thrust
+            const useSpear = activeLoadoutUsesSpear(world)
+            const useWideSwing = !useStaff && !useSpear && nextWideSwing
+            const def = useStaff ? staffSlam : useSpear ? spearThrust : useWideSwing ? swing : thrust
             if (!startMeleeAttack(world, { kind: 'player', eid: player }, def)) return
-            controller?.machine.setParam(useStaff ? 'staffAttack' : useWideSwing ? 'attackWide' : 'attack', 1)
-            if (!useStaff) nextWideSwing = !nextWideSwing
+            controller?.machine.setParam(useStaff ? 'staffAttack' : useSpear ? 'spearAttack' : useWideSwing ? 'attackWide' : 'attack', 1)
+            if (!useStaff && !useSpear) nextWideSwing = !nextWideSwing
         },
     }
 }
 
 function isMeleeAnimationBusy(stateId: string): boolean {
-    return stateId === 'attack' || stateId === 'attackWide' || stateId === 'staffAttack' || stateId === 'hammerAttack' || stateId === 'shoot' || stateId === 'shieldBlock'
+    return stateId === 'attack' || stateId === 'spearAttack' || stateId === 'attackWide' || stateId === 'staffAttack' || stateId === 'hammerAttack' || stateId === 'shoot' || stateId === 'shieldBlock'
 }
 
 function activeLoadoutUsesStaff(world: Parameters<System['update']>[0]): boolean {
     const loadout = world.playerSettings.equipment[world.weaponStance]
     return isStaffEquipmentKind(loadout.handR) || isStaffEquipmentKind(loadout.handL)
+}
+
+function activeLoadoutUsesSpear(world: Parameters<System['update']>[0]): boolean {
+    const loadout = world.playerSettings.equipment[world.weaponStance]
+    return loadout.handR === SPEAR_ITEM_ID || loadout.handL === SPEAR_ITEM_ID
 }
 
 function playerAttackDef(id: MeleeAttackId, range: number, arcCos: number, damage: number): MeleeAttackDef {

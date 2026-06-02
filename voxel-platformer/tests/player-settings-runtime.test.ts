@@ -26,6 +26,7 @@ import {
     isStaffEquipmentKind,
 } from '../src/game/anim/equipment'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
+import { SPEAR_ITEM_ID } from '../src/game/equipment-items'
 import {
     HIGH_SPEED_BOOTS_MOVE_SPEED_BONUS,
     RANGER_HAT_ARROW_LIFT_BONUS,
@@ -419,6 +420,46 @@ test('staff melee variants use the custom staff bonk animation', () => {
     }
 })
 
+test('spear melee uses a longer narrow thrust without alternating to wide swing', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.melee = { handR: SPEAR_ITEM_ID, handL: 'shield' }
+    world.weaponStance = 'melee'
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    const controller = world.animControllerByEid.get(player)!
+    const idleParams = computeLocomotionParams({ speedXZ: 0, vy: 0, grounded: true, blocked: false, movementState: 0 })
+    const system = createMeleeAttackSystem(onePressAction())
+
+    system.update(world, 1 / 60)
+    controller.setParams(idleParams)
+    controller.update(0.05)
+
+    const attack = Array.from(world.meleeAttacks.values())[0]
+    assert.ok(attack, 'spear should schedule a melee attack')
+    assert.equal(attack!.def.id, 'player-spear-thrust')
+    assert.equal(attack!.def.targetMode, 'nearest')
+    assert.equal(attack!.def.shape.kind, 'wedge')
+    if (attack!.def.shape.kind === 'wedge') {
+        assert.ok(attack!.def.shape.range > 2.75, 'spear should reach farther than sword thrust')
+        assert.ok(attack!.def.shape.arcRadians < 1.4, 'spear should keep a narrow thrust cone')
+    }
+    assert.equal(controller.machine.currentStateId, 'spearAttack')
+})
+
+test('spear builds as a selectable long hand item', () => {
+    const item = createEquipment(SPEAR_ITEM_ID)
+    assert.equal(item.name, `equip:${SPEAR_ITEM_ID}`)
+    assert.ok(findObjectByName(item, 'SpearHead'))
+    assert.ok(findObjectByName(item, 'SpearShaft'))
+    assert.ok(findObjectByName(item, 'SpearButtSpike'))
+    assert.ok(item.children.length <= 7, 'spear should stay a cheap low-part equipment model')
+    const frame = equipmentSocketFrame(SPEAR_ITEM_ID, 'handR')
+    const spearDir = new Vector3(0, 1, 0).applyEuler(toEuler(frame.orient))
+    assert.ok(spearDir.z > 0.96, 'right-hand spear should point forward')
+    assert.ok((frame.offset?.[2] ?? 0) > 0.14, 'spear grip should sit forward of the wrist')
+})
+
 test('held shield action drives the shield block animation while grounded', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
@@ -554,6 +595,21 @@ test('staff attack impact drives the pointy head forward and downward', () => {
 
     assert.ok(staffHeadDir.z > 0.72, 'staff head should point into the enemy at impact')
     assert.ok(staffHeadDir.y < -0.3, 'staff head should drive downward at impact')
+})
+
+test('spear attack impact keeps the point in a tight forward thrust', () => {
+    const spear = equipmentSocketFrame(SPEAR_ITEM_ID, 'handR')
+    const clip = partCharacterClips().find((candidate) => candidate.name === 'spearAttack')
+    assert.ok(clip)
+
+    const spearHeadDir = new Vector3(0, 1, 0)
+        .applyEuler(toEuler(spear.orient))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'UpperArmR')!, HUMANOID_ANIM_TIMINGS.spearImpact))
+        .applyQuaternion(quaternionAt(clip!.tracks.find((track) => track.target === 'Chest')!, HUMANOID_ANIM_TIMINGS.spearImpact))
+
+    assert.ok(spearHeadDir.z > 0.95, 'spear point should drive straight into the target at impact')
+    assert.ok(Math.abs(spearHeadDir.x) < 0.16, 'spear thrust should not drift sideways at impact')
+    assert.ok(Math.abs(spearHeadDir.y) < 0.24, 'spear thrust should stay nearly level at impact')
 })
 
 test('hammer attack drives the hammer head down into the ground circle', () => {

@@ -13,7 +13,7 @@
 import type { VoxelCoord } from '../ecs/world'
 import type { PlayerAbilityKey, PlayerSettings, PlayerSettingsPatch } from '../../game/player-settings'
 import type { StoneSpawnOptions, StoneTierId } from '../../game/moving-objects'
-import type { InventoryCategoryId, InventoryItemOptions, InventorySnapshotItem } from '../../game/inventory'
+import type { InventoryCategoryId, InventoryItemOptions, InventoryItemRecord, InventorySnapshotItem } from '../../game/inventory'
 import type { DialogueVoiceRef } from '../../game/dialogue-voice/types'
 import type { EditorPropKind } from '../../game/props/prop-types'
 
@@ -190,6 +190,9 @@ export interface NpcFacade {
     /** Define who is an enemy. `target` is `'player'` or another NPC id. There
      *  is no faction system — hostility is whatever scripts set. */
     setHostile(id: string, target: string, hostile: boolean): boolean
+    /** Prey behaviour: while `on`, the NPC never attacks and flees perceived
+     *  threats within its perception radius (rabbits, critters). */
+    setFlee(id: string, on: boolean): boolean
 }
 
 export interface ZoneFacade {
@@ -525,6 +528,8 @@ export interface NpcApi {
     setPerceptionRadius(id: string, radius: number): boolean
     /** Mark `target` (`'player'` or an NPC id) as an enemy or not. */
     setHostile(id: string, target: string, hostile: boolean): boolean
+    /** Make the NPC prey: flee perceived threats instead of attacking. */
+    setFlee(id: string, on: boolean): boolean
 }
 
 export interface PickupSpawnOptions {
@@ -593,13 +598,22 @@ export interface TradeApi {
 }
 
 export type TradeCurrency = 'gold'
-export type TradeResource = 'arrows' | 'heal-potion' | 'high-jump-boots' | 'high-speed-boots'
+export type TradeResource =
+    | 'arrows'
+    | 'heal-potion'
+    | 'high-jump-boots'
+    | 'high-speed-boots'
+    | 'hat-arcane'
+    | 'hat-ranger'
+    | 'hat-sun'
+    | 'metal-helmet'
+    | 'spear'
 export type TradeMode = 'buy' | 'sell'
 
 export interface TradeInventorySnapshot {
     gold: number
     arrows: number
-    items?: Record<string, { quantity: number }>
+    items?: Record<string, InventoryItemRecord>
 }
 
 export interface TradeItem {

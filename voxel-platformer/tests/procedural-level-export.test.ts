@@ -136,6 +136,7 @@ test('combat arena includes hostile guards, target dummies, and hammer bystander
     const byId = new Map(arena.runtimeMeta.npcs.map((npc) => [npc.id, npc]))
     const sword = byId.get('arena-sword-guard')
     const hammer = byId.get('arena-hammer-guardian')
+    const spearman = byId.get('arena-shield-spearman')
     const smallDummy = byId.get('arena-volume-dummy-small')
     const largeDummy = byId.get('arena-volume-dummy-large')
     const bystanderA = byId.get('arena-friendly-fire-a')
@@ -155,6 +156,10 @@ test('combat arena includes hostile guards, target dummies, and hammer bystander
     assert.equal(hammer!.variant, 'guardian')
     assert.deepEqual(hammer!.equipment, { handR: 'battle-hammer', handL: null })
     assert.match(hammer!.scriptSource, /npc\.setPerceptionRadius\(NPC_ID, 9\)/)
+    assert.ok(spearman, 'arena should place a shield spearman')
+    assert.equal(spearman!.model, 'shield-spearman')
+    assert.deepEqual(spearman!.equipment, { handR: 'spear', handL: 'shield' })
+    assert.match(spearman!.scriptSource, /npc\.setHostile\(NPC_ID, 'player', true\)/)
     assert.ok(smallDummy && largeDummy, 'arena should include volume-check target dummies')
     assert.equal(largeDummy!.colliderRadius, 0.78)
     assert.ok(bystanderA && bystanderB, 'arena should include non-target bystanders for hammer area checks')
@@ -174,6 +179,42 @@ test('large town includes a long rideable rail line', () => {
     assert.equal(town.chunks.getVoxel(139, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
     assert.equal(town.chunks.getVoxel(240, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
     assert.equal(town.chunks.getVoxel(490, cart!.railCell.y, cart!.railCell.z), BLOCK.rail)
+})
+
+test('large town includes the fixed dwarf market row and merchants', () => {
+    const town = createProceduralEditorLevel(LARGE_TOWN_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const propKinds = new Set(town.runtimeMeta.props.map((prop) => prop.kind))
+    for (const kind of [
+        'market-meat',
+        'market-apples',
+        'market-fish',
+        'spear-rack',
+        'arrow-barrel',
+        'helmet-stand',
+        'hat-display',
+        'boot-rack',
+        'potion-shelf',
+        'alchemy-cauldron',
+    ] as const) {
+        assert.ok(propKinds.has(kind), `large town should place ${kind}`)
+    }
+
+    const byId = new Map(town.runtimeMeta.npcs.map((npc) => [npc.id, npc]))
+    const product = byId.get('large-town:product-vendor')
+    const smith = byId.get('large-town:forge-smith')
+    const clothier = byId.get('large-town:clothier')
+    const alchemist = byId.get('large-town:alchemist')
+
+    assert.ok(product && smith && clothier && alchemist, 'large town should place all dwarf merchants')
+    assert.equal(product!.interactionPrompt, 'Talk')
+    assert.equal(smith!.equipment.handR, 'spear')
+    assert.equal(alchemist!.equipment.handR, 'staff-crystal')
+    assert.match(smith!.scriptSource, /resource": "spear"/)
+    assert.match(smith!.scriptSource, /resource": "metal-helmet"/)
+    assert.match(clothier!.scriptSource, /resource": "hat-ranger"/)
+    assert.match(clothier!.scriptSource, /resource": "high-speed-boots"/)
+    assert.match(alchemist!.scriptSource, /resource": "heal-potion"/)
+    assert.doesNotMatch(product!.scriptSource, /trade\.open/)
 })
 
 test('large town includes a collidable large troll NPC', () => {

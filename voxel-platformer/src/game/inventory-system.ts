@@ -23,7 +23,15 @@ import {
     EQUIPMENT_LABELS,
     HEAD_EQUIPMENT_KINDS,
     describeHandLoadout,
+    type HandEquipmentKind,
+    type HeadEquipmentKind,
 } from './anim/equipment-types'
+import {
+    METAL_HELMET_ITEM_ID,
+    SPEAR_ITEM_ID,
+    isBuyableHandEquipmentItemId,
+    isBuyableHeadEquipmentItemId,
+} from './equipment-items'
 import { SPELLS } from './spells'
 import {
     INVENTORY_CATEGORIES,
@@ -87,6 +95,25 @@ export function setBootsEquipped(world: GameWorld, boots: BootEquipmentKind, equ
     const next = equipped ? boots : null
     if (world.playerSettings.equipment.boots === next) return false
     world.playerSettings.equipment.boots = next
+    syncPlayerVisuals(world)
+    return true
+}
+
+export function setHeadEquipment(world: GameWorld, kind: HeadEquipmentKind): boolean {
+    if (!playerCanEquipHead(world, kind)) return false
+    if (world.playerSettings.equipment.head === kind) return false
+    world.playerSettings.equipment.head = kind
+    syncPlayerVisuals(world)
+    return true
+}
+
+export function setMeleeHandEquipment(world: GameWorld, kind: HandEquipmentKind): boolean {
+    if (!playerCanEquipMeleeHand(world, kind)) return false
+    if (world.playerSettings.equipment.melee.handR === kind) return false
+    world.playerSettings.equipment.melee = {
+        ...world.playerSettings.equipment.melee,
+        handR: kind,
+    }
     syncPlayerVisuals(world)
     return true
 }
@@ -422,6 +449,7 @@ function groupInventoryItems(world: GameWorld): Map<InventoryCategoryId, Invento
     )
     for (const item of listInventoryItems(world.inventory.items)) {
         if (item.id === HEAL_POTION_ITEM_ID) continue
+        if (isBuyableHeadEquipmentItemId(item.id) || isBuyableHandEquipmentItemId(item.id)) continue
         grouped.get(item.category)?.push(item)
     }
     grouped.get('consumables')!.unshift(healPotionItem(world))
@@ -447,12 +475,14 @@ function categoryCards(
 ): HTMLElement[] {
     const cards = items.map((item) => itemCard(item, dom, world))
     if (category === 'accessories') cards.unshift(...hatSelectorCards(dom, world))
-    if (category === 'tools') cards.unshift(torchToggleCard(dom, world))
+    if (category === 'tools') cards.unshift(...meleeWeaponSelectorCards(dom, world), torchToggleCard(dom, world))
     return cards
 }
 
 function hatSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
-    return HEAD_EQUIPMENT_KINDS.map((kind) => {
+    return HEAD_EQUIPMENT_KINDS
+        .filter((kind) => playerCanEquipHead(world, kind))
+        .map((kind) => {
         const active = world.playerSettings.equipment.head === kind
         return menuCard({
             icon: kind,
@@ -461,12 +491,41 @@ function hatSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
             active,
             title: `Equip ${EQUIPMENT_LABELS[kind]}`,
             onClick: () => {
-                world.playerSettings.equipment.head = kind
-                syncPlayerVisuals(world)
-                renderInventory(dom, world)
+                if (setHeadEquipment(world, kind)) renderInventory(dom, world)
             },
         })
     })
+}
+
+function meleeWeaponSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    const kinds = ['sword', SPEAR_ITEM_ID] as const satisfies readonly HandEquipmentKind[]
+    return kinds
+        .filter((kind) => playerCanEquipMeleeHand(world, kind))
+        .map((kind) => {
+            const active = world.playerSettings.equipment.melee.handR === kind
+            return menuCard({
+                icon: kind,
+                name: EQUIPMENT_LABELS[kind],
+                detail: active ? 'Equipped' : 'Select',
+                active,
+                title: `Equip ${EQUIPMENT_LABELS[kind]} in the melee loadout.`,
+                onClick: () => {
+                    if (setMeleeHandEquipment(world, kind)) renderInventory(dom, world)
+                },
+            })
+        })
+}
+
+function playerCanEquipHead(world: GameWorld, kind: HeadEquipmentKind): boolean {
+    return kind === 'hat'
+        || world.playerSettings.equipment.head === kind
+        || inventoryItemCount(world.inventory.items, kind) > 0
+}
+
+function playerCanEquipMeleeHand(world: GameWorld, kind: HandEquipmentKind): boolean {
+    return kind === 'sword'
+        || world.playerSettings.equipment.melee.handR === kind
+        || inventoryItemCount(world.inventory.items, kind) > 0
 }
 
 function torchToggleCard(dom: InventoryDom, world: GameWorld): HTMLElement {
@@ -742,6 +801,9 @@ function iconBackground(icon: InventoryIconId): string {
         case 'hat-ranger': return 'linear-gradient(145deg, #203d24, #9fd179)'
         case 'hat-guard': return 'linear-gradient(145deg, #3f4b52, #b7c3ca)'
         case 'hat-sun': return 'linear-gradient(145deg, #6d4215, #ffd166)'
+        case 'metal-helmet': return 'linear-gradient(145deg, #3f4b52, #d8e2ea)'
+        case 'sword': return 'linear-gradient(145deg, #39444d, #d8e2ea)'
+        case 'spear': return 'linear-gradient(145deg, #4a2b18, #d8e2ea)'
         case 'consumable': return 'linear-gradient(145deg, #3e4b2e, #9bbd5c)'
         case 'accessory': return 'linear-gradient(145deg, #4b3656, #b181bd)'
         case 'tool': return 'linear-gradient(145deg, #4d4439, #c0a26f)'
@@ -831,6 +893,33 @@ function glyphStyle(icon: InventoryIconId): Partial<CSSStyleDeclaration> {
             clipPath: 'polygon(0 100%, 0 48%, 18% 70%, 32% 18%, 50% 64%, 68% 18%, 82% 70%, 100% 48%, 100% 100%)',
             background: '#ffd166',
             boxShadow: 'inset 0 -5px 0 #d9a62a',
+        }
+    }
+    if (icon === METAL_HELMET_ITEM_ID) {
+        return {
+            width: '23px',
+            height: '21px',
+            background: 'linear-gradient(180deg, #e0e8ed, #78858d)',
+            clipPath: 'polygon(12% 42%, 24% 12%, 50% 0, 76% 12%, 88% 42%, 84% 100%, 62% 78%, 50% 100%, 38% 78%, 16% 100%)',
+            boxShadow: 'inset 0 -4px 0 rgba(43, 55, 63, 0.45)',
+        }
+    }
+    if (icon === 'sword') {
+        return {
+            width: '4px',
+            height: '25px',
+            background: '#eef6f2',
+            transform: 'rotate(42deg)',
+            boxShadow: '0 8px 0 2px #c9a85d, 0 12px 0 4px #5a3a22',
+        }
+    }
+    if (icon === SPEAR_ITEM_ID) {
+        return {
+            width: '24px',
+            height: '4px',
+            background: '#b98650',
+            transform: 'rotate(-34deg)',
+            boxShadow: '10px 0 0 -1px #eef6f2, 13px 0 0 -2px #6f7d85',
         }
     }
     return {

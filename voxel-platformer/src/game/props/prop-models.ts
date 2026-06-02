@@ -2,6 +2,7 @@ import {
     BoxGeometry,
     BufferAttribute,
     BufferGeometry,
+    ConeGeometry,
     CylinderGeometry,
     SphereGeometry,
 } from 'three'
@@ -82,6 +83,16 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'high-jump-boots': return buildHighJumpBoots()
         case 'lift-cabin-broken': return buildLiftCabin('broken')
         case 'lift-cabin-repaired': return buildLiftCabin('repaired')
+        case 'market-meat': return buildMarketMeat()
+        case 'market-apples': return buildMarketApples()
+        case 'market-fish': return buildMarketFish()
+        case 'spear-rack': return buildSpearRack()
+        case 'arrow-barrel': return buildArrowBarrel()
+        case 'helmet-stand': return buildHelmetStand()
+        case 'hat-display': return buildHatDisplay()
+        case 'boot-rack': return buildBootRack()
+        case 'potion-shelf': return buildPotionShelf()
+        case 'alchemy-cauldron': return buildAlchemyCauldron()
     }
 }
 
@@ -852,9 +863,251 @@ function buildPortalShrine(): BufferGeometry {
     return mergeAndCleanup(parts)
 }
 
+function buildMarketMeat(): BufferGeometry {
+    const parts: BufferGeometry[] = [
+        boxPart([0.78, 0.10, 0.46], [0, 0.05, 0], [0.42, 0.24, 0.12]),
+        boxPart([0.86, 0.045, 0.08], [0, 0.13, -0.23], [0.56, 0.36, 0.18]),
+        boxPart([0.86, 0.045, 0.08], [0, 0.13, 0.23], [0.56, 0.36, 0.18]),
+    ]
+    for (const [x, z, w] of [[-0.22, -0.08, 0.22], [0.02, 0.04, 0.26], [0.25, -0.02, 0.18]] as const) {
+        parts.push(boxPart([w, 0.08, 0.18], [x, 0.19, z], [0.76, 0.20, 0.18], [0, 0.18, 0]))
+        const bone = new CylinderGeometry(0.018, 0.018, w + 0.08, 6)
+        bone.rotateZ(Math.PI * 0.5)
+        bone.translate(x, 0.23, z)
+        paintVertexColor(bone, 0.92, 0.86, 0.72)
+        parts.push(bone)
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildMarketApples(): BufferGeometry {
+    const parts: BufferGeometry[] = []
+    const basket = new CylinderGeometry(0.34, 0.40, 0.22, 12)
+    basket.translate(0, 0.11, 0)
+    paintVertexColor(basket, 0.55, 0.33, 0.16)
+    parts.push(basket)
+    const rim = new CylinderGeometry(0.42, 0.42, 0.035, 12)
+    rim.translate(0, 0.24, 0)
+    paintVertexColor(rim, 0.68, 0.45, 0.22)
+    parts.push(rim)
+    for (const [x, z, y, r, g] of [
+        [-0.16, -0.06, 0.30, 0.84, 0.12],
+        [0.00, -0.11, 0.33, 0.90, 0.18],
+        [0.15, -0.03, 0.30, 0.78, 0.10],
+        [-0.08, 0.10, 0.34, 0.95, 0.24],
+        [0.11, 0.11, 0.33, 0.82, 0.15],
+    ] as const) {
+        parts.push(spherePart(0.095, [x, y, z], [r, g, 0.08], [1, 0.92, 1]))
+        parts.push(boxPart([0.018, 0.055, 0.018], [x + 0.02, y + 0.075, z], [0.24, 0.14, 0.06], [0, 0, 0.18]))
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildMarketFish(): BufferGeometry {
+    const parts: BufferGeometry[] = [
+        boxPart([0.78, 0.08, 0.40], [0, 0.04, 0], [0.44, 0.30, 0.16]),
+    ]
+    for (const [x, z, color] of [
+        [-0.22, -0.08, [0.52, 0.68, 0.72]],
+        [0.04, 0.05, [0.68, 0.74, 0.62]],
+        [0.25, -0.02, [0.58, 0.65, 0.78]],
+    ] as const) {
+        parts.push(spherePart(0.12, [x, 0.16, z], color as [number, number, number], [1.55, 0.45, 0.62]))
+        const tail = new ConeGeometry(0.055, 0.13, 4)
+        tail.rotateZ(-Math.PI * 0.5)
+        tail.translate(x - 0.16, 0.16, z)
+        paintVertexColor(tail, color[0] * 0.85, color[1] * 0.85, color[2] * 0.85)
+        parts.push(tail)
+        parts.push(spherePart(0.018, [x + 0.11, 0.18, z + 0.045], [0.05, 0.06, 0.07]))
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildSpearRack(): BufferGeometry {
+    const parts: BufferGeometry[] = [
+        boxPart([0.76, 0.08, 0.18], [0, 0.04, 0], [0.34, 0.20, 0.10]),
+        boxPart([0.08, 0.64, 0.08], [-0.34, 0.34, 0], [0.34, 0.20, 0.10]),
+        boxPart([0.08, 0.64, 0.08], [0.34, 0.34, 0], [0.34, 0.20, 0.10]),
+        boxPart([0.82, 0.06, 0.08], [0, 0.50, 0], [0.44, 0.27, 0.13]),
+    ]
+    for (const x of [-0.22, 0, 0.22]) {
+        const shaft = new CylinderGeometry(0.015, 0.018, 0.92, 7)
+        shaft.rotateZ(-0.12)
+        shaft.translate(x, 0.52, 0.04)
+        paintVertexColor(shaft, 0.52, 0.30, 0.14)
+        parts.push(shaft)
+        const head = new ConeGeometry(0.055, 0.16, 8)
+        head.rotateZ(-0.12)
+        head.translate(x + 0.055, 1.01, 0.04)
+        paintVertexColor(head, 0.80, 0.86, 0.90)
+        parts.push(head)
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildArrowBarrel(): BufferGeometry {
+    const parts: BufferGeometry[] = []
+    const barrel = new CylinderGeometry(0.25, 0.30, 0.46, 12)
+    barrel.translate(0, 0.23, 0)
+    paintVertexColor(barrel, 0.48, 0.29, 0.14)
+    parts.push(barrel)
+    for (const y of [0.12, 0.36]) {
+        const band = new CylinderGeometry(0.31, 0.31, 0.035, 12)
+        band.translate(0, y, 0)
+        paintVertexColor(band, 0.24, 0.25, 0.26)
+        parts.push(band)
+    }
+    for (const [x, z, lean] of [[-0.08, 0, -0.12], [0.02, 0.04, 0.06], [0.11, -0.03, 0.12], [-0.01, -0.09, -0.04]] as const) {
+        const shaft = new CylinderGeometry(0.009, 0.009, 0.62, 6)
+        shaft.rotateZ(lean)
+        shaft.translate(x, 0.62, z)
+        paintVertexColor(shaft, 0.68, 0.43, 0.20)
+        parts.push(shaft)
+        const head = new ConeGeometry(0.028, 0.09, 6)
+        head.rotateZ(lean)
+        head.translate(x + lean * 0.05, 0.96, z)
+        paintVertexColor(head, 0.82, 0.88, 0.92)
+        parts.push(head)
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildHelmetStand(): BufferGeometry {
+    const parts: BufferGeometry[] = [
+        boxPart([0.38, 0.06, 0.38], [0, 0.03, 0], [0.30, 0.18, 0.09]),
+        cylPart(0.045, 0.055, 0.42, [0, 0.24, 0], [0.36, 0.22, 0.11]),
+        spherePart(0.11, [0, 0.47, 0], [0.58, 0.38, 0.20], [1, 0.72, 1]),
+    ]
+    const dome = new SphereGeometry(0.22, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.62)
+    dome.translate(0, 0.52, 0)
+    paintVertexColor(dome, 0.78, 0.84, 0.88)
+    parts.push(dome)
+    parts.push(cylPart(0.23, 0.23, 0.035, [0, 0.49, 0], [0.36, 0.40, 0.44]))
+    parts.push(boxPart([0.035, 0.16, 0.035], [0, 0.45, 0.22], [0.36, 0.40, 0.44]))
+    return mergeAndCleanup(parts)
+}
+
+function buildHatDisplay(): BufferGeometry {
+    const parts: BufferGeometry[] = [
+        boxPart([0.86, 0.08, 0.36], [0, 0.04, 0], [0.48, 0.30, 0.15]),
+        boxPart([0.08, 0.36, 0.08], [-0.34, 0.22, -0.12], [0.34, 0.20, 0.10]),
+        boxPart([0.08, 0.36, 0.08], [0.34, 0.22, -0.12], [0.34, 0.20, 0.10]),
+        boxPart([0.82, 0.06, 0.08], [0, 0.38, -0.12], [0.44, 0.27, 0.13]),
+    ]
+    for (const [x, c] of [[-0.24, [0.20, 0.36, 0.18]], [0.02, [0.20, 0.24, 0.58]], [0.28, [0.82, 0.62, 0.18]]] as const) {
+        parts.push(cylPart(0.15, 0.14, 0.03, [x, 0.42, -0.12], c as [number, number, number], 12, [0, 0, 0]))
+        const crown = new CylinderGeometry(0.09, 0.12, 0.16, 10)
+        crown.translate(x, 0.50, -0.12)
+        paintVertexColor(crown, c[0], c[1], c[2])
+        parts.push(crown)
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildBootRack(): BufferGeometry {
+    const parts: BufferGeometry[] = [
+        boxPart([0.82, 0.07, 0.24], [0, 0.035, 0], [0.40, 0.24, 0.12]),
+        boxPart([0.76, 0.05, 0.08], [0, 0.38, -0.07], [0.47, 0.30, 0.15]),
+        boxPart([0.05, 0.42, 0.05], [-0.35, 0.22, -0.07], [0.33, 0.19, 0.09]),
+        boxPart([0.05, 0.42, 0.05], [0.35, 0.22, -0.07], [0.33, 0.19, 0.09]),
+    ]
+    for (const [x, color] of [[-0.22, [0.16, 0.13, 0.18]], [0.18, [0.12, 0.18, 0.22]]] as const) {
+        for (const dx of [-0.055, 0.055]) {
+            parts.push(boxPart([0.09, 0.20, 0.12], [x + dx, 0.20, 0.05], color as [number, number, number]))
+            parts.push(boxPart([0.11, 0.06, 0.20], [x + dx, 0.10, 0.13], color as [number, number, number]))
+        }
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildPotionShelf(): BufferGeometry {
+    const parts: BufferGeometry[] = [
+        boxPart([0.88, 0.08, 0.26], [0, 0.04, 0], [0.36, 0.22, 0.12]),
+        boxPart([0.88, 0.06, 0.24], [0, 0.38, 0], [0.42, 0.26, 0.14]),
+        boxPart([0.06, 0.62, 0.06], [-0.40, 0.32, 0], [0.30, 0.18, 0.10]),
+        boxPart([0.06, 0.62, 0.06], [0.40, 0.32, 0], [0.30, 0.18, 0.10]),
+    ]
+    const bottles = [
+        [-0.27, 0.17, -0.03, [0.90, 0.18, 0.26]],
+        [-0.06, 0.17, 0.04, [0.20, 0.82, 0.78]],
+        [0.16, 0.17, -0.02, [0.66, 0.32, 0.92]],
+        [0.30, 0.50, 0.02, [0.92, 0.72, 0.18]],
+        [-0.18, 0.50, 0.03, [0.28, 0.84, 0.38]],
+    ] as const
+    for (const [x, y, z, color] of bottles) {
+        parts.push(cylPart(0.04, 0.052, 0.14, [x, y, z], color as [number, number, number], 8))
+        parts.push(cylPart(0.022, 0.026, 0.07, [x, y + 0.10, z], [0.86, 0.78, 0.62], 7))
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildAlchemyCauldron(): BufferGeometry {
+    const parts: BufferGeometry[] = []
+    const pot = new SphereGeometry(0.34, 12, 8)
+    pot.scale(1, 0.64, 1)
+    pot.translate(0, 0.31, 0)
+    paintVertexColor(pot, 0.08, 0.10, 0.12)
+    parts.push(pot)
+    parts.push(cylPart(0.31, 0.32, 0.06, [0, 0.52, 0], [0.16, 0.18, 0.19], 12))
+    parts.push(cylPart(0.24, 0.24, 0.025, [0, 0.555, 0], [0.32, 0.88, 0.56], 12))
+    for (const [x, z] of [[-0.23, -0.18], [0.23, -0.18], [0, 0.25]] as const) {
+        parts.push(cylPart(0.035, 0.04, 0.20, [x, 0.10, z], [0.09, 0.08, 0.07], 7))
+    }
+    for (const [x, z, r] of [[-0.12, 0.02, 0.055], [0.08, -0.04, 0.045], [0.16, 0.09, 0.035]] as const) {
+        parts.push(spherePart(r, [x, 0.66 + r, z], [0.48, 1.0, 0.72], [1, 1, 1]))
+    }
+    return mergeAndCleanup(parts)
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────
+
+function boxPart(
+    size: readonly [number, number, number],
+    pos: readonly [number, number, number],
+    color: readonly [number, number, number],
+    rot: readonly [number, number, number] = [0, 0, 0],
+): BufferGeometry {
+    const geo = new BoxGeometry(size[0], size[1], size[2])
+    if (rot[0]) geo.rotateX(rot[0])
+    if (rot[1]) geo.rotateY(rot[1])
+    if (rot[2]) geo.rotateZ(rot[2])
+    geo.translate(pos[0], pos[1], pos[2])
+    paintVertexColor(geo, color[0], color[1], color[2])
+    return geo
+}
+
+function cylPart(
+    radiusTop: number,
+    radiusBottom: number,
+    height: number,
+    pos: readonly [number, number, number],
+    color: readonly [number, number, number],
+    segments = 10,
+    rot: readonly [number, number, number] = [0, 0, 0],
+): BufferGeometry {
+    const geo = new CylinderGeometry(radiusTop, radiusBottom, height, segments)
+    if (rot[0]) geo.rotateX(rot[0])
+    if (rot[1]) geo.rotateY(rot[1])
+    if (rot[2]) geo.rotateZ(rot[2])
+    geo.translate(pos[0], pos[1], pos[2])
+    paintVertexColor(geo, color[0], color[1], color[2])
+    return geo
+}
+
+function spherePart(
+    radius: number,
+    pos: readonly [number, number, number],
+    color: readonly [number, number, number],
+    scale: readonly [number, number, number] = [1, 1, 1],
+): BufferGeometry {
+    const geo = new SphereGeometry(radius, 8, 6)
+    geo.scale(scale[0], scale[1], scale[2])
+    geo.translate(pos[0], pos[1], pos[2])
+    paintVertexColor(geo, color[0], color[1], color[2])
+    return geo
+}
 
 function paintVertexColor(geo: BufferGeometry, r: number, g: number, b: number): void {
     const pos = geo.attributes.position

@@ -35,6 +35,16 @@ export const PROP_KINDS = [
     'high-jump-boots',
     'lift-cabin-broken',
     'lift-cabin-repaired',
+    'market-meat',
+    'market-apples',
+    'market-fish',
+    'spear-rack',
+    'arrow-barrel',
+    'helmet-stand',
+    'hat-display',
+    'boot-rack',
+    'potion-shelf',
+    'alchemy-cauldron',
 ] as const
 
 export type EditorPropKind = (typeof PROP_KINDS)[number]
@@ -87,4 +97,14 @@ export const PROP_LABELS: Record<EditorPropKind, string> = {
     'high-jump-boots': 'High Jump Boots',
     'lift-cabin-broken': 'Broken Lift Cabin',
     'lift-cabin-repaired': 'Repaired Lift Cabin',
+    'market-meat': 'Market Meat',
+    'market-apples': 'Market Apples',
+    'market-fish': 'Market Fish',
+    'spear-rack': 'Spear Rack',
+    'arrow-barrel': 'Arrow Barrel',
+    'helmet-stand': 'Helmet Stand',
+    'hat-display': 'Hat Display',
+    'boot-rack': 'Boot Rack',
+    'potion-shelf': 'Potion Shelf',
+    'alchemy-cauldron': 'Alchemy Cauldron',
 }
