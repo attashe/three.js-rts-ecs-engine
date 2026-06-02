@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { disposePropModels, getPropModel } from '../src/game/props/prop-models'
+import {
+    LIFT_CABIN_REPAIRED_INTERIOR_CLEARANCE,
+    disposePropModels,
+    getPropModel,
+} from '../src/game/props/prop-models'
 import { PROP_KINDS, PROP_LABELS } from '../src/game/props/prop-types'
+import { MAIN_CHARACTER_COLLIDER_HEIGHT } from '../src/game/assets/main-character'
 
 test('every PROP_KIND yields a valid merged geometry with vertex colours', () => {
     for (const kind of PROP_KINDS) {
@@ -42,6 +47,33 @@ test('mushroom variants sit on their base and keep a readable cap silhouette', (
         assert.ok(box!.max.y > 0.18, `${kind} should be tall enough to read as a mushroom`)
         assert.ok((box!.max.x - box!.min.x) > 0.15, `${kind} should have a visible cap width`)
     }
+})
+
+test('lift cabin variants are registered, distinct, and sized for a player lift', () => {
+    assert.ok(PROP_KINDS.includes('lift-cabin-broken'))
+    assert.ok(PROP_KINDS.includes('lift-cabin-repaired'))
+    assert.equal(PROP_LABELS['lift-cabin-broken'], 'Broken Lift Cabin')
+    assert.equal(PROP_LABELS['lift-cabin-repaired'], 'Repaired Lift Cabin')
+
+    const broken = getPropModel('lift-cabin-broken').geometry
+    const repaired = getPropModel('lift-cabin-repaired').geometry
+    broken.computeBoundingBox()
+    repaired.computeBoundingBox()
+    assert.ok(broken.boundingBox)
+    assert.ok(repaired.boundingBox)
+    assert.ok(broken.boundingBox!.min.y >= -0.001, 'broken cabin sits on its placement base')
+    assert.ok(repaired.boundingBox!.min.y >= -0.001, 'repaired cabin sits on its placement base')
+    assert.ok(repaired.boundingBox!.max.y > broken.boundingBox!.max.y, 'repaired cabin has upright posts/roof')
+    assert.ok((repaired.boundingBox!.max.x - repaired.boundingBox!.min.x) >= 1.1, 'repaired cabin spans a lift platform')
+    assert.ok(
+        LIFT_CABIN_REPAIRED_INTERIOR_CLEARANCE >= MAIN_CHARACTER_COLLIDER_HEIGHT + 0.1,
+        'repaired cabin roof clearance should fit the player with a little headroom',
+    )
+    assert.notEqual(
+        broken.getAttribute('position')!.count,
+        repaired.getAttribute('position')!.count,
+        'broken and repaired variants should not collapse to the same mesh',
+    )
 })
 
 test('disposePropModels clears the cache so the next lookup rebuilds', () => {

@@ -1,12 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addComponent, addEntity } from 'bitecs'
+import { addComponent, addEntity, hasComponent } from 'bitecs'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../src/engine/voxel/palette'
-import { BoxCollider, PlayerControlled, Position, Velocity } from '../src/engine/ecs/components'
+import { BoxCollider, PlayerControlled, Position, Renderable, Velocity } from '../src/engine/ecs/components'
 import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
 import { createPistonSystem } from '../src/engine/ecs/systems/piston-system'
-import { registerPistonMechanism } from '../src/game/mechanisms'
+import { registerPistonMechanism, setPhysicalPistonDeployed } from '../src/game/mechanisms'
 
 function placePlayer(world: GameWorld, x: number, y: number, z: number): number {
     const eid = addEntity(world)
@@ -263,6 +263,39 @@ test('PistonSystem: physical piston moves continuously between endpoints', () =>
     system.update(world, 0.5)
     assert.ok(Math.abs(Position.y[piston.eid] - 3) < 1e-5, `expected endpoint y≈3, got ${Position.y[piston.eid]}`)
     assert.equal(piston.occupied, 'to')
+})
+
+test('physical piston can use a prop visual and start undeployed', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const world = createGameWorld()
+    const piston = registerPistonMechanism(world, chunks, {
+        id: 'piston.lift-cabin',
+        from: { x: 5, y: 1, z: 0 },
+        to: { x: 5, y: 3, z: 0 },
+        block: BLOCK.plank,
+        delay: 99,
+        travelTime: 1,
+        motion: 'physical',
+        characterPolicy: 'push',
+        visualKind: 'lift-cabin-repaired',
+        visualOffset: { x: 0, y: 0.94, z: 0 },
+        deployed: false,
+    })
+
+    assert.equal(piston.deployed, false)
+    assert.ok(piston.eid >= 0)
+    assert.equal(hasComponent(world, piston.eid, Renderable), false, 'undeployed lift is not rendered')
+    assert.equal(hasComponent(world, piston.eid, BoxCollider), false, 'undeployed lift is not collidable')
+    assert.equal(world.object3DByEid.get(piston.eid)?.name, 'PhysicalPistonProp:lift-cabin-repaired')
+
+    assert.equal(setPhysicalPistonDeployed(world, piston, true), true)
+    assert.equal(piston.deployed, true)
+    assert.equal(hasComponent(world, piston.eid, Renderable), true)
+    assert.equal(hasComponent(world, piston.eid, BoxCollider), true)
+
+    assert.equal(setPhysicalPistonDeployed(world, piston, false), true)
+    assert.equal(hasComponent(world, piston.eid, Renderable), false)
+    assert.equal(hasComponent(world, piston.eid, BoxCollider), false)
 })
 
 test('PistonSystem: physical piston carries a rider during travel', () => {

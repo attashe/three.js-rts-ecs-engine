@@ -92,6 +92,28 @@ test('loadLevelFromBuffer defaults yaw/scale/gridAligned when meta omits them', 
     assert.equal(p.gridAligned, true, 'missing gridAligned → true (the default UI state)')
 })
 
+test('hidden props preserve their authored record across save and load', () => {
+    const state = createEditorState({ x: 0, y: 0, z: 0 })
+    state.props.push({
+        id: 'prop-hidden-lift',
+        kind: 'lift-cabin-broken',
+        position: { x: 1, y: 2, z: 3 },
+        yaw: 0.25,
+        scale: 1,
+        gridAligned: false,
+        visible: false,
+    })
+
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const buffer = serializeLevel(chunks, toLevelMeta(state, 'hidden-props'))
+    const restoreState = createEditorState({ x: 0, y: 0, z: 0 })
+    loadLevelFromBuffer(buffer, createGameWorld(), new ChunkManager(DEFAULT_PALETTE), restoreState)
+
+    assert.equal(restoreState.props.length, 1)
+    assert.equal(restoreState.props[0]!.id, 'prop-hidden-lift')
+    assert.equal(restoreState.props[0]!.visible, false)
+})
+
 test('scripts survive a save -> load round-trip through metadata', () => {
     const state = createEditorState({ x: 0, y: 0, z: 0 })
     state.scripts.push({

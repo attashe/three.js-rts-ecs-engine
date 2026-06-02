@@ -33,6 +33,8 @@ export const PROP_KINDS = [
     'haste-shrine',
     'portal-shrine',
     'high-jump-boots',
+    'lift-cabin-broken',
+    'lift-cabin-repaired',
 ] as const
 
 export type EditorPropKind = (typeof PROP_KINDS)[number]
@@ -53,6 +55,10 @@ export interface EditorProp {
      *  Persisted so the editor UI can re-show the same authoring
      *  choice when the prop is re-selected; the runtime ignores it. */
     gridAligned: boolean
+    /** Runtime/script visibility toggle. Omitted/true renders normally;
+     *  false keeps the authored record but removes its instance from the
+     *  prop renderer. */
+    visible?: boolean
 }
 
 /** Pretty label used by the editor's kind picker. Adding a new kind:
@@ -79,4 +85,6 @@ export const PROP_LABELS: Record<EditorPropKind, string> = {
     'haste-shrine': 'Shrine of Haste',
     'portal-shrine': 'Portal Shrine',
     'high-jump-boots': 'High Jump Boots',
+    'lift-cabin-broken': 'Broken Lift Cabin',
+    'lift-cabin-repaired': 'Repaired Lift Cabin',
 }

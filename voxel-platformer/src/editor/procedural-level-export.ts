@@ -79,6 +79,11 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             characterPolicy: piston.characterPolicy ?? 'block',
             moveSoundId: piston.moveSoundId,
             moveSoundVolume: piston.moveSoundVolume,
+            visualKind: piston.visualKind,
+            visualScale: piston.visualScale,
+            visualYaw: piston.visualYaw,
+            visualOffset: piston.visualOffset ? { ...piston.visualOffset } : undefined,
+            ...(piston.deployed === false ? { deployed: false } : {}),
         })),
         zones: meta.zones.map((zone) => ({
             id: zone.id,
@@ -141,6 +146,7 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             yaw: prop.yaw,
             scale: prop.scale,
             gridAligned: prop.gridAligned,
+            ...(prop.visible === false ? { visible: false } : {}),
         })),
         npcs: meta.npcs.map(copyNpcConfig),
         ambientWeather: meta.ambientWeather ? {

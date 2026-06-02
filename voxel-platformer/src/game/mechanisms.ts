@@ -1,11 +1,13 @@
-import { addComponent, addComponents } from 'bitecs'
-import { Group, Mesh } from 'three'
+import { addComponent, addComponents, hasComponent, removeComponent } from 'bitecs'
+import { Group, Mesh, MeshStandardMaterial } from 'three'
 import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { paletteEntry, voxelOpacity } from '../engine/voxel/palette'
 import { BoxCollider, Position, Renderable, Rotation } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
 import type { GameWorld, PistonMechanism, VoxelCoord } from '../engine/ecs/world'
 import { sharedBoxGeometry, sharedMaterial } from './assets'
+import { getPropModel } from './props/prop-models'
+import type { EditorPropKind } from './props/prop-types'
 
 export interface PistonMechanismConfig {
     /** Stable author id (`'piston.elevator'`, `'piston-3'`, ...). Optional —
@@ -35,6 +37,16 @@ export interface PistonMechanismConfig {
     moveSoundId?: string
     /** 0..1 gain multiplier for the move sound. Default 1. */
     moveSoundVolume?: number
+    /** Optional prop model rendered instead of the default cube for physical pistons. */
+    visualKind?: EditorPropKind
+    /** Uniform scale for `visualKind`. Default 1. */
+    visualScale?: number
+    /** Local yaw offset for `visualKind`, in radians. */
+    visualYaw?: number
+    /** Local offset applied to `visualKind` from the moving block origin. */
+    visualOffset?: VoxelCoord
+    /** False keeps a physical piston hidden/non-colliding until scripts deploy it. */
+    deployed?: boolean
 }
 
 /**
@@ -77,13 +89,18 @@ export function registerPistonMechanism(
         characterPolicy: config.characterPolicy ?? 'block',
         moveSoundId: config.moveSoundId || undefined,
         moveSoundVolume: config.moveSoundVolume,
+        visualKind: config.visualKind,
+        visualScale: config.visualScale,
+        visualYaw: config.visualYaw,
+        visualOffset: config.visualOffset ? { ...config.visualOffset } : undefined,
+        deployed: config.deployed !== false,
     }
     const initialCell = piston.occupied === 'from' ? piston.from : piston.to
     if (motion === 'physical') {
         // Physical pistons own their block as an entity. Clear the source
         // voxel so editor-authored terrain does not overlap the moving block.
         chunks.setVoxel(initialCell.x, initialCell.y, initialCell.z, 0)
-        piston.eid = spawnPhysicalPistonBlock(world, chunks, piston.block, initialCell)
+        piston.eid = spawnPhysicalPistonBlock(world, chunks, piston, initialCell)
     } else {
         chunks.setVoxel(initialCell.x, initialCell.y, initialCell.z, piston.block)
     }
@@ -95,35 +112,64 @@ export function registerPistonMechanism(
 function spawnPhysicalPistonBlock(
     world: GameWorld,
     chunks: ChunkManager,
-    block: number,
+    piston: PistonMechanism,
     cell: VoxelCoord,
 ): number {
     const eid = createEntity(world)
-    addComponents(world, eid, [Position, Rotation, BoxCollider])
+    addComponents(world, eid, [Position, Rotation])
     Position.x[eid] = cell.x + 0.5
     Position.y[eid] = cell.y
     Position.z[eid] = cell.z + 0.5
-    BoxCollider.x[eid] = 0.5
-    BoxCollider.y[eid] = 0.5
-    BoxCollider.z[eid] = 0.5
-    world.object3DByEid.set(eid, createPistonBlockVisual(chunks, block))
-    addComponent(world, eid, Renderable)
+    Rotation.y[eid] = piston.visualYaw ?? 0
+    world.object3DByEid.set(eid, createPistonBlockVisual(chunks, piston))
+    if (piston.deployed) {
+        addComponent(world, eid, BoxCollider)
+        BoxCollider.x[eid] = 0.5
+        BoxCollider.y[eid] = 0.5
+        BoxCollider.z[eid] = 0.5
+        addComponent(world, eid, Renderable)
+    }
     return eid
 }
 
-function createPistonBlockVisual(chunks: ChunkManager, block: number): Group {
+function createPistonBlockVisual(chunks: ChunkManager, piston: PistonMechanism): Group {
     const root = new Group()
+    if (piston.visualKind) {
+        root.name = `PhysicalPistonProp:${piston.visualKind}`
+        const mesh = new Mesh(getPropModel(piston.visualKind).geometry, getSharedPhysicalPropMaterial())
+        const offset = piston.visualOffset
+        mesh.position.set(offset?.x ?? 0, offset?.y ?? 0, offset?.z ?? 0)
+        mesh.scale.setScalar(Math.max(0.0001, piston.visualScale ?? 1))
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+        root.add(mesh)
+        return root
+    }
     root.name = 'PhysicalPistonBlock'
     const mesh = new Mesh(sharedBoxGeometry(1, 1, 1))
     mesh.position.y = 0.5
-    applyPistonBlockMaterial(mesh, chunks, block)
+    applyPistonBlockMaterial(mesh, chunks, piston.block)
     root.add(mesh)
     return root
+}
+
+let sharedPhysicalPropMaterial: MeshStandardMaterial | null = null
+function getSharedPhysicalPropMaterial(): MeshStandardMaterial {
+    if (!sharedPhysicalPropMaterial) {
+        sharedPhysicalPropMaterial = new MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.85,
+            metalness: 0,
+            flatShading: true,
+        })
+    }
+    return sharedPhysicalPropMaterial
 }
 
 export function refreshPhysicalPistonVisuals(world: GameWorld, chunks: ChunkManager, block?: number): void {
     for (const piston of world.pistons) {
         if (piston.motion !== 'physical' || piston.eid < 0) continue
+        if (piston.visualKind) continue
         if (block !== undefined && piston.block !== block) continue
         const obj = world.object3DByEid.get(piston.eid)
         if (!obj) continue
@@ -131,6 +177,29 @@ export function refreshPhysicalPistonVisuals(world: GameWorld, chunks: ChunkMana
             if (child instanceof Mesh) applyPistonBlockMaterial(child, chunks, piston.block)
         })
     }
+}
+
+export function setPhysicalPistonDeployed(
+    world: GameWorld,
+    piston: PistonMechanism,
+    deployed: boolean,
+): boolean {
+    if (piston.motion !== 'physical' || piston.eid < 0) return false
+    if (piston.moving === 1) return false
+    piston.deployed = !!deployed
+    if (piston.deployed) {
+        if (!hasComponent(world, piston.eid, BoxCollider)) addComponent(world, piston.eid, BoxCollider)
+        BoxCollider.x[piston.eid] = 0.5
+        BoxCollider.y[piston.eid] = 0.5
+        BoxCollider.z[piston.eid] = 0.5
+        if (!hasComponent(world, piston.eid, Renderable)) addComponent(world, piston.eid, Renderable)
+    } else {
+        piston.pendingFlip = false
+        world.obstacles.remove(piston.eid)
+        if (hasComponent(world, piston.eid, Renderable)) removeComponent(world, piston.eid, Renderable)
+        if (hasComponent(world, piston.eid, BoxCollider)) removeComponent(world, piston.eid, BoxCollider)
+    }
+    return true
 }
 
 function applyPistonBlockMaterial(mesh: Mesh, chunks: ChunkManager, block: number): void {

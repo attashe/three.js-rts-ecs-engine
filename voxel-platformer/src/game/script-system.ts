@@ -18,6 +18,7 @@ import type {
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
+    PropsFacade,
     ScriptEntry,
     StonesFacade,
     StoneScriptSpawnOptions,
@@ -60,6 +61,8 @@ import {
     removeInventoryItem as removeInventoryItemFromMap,
 } from './inventory'
 import { isBootEquipmentItemId } from './high-jump-boots'
+import { setPhysicalPistonDeployed } from './mechanisms'
+import { PROP_KINDS, type EditorProp } from './props/prop-types'
 
 interface ScriptWeatherSystem {
     ambient: {
@@ -85,6 +88,8 @@ export interface GameScriptSystemOptions {
     dialogue?: Pick<UiFacade, 'dialogue'>
     trade?: TradeMenuFacade
     travel?: TravelFacade
+    /** Live authored props for `props.*` script bindings. */
+    props?: EditorProp[]
     /** Source for the `level.spawn / size / name` getters. Narrowed to
      *  the three fields the script API exposes so widening the script
      *  surface requires an explicit type change here, not just a new
@@ -259,6 +264,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
             const piston = opts.world.pistonsById.get(id)
             if (!piston) return false
             if (!piston.enabled) return false
+            if (piston.motion === 'physical' && !piston.deployed) return false
             // Physical pistons mid-travel cannot accept a new request —
             // reversing the interpolation mid-way would leave the entity
             // stranded between cells. Teleport pistons have no
@@ -267,10 +273,17 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
             piston.pendingFlip = true
             return true
         },
+        setDeployed(id, deployed) {
+            const piston = opts.world.pistonsById.get(id)
+            if (!piston) return false
+            return setPhysicalPistonDeployed(opts.world, piston, deployed)
+        },
         list() {
             return Array.from(opts.world.pistonsById.keys())
         },
     }
+
+    const props = buildPropsFacade(opts.props ?? [])
 
     const stones: StonesFacade = {
         spawn(pos, spawnOpts) {
@@ -422,6 +435,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         player,
         pickups,
         pistons,
+        props,
         stones,
         carts,
         npc,
@@ -477,6 +491,42 @@ function stoneConfigFromScript(pos: { x: number; y: number; z: number }, opts?: 
         size,
         options: Object.keys(stoneOptions).length > 0 ? stoneOptions : undefined,
     }
+}
+
+function buildPropsFacade(propRecords: EditorProp[]): PropsFacade {
+    const byId = (id: string) => propRecords.find((prop) => prop.id === id)
+    return {
+        exists(id) {
+            return byId(id) !== undefined
+        },
+        isVisible(id) {
+            const prop = byId(id)
+            return prop !== undefined && prop.visible !== false
+        },
+        setVisible(id, visible) {
+            const prop = byId(id)
+            if (!prop) return false
+            if (visible) {
+                delete prop.visible
+            } else {
+                prop.visible = false
+            }
+            return true
+        },
+        setKind(id, kind) {
+            const prop = byId(id)
+            if (!prop || !isEditorPropKind(kind)) return false
+            prop.kind = kind
+            return true
+        },
+        list() {
+            return propRecords.map((prop) => prop.id)
+        },
+    }
+}
+
+function isEditorPropKind(kind: string): kind is EditorProp['kind'] {
+    return (PROP_KINDS as readonly string[]).includes(kind)
 }
 
 function applyPlayerPatch(world: GameWorld, patch: PlayerSettingsPatch) {

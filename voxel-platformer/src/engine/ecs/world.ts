@@ -8,6 +8,7 @@ import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from
 import { copyInventoryItems, type InventoryItemMap, type InventoryItemOptions } from '../../game/inventory'
 import type { NpcRuntimeState } from '../../game/npcs/npc-types'
 import type { ActiveMeleeAttack } from './melee-types'
+import type { EditorPropKind } from '../../game/props/prop-types'
 
 export interface VoxelCoord {
     x: number
@@ -118,6 +119,17 @@ export interface PistonMechanism {
     moveSoundId?: string
     /** Per-piston gain multiplier for the move sound. Defaults to 1. */
     moveSoundVolume?: number
+    /** Optional prop visual used by physical pistons instead of a cube. */
+    visualKind?: EditorPropKind
+    /** Uniform visual scale for prop visuals. */
+    visualScale?: number
+    /** Local yaw offset for prop visuals. */
+    visualYaw?: number
+    /** Local offset for prop visuals from the piston's block origin. */
+    visualOffset?: VoxelCoord
+    /** Physical-piston deployment gate. False means hidden and non-colliding
+     *  until scripts deploy it. Teleport pistons ignore this field. */
+    deployed: boolean
 }
 
 export interface StoneSpawnerRuntime {

@@ -342,12 +342,51 @@ interface PistonsApi {
     /** Queue a flip for the next fixed tick. False for unknown / disabled
      *  pistons and physical pistons mid-travel. */
     flip(id: string): boolean
+    /** Deploy or hide a physical piston's entity. Hidden pistons are not
+     *  rendered or collidable. False for unknown, teleport, or moving pistons. */
+    setDeployed(id: string, deployed: boolean): boolean
     /** Ids in registration order. Pistons authored without an id are
      *  invisible to scripts and excluded here. */
     list(): string[]
 }
 
 declare const pistons: PistonsApi
+
+// ─── props ───────────────────────────────────────────────────────────
+
+type EditorPropKind =
+    | 'flower'
+    | 'flower-2'
+    | 'flower-3'
+    | 'bush'
+    | 'bush-2'
+    | 'bush-3'
+    | 'mushroom'
+    | 'mushroom-2'
+    | 'mushroom-3'
+    | 'table'
+    | 'table-2'
+    | 'chair'
+    | 'chair-2'
+    | 'book'
+    | 'book-2'
+    | 'npc-keeper'
+    | 'sundial'
+    | 'haste-shrine'
+    | 'portal-shrine'
+    | 'high-jump-boots'
+    | 'lift-cabin-broken'
+    | 'lift-cabin-repaired'
+
+interface PropsApi {
+    exists(id: string): boolean
+    isVisible(id: string): boolean
+    setVisible(id: string, visible: boolean): boolean
+    setKind(id: string, kind: EditorPropKind | string): boolean
+    list(): string[]
+}
+
+declare const props: PropsApi
 
 // ─── stones ───────────────────────────────────────────────────────────
 

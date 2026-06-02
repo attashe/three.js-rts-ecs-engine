@@ -4,7 +4,7 @@ Status: **Slices 1, 1.5, 1.6, 2 implemented** on `feature/surface-improve`.
 Authors can now (a) load `.js` files or paste snippets into the editor's
 **Logic** tab, (b) react to zone enter/exit, pickup-taken, player-died,
 and input events, (c) call into world state via the host bindings
-(`chunks`, `audio`, `pickups`, `pistons`, `stones`, `npc`, `player`, `flags`,
+(`chunks`, `audio`, `pickups`, `pistons`, `props`, `stones`, `npc`, `player`, `flags`,
 `ui`, `dayCycle`, `weather`, `zone`, `geom`). See `script-engine-slice-1-5-review.md`
 and the §11 implementation status below.
 
@@ -89,7 +89,7 @@ async function compileScript(entry: ScriptEntry, ctx: ScriptContext): Promise<vo
     const fn = new AsyncFunction('ctx', `
         "use strict";
         const { on, once, emit, wait, log,
-                player, chunks, pickups, pistons, stones, audio,
+                player, chunks, pickups, pistons, props, stones, audio,
                 npc, flags, time, zone, geom, ui,
                 dayCycle, weather, travel, level, random } = ctx;
         ${entry.source}
@@ -341,7 +341,15 @@ pickups.exists(id: PickupId): boolean
 pistons.setEnabled(id: string, enabled: boolean): boolean   // false on unknown id
 pistons.isEnabled(id: string): boolean
 pistons.flip(id: string): boolean                           // false if unknown, disabled, or mid-physical-travel
+pistons.setDeployed(id: string, deployed: boolean): boolean // physical pistons only
 pistons.list(): string[]                                    // enumerate ids in registration order
+
+// Props — toggle authored prop records without deleting them from level data.
+props.exists(id: string): boolean
+props.isVisible(id: string): boolean
+props.setVisible(id: string, visible: boolean): boolean
+props.setKind(id: string, kind: string): boolean
+props.list(): string[]
 
 // Stones — direct physics stones plus editor-authored falling-stone spawners.
 stones.spawn(pos: VoxelCoord,
@@ -848,6 +856,8 @@ on('level-start', async () => {
 | `player.setCheckpoint` / `clearCheckpoint`    | — | ✅ | Slice 3 — `world.lastCheckpoint` + session checkpoint store |
 | `pickups.despawn` / `pickups.exists`          | — | ✅ | Slice 3 — closes the stable-id lifecycle |
 | `pistons.setEnabled/isEnabled/flip/list`      | — | ✅ | Slice 3 — `world.pistonsById`, `pendingFlip` force-flip path |
+| `props.exists/isVisible/setVisible/setKind/list` | — | ✅ | Authored prop state for repair/reveal scripts |
+| `pistons.setDeployed`                         | — | ✅ | Physical-piston render/collision gate for repairable lifts |
 | `stones.spawn/remove/exists`                  | — | ✅ | Direct physics stones with stable ids |
 | `stones.setSpawnerEnabled/triggerSpawner/listSpawners` | — | ✅ | Editor-authored falling-stone spawners |
 | `npc.attack/die/exists/list`                  | — | ✅ | NPC combat via `world.npcRuntimeById`; `die` topples + despawns |

@@ -8,6 +8,8 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { EditorPropKind } from './prop-types'
 
+export const LIFT_CABIN_REPAIRED_INTERIOR_CLEARANCE = 1.68
+
 /**
  * Procedural geometry recipes for each prop kind. Each recipe builds a
  * tree of primitive geometries with per-part RGB colours baked in as
@@ -78,6 +80,8 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'haste-shrine': return buildHasteShrine()
         case 'portal-shrine': return buildPortalShrine()
         case 'high-jump-boots': return buildHighJumpBoots()
+        case 'lift-cabin-broken': return buildLiftCabin('broken')
+        case 'lift-cabin-repaired': return buildLiftCabin('repaired')
     }
 }
 
@@ -258,6 +262,91 @@ function buildHighJumpBoots(): BufferGeometry {
 
         parts.push(sole, upper, toe, spring, gem)
     }
+    return mergeAndCleanup(parts)
+}
+
+function buildLiftCabin(state: 'broken' | 'repaired'): BufferGeometry {
+    const parts: BufferGeometry[] = []
+    const wood: [number, number, number] = state === 'repaired' ? [0.50, 0.31, 0.16] : [0.36, 0.24, 0.14]
+    const darkWood: [number, number, number] = state === 'repaired' ? [0.30, 0.18, 0.09] : [0.20, 0.13, 0.08]
+    const rope: [number, number, number] = [0.58, 0.45, 0.25]
+    const metal: [number, number, number] = [0.34, 0.34, 0.36]
+    const floorCenterY = 0.035
+    const floorThickness = 0.065
+    const floorTopY = floorCenterY + floorThickness * 0.5
+
+    const addBox = (
+        size: [number, number, number],
+        pos: [number, number, number],
+        color: [number, number, number],
+        rot: [number, number, number] = [0, 0, 0],
+    ): void => {
+        const box = new BoxGeometry(size[0], size[1], size[2])
+        if (rot[0]) box.rotateX(rot[0])
+        if (rot[1]) box.rotateY(rot[1])
+        if (rot[2]) box.rotateZ(rot[2])
+        box.translate(pos[0], pos[1], pos[2])
+        paintVertexColor(box, color[0], color[1], color[2])
+        parts.push(box)
+    }
+
+    // Floor planks. Broken variant keeps the same footprint but staggers
+    // planks so the state reads clearly even at the demo camera distance.
+    for (let i = 0; i < 4; i++) {
+        const z = -0.36 + i * 0.24
+        const lift = state === 'broken' && i % 2 === 1 ? 0.025 : 0
+        const yaw = state === 'broken' ? (i - 1.5) * 0.08 : 0
+        addBox([1.08, floorThickness, 0.18], [0, floorCenterY + lift, z], i % 2 === 0 ? wood : darkWood, [0, yaw, 0])
+    }
+
+    if (state === 'repaired') {
+        const roofThickness = 0.08
+        const roofCenterY = floorTopY + LIFT_CABIN_REPAIRED_INTERIOR_CLEARANCE + roofThickness * 0.5
+        const postBottomY = 0.10
+        const postHeight = roofCenterY + roofThickness * 0.5 - postBottomY
+        const postCenterY = postBottomY + postHeight * 0.5
+        const upperRailY = floorTopY + 0.86
+        const roofTrimY = roofCenterY + 0.09
+        const cableHeight = 1.16
+        const cableCenterY = roofTrimY + cableHeight * 0.5
+
+        addBox([1.18, 0.08, 0.10], [0, 0.15, -0.58], darkWood)
+        addBox([1.18, 0.08, 0.10], [0, 0.15, 0.58], darkWood)
+        addBox([0.10, 0.08, 1.18], [-0.58, 0.15, 0], darkWood)
+        addBox([0.10, 0.08, 1.18], [0.58, 0.15, 0], darkWood)
+
+        for (const x of [-0.48, 0.48]) {
+            for (const z of [-0.48, 0.48]) addBox([0.09, postHeight, 0.09], [x, postCenterY, z], darkWood)
+        }
+        addBox([1.18, 0.07, 0.08], [0, upperRailY, -0.52], wood)
+        addBox([1.18, 0.07, 0.08], [0, upperRailY, 0.52], wood)
+        addBox([0.08, 0.07, 1.18], [-0.52, upperRailY, 0], wood)
+        addBox([0.08, 0.07, 1.18], [0.52, upperRailY, 0], wood)
+        addBox([1.22, roofThickness, 1.00], [0, roofCenterY, 0], [0.42, 0.24, 0.12])
+        addBox([1.30, 0.075, 0.12], [0, roofTrimY, 0], [0.62, 0.45, 0.20], [0, 0, 0.12])
+        addBox([0.06, cableHeight, 0.06], [0, cableCenterY, 0], rope)
+    } else {
+        addBox([0.10, 0.58, 0.10], [-0.48, 0.30, -0.48], darkWood, [0, 0, -0.28])
+        addBox([0.10, 0.42, 0.10], [0.50, 0.24, -0.46], darkWood, [0.18, 0, 0.20])
+        addBox([0.09, 0.34, 0.09], [-0.50, 0.19, 0.46], darkWood, [0, 0, 0.40])
+        addBox([0.90, 0.07, 0.10], [0.05, 0.48, -0.52], wood, [0, 0.18, -0.20])
+        addBox([0.08, 0.07, 0.92], [0.54, 0.40, 0.02], wood, [0.20, 0, 0.12])
+        addBox([0.92, 0.08, 0.46], [-0.16, 0.28, 0.34], [0.25, 0.15, 0.08], [0.10, -0.28, 0.44])
+        addBox([0.05, 0.54, 0.05], [0.17, 0.47, 0.18], rope, [0.52, 0.18, -0.20])
+    }
+
+    const wheel = new CylinderGeometry(0.18, 0.18, 0.055, 12)
+    wheel.rotateZ(Math.PI * 0.5)
+    wheel.translate(state === 'repaired' ? 0.66 : 0.45, state === 'repaired' ? 1.30 : 0.20, state === 'repaired' ? -0.30 : 0.46)
+    paintVertexColor(wheel, metal[0], metal[1], metal[2])
+    parts.push(wheel)
+
+    const hub = new CylinderGeometry(0.055, 0.055, 0.075, 8)
+    hub.rotateZ(Math.PI * 0.5)
+    hub.translate(state === 'repaired' ? 0.69 : 0.48, state === 'repaired' ? 1.30 : 0.20, state === 'repaired' ? -0.30 : 0.46)
+    paintVertexColor(hub, rope[0], rope[1], rope[2])
+    parts.push(hub)
+
     return mergeAndCleanup(parts)
 }
 

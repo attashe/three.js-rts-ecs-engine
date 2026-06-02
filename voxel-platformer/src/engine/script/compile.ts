@@ -27,7 +27,7 @@ const AsyncFunctionCtor: new (...args: string[]) => (ctx: ScriptContext) => Prom
  *  shows up wherever scripts are parse-checked. */
 export const PRELUDE_LOCALS = [
     'on', 'once', 'emit', 'wait', 'log',
-    'player', 'chunks', 'pickups', 'pistons', 'stones', 'audio',
+    'player', 'chunks', 'pickups', 'pistons', 'props', 'stones', 'audio',
     'npc', 'flags', 'time', 'zone', 'geom', 'ui', 'trade',
     'dayCycle', 'weather', 'travel', 'level', 'random',
 ].join(', ')

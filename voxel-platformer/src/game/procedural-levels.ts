@@ -82,6 +82,11 @@ export const PROCEDURAL_LEVEL_SCRIPT_FILES = [
         name: 'paid-portal-shrine.js',
         sourcePath: 'examples/scripts/paid-portal-shrine.js',
     },
+    {
+        id: 'cliff-lift-repair',
+        name: 'cliff-lift-repair.js',
+        sourcePath: 'examples/scripts/cliff-lift-repair.js',
+    },
 ] as const satisfies readonly ProceduralLevelScriptFile[]
 
 export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] = [

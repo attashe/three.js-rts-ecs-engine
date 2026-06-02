@@ -229,6 +229,13 @@ export function loadLevelFromBuffer(
                 motion: p.motion ?? 'teleport',
                 travelTime: p.travelTime ?? 1,
                 characterPolicy: p.characterPolicy,
+                moveSoundId: p.moveSoundId,
+                moveSoundVolume: p.moveSoundVolume,
+                visualKind: p.visualKind,
+                visualScale: p.visualScale,
+                visualYaw: p.visualYaw,
+                visualOffset: p.visualOffset ? { ...p.visualOffset } : undefined,
+                deployed: p.deployed,
             })
             editorState.pistons.push({
                 id: p.id,
@@ -239,6 +246,13 @@ export function loadLevelFromBuffer(
                 motion: p.motion ?? 'teleport',
                 travelTime: p.travelTime ?? 1,
                 characterPolicy: p.characterPolicy,
+                moveSoundId: p.moveSoundId,
+                moveSoundVolume: p.moveSoundVolume,
+                visualKind: p.visualKind,
+                visualScale: p.visualScale,
+                visualYaw: p.visualYaw,
+                visualOffset: p.visualOffset ? { ...p.visualOffset } : undefined,
+                deployed: p.deployed,
             })
         }
         for (const z of loaded.metadata.zones ?? []) {
@@ -304,6 +318,7 @@ export function loadLevelFromBuffer(
                 yaw: Number.isFinite(p.yaw) ? p.yaw : 0,
                 scale: Number.isFinite(p.scale) && p.scale > 0 ? p.scale : 1,
                 gridAligned: p.gridAligned ?? true,
+                ...(p.visible === false ? { visible: false } : {}),
             })
         }
         for (const npc of loaded.metadata.npcs ?? []) {

@@ -202,6 +202,7 @@ export function createPropRenderSystem(scene: Scene, opts: PropRenderSystemOptio
             // Skip props whose kind isn't in the registry — saved
             // levels may reference removed kinds during dev.
             if (!isKnownKind(prop.kind)) continue
+            if (prop.visible === false) continue
             seen.add(prop.id)
             const existing = slotByPropId.get(prop.id)
             if (existing) {
@@ -328,6 +329,7 @@ function fingerprint(props: readonly EditorProp[]): number {
         h = mixInt(h, floatBits(p.position.z))
         h = mixInt(h, floatBits(p.yaw))
         h = mixInt(h, floatBits(p.scale))
+        h = mixInt(h, p.visible === false ? 0 : 1)
     }
     return h >>> 0
 }

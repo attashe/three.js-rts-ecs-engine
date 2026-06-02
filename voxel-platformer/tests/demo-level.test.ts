@@ -1,9 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
+import { aabbFromFoot, voxelAABBOverlap, type AABB } from '../src/engine/voxel/voxel-collide'
 import { BLOCK, DEFAULT_PALETTE, voxelLightSpec } from '../src/engine/voxel/palette'
+import { MAIN_CHARACTER_COLLIDER_HALF_HEIGHT, MAIN_CHARACTER_COLLIDER_RADIUS } from '../src/game/assets/main-character'
 import { generatePlatformerLevel } from '../src/game/level'
 import {
+    COMBAT_ARENA_LEVEL_ID,
+    DEMO_FROM_ARENA_ARRIVAL_ID,
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
@@ -76,11 +80,50 @@ test('demo large-town portal and return arrival sit on clear ground', () => {
     assert.equal(chunks.getVoxel(arrivalX, 6, arrivalZ), BLOCK.air, 'return arrival body cell should be clear')
 })
 
+test('demo combat arena return arrival gives the player collider clear space', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const meta = generatePlatformerLevel(chunks)
+    const portal = meta.zones.find((zone) => zone.portal?.targetLevelId === COMBAT_ARENA_LEVEL_ID)
+    const arrival = meta.zones.find((zone) => zone.id === DEMO_FROM_ARENA_ARRIVAL_ID)
+
+    assert.equal(portal?.kind, 'portal')
+    assert.equal(arrival?.kind, 'arrival')
+    assert.deepEqual(arrival?.min, { x: 18.25, y: 5, z: 14.25 })
+    assert.deepEqual(arrival?.max, { x: 19.75, y: 6.8, z: 15.75 })
+    assert.equal(zonesOverlap(portal!, arrival!), false, 'return arrival must not overlap the outgoing arena portal')
+    assertPlayerArrivalClear(chunks, arrival!, 'combat arena return arrival')
+})
+
 test('demo pistons carry stable ids for script targeting', () => {
     const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
     const ids = meta.pistons.map((p) => p.id)
-    assert.deepEqual(ids.sort(), ['piston.elevator', 'piston.trap'])
+    assert.deepEqual(ids.sort(), ['piston.cliff-lift', 'piston.elevator', 'piston.trap'])
 })
+
+function assertPlayerArrivalClear(chunks: ChunkManager, zone: NonNullable<ReturnType<typeof generatePlatformerLevel>['zones'][number]>, label: string): void {
+    const pos = {
+        x: (zone.min.x + zone.max.x) * 0.5,
+        y: zone.min.y,
+        z: (zone.min.z + zone.max.z) * 0.5,
+    }
+    const box: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+    aabbFromFoot(pos, {
+        x: MAIN_CHARACTER_COLLIDER_RADIUS,
+        y: MAIN_CHARACTER_COLLIDER_HALF_HEIGHT,
+        z: MAIN_CHARACTER_COLLIDER_RADIUS,
+    }, box)
+
+    assert.equal(voxelAABBOverlap(chunks, box), false, `${label} should fit the full player collider`)
+}
+
+function zonesOverlap(
+    a: NonNullable<ReturnType<typeof generatePlatformerLevel>['zones'][number]>,
+    b: NonNullable<ReturnType<typeof generatePlatformerLevel>['zones'][number]>,
+): boolean {
+    return a.min.x < b.max.x && a.max.x > b.min.x &&
+        a.min.y < b.max.y && a.max.y > b.min.y &&
+        a.min.z < b.max.z && a.max.z > b.min.z
+}
 
 test('demo level: id-bearing pistons round-trip through the editor -> buffer -> editor mapping', () => {
     // Procedural level -> editor meta -> binary buffer -> editor meta -> runtime meta.
@@ -89,7 +132,7 @@ test('demo level: id-bearing pistons round-trip through the editor -> buffer -> 
     // address them from any load path.
     const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
     const ids = meta.pistons.map((p) => p.id).filter(Boolean)
-    assert.ok(ids.length === 2, 'baseline: two id-bearing pistons in the demo')
+    assert.ok(ids.length === 3, 'baseline: three id-bearing pistons in the demo')
 })
 
 test('demo level has a paid portal shrine and dormant magic gate FX', () => {
@@ -183,6 +226,25 @@ test('demo haste shrine is an interactable prop near the spawn plaza', () => {
     assert.equal(shrine?.kind, 'interact')
     assert.equal(shrine?.interaction?.prompt, 'Invoke Haste')
     assert.ok(meta.props.some((prop) => prop.id === 'demo:haste-shrine' && prop.kind === 'haste-shrine'))
+})
+
+test('demo includes a repairable cabin lift for the east cliff', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const meta = generatePlatformerLevel(chunks)
+    const lift = meta.pistons.find((piston) => piston.id === 'piston.cliff-lift')
+    const bottom = meta.zones.find((zone) => zone.id === 'zone.demo.cliff-lift.bottom')
+    const top = meta.zones.find((zone) => zone.id === 'zone.demo.cliff-lift.top')
+
+    assert.equal(lift?.motion, 'physical')
+    assert.equal(lift?.visualKind, 'lift-cabin-repaired')
+    assert.equal(lift?.deployed, false)
+    assert.deepEqual(lift?.from, { x: 21, y: 5, z: 5 })
+    assert.deepEqual(lift?.to, { x: 21, y: 8, z: 5 })
+    assert.equal(chunks.getVoxel(21, 5, 5), BLOCK.air, 'lift bottom endpoint must be clear')
+    assert.equal(chunks.getVoxel(21, 8, 5), BLOCK.air, 'lift top endpoint must be clear')
+    assert.equal(bottom?.kind, 'interact')
+    assert.equal(top?.kind, 'interact')
+    assert.ok(meta.props.some((prop) => prop.id === 'demo:cliff-lift-broken' && prop.kind === 'lift-cabin-broken'))
 })
 
 function countBlockLightVoxels(chunks: ChunkManager): number {

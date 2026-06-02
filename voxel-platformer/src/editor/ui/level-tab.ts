@@ -25,12 +25,14 @@ import demoQuestSource from '../../../examples/scripts/demo-quest.js?raw'
 import lanternTrialSource from '../../../examples/scripts/lantern-trial.js?raw'
 import hasteShrineSource from '../../../examples/scripts/haste-shrine.js?raw'
 import paidPortalShrineSource from '../../../examples/scripts/paid-portal-shrine.js?raw'
+import cliffLiftRepairSource from '../../../examples/scripts/cliff-lift-repair.js?raw'
 
 const BROWSER_PROCEDURAL_SCRIPT_SOURCES: ProceduralScriptSources = {
     'examples/scripts/demo-quest.js': demoQuestSource,
     'examples/scripts/lantern-trial.js': lanternTrialSource,
     'examples/scripts/haste-shrine.js': hasteShrineSource,
     'examples/scripts/paid-portal-shrine.js': paidPortalShrineSource,
+    'examples/scripts/cliff-lift-repair.js': cliffLiftRepairSource,
 }
 
 export interface LevelTabOptions {

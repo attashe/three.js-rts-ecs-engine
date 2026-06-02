@@ -37,3 +37,29 @@ test('prop renderer grows instanced bucket capacity instead of dropping dense sc
 
     system.dispose?.()
 })
+
+test('prop renderer removes authored props while visible is false', () => {
+    const scene = new Scene()
+    const props: EditorProp[] = [prop('p1', 1), { ...prop('p2', 2), visible: false }]
+    const world = createGameWorld()
+    const system = createPropRenderSystem(scene, {
+        getProps: () => props,
+    })
+
+    system.init?.(world)
+    let mesh = scene.children.find((child) => child.name === 'Props:bush') as InstancedMesh | undefined
+    assert.ok(mesh)
+    assert.equal(mesh!.count, 1)
+
+    props[1]!.visible = true
+    system.update(world, 0)
+    mesh = scene.children.find((child) => child.name === 'Props:bush') as InstancedMesh | undefined
+    assert.ok(mesh)
+    assert.equal(mesh!.count, 2)
+
+    props[0]!.visible = false
+    system.update(world, 0)
+    assert.equal(mesh!.count, 1)
+
+    system.dispose?.()
+})

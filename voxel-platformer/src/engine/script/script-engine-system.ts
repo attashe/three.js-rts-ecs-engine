@@ -39,6 +39,7 @@ import type {
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
+    PropsFacade,
     ScriptContext,
     ScriptEntry,
     StonesFacade,
@@ -55,6 +56,7 @@ export interface ScriptEngineSystemOptions {
     player: PlayerFacade
     pickups: PickupsFacade
     pistons: PistonsFacade
+    props?: PropsFacade
     stones?: StonesFacade
     carts?: CartsFacade
     npc?: NpcFacade
@@ -126,6 +128,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         player: opts.player,
         pickups: opts.pickups,
         pistons: opts.pistons,
+        props: opts.props,
         stones: opts.stones,
         carts: opts.carts,
         npc: opts.npc,

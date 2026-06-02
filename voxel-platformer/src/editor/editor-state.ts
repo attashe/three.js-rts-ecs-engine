@@ -119,6 +119,17 @@ export interface EditorPiston {
     moveSoundId?: string
     /** Per-piston gain multiplier for the move sound (0..1). */
     moveSoundVolume?: number
+    /** Optional prop model rendered instead of the default moving block
+     *  cube for physical pistons. */
+    visualKind?: EditorPropKind
+    /** Uniform visual scale for `visualKind`. Defaults to 1. */
+    visualScale?: number
+    /** Local yaw offset for `visualKind`, in radians. */
+    visualYaw?: number
+    /** Local offset applied to `visualKind` from the piston's block origin. */
+    visualOffset?: VoxelCoord
+    /** False keeps a physical piston hidden/non-colliding until scripts deploy it. */
+    deployed?: boolean
 }
 
 export interface EditorSoundSource {
@@ -876,6 +887,11 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             travelTime: p.travelTime ?? 1,
             moveSoundId: p.moveSoundId,
             moveSoundVolume: p.moveSoundVolume,
+            visualKind: p.visualKind,
+            visualScale: p.visualScale,
+            visualYaw: p.visualYaw,
+            visualOffset: p.visualOffset ? { ...p.visualOffset } : undefined,
+            ...(p.deployed === false ? { deployed: false } : {}),
         })),
         zones: state.zones.map((z) => ({
             id: z.id,
@@ -943,6 +959,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             yaw: p.yaw,
             scale: p.scale,
             gridAligned: p.gridAligned,
+            ...(p.visible === false ? { visible: false } : {}),
         })),
         npcs: state.npcs.length === 0 ? undefined : state.npcs.map(copyNpcConfig),
         scripts: state.scripts.length === 0 ? undefined : state.scripts.map(copyScriptEntry),

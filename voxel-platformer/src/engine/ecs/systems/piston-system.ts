@@ -71,6 +71,11 @@ export function createPistonSystem(chunks: ChunkManager, opts: PistonSystemOptio
             const pushedThisTick = new Set<number>()
             for (const piston of world.pistons) {
                 if (piston.motion === 'physical') {
+                    if (!piston.deployed) {
+                        piston.pendingFlip = false
+                        if (piston.eid >= 0) world.obstacles.remove(piston.eid)
+                        continue
+                    }
                     // Disabled physical pistons freeze in place. Their
                     // obstacle AABB stays in the registry from the last
                     // update, so a rider standing on top keeps standing.
@@ -325,6 +330,7 @@ function coMovingPhysicalPistonEids(
     for (const piston of world.pistons) {
         if (piston === active) continue
         if (piston.motion !== 'physical' || piston.eid < 0) continue
+        if (!piston.deployed) continue
         if (!piston.enabled) continue
         if (!isCollidable(chunks.palette, piston.block)) continue
         const otherDelta = physicalPistonDeltaForTick(chunks, world, piston, simTime, dt)

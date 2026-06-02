@@ -7,6 +7,7 @@ import { STONE_TIER, type StoneFallSpawnerConfig, type StonePlacementConfig } fr
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './sound-sources'
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
 import type { EditorProp } from './props/prop-types'
+import { GameAudio } from './audio'
 import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
 import {
     applyPlayerSettingsPatch,
@@ -151,6 +152,14 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         // torch when the player returns all three Sun Shards to Keeper Arlen.
         .set(9, groundY + 1, 9, BLOCK.unlitLantern)
 
+    // Repairable cliff lift landing. The physical piston starts hidden; the
+    // cliff-lift script deploys its repaired cabin visual after materials are
+    // found and consumed.
+    t.fill([20, 21], [groundY, groundY], [4, 6], BLOCK.plank)
+        .fill([21, 21], [cliffTop, cliffTop], [4, 6], BLOCK.plank)
+        .clear(21, groundY + 1, 5)
+        .clear(21, cliffTop, 5)
+
     const stoneSpawners: StoneFallSpawnerConfig[] = [
         {
             position: { x: 22.4, y: cliffTop + 0.6, z: 3.5 },
@@ -197,6 +206,22 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             delay: 1.4,
             characterPolicy: 'push',
         },
+        {
+            id: 'piston.cliff-lift',
+            from: { x: 21, y: groundY + 1, z: 5 },
+            to: { x: 21, y: cliffTop, z: 5 },
+            block: BLOCK.plank,
+            delay: 9999,
+            motion: 'physical',
+            travelTime: 2.2,
+            characterPolicy: 'push',
+            moveSoundId: GameAudio.StoneImpact,
+            moveSoundVolume: 0.38,
+            visualKind: 'lift-cabin-repaired',
+            visualScale: 1,
+            visualOffset: { x: 0, y: 0.94, z: 0 },
+            deployed: false,
+        },
     ]
 
     // Walk-in gate to the Large Town (the mesh-streaming demo location).
@@ -212,6 +237,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         .fill([22, 22], [groundY, groundY], [11, 11], BLOCK.door)
         .fill([21, 21], [groundY + 1, groundY + 3], [10, 10], BLOCK.brick)
         .fill([23, 23], [groundY + 1, groundY + 3], [12, 12], BLOCK.brick)
+        .fill([18, 19], [groundY, groundY], [14, 15], BLOCK.stone)
 
     // Quest / test zones. The interact spots derive their AABB + prompt
     // anchor from a single center (= the matching prop's position); the
@@ -265,6 +291,28 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             prompt: 'Invoke Haste',
             anchorDy: 1.35,
             radius: 2.55,
+        }),
+        interactZone({
+            id: 'zone.demo.cliff-lift.bottom',
+            label: 'Broken Cliff Lift',
+            center: { x: 21.5, z: 5.5 },
+            half: { x: 1.25, z: 1.25 },
+            yLo: groundY + 1,
+            yHi: groundY + 3,
+            prompt: 'Repair / Operate Lift',
+            anchorDy: 1.1,
+            radius: 2.6,
+        }),
+        interactZone({
+            id: 'zone.demo.cliff-lift.top',
+            label: 'Cliff Lift',
+            center: { x: 21.5, z: 5.5 },
+            half: { x: 1.25, z: 1.25 },
+            yLo: cliffTop + 1,
+            yHi: cliffTop + 3,
+            prompt: 'Operate Lift',
+            anchorDy: 1.1,
+            radius: 2.6,
         }),
         interactZone({
             // Paid portal shrine: spends a coin to open the garden gate + FX.
@@ -344,8 +392,8 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             id: DEMO_FROM_ARENA_ARRIVAL_ID,
             kind: 'arrival',
             label: 'Return from the Combat Arena',
-            min: { x: 20.25, y: groundY + 1, z: 12.75 },
-            max: { x: 21.75, y: groundY + 2.8, z: 14.25 },
+            min: { x: 18.25, y: groundY + 1, z: 14.25 },
+            max: { x: 19.75, y: groundY + 2.8, z: 15.75 },
         },
     ]
 
@@ -392,6 +440,14 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             position: t.stand(4.3, 19.8),
             yaw: -Math.PI * 0.22,
             scale: 1.25,
+            gridAligned: false,
+        },
+        {
+            id: 'demo:cliff-lift-broken',
+            kind: 'lift-cabin-broken',
+            position: t.stand(21.5, 5.5),
+            yaw: Math.PI * 0.05,
+            scale: 1,
             gridAligned: false,
         },
         // Decorative flora in the open corners of the plaza.

@@ -32,6 +32,11 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         travelTime: p.travelTime ?? 1,
         moveSoundId: p.moveSoundId || undefined,
         moveSoundVolume: clamp(p.moveSoundVolume ?? 1, 0, 1, 1),
+        visualKind: p.visualKind,
+        visualScale: p.visualScale,
+        visualYaw: p.visualYaw,
+        visualOffset: p.visualOffset ? { ...p.visualOffset } : undefined,
+        deployed: p.deployed,
     }))
 
     const zones: Zone[] = (meta.zones ?? []).map((z) => ({
@@ -104,6 +109,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         yaw: p.yaw,
         scale: p.scale,
         gridAligned: p.gridAligned,
+        visible: p.visible,
     }))
 
     const npcs = (meta.npcs ?? []).map((npc) => normalizeNpcConfig({

@@ -28,6 +28,7 @@ import type {
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
+    PropsFacade,
     ScriptContext,
     StonesFacade,
     TradeFacade,
@@ -54,6 +55,7 @@ export interface BindingsDeps {
     player: PlayerFacade
     pickups: PickupsFacade
     pistons: PistonsFacade
+    props?: PropsFacade
     stones?: StonesFacade
     carts?: CartsFacade
     npc?: NpcFacade
@@ -81,6 +83,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const stones = deps.stones ?? NOOP_STONES
     const carts = deps.carts ?? NOOP_CARTS
     const npc = deps.npc ?? NOOP_NPC
+    const props = deps.props ?? NOOP_PROPS
 
     // `on(...)` has two shapes: with filter object, or without (for
     // string-named custom events). Detect by checking arg 2's type —
@@ -193,7 +196,16 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             setEnabled: (id, enabled) => pistons.setEnabled(id, enabled),
             isEnabled: (id) => pistons.isEnabled(id),
             flip: (id) => pistons.flip(id),
+            setDeployed: (id, deployed) => pistons.setDeployed?.(id, deployed) ?? false,
             list: () => pistons.list(),
+        },
+
+        props: {
+            exists: (id) => props.exists(id),
+            isVisible: (id) => props.isVisible(id),
+            setVisible: (id, visible) => props.setVisible(id, visible),
+            setKind: (id, kind) => props.setKind(id, kind),
+            list: () => props.list(),
         },
 
         stones: {
@@ -356,6 +368,14 @@ const NOOP_NPC: NpcFacade = {
     stop() { return false },
     setPerceptionRadius() { return false },
     setHostile() { return false },
+}
+
+const NOOP_PROPS: PropsFacade = {
+    exists() { return false },
+    isVisible() { return false },
+    setVisible() { return false },
+    setKind() { return false },
+    list() { return [] },
 }
 
 /** Split a boolean `once` out of an author-supplied filter object.

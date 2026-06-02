@@ -11,6 +11,7 @@ import type {
     PickupsFacade,
     PistonsFacade,
     PlayerFacade,
+    PropsFacade,
     StonesFacade,
     TradeFacade,
     TravelFacade,
@@ -46,7 +47,8 @@ function stubs() {
         playerSettings: [], playerAbility: [], playerGold: [], playerArrows: [],
         playerItemAdd: [], playerItemRemove: [],
         pickupSpawn: [], pickupDespawn: [], pickupExists: [],
-        pistonSetEnabled: [], pistonIsEnabled: [], pistonFlip: [], pistonList: [],
+        pistonSetEnabled: [], pistonIsEnabled: [], pistonFlip: [], pistonSetDeployed: [], pistonList: [],
+        propExists: [], propIsVisible: [], propSetVisible: [], propSetKind: [], propList: [],
         uiSay: [],
         uiClear: [],
         uiDialogue: [],
@@ -58,6 +60,9 @@ function stubs() {
     let pistonRoster: string[] = []
     let pistonFlipBlocks = false
     const livePickups = new Set<string>()
+    const propState = new Map<string, { kind: string; visible: boolean }>([
+        ['prop.lift', { kind: 'lift-cabin-broken', visible: true }],
+    ])
     let playerPos: VoxelCoord | null = { x: 1, y: 2, z: 3 }
     let gold = 7
     let arrows = 3
@@ -143,9 +148,41 @@ function stubs() {
             if (pistonFlipBlocks) return false
             return true
         },
+        setDeployed(id, deployed) {
+            calls.pistonSetDeployed.push({ id, deployed })
+            return pistonRoster.includes(id) || enabledPistons.has(id)
+        },
         list() {
             calls.pistonList.push({})
             return [...pistonRoster]
+        },
+    }
+    const props: PropsFacade = {
+        exists(id) {
+            calls.propExists.push({ id })
+            return propState.has(id)
+        },
+        isVisible(id) {
+            calls.propIsVisible.push({ id })
+            return propState.get(id)?.visible === true
+        },
+        setVisible(id, visible) {
+            calls.propSetVisible.push({ id, visible })
+            const prop = propState.get(id)
+            if (!prop) return false
+            prop.visible = visible
+            return true
+        },
+        setKind(id, kind) {
+            calls.propSetKind.push({ id, kind })
+            const prop = propState.get(id)
+            if (!prop) return false
+            prop.kind = kind
+            return true
+        },
+        list() {
+            calls.propList.push({})
+            return [...propState.keys()]
         },
     }
     const ui: UiFacade = {
@@ -182,7 +219,7 @@ function stubs() {
     }
     return {
         calls,
-        deps: { audio, chunks, player, pickups, pistons, ui, trade, zone, log },
+        deps: { audio, chunks, player, pickups, pistons, props, ui, trade, zone, log },
         setPlayerPos(p: VoxelCoord | null) { playerPos = p },
         setGold(g: number) { gold = g },
         setArrows(a: number) { arrows = a },
@@ -575,15 +612,40 @@ test('pistons bindings forward to the facade', () => {
     assert.equal(ctx.pistons.isEnabled('piston.elevator'), true)
     assert.equal(ctx.pistons.setEnabled('piston.elevator', false), true)
     assert.equal(ctx.pistons.isEnabled('piston.elevator'), false)
+    assert.equal(ctx.pistons.setDeployed('piston.elevator', true), true)
     assert.equal(ctx.pistons.flip('piston.elevator'), true)
 
     // Unknown id returns false on every read/write path.
     assert.equal(ctx.pistons.setEnabled('piston.ghost', true), false)
     assert.equal(ctx.pistons.isEnabled('piston.ghost'), false)
+    assert.equal(ctx.pistons.setDeployed('piston.ghost', true), false)
     assert.equal(ctx.pistons.flip('piston.ghost'), false)
 
     s.setPistonFlipBlocks(true)
     assert.equal(ctx.pistons.flip('piston.trap'), false)
+})
+
+test('props bindings forward visibility and kind changes through the facade', () => {
+    const s = stubs()
+    const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
+
+    assert.deepEqual(ctx.props.list(), ['prop.lift'])
+    assert.equal(ctx.props.exists('prop.lift'), true)
+    assert.equal(ctx.props.isVisible('prop.lift'), true)
+    assert.equal(ctx.props.setVisible('prop.lift', false), true)
+    assert.equal(ctx.props.isVisible('prop.lift'), false)
+    assert.equal(ctx.props.setKind('prop.lift', 'lift-cabin-repaired'), true)
+    assert.equal(ctx.props.setVisible('missing', true), false)
+    assert.equal(ctx.props.setKind('missing', 'flower'), false)
+
+    assert.deepEqual(s.calls.propSetVisible, [
+        { id: 'prop.lift', visible: false },
+        { id: 'missing', visible: true },
+    ])
+    assert.deepEqual(s.calls.propSetKind, [
+        { id: 'prop.lift', kind: 'lift-cabin-repaired' },
+        { id: 'missing', kind: 'flower' },
+    ])
 })
 
 test('stones bindings forward direct stone and spawner control calls', () => {

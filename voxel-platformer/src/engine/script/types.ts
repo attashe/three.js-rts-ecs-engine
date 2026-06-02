@@ -15,6 +15,7 @@ import type { PlayerAbilityKey, PlayerSettings, PlayerSettingsPatch } from '../.
 import type { StoneSpawnOptions, StoneTierId } from '../../game/moving-objects'
 import type { InventoryCategoryId, InventoryItemOptions, InventorySnapshotItem } from '../../game/inventory'
 import type { DialogueVoiceRef } from '../../game/dialogue-voice/types'
+import type { EditorPropKind } from '../../game/props/prop-types'
 
 export type { VoxelCoord }
 
@@ -125,7 +126,18 @@ export interface PistonsFacade {
      *  ids, disabled pistons, and physical pistons that are currently
      *  mid-travel; true otherwise. */
     flip(id: string): boolean
+    /** Deploy/hide a physical piston entity. Returns false for unknown
+     *  ids, teleport pistons, or physical pistons mid-travel. */
+    setDeployed?(id: string, deployed: boolean): boolean
     /** Enumerate every id-bearing piston. Order matches registration. */
+    list(): string[]
+}
+
+export interface PropsFacade {
+    exists(id: string): boolean
+    isVisible(id: string): boolean
+    setVisible(id: string, visible: boolean): boolean
+    setKind(id: string, kind: string): boolean
     list(): string[]
 }
 
@@ -286,6 +298,7 @@ export interface ScriptContext {
     audio: AudioApi
     pickups: PickupsApi
     pistons: PistonsApi
+    props: PropsApi
     stones: StonesApi
     carts: CartsApi
     npc: NpcApi
@@ -419,8 +432,19 @@ export interface PistonsApi {
      *  ids, disabled pistons, and physical pistons mid-travel — the
      *  authored cycle stays untouched in those cases. */
     flip(id: string): boolean
+    /** Deploy/hide a physical piston's entity. Use for scripted repair
+     *  or construction flows where the platform should not exist yet. */
+    setDeployed(id: string, deployed: boolean): boolean
     /** Snapshot of every script-targetable piston id in the current
      *  level. Pistons without an `id` are intentionally excluded. */
+    list(): string[]
+}
+
+export interface PropsApi {
+    exists(id: string): boolean
+    isVisible(id: string): boolean
+    setVisible(id: string, visible: boolean): boolean
+    setKind(id: string, kind: EditorPropKind | string): boolean
     list(): string[]
 }
 
