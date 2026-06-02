@@ -11,6 +11,7 @@ import { createScriptEngineSystem } from '../engine/script/script-engine-system'
 import type {
     AudioFacade,
     CartsFacade,
+    CinematicFacade,
     ChunksFacade,
     DayCycleFacade,
     LogFacade,
@@ -88,6 +89,9 @@ export interface GameScriptSystemOptions {
     dialogue?: Pick<UiFacade, 'dialogue'>
     trade?: TradeMenuFacade
     travel?: TravelFacade
+    /** Backs the `cinematic.play / stop` bindings. Omit on levels that don't
+     *  use cinematics; scripts then see the no-op fallback. */
+    cinematic?: CinematicFacade
     /** Live authored props for `props.*` script bindings. */
     props?: EditorProp[]
     /** Source for the `level.spawn / size / name` getters. Narrowed to
@@ -460,6 +464,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
         dayCycle,
         weather,
         travel: opts.travel,
+        cinematic: opts.cinematic,
         level,
         getScripts: opts.getScripts,
         initialFlags: opts.initialFlags,

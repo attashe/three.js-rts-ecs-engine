@@ -29,6 +29,8 @@ export function createCameraFollowSystem(
         order: RenderOrder.cameraFollow,
         update(world, dt) {
             if (smoothing <= 0) return
+            // A cinematic owns the camera while active — don't fight its tweens.
+            if (world.cinematicActive) return
             const eids = query(world, [CameraTarget, Position])
             if (eids.length === 0) return
             const eid = eids[0]

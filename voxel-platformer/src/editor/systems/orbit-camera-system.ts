@@ -59,12 +59,36 @@ export function createOrbitCameraSystem(
         name: 'orbitCamera',
         order: RenderOrder.cameraControl + 2,
         update() {
+            // A cinematic preview owns the camera — stop OrbitControls so it
+            // doesn't fight the director's framing.
+            if (editorState.cinematicPreviewActive) {
+                if (controls.enabled) controls.enabled = false
+                input.consumeWheel()
+                return
+            }
             const isOrbit = editorState.viewMode === 'orbit'
             if (isOrbit && !wasOrbit) enterOrbit()
             else if (!isOrbit && wasOrbit) exitOrbit()
+            else if (isOrbit && !controls.enabled) {
+                // Resume after a preview ended while still in orbit mode.
+                controls.enabled = true
+                controls.target.copy(iso.target)
+            }
             wasOrbit = isOrbit
 
             if (!isOrbit) return
+            // "Jump to shot": snap the orbit camera onto a cinematic framing so
+            // the author can inspect / tweak it. OrbitControls re-derives its
+            // orientation from the camera position on the next update().
+            const jump = editorState.cameraJumpRequest
+            if (jump) {
+                editorState.cameraJumpRequest = null
+                iso.target.set(jump.target.x, jump.target.y, jump.target.z)
+                iso.camera.position.set(jump.position.x, jump.position.y, jump.position.z)
+                iso.camera.zoom = jump.zoom
+                iso.camera.updateProjectionMatrix()
+                controls.target.copy(iso.target)
+            }
             controls.update()
             iso.target.copy(controls.target)
             // Input also listens to the canvas. Drain these events so the

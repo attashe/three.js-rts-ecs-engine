@@ -3,6 +3,7 @@ import { PickupKind } from '../engine/ecs/systems/pickup-system'
 import type { RailCartConfig, RailCartFacing, VoxelCoord } from '../engine/ecs/world'
 import type { ZonePortal, ZoneTriggerSource } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
+import { cloneCinematic, type CameraShot, type Cinematic } from '../game/cinematics/cinematic-types'
 import { GameAudio } from '../game/audio'
 import type { BrushKind } from './brush'
 import type { TerrainBrushShape, TerrainFalloff, TerrainTool } from './terrain-brush'
@@ -485,6 +486,18 @@ export interface EditorState {
 
     /** Plain JavaScript scripts persisted with the level and run in playtest. */
     scripts: ScriptEntry[]
+    /** Authored cinematics (camera/text/character sequences), persisted with
+     *  the level and playable by id from scripts or on level start. */
+    cinematics: Cinematic[]
+    /** Cinematic currently selected for editing in the Cinematics tab.
+     *  Session-only — not serialized. */
+    selectedCinematicId: string | null
+    /** True while the Cinematics tab is previewing a cinematic; gates the
+     *  editor camera systems so the director owns the view. Session-only. */
+    cinematicPreviewActive: boolean
+    /** A one-shot request to move the orbit camera to a framing ("Jump to
+     *  shot"), consumed + cleared by the orbit-camera system. Session-only. */
+    cameraJumpRequest: CameraShot | null
     /** Falling-stone hazard emitters placed in the editor. */
     stoneSpawners: StoneFallSpawnerConfig[]
     selectedStoneSpawnerId: string | null
@@ -740,6 +753,10 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         stoneSize: DEFAULT_STONE_RADIUS,
         stoneVelocity: { x: 0, y: 0, z: 0 },
         scripts: [],
+        cinematics: [],
+        selectedCinematicId: null,
+        cinematicPreviewActive: false,
+        cameraJumpRequest: null,
         stoneSpawners: [],
         selectedStoneSpawnerId: null,
         stoneSpawnerTier: DEFAULT_STONE_TIER,
@@ -862,6 +879,8 @@ export interface EditorLevelMeta {
     ambientWeather?: EditorAmbientWeather
     /** Plain JavaScript scripts run by the script engine during playtest. */
     scripts?: ScriptEntry[]
+    /** Authored cinematics. Absent / empty ⇒ no cinematics in the level. */
+    cinematics?: Cinematic[]
 }
 
 export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
@@ -963,6 +982,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
         })),
         npcs: state.npcs.length === 0 ? undefined : state.npcs.map(copyNpcConfig),
         scripts: state.scripts.length === 0 ? undefined : state.scripts.map(copyScriptEntry),
+        cinematics: state.cinematics.length === 0 ? undefined : state.cinematics.map(cloneCinematic),
         ambientWeather: state.ambientWeather.enabled
             ? {
                 enabled: true,

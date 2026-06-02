@@ -286,6 +286,9 @@ export interface GameContext {
     /** Active timed melee attacks keyed by actor (`player:<eid>` / `npc:<id>`).
      *  The melee combat system owns timeline advancement and hit resolution. */
     meleeAttacks: Map<string, ActiveMeleeAttack>
+    /** True while a cinematic owns the camera. The camera-follow system yields
+     *  so the cinematic director can drive the view; cleared on completion. */
+    cinematicActive: boolean
     /** AABBs of settled rigid bodies the voxel-sweep treats as solid. */
     obstacles: ObstacleRegistry
     inventory: PickupInventory
@@ -429,6 +432,7 @@ export function createGameWorld(): GameWorld {
         equipmentByEid: new Map<number, Map<string, Object3D>>(),
         npcRuntimeById: new Map<string, NpcRuntimeState>(),
         meleeAttacks: new Map<string, ActiveMeleeAttack>(),
+        cinematicActive: false,
         obstacles: new ObstacleRegistry(),
         inventory: {
             gold: DEFAULT_PLAYER_SETTINGS.inventory.gold,

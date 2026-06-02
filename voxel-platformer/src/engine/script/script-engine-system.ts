@@ -30,6 +30,7 @@ import { createRuntime, type ScriptRuntime } from './runtime'
 import type {
     AudioFacade,
     CartsFacade,
+    CinematicFacade,
     ChunksFacade,
     DayCycleFacade,
     FlagValue,
@@ -74,6 +75,8 @@ export interface ScriptEngineSystemOptions {
     /** Optional. When omitted, `level.*` returns sentinel values
      *  (spawn at origin, size 0, name 'untitled'). */
     level?: LevelMetaFacade
+    /** Optional. When omitted, `cinematic.play(...)` resolves immediately. */
+    cinematic?: CinematicFacade
     /** Pulled fresh on every `apply()` / `init()` so the editor can mutate
      *  the script list without re-creating the system. */
     getScripts: () => readonly ScriptEntry[]
@@ -140,6 +143,7 @@ export function createScriptEngineSystem(opts: ScriptEngineSystemOptions): Scrip
         weather: opts.weather,
         travel: opts.travel,
         level: opts.level,
+        cinematic: opts.cinematic,
         flags,
     })
 

@@ -17,6 +17,8 @@ import { buildLogicTab } from './logic-tab'
 import { buildStonesTab } from './stones-tab'
 import { buildStructuresTab } from './structures-tab'
 import { buildRailTab } from './rail-tab'
+import { buildCinematicsTab } from './cinematics-tab'
+import type { CinematicPreviewController } from '../cinematic-preview'
 
 export interface MountEditorPanelOptions {
     world: GameWorld
@@ -24,6 +26,9 @@ export interface MountEditorPanelOptions {
     editorState: EditorState
     /** Undo / redo stack — `New` / `Load` invalidate it. */
     history: CommandStack
+    /** Drives the in-editor cinematic preview (camera + overlay). Provided by
+     *  the editor bootstrap, which owns the renderer/camera. */
+    cinematicPreview?: CinematicPreviewController
 }
 
 /**
@@ -61,6 +66,7 @@ export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () =
         { id: 'stones', label: 'Stones', build: () => buildStonesTab(opts) },
         { id: 'npcs', label: 'NPCs', build: () => buildNpcTab(opts) },
         { id: 'logic', label: 'Logic', build: () => buildLogicTab(opts) },
+        { id: 'cinematics', label: 'Cinematics', build: () => buildCinematicsTab(opts) },
         { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
         { id: 'help', label: 'Help', build: () => buildHelpTab() },
     ], 'edit')

@@ -16,6 +16,7 @@ import {
     type PlayerSettings,
 } from './player-settings'
 import type { ScriptEntry } from '../engine/script/types'
+import type { Cinematic } from './cinematics/cinematic-types'
 import {
     ARENA_FROM_DEMO_ARRIVAL_ID,
     COMBAT_ARENA_LEVEL_ID,
@@ -73,6 +74,10 @@ export interface LevelMeta {
     npcs: NpcConfig[]
     /** Plain JavaScript scripts run by the script engine. */
     scripts: ScriptEntry[]
+    /** Authored cinematics, playable by id from scripts (`cinematic.play`) or
+     *  auto-played on level start when `playOnStart` is set. Optional — absent
+     *  means the level has none. */
+    cinematics?: Cinematic[]
     /** Level-wide visual environment snapshot (sky/fog/sun/drifting
      *  rain & snow). Optional - absent means engine defaults. */
     ambientWeather?: AmbientWeatherRuntimeConfig

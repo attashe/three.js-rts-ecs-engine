@@ -51,6 +51,7 @@ import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { createRailRenderSystem } from './game/rail/rail-render-system'
 import { createFenceRenderSystem } from './game/fence/fence-render-system'
 import { mountEditorPanel } from './editor/editor-ui'
+import { createCinematicPreview } from './editor/cinematic-preview'
 import { consumePlaytestLevel } from './editor/playtest'
 import { loadLevelFromBuffer } from './editor/save-load'
 import type { GameWorld } from './engine/ecs/world'
@@ -121,7 +122,8 @@ async function main(): Promise<void> {
     renderer.iso.syncPosition()
 
     const history = createCommandStack()
-    mountEditorPanel({ world, chunks, editorState, history })
+    const cinematicPreview = createCinematicPreview(renderer.iso, editorState)
+    mountEditorPanel({ world, chunks, editorState, history, cinematicPreview: cinematicPreview.controller })
 
     const chunkRenderSystem: System = {
         name: 'chunkRender',
@@ -198,6 +200,7 @@ async function main(): Promise<void> {
         .addSystem(createViewModeSystem(renderer.iso, chunkRenderer, chunks, editorState), 'viewMode')
         .addSystem(createOrbitCameraSystem(renderer.iso, engine.input, renderer.webgpu.domElement, editorState), 'orbitCamera')
         .addSystem(createAxisGizmoSystem(renderer.iso), 'axisGizmo')
+        .addSystem(cinematicPreview.system, 'cinematicPreview')
 
     await engine.start()
 }

@@ -13,6 +13,7 @@ import { normalizeNpcConfig } from '../game/npcs/npc-types'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../game/player-settings'
 import { spawnPickupPreview } from './systems/pickup-spawn-system'
 import { toLevelMeta } from './editor-state'
+import { cloneCinematic } from '../game/cinematics/cinematic-types'
 import { despawnEntity } from '../engine/ecs/entity'
 import type { GameWorld } from '../engine/ecs/world'
 import { registerPistonMechanism } from '../game/mechanisms'
@@ -112,6 +113,9 @@ function clearWorldAndEditorState(
     editorState.stones = []
     editorState.selectedStoneId = null
     editorState.scripts = []
+    editorState.cinematics = []
+    editorState.selectedCinematicId = null
+    editorState.cinematicPreviewActive = false
     editorState.stoneSpawners = []
     editorState.selectedStoneSpawnerId = null
     // Leave ambientWeather alone — it's level-wide state the user
@@ -328,6 +332,8 @@ export function loadLevelFromBuffer(
             }))
         }
         editorState.scripts = (loaded.metadata.scripts ?? []).map(copyScriptEntry)
+        editorState.cinematics = (loaded.metadata.cinematics ?? []).map(cloneCinematic)
+        editorState.selectedCinematicId = editorState.cinematics[0]?.id ?? null
         // Restore the level-wide music selection. Without this branch
         // the Level-tab track dropdown silently resets to "(none)"
         // every time the editor reopens — e.g. after a playtest

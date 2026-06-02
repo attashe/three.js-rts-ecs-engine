@@ -74,6 +74,15 @@ export interface AudioFacade {
     stop(handleOrSoundId: unknown, opts?: { fade?: number }): void
 }
 
+export interface CinematicFacade {
+    /** Play an authored cinematic by id. Resolves when it finishes (or is
+     *  skipped). A no-op resolved promise if the id is unknown. */
+    play(id: string): Promise<void>
+    /** Skip the active cinematic. Returns false if none was playing. */
+    stop(): boolean
+    readonly isPlaying: boolean
+}
+
 export interface ChunksFacade {
     getBlock(x: number, y: number, z: number): number
     setBlock(x: number, y: number, z: number, block: number): void
@@ -296,6 +305,7 @@ export interface ScriptContext {
     player: PlayerApi
     chunks: ChunksApi
     audio: AudioApi
+    cinematic: CinematicApi
     pickups: PickupsApi
     pistons: PistonsApi
     props: PropsApi
@@ -409,6 +419,15 @@ export interface ChunksApi {
 export interface AudioApi {
     play(soundId: string, opts?: { volume?: number; loop?: boolean; fade?: number }): unknown
     stop(handleOrSoundId: unknown, opts?: { fade?: number }): void
+}
+
+export interface CinematicApi {
+    /** Play an authored cinematic by id; `await` it to continue the script
+     *  after the cinematic ends. */
+    play(id: string): Promise<void>
+    /** Skip the active cinematic. */
+    stop(): boolean
+    readonly isPlaying: boolean
 }
 
 export interface PickupsApi {

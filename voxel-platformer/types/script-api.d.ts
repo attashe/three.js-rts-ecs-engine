@@ -312,6 +312,21 @@ interface AudioApi {
 
 declare const audio: AudioApi
 
+// ─── cinematic (camera/text/character sequences) ──────────────────────
+
+interface CinematicApi {
+    /** Play an authored cinematic by id. `await` it to continue the script
+     *  after the cinematic ends; an unknown id resolves immediately.
+     *  Example: `await cinematic.play('intro')` */
+    play(id: string): Promise<void>
+    /** Skip the active cinematic. Returns false if none was playing. */
+    stop(): boolean
+    /** Whether a cinematic is currently playing. */
+    readonly isPlaying: boolean
+}
+
+declare const cinematic: CinematicApi
+
 // ─── pickups ──────────────────────────────────────────────────────────
 
 interface PickupSpawnOptions {

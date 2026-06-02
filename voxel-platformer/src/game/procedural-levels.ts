@@ -10,6 +10,7 @@ import {
 } from './high-jump-boots'
 import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
 import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
+import type { CameraShot, Cinematic } from './cinematics/cinematic-types'
 import {
     generateStructureAsset,
     placeStructureAsset,
@@ -216,6 +217,56 @@ export function createDemoScripts(scriptSources: ProceduralScriptSources): Scrip
     }))
 }
 
+/**
+ * "Garden arrival" — a one-shot establishing cinematic played the first time
+ * the player teleports into the garden (the client's `playOnStart` guard keeps
+ * it from replaying on return trips). It orbits the camera a full turn around
+ * the garden centre while three lines of text fade in over the top, swapping to
+ * the hopeful Menu theme for the reveal and crossfading back to the garden bed
+ * at the end.
+ *
+ * The orbit is expressed as discrete camera shots placed on a circle and tweened
+ * between — see the "orbit step" enhancement proposal for a cleaner primitive.
+ */
+function gardenIntroCinematic(size: number, groundY: number): Cinematic {
+    const center = { x: size / 2, y: groundY + 1, z: size / 2 }
+    const radius = size * 0.95
+    const camY = groundY + 11
+    const zoom = 0.78
+    const shotAt = (deg: number): CameraShot => {
+        const a = (deg * Math.PI) / 180
+        return {
+            position: { x: center.x + Math.cos(a) * radius, y: camY, z: center.z + Math.sin(a) * radius },
+            target: { ...center },
+            zoom,
+        }
+    }
+    return {
+        id: 'garden-intro',
+        name: 'Garden arrival',
+        playOnStart: true,
+        letterbox: true,
+        freezePlayer: true,
+        steps: [
+            // Swap to the reveal theme; restored to the garden bed at the end.
+            { id: 'music', type: 'sound', wait: false, soundId: 'music.theme.menu', fade: 1.5 },
+            // Establishing move from the spawn view onto the orbit ring, then a
+            // full turn. Camera steps block (▶) so the rotation is continuous;
+            // subtitles run alongside (‖) so text floats over the moving shot.
+            { id: 'cam0', type: 'camera', wait: true, duration: 2.2, ease: 'easeOut', shot: shotAt(20) },
+            { id: 'text1', type: 'subtitle', wait: false, duration: 3.5, text: 'The Teleport Garden' },
+            { id: 'cam1', type: 'camera', wait: true, duration: 2.6, ease: 'easeInOut', shot: shotAt(92) },
+            { id: 'cam2', type: 'camera', wait: true, duration: 2.6, ease: 'easeInOut', shot: shotAt(164) },
+            { id: 'text2', type: 'subtitle', wait: false, duration: 4, text: 'A quiet waypoint between worlds.' },
+            { id: 'cam3', type: 'camera', wait: true, duration: 2.6, ease: 'easeInOut', shot: shotAt(236) },
+            { id: 'cam4', type: 'camera', wait: true, duration: 2.6, ease: 'easeInOut', shot: shotAt(308) },
+            { id: 'text3', type: 'subtitle', wait: false, duration: 4, text: 'Rest here — the paths will wait.' },
+            { id: 'cam5', type: 'camera', wait: true, duration: 2.6, ease: 'easeInOut', shot: shotAt(380) },
+            { id: 'music-restore', type: 'sound', wait: false, soundId: 'music.amb.garden', fade: 2 },
+        ],
+    }
+}
+
 export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
     const size = 20
     const groundY = 4
@@ -282,6 +333,8 @@ export function generateTeleportGardenLevel(chunks: ChunkManager): LevelMeta {
             { position: { x: 6.2, y: groundY + 1, z: 14.8 }, amount: 1 },
         ],
         zones,
+        // Arrival cinematic — plays once, the first time the player teleports in.
+        cinematics: [gardenIntroCinematic(size, groundY)],
         // "Verdant" — warm, pastoral piano bed for the garden.
         environment: { soundId: 'music.amb.garden', volume: 0.28 },
         ambient: outdoorDay({

@@ -1,4 +1,5 @@
 import { copyScriptEntry, copyStonePlacement, copyStoneSpawner, type EditorLevelMeta } from '../editor/editor-state'
+import { cloneCinematic } from './cinematics/cinematic-types'
 import type { Zone } from '../engine/ecs/zones'
 import type { LevelMeta, CoinPileSpawn } from './level'
 import type { PistonMechanismConfig } from './mechanisms'
@@ -141,6 +142,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
         props,
         npcs,
         scripts: (meta.scripts ?? []).map(copyScriptEntry),
+        cinematics: (meta.cinematics ?? []).map(cloneCinematic),
         ambientWeather,
         size: fallbackSize,
     }

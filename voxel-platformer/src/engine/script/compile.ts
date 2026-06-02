@@ -29,7 +29,7 @@ export const PRELUDE_LOCALS = [
     'on', 'once', 'emit', 'wait', 'log',
     'player', 'chunks', 'pickups', 'pistons', 'props', 'stones', 'audio',
     'npc', 'flags', 'time', 'zone', 'geom', 'ui', 'trade',
-    'dayCycle', 'weather', 'travel', 'level', 'random',
+    'dayCycle', 'weather', 'travel', 'level', 'cinematic', 'random',
 ].join(', ')
 
 export interface CompileSuccess {

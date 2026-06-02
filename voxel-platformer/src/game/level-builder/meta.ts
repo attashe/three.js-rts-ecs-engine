@@ -24,6 +24,7 @@ import type { WeatherZoneRuntimeConfig } from '../weather-config'
 import type { EditorProp } from '../props/prop-types'
 import type { NpcConfig } from '../npcs/npc-types'
 import type { ScriptEntry } from '../../engine/script/types'
+import type { Cinematic } from '../cinematics/cinematic-types'
 
 interface XZ {
     x: number
@@ -52,6 +53,7 @@ export interface LevelSpec {
     props?: EditorProp[]
     npcs?: NpcConfig[]
     scripts?: ScriptEntry[]
+    cinematics?: Cinematic[]
     /** Alias for {@link ambientWeather}. When both are given,
      *  `ambientWeather` wins. */
     ambient?: AmbientWeatherRuntimeConfig
@@ -78,6 +80,7 @@ export function defineLevel(spec: LevelSpec): LevelMeta {
         props: spec.props ?? [],
         npcs: spec.npcs ?? [],
         scripts: spec.scripts ?? [],
+        cinematics: spec.cinematics,
         ambientWeather: spec.ambientWeather ?? spec.ambient,
         size: spec.size,
     }

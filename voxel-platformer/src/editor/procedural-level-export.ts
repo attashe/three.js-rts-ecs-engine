@@ -15,6 +15,7 @@ import {
     type ProceduralScriptSources,
 } from '../game/procedural-levels'
 import type { LevelMeta } from '../game/level'
+import { cloneCinematic } from '../game/cinematics/cinematic-types'
 import { copyNpcConfig } from '../game/npcs/npc-types'
 import { copyPlayerSettings } from '../game/player-settings'
 
@@ -159,6 +160,7 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             },
         } : undefined,
         scripts: meta.scripts.map(copyScriptEntry),
+        cinematics: meta.cinematics?.map(cloneCinematic),
     }
 }
 

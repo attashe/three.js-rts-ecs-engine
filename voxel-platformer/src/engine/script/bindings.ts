@@ -15,6 +15,7 @@
 import type {
     AudioFacade,
     CartsFacade,
+    CinematicFacade,
     ChunksFacade,
     DayCycleFacade,
     Disposer,
@@ -67,6 +68,7 @@ export interface BindingsDeps {
     weather?: WeatherFacade
     travel?: TravelFacade
     level?: LevelMetaFacade
+    cinematic?: CinematicFacade
     /** Backing store for `flags.get / set`. Owned by the script engine
      *  system so it can persist into level metadata on save. */
     flags: Map<string, FlagValue>
@@ -80,6 +82,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
     const weather = deps.weather ?? NOOP_WEATHER
     const travel = deps.travel ?? NOOP_TRAVEL
     const level = deps.level ?? NOOP_LEVEL
+    const cinematic = deps.cinematic ?? NOOP_CINEMATIC
     const stones = deps.stones ?? NOOP_STONES
     const carts = deps.carts ?? NOOP_CARTS
     const npc = deps.npc ?? NOOP_NPC
@@ -295,6 +298,12 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             get name() { return level.getName() },
         },
 
+        cinematic: {
+            play(id) { return cinematic.play(id) },
+            stop() { return cinematic.stop() },
+            get isPlaying() { return cinematic.isPlaying },
+        },
+
         random: (min, max) => runtime.random(min, max),
     }
 
@@ -339,6 +348,12 @@ const NOOP_LEVEL: LevelMetaFacade = {
     getSpawn() { return { x: 0, y: 0, z: 0 } },
     getSize() { return 0 },
     getName() { return 'untitled' },
+}
+
+const NOOP_CINEMATIC: CinematicFacade = {
+    play() { return Promise.resolve() },
+    stop() { return false },
+    isPlaying: false,
 }
 
 const NOOP_STONES: StonesFacade = {

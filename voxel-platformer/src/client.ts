@@ -22,6 +22,11 @@ import { createProjectileLaunchSystem } from './engine/ecs/systems/projectile-la
 import { createMeleeAttackSystem } from './engine/ecs/systems/melee-attack-system'
 import { createMeleeCombatSystem } from './engine/ecs/systems/melee-combat-system'
 import { createPlayerHurtAudioSystem } from './engine/ecs/systems/player-hurt-audio-system'
+import { CinematicDirector } from './game/cinematics/cinematic-director'
+import { createCinematicSystem } from './game/cinematics/cinematic-system'
+import { createCinematicOverlay } from './game/cinematics/cinematic-overlay'
+import { createGameCinematicStage } from './game/cinematics/game-cinematic-stage'
+import type { CinematicFacade } from './engine/script/types'
 import { createSpellCastSystem } from './game/spells'
 import { createSpellEffectSystem, createSpellEffectRenderSystem } from './game/spell-effect-system'
 import { createWeaponStanceSystem } from './game/weapon-stance-system'
@@ -181,6 +186,44 @@ async function main(): Promise<void> {
     const snapshots = new Map<string, LocationSnapshot>()
     let active: ActiveLocation | null = null
     let locationVersion = 0
+
+    // ── Cinematics: one director for the whole session, driving the camera +
+    // a letterbox/subtitle overlay. The script-facing facade resolves ids
+    // against the active location's authored cinematics.
+    const cinematicMusicIds = new Set((GAME_AUDIO_MANIFEST.music ?? []).map((a) => a.id))
+    const cinematicOverlay = createCinematicOverlay()
+    const cinematicDirector = new CinematicDirector(createGameCinematicStage({
+        iso: renderer.iso,
+        world,
+        input: engine.input,
+        overlay: cinematicOverlay,
+        getNpcs: () => active?.meta.npcs ?? [],
+        playSound: (id, o) => {
+            if (cinematicMusicIds.has(id)) {
+                void audio.playMusic(id, { volume: o.volume, crossfade: o.fade, fadeIn: o.fade, fadeOut: o.fade }).catch(() => {})
+            } else {
+                audio.play(id, { deferUntilUnlocked: true, volume: o.volume, fadeIn: o.fade })
+            }
+        },
+    }))
+    cinematicOverlay.onSkip(() => cinematicDirector.skip())
+    const playedIntros = new Set<string>()
+    const cinematicFacade: CinematicFacade = {
+        play: (id) => {
+            const c = (active?.meta.cinematics ?? []).find((x) => x.id === id)
+            if (!c) {
+                console.warn(`cinematic.play: unknown cinematic "${id}"`)
+                return Promise.resolve()
+            }
+            return cinematicDirector.play(c)
+        },
+        stop: () => {
+            if (!cinematicDirector.isPlaying) return false
+            cinematicDirector.skip()
+            return true
+        },
+        get isPlaying() { return cinematicDirector.isPlaying },
+    }
     let travelInFlight = false
 
     const slots = {
@@ -327,6 +370,17 @@ async function main(): Promise<void> {
             nextActive.environmentHandle = startEnvironment(audio, meta.environment, GAME_AUDIO_MANIFEST)
         })
         titleOverlay.show(meta.name)
+
+        // Auto-play a `playOnStart` cinematic the first time the player reaches
+        // this location in the session.
+        const intro = (meta.cinematics ?? []).find((c) => c.playOnStart)
+        if (intro) {
+            const introKey = `${loaded.id}:${intro.id}`
+            if (!playedIntros.has(introKey)) {
+                playedIntros.add(introKey)
+                void cinematicDirector.play(intro)
+            }
+        }
     }
 
     function installLocationSystems(location: ActiveLocation, initialFlags?: ReadonlyMap<string, FlagValue>): void {
@@ -369,6 +423,7 @@ async function main(): Promise<void> {
             dialogue: dialogue.facade,
             trade: trade.facade,
             travel: travelFacade,
+            cinematic: cinematicFacade,
             level: meta,
             props: meta.props,
             checkpointStore: location.checkpointStore,
@@ -690,6 +745,7 @@ async function main(): Promise<void> {
             wheelZoom: true,
         }), 'cameraControl')
         .addSystem(createCameraFollowSystem(renderer.iso, { smoothing: 8 }), 'cameraFollow')
+        .addSystem(createCinematicSystem(cinematicDirector), 'cinematic')
         .addSystem(createPlayerAudioListenerSystem(audio, () => renderer.iso.camera), 'audioListener')
 
     mountRestartButton(world)
