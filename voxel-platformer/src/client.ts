@@ -43,6 +43,7 @@ import { createElectricOrbSystem } from './game/electric-orb-system'
 import { createConsumableUseSystem, createDelayedConsumableSystem } from './game/consumable-use-system'
 import { createDynamiteSystem } from './game/dynamite-system'
 import { createNpcLootSystem } from './game/npc-loot-system'
+import { createSniperHatTrajectorySystem } from './game/sniper-hat-trajectory-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { createPickupSystem, PickupKind } from './engine/ecs/systems/pickup-system'
@@ -756,6 +757,7 @@ async function main(): Promise<void> {
         .addSystem(createPlayerDeathAnimSystem(), 'playerDeathAnim')
         .addSystem(createAnimationSystem(), 'animation')
         .addSystem(createPlayerStunBlinkSystem(), 'playerStunBlink')
+        .addSystem(createSniperHatTrajectorySystem(renderer.scene, chunks), 'sniperHatTrajectory')
         .addSystem(slots.blockLights.system, 'blockLights')
         .addSystem(slots.chunkRender.system, 'chunkRender')
         .addSystem(slots.indoorCut.system, 'indoorCut')

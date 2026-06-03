@@ -19,6 +19,7 @@ import { createGameWorld, type GameWorld } from '../src/engine/ecs/world'
 import type { ActionMap } from '../src/engine/input/actions'
 import { GameAction } from '../src/game/actions'
 import { createLadderSystem, nearestLadderInteractionTarget } from '../src/game/ladder/ladder-system'
+import { ladderCellAttachmentAt } from '../src/game/ladder/ladder-support'
 
 test('default ladder is a raycastable non-physical special block', () => {
     assert.equal(BLOCK.ladder, 47)
@@ -59,6 +60,25 @@ test('old palettes append stairs before ladder to preserve stable default indice
     assert.equal(ladderBlockIndex(chunks.palette), BLOCK.ladder)
 })
 
+test('ladder cells require side wall support', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 1, 0, BLOCK.ladder)
+    const world = createGameWorld()
+    const player = placePlayer(world, 0.5, 1, 0.5)
+
+    assert.equal(ladderCellAttachmentAt(chunks, 0, 1, 0), null)
+    assert.equal(nearestLadderInteractionTarget(world, playerInfo(player), chunks), null)
+
+    chunks.setVoxel(-1, 1, 0, BLOCK.stone)
+    const attachment = ladderCellAttachmentAt(chunks, 0, 1, 0)
+
+    assert.equal(attachment?.normalX, 1)
+    assert.equal(attachment?.normalZ, 0)
+    assertNear(attachment?.surfaceX ?? 0, 0.035)
+    assertNear(attachment?.surfaceZ ?? 0, 0.5)
+    assert.equal(nearestLadderInteractionTarget(world, playerInfo(player), chunks)?.prompt, 'Climb ladder')
+})
+
 test('ladder interaction attaches the player and physics skips gravity while climbing', () => {
     const chunks = ladderTestChunks()
     const world = createGameWorld()
@@ -70,7 +90,7 @@ test('ladder interaction attaches the player and physics skips gravity while cli
     target?.interact(world, playerInfo(player))
 
     assert.equal(hasComponent(world, player, ClimbingLadder), true)
-    assertNear(Position.x[player], 0.5)
+    assertNear(Position.x[player], 0.4)
     assertNear(Position.z[player], 0.5)
     assert.equal(Velocity.y[player], 0)
 
@@ -109,6 +129,22 @@ test('climber detaches if the ladder column is broken while attached', () => {
     assert.equal(hasComponent(world, player, ClimbingLadder), false)
 })
 
+test('climber detaches if a ladder wall support is removed while attached', () => {
+    const chunks = ladderTestChunks()
+    const world = createGameWorld()
+    const actions = heldActions()
+    const system = createLadderSystem(chunks, { actions, climbSpeed: 2 })
+    const player = placePlayer(world, 0.5, 2, 0.5)
+
+    nearestLadderInteractionTarget(world, playerInfo(player), chunks)?.interact(world, playerInfo(player))
+    assert.equal(hasComponent(world, player, ClimbingLadder), true)
+
+    chunks.setVoxel(-1, 2, 0, BLOCK.air)
+    system.update(world, 1 / 60)
+
+    assert.equal(hasComponent(world, player, ClimbingLadder), false)
+})
+
 test('W and S climb vertically and auto-detach at ladder endpoints', () => {
     const chunks = ladderTestChunks()
     chunks.setVoxel(1, 3, 0, BLOCK.stone)
@@ -125,7 +161,7 @@ test('W and S climb vertically and auto-detach at ladder endpoints', () => {
 
     system.update(world, 2)
     assert.equal(hasComponent(world, player, ClimbingLadder), false)
-    assertNear(Position.x[player], 1.5)
+    assertNear(Position.x[player], -0.5)
     assertNear(Position.y[player], 4)
     assertNear(Position.z[player], 0.5)
 
@@ -138,14 +174,35 @@ test('W and S climb vertically and auto-detach at ladder endpoints', () => {
     system.update(world, 1)
 
     assert.equal(hasComponent(world, player, ClimbingLadder), false)
-    assertNear(Position.x[player], 0.5)
+    assertNear(Position.x[player], 0.4)
     assertNear(Position.y[player], 1)
+    assertNear(Position.z[player], 0.5)
+})
+
+test('climber stays attached at the top if no safe dismount ledge exists', () => {
+    const chunks = ladderTestChunks()
+    chunks.setVoxel(-1, 4, 0, BLOCK.stone)
+    const world = createGameWorld()
+    const actions = heldActions()
+    const system = createLadderSystem(chunks, { actions, climbSpeed: 2 })
+    const player = placePlayer(world, 0.5, 3.9, 0.5)
+
+    nearestLadderInteractionTarget(world, playerInfo(player), chunks)?.interact(world, playerInfo(player))
+    actions.hold(GameAction.MoveForward)
+    system.update(world, 1)
+
+    assert.equal(hasComponent(world, player, ClimbingLadder), true)
+    assertNear(Position.x[player], 0.4)
+    assertNear(Position.y[player], 4)
     assertNear(Position.z[player], 0.5)
 })
 
 function ladderTestChunks(): ChunkManager {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    chunks.setVoxel(-1, 1, 0, BLOCK.stone)
+    chunks.setVoxel(-1, 2, 0, BLOCK.stone)
+    chunks.setVoxel(-1, 3, 0, BLOCK.stone)
     chunks.setVoxel(0, 1, 0, BLOCK.ladder)
     chunks.setVoxel(0, 2, 0, BLOCK.ladder)
     chunks.setVoxel(0, 3, 0, BLOCK.ladder)

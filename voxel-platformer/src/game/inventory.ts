@@ -1,6 +1,7 @@
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from './high-jump-boots'
 import {
     METAL_HELMET_ITEM_ID,
+    SNIPER_HAT_ITEM_ID,
     SPEAR_ITEM_ID,
     isBuyableHeadEquipmentItemId,
 } from './equipment-items'
@@ -43,6 +44,7 @@ export type InventoryIconId =
     | 'hat-arcane'
     | 'hat-ranger'
     | 'hat-guard'
+    | 'hat-sniper'
     | 'hat-sun'
     | 'metal-helmet'
     | 'sword'
@@ -192,6 +194,7 @@ export function defaultInventoryIcon(itemId: string, category = defaultInventory
     if (itemId === 'dynamite') return 'dynamite'
     if (itemId === HIGH_JUMP_BOOTS_ITEM_ID || itemId === HIGH_SPEED_BOOTS_ITEM_ID || itemId.includes('boots')) return 'boots'
     if (itemId === METAL_HELMET_ITEM_ID) return 'metal-helmet'
+    if (itemId === SNIPER_HAT_ITEM_ID) return 'hat-sniper'
     if (itemId === SPEAR_ITEM_ID) return 'spear'
     if (itemId.includes('shard') || category === 'quest') return 'quest-shard'
     if (category === 'consumables') return 'consumable'
@@ -299,6 +302,7 @@ function isInventoryIcon(value: unknown): value is InventoryIconId {
         'hat-arcane',
         'hat-ranger',
         'hat-guard',
+        'hat-sniper',
         'hat-sun',
         'metal-helmet',
         'sword',

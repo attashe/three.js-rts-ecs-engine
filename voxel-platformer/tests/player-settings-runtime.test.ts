@@ -4,6 +4,8 @@ import { addComponent, query } from 'bitecs'
 import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Vector3, type Object3D } from 'three'
 import { BoxCollider, ClimbingLadder, Grounded, MovingObject, Shield, Velocity } from '../src/engine/ecs/components'
 import { computeLocomotionParams } from '../src/engine/anim/core'
+import { ChunkManager } from '../src/engine/voxel/chunk-manager'
+import { BLOCK, DEFAULT_PALETTE } from '../src/engine/voxel/palette'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
 import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
 import { createPlayerControlSystem } from '../src/engine/ecs/systems/player-control-system'
@@ -26,7 +28,7 @@ import {
     isStaffEquipmentKind,
 } from '../src/game/anim/equipment'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
-import { SPEAR_ITEM_ID } from '../src/game/equipment-items'
+import { SNIPER_HAT_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
 import {
     HIGH_SPEED_BOOTS_MOVE_SPEED_BONUS,
     RANGER_HAT_ARROW_LIFT_BONUS,
@@ -42,6 +44,9 @@ import {
     syncPlayerVisuals,
 } from '../src/game/player'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
+import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
+import { normalizeNpcConfig } from '../src/game/npcs/npc-types'
+import { predictSniperArrowTrajectory, sniperTrajectoryPreviewEnabled } from '../src/game/sniper-hat-trajectory-system'
 
 function onePressAction(): ActionMap {
     let pressed = true
@@ -120,6 +125,47 @@ test('ranger hat shoots arrows farther by increasing launch velocity', () => {
     assert.ok(arrow)
     assert.equal(Velocity.z[arrow!], DEFAULT_PLAYER_SETTINGS.arrowSpeed + RANGER_HAT_ARROW_SPEED_BONUS)
     assert.equal(Velocity.y[arrow!], DEFAULT_PLAYER_SETTINGS.arrowLift + RANGER_HAT_ARROW_LIFT_BONUS)
+})
+
+test('sniper hat enables trajectory preview and predicts NPC target-volume hit', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.head = SNIPER_HAT_ITEM_ID
+    world.weaponStance = 'ranged'
+    world.inventory.arrows = 1
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    registerRuntimeNpcs(world, [
+        normalizeNpcConfig({ id: 'target', model: 'keeper', position: { x: 0, y: 1, z: 2.35 } }),
+    ])
+
+    assert.equal(sniperTrajectoryPreviewEnabled(world, player), true)
+    const prediction = predictSniperArrowTrajectory(world, chunks, player)
+
+    assert.equal(prediction.hit?.kind, 'npc')
+    assert.ok(prediction.points.length > 2)
+    assert.ok(Math.abs(prediction.hit.position.z - 2.0) < 0.6)
+
+    world.inventory.arrows = 0
+    assert.equal(sniperTrajectoryPreviewEnabled(world, player), false)
+})
+
+test('sniper hat trajectory prediction marks first terrain hit point', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 1, 4, BLOCK.stone)
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.head = SNIPER_HAT_ITEM_ID
+    world.weaponStance = 'ranged'
+    world.inventory.arrows = 1
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+
+    const prediction = predictSniperArrowTrajectory(world, chunks, player)
+
+    assert.equal(prediction.hit?.kind, 'voxel')
+    assert.ok(prediction.hit.position.z >= 4 && prediction.hit.position.z <= 4.1)
 })
 
 test('high speed boots increase player control base speed', () => {
@@ -306,6 +352,7 @@ test('all head equipment variants build distinct hat models', () => {
         const frame = equipmentSocketFrame(kind, 'head')
         assert.ok((frame.offset?.[1] ?? 1) < 0, `${kind} should sit down onto the head socket`)
     }
+    assert.ok(findObjectByName(createEquipment(SNIPER_HAT_ITEM_ID), 'SniperHatLens'))
     assert.ok(childCounts.size > 1, 'hat variants should not all share the same silhouette complexity')
 })
 

@@ -212,6 +212,7 @@ test('large town includes the fixed dwarf market row and merchants', () => {
     assert.match(smith!.scriptSource, /resource": "spear"/)
     assert.match(smith!.scriptSource, /resource": "metal-helmet"/)
     assert.match(clothier!.scriptSource, /resource": "hat-ranger"/)
+    assert.match(clothier!.scriptSource, /resource": "hat-sniper"/)
     assert.match(clothier!.scriptSource, /resource": "high-speed-boots"/)
     assert.match(product!.scriptSource, /resource": "food-apple"/)
     assert.match(product!.scriptSource, /resource": "food-pie"/)

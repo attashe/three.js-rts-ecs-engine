@@ -15,6 +15,7 @@ import { RenderOrder } from '../../engine/ecs/systems/orders'
 import { CHUNK_DIM, chunkKey, type Chunk, type ChunkKey } from '../../engine/voxel/chunk'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import { isLadderBlock } from '../../engine/voxel/palette'
+import { ladderCellAttachmentAt } from './ladder-support'
 
 export interface LadderRenderOptions {
     cutY?: () => number | null
@@ -27,6 +28,9 @@ interface LadderRecord {
     x: number
     y: number
     z: number
+    surfaceX: number
+    surfaceZ: number
+    yaw: number
 }
 
 interface ChunkSnapshot {
@@ -35,6 +39,7 @@ interface ChunkSnapshot {
 }
 
 const MAX_INITIAL_CAPACITY = 256
+const tmpUp = new Vector3(0, 1, 0)
 const tmpPos = new Vector3()
 const tmpQuat = new Quaternion()
 const tmpScale = new Vector3(1, 1, 1)
@@ -131,24 +136,27 @@ export function createLadderRenderSystem(
 
     function writeRecord(record: LadderRecord): void {
         const target = ensureMesh()
-        tmpPos.set(record.x + 0.5, record.y, record.z + 0.5)
-        tmpQuat.identity()
+        tmpPos.set(record.surfaceX, record.y, record.surfaceZ)
+        tmpQuat.setFromAxisAngle(tmpUp, record.yaw)
         tmpMatrix.compose(tmpPos, tmpQuat, tmpScale)
         target.setMatrixAt(record.slot, tmpMatrix)
         dirty = true
     }
 
-    function upsertLadder(x: number, y: number, z: number, key: string): void {
+    function upsertLadder(x: number, y: number, z: number, surfaceX: number, surfaceZ: number, yaw: number, key: string): void {
         let record = records.get(key)
         if (!record) {
             const slot = allocateSlot(key)
             if (slot < 0) return
-            record = { key, slot, x, y, z }
+            record = { key, slot, x, y, z, surfaceX, surfaceZ, yaw }
             records.set(key, record)
         }
         record.x = x
         record.y = y
         record.z = z
+        record.surfaceX = surfaceX
+        record.surfaceZ = surfaceZ
+        record.yaw = yaw
         writeRecord(record)
     }
 
@@ -166,7 +174,9 @@ export function createLadderRenderSystem(
                 const wz = baseZ + lz
                 const ladderKey = `${wx},${wy},${wz}`
                 ladderKeys.add(ladderKey)
-                upsertLadder(wx, wy, wz, ladderKey)
+                const attachment = ladderCellAttachmentAt(chunks, wx, wy, wz)
+                if (!attachment) return
+                upsertLadder(wx, wy, wz, attachment.surfaceX, attachment.surfaceZ, attachment.yaw, ladderKey)
             })
         }
         if (prev) {
@@ -191,7 +201,7 @@ export function createLadderRenderSystem(
             const key = chunkKey(chunk.cx, chunk.cy, chunk.cz)
             seen.add(key)
             const snapshot = snapshots.get(key)
-            if (snapshot?.version === chunk.version) continue
+            if (snapshot?.version === chunk.version && snapshot.ladderKeys.size === 0) continue
             syncChunk(chunk, key)
         }
         for (const key of [...snapshots.keys()]) {
@@ -264,13 +274,10 @@ function buildLadderGeometry(): BufferGeometry {
     const rail = [0.38, 0.22, 0.10] as const
     const rung = [0.62, 0.42, 0.22] as const
     for (const x of [-0.28, 0.28]) {
-        for (const z of [-0.24, 0.24]) {
-            parts.push(box(0.08, 1.0, 0.08, x, 0.5, z, ...rail))
-        }
+        parts.push(box(0.08, 1.0, 0.07, x, 0.5, 0, ...rail))
     }
     for (const y of [0.24, 0.52, 0.80]) {
-        parts.push(box(0.62, 0.07, 0.07, 0, y, -0.28, ...rung))
-        parts.push(box(0.62, 0.07, 0.07, 0, y, 0.28, ...rung))
+        parts.push(box(0.62, 0.07, 0.08, 0, y, 0.01, ...rung))
     }
     const merged = mergeGeometries(parts, false)
     for (const part of parts) part.dispose()

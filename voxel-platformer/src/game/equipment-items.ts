@@ -4,10 +4,12 @@ import type { InventoryItemOptions } from './inventory'
 
 export const SPEAR_ITEM_ID = 'spear' satisfies HandEquipmentKind
 export const METAL_HELMET_ITEM_ID = 'metal-helmet' satisfies HeadEquipmentKind
+export const SNIPER_HAT_ITEM_ID = 'hat-sniper' satisfies HeadEquipmentKind
 
 export const BUYABLE_HEAD_EQUIPMENT_ITEM_IDS = [
     'hat-arcane',
     'hat-ranger',
+    SNIPER_HAT_ITEM_ID,
     'hat-sun',
     METAL_HELMET_ITEM_ID,
 ] as const satisfies readonly HeadEquipmentKind[]
@@ -38,6 +40,12 @@ export const BUYABLE_EQUIPMENT_ITEM_OPTIONS: Record<BuyableEquipmentItemId, Inve
         description: 'A green ranger cap that helps arrows fly farther.',
         category: 'accessories',
         icon: 'hat-ranger',
+    },
+    [SNIPER_HAT_ITEM_ID]: {
+        name: EQUIPMENT_LABELS[SNIPER_HAT_ITEM_ID],
+        description: 'A sighted cap that reveals arrow trajectory and impact point.',
+        category: 'accessories',
+        icon: 'hat-sniper',
     },
     'hat-sun': {
         name: EQUIPMENT_LABELS['hat-sun'],

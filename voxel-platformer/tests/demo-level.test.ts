@@ -106,11 +106,13 @@ test('demo cliff has a vertical ladder with clear bottom and top dismounts', () 
 
     for (let y = 5; y <= 8; y++) {
         assert.equal(chunks.getVoxel(20, y, 4), BLOCK.ladder, `ladder cell at 20,${y},4`)
+        assert.equal(chunks.getVoxel(19, y, 4), BLOCK.stone, `ladder side support at 19,${y},4`)
     }
     assert.equal(chunks.getVoxel(20, 4, 4), BLOCK.plank, 'ladder bottom should stand on the lower plank')
-    assert.equal(chunks.getVoxel(21, 8, 4), BLOCK.plank, 'ladder top should exit onto the upper plank')
-    assertPlayerFootClear(chunks, { x: 20.5, y: 5, z: 4.5 }, 'ladder bottom')
-    assertPlayerFootClear(chunks, { x: 21.5, y: 9, z: 4.5 }, 'ladder top')
+    assert.equal(chunks.getVoxel(19, 8, 5), BLOCK.plank, 'ladder top should connect to the upper landing')
+    assert.equal(chunks.getVoxel(21, 8, 4), BLOCK.plank, 'upper landing should remain connected in front of the ladder')
+    assertPlayerFootClear(chunks, { x: 20.4, y: 5, z: 4.5 }, 'ladder bottom')
+    assertPlayerFootClear(chunks, { x: 19.5, y: 9, z: 4.5 }, 'ladder top')
 })
 
 function assertPlayerArrivalClear(chunks: ChunkManager, zone: NonNullable<ReturnType<typeof generatePlatformerLevel>['zones'][number]>, label: string): void {

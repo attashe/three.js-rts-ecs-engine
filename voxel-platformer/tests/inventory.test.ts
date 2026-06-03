@@ -17,7 +17,7 @@ import {
 import { consumeHealPotion, consumeManaPotion, setBootsEquipped, setHeadEquipment, setHighJumpBootsEquipped, setMeleeHandEquipment } from '../src/game/inventory-system'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
-import { METAL_HELMET_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
+import { METAL_HELMET_ITEM_ID, SNIPER_HAT_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
 import { MANA_POTION_ITEM_ID, MANA_POTION_RESTORE, PLAYER_DEFAULT_MAX_MANA } from '../src/game/mana'
 import {
     DYNAMITE_ITEM_ID,
@@ -62,6 +62,7 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.equal(addInventoryItem(items, DYNAMITE_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, HIGH_JUMP_BOOTS_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, HIGH_SPEED_BOOTS_ITEM_ID, 1), true)
+    assert.equal(addInventoryItem(items, SNIPER_HAT_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, METAL_HELMET_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, SPEAR_ITEM_ID, 1), true)
     assert.equal(defaultInventoryIcon('heal-potion'), 'heal-potion')
@@ -73,6 +74,7 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.equal(defaultInventoryIcon(DYNAMITE_ITEM_ID), 'dynamite')
     assert.equal(defaultInventoryIcon(HIGH_JUMP_BOOTS_ITEM_ID), 'boots')
     assert.equal(defaultInventoryIcon(HIGH_SPEED_BOOTS_ITEM_ID), 'boots')
+    assert.equal(defaultInventoryIcon(SNIPER_HAT_ITEM_ID), 'hat-sniper')
     assert.equal(defaultInventoryIcon(METAL_HELMET_ITEM_ID), 'metal-helmet')
     assert.equal(defaultInventoryIcon(SPEAR_ITEM_ID), 'spear')
     assert.deepEqual(listInventoryItems(items, 'consumables').map((item) => [item.id, item.quantity, item.icon]), [
@@ -85,6 +87,7 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
         [MANA_POTION_ITEM_ID, 2, 'mana-potion'],
     ])
     assert.deepEqual(listInventoryItems(items, 'accessories').map((item) => [item.id, item.quantity, item.icon]), [
+        [SNIPER_HAT_ITEM_ID, 1, 'hat-sniper'],
         [HIGH_JUMP_BOOTS_ITEM_ID, 1, 'boots'],
         [HIGH_SPEED_BOOTS_ITEM_ID, 1, 'boots'],
         [METAL_HELMET_ITEM_ID, 1, 'metal-helmet'],
@@ -218,12 +221,15 @@ test('purchased head gear and spear equip only when owned', () => {
 
     world.inventory.items = normalizeInventoryItems({
         [METAL_HELMET_ITEM_ID]: { quantity: 1 },
+        [SNIPER_HAT_ITEM_ID]: { quantity: 1 },
         [SPEAR_ITEM_ID]: { quantity: 1 },
     })
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
 
     assert.equal(setHeadEquipment(world, METAL_HELMET_ITEM_ID), true)
     assert.equal(world.playerSettings.equipment.head, METAL_HELMET_ITEM_ID)
+    assert.equal(setHeadEquipment(world, SNIPER_HAT_ITEM_ID), true)
+    assert.equal(world.playerSettings.equipment.head, SNIPER_HAT_ITEM_ID)
     assert.equal(setMeleeHandEquipment(world, SPEAR_ITEM_ID), true)
     assert.equal(world.playerSettings.equipment.melee.handR, SPEAR_ITEM_ID)
     assert.equal(world.playerSettings.equipment.melee.handL, 'shield')

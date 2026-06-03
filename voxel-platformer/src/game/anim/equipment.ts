@@ -11,6 +11,7 @@ import {
     Mesh,
     MeshStandardMaterial,
     SphereGeometry,
+    TorusGeometry,
     type Object3D,
 } from 'three'
 import { SLOT_TO_SOCKET, attachToSocket, detachFromSocket, type EquipSlot } from '../../engine/anim'
@@ -57,6 +58,7 @@ export function createEquipment(kind: EquipmentKind): Group {
         case 'hat': return buildTravelerHat()
         case 'hat-arcane': return buildArcaneHat()
         case 'hat-ranger': return buildRangerCap()
+        case 'hat-sniper': return buildSniperHat()
         case 'hat-guard': return buildGuardHelm()
         case 'hat-sun': return buildSunCrown()
         case 'metal-helmet': return buildMetalHelmet()
@@ -152,6 +154,9 @@ const EQUIP_FRAMES: Partial<Record<EquipmentKind, Partial<Record<EquipSlot, Equi
     },
     'hat-ranger': {
         head: { offset: [0, -0.04, 0.01] },
+    },
+    'hat-sniper': {
+        head: { offset: [0, -0.045, 0.02] },
     },
     'hat-guard': {
         head: { offset: [0, -0.055, 0] },
@@ -311,6 +316,44 @@ function buildRangerCap(): Group {
     vein.position.copy(feather.position)
     vein.rotation.copy(feather.rotation)
     return addParts(g, [crown, brim, visor, feather, vein])
+}
+
+function buildSniperHat(): Group {
+    const g = new Group()
+    g.name = 'equip:hat-sniper'
+    const cloth = mat(0x27313a, 0.78)
+    const dark = mat(0x151b21, 0.82)
+    const brass = mat(0xc89b45, 0.42, 0.32)
+    const lensMat = glowMat(0x80d8ff, 0.42)
+    const crown = new Mesh(new SphereGeometry(0.235, 12, 8), cloth)
+    crown.name = 'SniperHatCrown'
+    crown.position.y = 0.12
+    crown.scale.set(1.04, 0.5, 0.88)
+    const brim = new Mesh(new CylinderGeometry(0.285, 0.255, 0.035, 14), dark)
+    brim.name = 'SniperHatBrim'
+    brim.position.y = 0.035
+    brim.scale.set(1.16, 1, 0.78)
+    const visor = new Mesh(new BoxGeometry(0.26, 0.034, 0.18), dark)
+    visor.name = 'SniperHatVisor'
+    visor.position.set(0, 0.045, 0.215)
+    visor.rotation.x = -0.1
+    const band = new Mesh(new CylinderGeometry(0.225, 0.23, 0.035, 14), brass)
+    band.name = 'SniperHatBand'
+    band.position.y = 0.078
+    band.scale.z = 0.84
+    const lens = new Mesh(new CylinderGeometry(0.055, 0.055, 0.035, 14), lensMat)
+    lens.name = 'SniperHatLens'
+    lens.position.set(0.12, 0.09, 0.245)
+    lens.rotation.x = Math.PI / 2
+    const lensRim = new Mesh(new TorusGeometry(0.058, 0.007, 6, 18), brass)
+    lensRim.name = 'SniperHatLensRim'
+    lensRim.position.copy(lens.position)
+    lensRim.rotation.x = Math.PI / 2
+    const sight = new Mesh(new BoxGeometry(0.075, 0.024, 0.16), brass)
+    sight.name = 'SniperHatSight'
+    sight.position.set(-0.12, 0.105, 0.235)
+    sight.rotation.x = -0.04
+    return addParts(g, [crown, brim, visor, band, lens, lensRim, sight])
 }
 
 function buildGuardHelm(): Group {

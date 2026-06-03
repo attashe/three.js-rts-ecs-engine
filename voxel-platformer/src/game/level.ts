@@ -161,12 +161,13 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
     // cliff-lift script deploys its repaired cabin visual after materials are
     // found and consumed.
     t.fill([20, 21], [groundY, groundY], [4, 6], BLOCK.plank)
-        .fill([21, 21], [cliffTop, cliffTop], [4, 6], BLOCK.plank)
+        .fill([19, 21], [cliffTop, cliffTop], [4, 6], BLOCK.plank)
         .clear(21, groundY + 1, 5)
         .clear(21, cliffTop, 5)
 
-    // Vertical ladder test column: bottom sits on the lower plank, top exits
-    // onto the upper cliff plank at x=21,z=4.
+    // Wall-mounted vertical ladder: the ladder cells sit in front of a stone
+    // support column, with the top exiting onto the upper cliff plank.
+    t.fill([19, 19], [groundY, cliffTop], [4, 4], BLOCK.stone)
     t.fill([20, 20], [groundY + 1, cliffTop], [4, 4], BLOCK.ladder)
 
     const stoneSpawners: StoneFallSpawnerConfig[] = [

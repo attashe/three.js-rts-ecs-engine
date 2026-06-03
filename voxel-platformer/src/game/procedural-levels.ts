@@ -982,6 +982,16 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
                     stock: 1,
                 },
                 {
+                    id: 'hat-sniper',
+                    name: 'Sniper Hat',
+                    description: 'A sighted cap that reveals arrow trajectory and impact point.',
+                    resource: 'hat-sniper',
+                    unitSize: 1,
+                    buyPrice: 18,
+                    sellPrice: 8,
+                    stock: 1,
+                },
+                {
                     id: 'hat-arcane',
                     name: 'Arcane Hat',
                     description: 'A tall spellcaster hat for the head slot.',

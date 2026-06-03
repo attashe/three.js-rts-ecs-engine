@@ -6,7 +6,7 @@ import {
     tradeAvailability,
 } from '../src/game/trade'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
-import { METAL_HELMET_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
+import { METAL_HELMET_ITEM_ID, SNIPER_HAT_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
 import { MANA_POTION_ITEM_ID } from '../src/game/mana'
 import { DYNAMITE_ITEM_ID, FOOD_APPLE_ITEM_ID, FOOD_PIE_ITEM_ID } from '../src/game/consumables'
 
@@ -299,6 +299,13 @@ test('trade buy and sell can mutate unique shop equipment', () => {
             buyPrice: 18,
             sellPrice: 8,
         }, {
+            id: SNIPER_HAT_ITEM_ID,
+            name: 'Sniper Hat',
+            resource: SNIPER_HAT_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 18,
+            sellPrice: 8,
+        }, {
             id: METAL_HELMET_ITEM_ID,
             name: 'Metal Helmet',
             resource: METAL_HELMET_ITEM_ID,
@@ -308,7 +315,7 @@ test('trade buy and sell can mutate unique shop equipment', () => {
         }],
     })
 
-    const spear = applyTradeSelection(shop, { gold: 40, arrows: 0, items: {} }, {
+    const spear = applyTradeSelection(shop, { gold: 60, arrows: 0, items: {} }, {
         action: 'buy',
         itemId: SPEAR_ITEM_ID,
         quantity: 1,
@@ -320,7 +327,18 @@ test('trade buy and sell can mutate unique shop equipment', () => {
     assert.equal(spear.inventory.items?.[SPEAR_ITEM_ID]?.icon, 'spear')
     assert.equal(tradeAvailability(shop.items[0]!, 'buy', spear.inventory).maxQuantity, 0)
 
-    const helmet = applyTradeSelection(shop, spear.inventory, {
+    const sniper = applyTradeSelection(shop, spear.inventory, {
+        action: 'buy',
+        itemId: SNIPER_HAT_ITEM_ID,
+        quantity: 1,
+    })
+
+    if (sniper.status !== 'bought') throw new Error(`expected bought, got ${sniper.status}`)
+    assert.equal(sniper.inventory.items?.[SNIPER_HAT_ITEM_ID]?.quantity, 1)
+    assert.equal(sniper.inventory.items?.[SNIPER_HAT_ITEM_ID]?.category, 'accessories')
+    assert.equal(sniper.inventory.items?.[SNIPER_HAT_ITEM_ID]?.icon, 'hat-sniper')
+
+    const helmet = applyTradeSelection(shop, sniper.inventory, {
         action: 'buy',
         itemId: METAL_HELMET_ITEM_ID,
         quantity: 1,

@@ -842,6 +842,7 @@ function iconBackground(icon: InventoryIconId): string {
         case 'hat-arcane': return 'linear-gradient(145deg, #18234f, #5f7dff)'
         case 'hat-ranger': return 'linear-gradient(145deg, #203d24, #9fd179)'
         case 'hat-guard': return 'linear-gradient(145deg, #3f4b52, #b7c3ca)'
+        case 'hat-sniper': return 'linear-gradient(145deg, #17212a, #80d8ff)'
         case 'hat-sun': return 'linear-gradient(145deg, #6d4215, #ffd166)'
         case 'metal-helmet': return 'linear-gradient(145deg, #3f4b52, #d8e2ea)'
         case 'sword': return 'linear-gradient(145deg, #39444d, #d8e2ea)'
@@ -982,6 +983,15 @@ function glyphStyle(icon: InventoryIconId): Partial<CSSStyleDeclaration> {
     }
     if (icon === 'hat-guard') {
         return hatGlyph('#9aa7ad', '0 -8px 0 -4px #b6342d')
+    }
+    if (icon === 'hat-sniper') {
+        return {
+            width: '24px',
+            height: '18px',
+            borderRadius: '7px 7px 4px 4px',
+            background: '#27313a',
+            boxShadow: '8px -2px 0 -4px #80d8ff, 8px -2px 0 -2px #c89b45, inset 0 -5px 0 #151b21',
+        }
     }
     if (icon === 'hat-sun') {
         return {

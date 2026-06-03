@@ -14,6 +14,7 @@ import { BOOT_EQUIPMENT_ITEM_IDS, HIGH_JUMP_BOOTS_ITEM_ID, isBootEquipmentItemId
 import {
     BUYABLE_EQUIPMENT_ITEM_IDS,
     METAL_HELMET_ITEM_ID,
+    SNIPER_HAT_ITEM_ID,
     SPEAR_ITEM_ID,
     isBuyableEquipmentItemId,
     isBuyableHeadEquipmentItemId,
@@ -680,6 +681,8 @@ function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLEle
             return dynamiteIcon(size)
         case HIGH_JUMP_BOOTS_ITEM_ID:
             return bootsIcon(size)
+        case SNIPER_HAT_ITEM_ID:
+            return sniperHatIcon(size)
         case SPEAR_ITEM_ID:
             return spearIcon(size)
         case METAL_HELMET_ITEM_ID:
@@ -883,6 +886,21 @@ function hatIcon(size: 'small' | 'large'): HTMLElement {
         borderRadius: isLarge ? '12px 12px 6px 6px' : '8px 8px 4px 4px',
         background: '#dff7ff',
         boxShadow: '0 -10px 0 -5px #9fd179, inset 0 -5px 0 rgba(22, 39, 30, 0.36)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function sniperHatIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '34px' : '23px',
+        height: isLarge ? '24px' : '16px',
+        display: 'block',
+        borderRadius: isLarge ? '12px 12px 6px 6px' : '8px 8px 4px 4px',
+        background: '#27313a',
+        boxShadow: `${isLarge ? '12px -3px 0 -6px' : '8px -2px 0 -4px'} #80d8ff, ${isLarge ? '12px -3px 0 -3px' : '8px -2px 0 -2px'} #c89b45, inset 0 -5px 0 #151b21`,
     } satisfies Partial<CSSStyleDeclaration>)
     return root
 }

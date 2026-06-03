@@ -5,10 +5,10 @@ import type { System } from '../../engine/ecs/systems/system'
 import type { GameWorld } from '../../engine/ecs/world'
 import type { ActionMap } from '../../engine/input/actions'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
-import { isLadderBlock } from '../../engine/voxel/palette'
 import { aabbFromFoot, isGrounded, voxelAABBOverlap, type AABB } from '../../engine/voxel/voxel-collide'
 import { GameAction } from '../actions'
 import type { InteractionProviderTarget } from '../interaction-system'
+import { ladderCellAttachmentAt, sameLadderAttachment, type LadderAttachment } from './ladder-support'
 
 export interface LadderSystemOptions {
     actions: ActionMap
@@ -20,6 +20,8 @@ interface LadderStack {
     z: number
     centerX: number
     centerZ: number
+    normalX: number
+    normalZ: number
     bottomY: number
     topY: number
     topCellY: number
@@ -28,6 +30,7 @@ interface LadderStack {
 const DEFAULT_CLIMB_SPEED = 2.8
 const LADDER_INTERACTION_RADIUS = 1.35
 const LADDER_SEARCH_VERTICAL_PAD = 1
+const LADDER_WALL_CLEARANCE = 0.06
 const LADDER_EPS = 1e-4
 
 const tmpAabb: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
@@ -88,14 +91,19 @@ export function nearestLadderInteractionTarget(
 
 export function attachToLadder(world: GameWorld, player: number, stack: LadderStack): void {
     if (hasComponent(world, player, RidingCart)) return
+    const center = ladderClimbCenter(stack, colliderHalf(player))
     addComponent(world, player, ClimbingLadder)
-    ClimbingLadder.centerX[player] = stack.centerX
-    ClimbingLadder.centerZ[player] = stack.centerZ
+    ClimbingLadder.centerX[player] = center.x
+    ClimbingLadder.centerZ[player] = center.z
+    ClimbingLadder.cellX[player] = stack.x
+    ClimbingLadder.cellZ[player] = stack.z
+    ClimbingLadder.normalX[player] = stack.normalX
+    ClimbingLadder.normalZ[player] = stack.normalZ
     ClimbingLadder.bottomY[player] = stack.bottomY
     ClimbingLadder.topY[player] = stack.topY
-    Position.x[player] = stack.centerX
+    Position.x[player] = center.x
     Position.y[player] = clamp(Position.y[player], stack.bottomY, stack.topY)
-    Position.z[player] = stack.centerZ
+    Position.z[player] = center.z
     zeroVelocity(player)
     if (hasComponent(world, player, Grounded)) removeComponent(world, player, Grounded)
 }
@@ -119,9 +127,11 @@ function updateClimber(
     const centerZ = ClimbingLadder.centerZ[player]
     const bottomY = ClimbingLadder.bottomY[player]
     const topY = ClimbingLadder.topY[player]
-    const ladderX = Math.floor(centerX)
-    const ladderZ = Math.floor(centerZ)
-    if (!ladderColumnStillExists(chunks, ladderX, ladderZ, bottomY, topY)) {
+    const ladderX = Math.floor(ClimbingLadder.cellX[player])
+    const ladderZ = Math.floor(ClimbingLadder.cellZ[player])
+    const normalX = Math.round(ClimbingLadder.normalX[player])
+    const normalZ = Math.round(ClimbingLadder.normalZ[player])
+    if (!ladderColumnStillExists(chunks, ladderX, ladderZ, bottomY, topY, normalX, normalZ)) {
         detachFromLadder(world, player)
         return
     }
@@ -151,6 +161,11 @@ function updateClimber(
 
 function detachAtEndpoint(world: GameWorld, chunks: ChunkManager, player: number, endpoint: 'top' | 'bottom'): void {
     const safe = findEndpointDismount(world, chunks, player, endpoint)
+    if (!safe && endpoint === 'top') {
+        Position.y[player] = ClimbingLadder.topY[player]
+        zeroVelocity(player)
+        return
+    }
     if (safe) {
         Position.x[player] = safe.x
         Position.y[player] = safe.y
@@ -168,13 +183,29 @@ function findEndpointDismount(
     const y = endpoint === 'top' ? ClimbingLadder.topY[player] : ClimbingLadder.bottomY[player]
     const centerX = ClimbingLadder.centerX[player]
     const centerZ = ClimbingLadder.centerZ[player]
+    const cellX = Math.floor(ClimbingLadder.cellX[player])
+    const cellZ = Math.floor(ClimbingLadder.cellZ[player])
+    const normalX = Math.round(ClimbingLadder.normalX[player])
+    const normalZ = Math.round(ClimbingLadder.normalZ[player])
+    const sideX = -normalZ
+    const sideZ = normalX
+    const outward = {
+        x: cellX + 0.5 + normalX,
+        y,
+        z: cellZ + 0.5 + normalZ,
+    }
+    const supportTop = {
+        x: cellX + 0.5 - normalX,
+        y,
+        z: cellZ + 0.5 - normalZ,
+    }
     const half = colliderHalf(player)
     const candidates = [
+        ...(endpoint === 'top' ? [supportTop, outward] : []),
         { x: centerX, y, z: centerZ },
-        { x: centerX + 1, y, z: centerZ },
-        { x: centerX - 1, y, z: centerZ },
-        { x: centerX, y, z: centerZ + 1 },
-        { x: centerX, y, z: centerZ - 1 },
+        ...(endpoint === 'bottom' ? [outward] : []),
+        { x: cellX + 0.5 + sideX, y, z: cellZ + 0.5 + sideZ },
+        { x: cellX + 0.5 - sideX, y, z: cellZ + 0.5 - sideZ },
     ]
     for (const candidate of candidates) {
         if (!isSafeStandingPosition(world, chunks, player, candidate, half)) continue
@@ -203,7 +234,6 @@ function nearestLadderStack(
     for (let z = z0; z <= z1; z++) {
         for (let y = y0; y <= y1; y++) {
             for (let x = x0; x <= x1; x++) {
-                if (!isLadderCell(chunks, x, y, z)) continue
                 const stack = ladderStackAt(chunks, x, y, z)
                 if (!stack) continue
                 const key = `${stack.x},${stack.bottomY},${stack.z},${stack.topCellY}`
@@ -221,33 +251,59 @@ function nearestLadderStack(
 }
 
 function ladderStackAt(chunks: ChunkManager, x: number, y: number, z: number): LadderStack | null {
-    if (!isLadderCell(chunks, x, y, z)) return null
+    const attachment = ladderCellAttachmentAt(chunks, x, y, z)
+    if (!attachment) return null
     let bottom = y
-    while (isLadderCell(chunks, x, bottom - 1, z)) bottom--
+    while (sameSupportedLadderCell(chunks, x, bottom - 1, z, attachment)) bottom--
     let top = y
-    while (isLadderCell(chunks, x, top + 1, z)) top++
+    while (sameSupportedLadderCell(chunks, x, top + 1, z, attachment)) top++
+    const center = ladderClimbCenter({ x, z, normalX: attachment.normalX, normalZ: attachment.normalZ }, { x: 0.34, z: 0.34 })
     return {
         x,
         z,
-        centerX: x + 0.5,
-        centerZ: z + 0.5,
+        centerX: center.x,
+        centerZ: center.z,
+        normalX: attachment.normalX,
+        normalZ: attachment.normalZ,
         bottomY: bottom,
         topY: top + 1,
         topCellY: top,
     }
 }
 
-function ladderColumnStillExists(chunks: ChunkManager, x: number, z: number, bottomY: number, topY: number): boolean {
-  const y0 = Math.floor(bottomY)
-  const y1 = Math.floor(topY - LADDER_EPS)
-  for (let y = y0; y <= y1; y++) {
-    if (!isLadderCell(chunks, x, y, z)) return false
-  }
-  return true
+function ladderColumnStillExists(
+    chunks: ChunkManager,
+    x: number,
+    z: number,
+    bottomY: number,
+    topY: number,
+    normalX: number,
+    normalZ: number,
+): boolean {
+    const y0 = Math.floor(bottomY)
+    const y1 = Math.floor(topY - LADDER_EPS)
+    for (let y = y0; y <= y1; y++) {
+        const attachment = ladderCellAttachmentAt(chunks, x, y, z)
+        if (!attachment || attachment.normalX !== normalX || attachment.normalZ !== normalZ) return false
+    }
+    return true
 }
 
-function isLadderCell(chunks: ChunkManager, x: number, y: number, z: number): boolean {
-    return isLadderBlock(chunks.palette, chunks.getVoxel(x, y, z))
+function sameSupportedLadderCell(chunks: ChunkManager, x: number, y: number, z: number, attachment: LadderAttachment): boolean {
+    const next = ladderCellAttachmentAt(chunks, x, y, z)
+    return !!next && sameLadderAttachment(next, attachment)
+}
+
+function ladderClimbCenter(
+    ladder: Pick<LadderStack, 'x' | 'z' | 'normalX' | 'normalZ'>,
+    half: { x: number; z: number },
+): { x: number; z: number } {
+    const alongHalf = Math.abs(ladder.normalX) > 0 ? half.x : half.z
+    const offset = alongHalf + LADDER_WALL_CLEARANCE
+    return {
+        x: ladder.x + 0.5 - ladder.normalX * 0.5 + ladder.normalX * offset,
+        z: ladder.z + 0.5 - ladder.normalZ * 0.5 + ladder.normalZ * offset,
+    }
 }
 
 function distanceSqToStack(
@@ -268,10 +324,11 @@ function isSafeAttachPosition(
     stack: LadderStack,
     half: { x: number; y: number; z: number },
 ): boolean {
+    const center = ladderClimbCenter(stack, half)
     const pos = {
-        x: stack.centerX,
+        x: center.x,
         y: clamp(Position.y[player], stack.bottomY, stack.topY),
-        z: stack.centerZ,
+        z: center.z,
     }
     aabbFromFoot(pos, half, tmpAabb)
     if (voxelAABBOverlap(chunks, tmpAabb)) return false

@@ -623,6 +623,7 @@ export type TradeResource =
     | 'high-speed-boots'
     | 'hat-arcane'
     | 'hat-ranger'
+    | 'hat-sniper'
     | 'hat-sun'
     | 'metal-helmet'
     | 'spear'
