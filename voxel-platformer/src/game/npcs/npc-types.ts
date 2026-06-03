@@ -99,6 +99,12 @@ export interface NpcConfig {
      *  it cannot be provoked into combat. Use for essential/quest characters
      *  (e.g. Keeper Arlen) so a stray swing doesn't make them fight back. */
     unprovokable?: boolean
+    /** Seconds an aggro'd NPC keeps pursuing a target it has lost sight of —
+     *  charging the last-known position (and the shot's origin when sniped from
+     *  beyond perception) before giving up. `0` (default) = no memory: the NPC
+     *  only engages what's currently in its perception radius. Raise it for a
+     *  hunter that punishes hit-and-run / sniping. */
+    threatMemorySeconds?: number
     equipment: EquipmentHandLoadout
     voice: DialogueVoiceRef
     scriptEnabled: boolean
@@ -138,6 +144,15 @@ export interface NpcAiState {
     /** Prey behaviour: when true the NPC never attacks and instead flees any
      *  perceived threat (the player / hostile ids). Default false. */
     flee?: boolean
+    // ── threat memory (only active when `rt.threatMemorySeconds > 0`) ──
+    /** Whether `targetId` is currently *perceived* (in range → track live and
+     *  attack) vs only *remembered* (lost → walk to `threatPos`, don't attack). */
+    targetPerceived: boolean
+    /** Countdown of remembered pursuit; while > 0 the NPC keeps chasing a lost
+     *  target's `threatPos`. Refreshed on every live sighting; 0 = forget. */
+    threatSeconds: number
+    /** Last position the target was seen / the attack came from. */
+    threatPos: Vec3Like | null
 }
 
 /** Per-NPC gameplay/animation runtime state, keyed by NPC id in
@@ -160,6 +175,9 @@ export interface NpcRuntimeState {
     /** Mirrors `NpcConfig.unprovokable`; when set, a player hit never flips the
      *  NPC hostile (see `damageNpc`). */
     unprovokable?: boolean
+    /** Mirrors `NpcConfig.threatMemorySeconds`; 0/undefined = no pursuit memory.
+     *  Read by the behaviour system to chase a lost target's last-known spot. */
+    threatMemorySeconds?: number
     requestAttack: boolean
     /** One-shot animation requested by behaviour/scripts. Defaults to the
      *  runtime's configured attack clip when omitted. */
@@ -280,6 +298,7 @@ export const DEFAULT_NPC: Omit<NpcConfig, 'id' | 'position'> = {
     interactionPrompt: 'Interaction',
     invulnerable: false,
     unprovokable: false,
+    threatMemorySeconds: 0,
     equipment: defaultNpcEquipment('keeper'),
     voice: defaultNpcVoice('keeper'),
     scriptEnabled: true,
@@ -487,6 +506,9 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         interactionPrompt: input.interactionPrompt || DEFAULT_NPC.interactionPrompt,
         invulnerable: input.invulnerable ?? DEFAULT_NPC.invulnerable,
         unprovokable: input.unprovokable ?? DEFAULT_NPC.unprovokable,
+        threatMemorySeconds: Number.isFinite(input.threatMemorySeconds)
+            ? Math.max(0, input.threatMemorySeconds!)
+            : DEFAULT_NPC.threatMemorySeconds,
         equipment: normalizeHandLoadout(input.equipment, defaultNpcEquipment(model, variant)),
         voice: compactNpcVoice(normalizeDialogueVoice(input.voice, defaultNpcVoice(model))),
         scriptEnabled: input.scriptEnabled ?? DEFAULT_NPC.scriptEnabled,

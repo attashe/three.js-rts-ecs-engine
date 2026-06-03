@@ -282,6 +282,7 @@ test('npc bindings forward attack/die/exists/list through the facade', () => {
         setPerceptionRadius(id, radius) { calls.push({ type: 'setPerceptionRadius', id, radius }); return live.has(id) },
         setHostile(id, target, hostile) { calls.push({ type: 'setHostile', id, target, hostile }); return live.has(id) },
         setFlee(id, on) { calls.push({ type: 'setFlee', id, on }); return live.has(id) },
+        setThreatMemory(id, seconds) { calls.push({ type: 'setThreatMemory', id, seconds }); return live.has(id) },
     }
     const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, npc, flags: new Map() })
 

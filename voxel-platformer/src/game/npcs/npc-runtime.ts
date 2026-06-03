@@ -48,6 +48,7 @@ export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]
             maxHp,
             invulnerable: npc.invulnerable,
             unprovokable: npc.unprovokable,
+            threatMemorySeconds: npc.threatMemorySeconds,
             requestAttack: false,
             attackClip: npcAttackClip(npc),
             requestDie: false,

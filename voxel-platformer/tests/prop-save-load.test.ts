@@ -154,6 +154,7 @@ test('NPCs survive a save -> load round-trip through metadata', () => {
         interactionPrompt: 'Interaction',
         invulnerable: false,
         unprovokable: false,
+        threatMemorySeconds: 0,
         equipment: { handR: 'staff', handL: null },
         voice: { preset: 'player', seed: 'arlen', volume: 0.5, rate: 1, pitchOffset: 0, enabled: true },
         scriptEnabled: true,

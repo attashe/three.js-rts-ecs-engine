@@ -179,6 +179,70 @@ test('an attacked NPC retaliates: a player hit turns it hostile and it engages',
         'the retaliating NPC acquires its attacker as a target')
 })
 
+test('threat memory: a hunter charges a sniper from beyond perception; a default NPC holds', () => {
+    function setup(memorySeconds: number) {
+        const chunks = flatWorld(28)
+        const world = createGameWorld()
+        const player = createEntity(world)
+        addComponents(world, player, [Position, PlayerControlled])
+        Position.x[player] = 22 // 18 units from the NPC — well beyond perception
+        Position.y[player] = 1
+        Position.z[player] = 4
+        const npc = spawnRuntimeNpc(world, 'hunter', 4, 4)
+        setNpcPerceptionRadius(world, 'hunter', 8)
+        npc.threatMemorySeconds = memorySeconds
+        return { chunks, world, npc }
+    }
+
+    // Hunter: sniped from out of sight → it charges where the shot came from.
+    {
+        const { chunks, world, npc } = setup(6)
+        const startX = npc.position.x
+        damageNpc(npc, 1, { byPlayer: true })
+        const sys = createNpcBehaviourSystem(chunks)
+        for (let i = 0; i < 180; i++) sys.update!(world, 1 / 60)
+        assert.equal(npc.ai?.hostileToPlayer, true)
+        assert.ok(npc.position.x > startX + 3, `the hunter should charge the sniper, x=${npc.position.x}`)
+    }
+
+    // Default NPC (no memory): turns hostile but can't see the distant shooter,
+    // so it holds its post — the current behaviour, unchanged.
+    {
+        const { chunks, world, npc } = setup(0)
+        const startX = npc.position.x
+        damageNpc(npc, 1, { byPlayer: true })
+        const sys = createNpcBehaviourSystem(chunks)
+        for (let i = 0; i < 180; i++) sys.update!(world, 1 / 60)
+        assert.equal(npc.ai?.hostileToPlayer, true, 'still becomes hostile')
+        assert.ok(Math.abs(npc.position.x - startX) < 1, 'but never pursues without memory')
+    }
+})
+
+test('threat memory expires: a hunter that loses its target eventually gives up', () => {
+    const chunks = flatWorld(72)
+    const world = createGameWorld()
+    const player = createEntity(world)
+    addComponents(world, player, [Position, PlayerControlled])
+    Position.x[player] = 6 // within perception at the start
+    Position.y[player] = 1
+    Position.z[player] = 4
+    const npc = spawnRuntimeNpc(world, 'hunter', 4, 4)
+    setNpcHostile(world, 'hunter', NPC_TARGET_PLAYER, true)
+    setNpcPerceptionRadius(world, 'hunter', 8)
+    npc.threatMemorySeconds = 1 // short fuse
+
+    const sys = createNpcBehaviourSystem(chunks)
+    sys.update!(world, 1 / 60)
+    assert.equal(npc.ai?.targetId, NPC_TARGET_PLAYER, 'acquires the visible player')
+    assert.ok((npc.ai?.threatSeconds ?? 0) > 0, 'and remembers the threat')
+
+    // The player vanishes far out of perception; the hunter pursues the last-known
+    // spot but gives up once the 1s memory runs out.
+    Position.x[player] = 64
+    for (let i = 0; i < 150; i++) sys.update!(world, 1 / 60)
+    assert.equal(npc.ai?.targetId, null, 'gives up once threat memory expires')
+})
+
 test('hammer NPC attacks use a timed circular impact', () => {
     const chunks = flatWorld()
     const world = createGameWorld()

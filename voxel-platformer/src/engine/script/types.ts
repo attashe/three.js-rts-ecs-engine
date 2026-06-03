@@ -195,6 +195,10 @@ export interface NpcFacade {
     /** Prey behaviour: while `on`, the NPC never attacks and flees perceived
      *  threats within its perception radius (rabbits, critters). */
     setFlee(id: string, on: boolean): boolean
+    /** Seconds the NPC keeps chasing a lost target's last-known spot before
+     *  giving up. `0` (default) = no memory; raise it for a hunter that
+     *  punishes hit-and-run / sniping. */
+    setThreatMemory(id: string, seconds: number): boolean
 }
 
 export interface ZoneFacade {
@@ -536,6 +540,8 @@ export interface NpcApi {
     setHostile(id: string, target: string, hostile: boolean): boolean
     /** Make the NPC prey: flee perceived threats instead of attacking. */
     setFlee(id: string, on: boolean): boolean
+    /** Seconds the NPC pursues a lost target before giving up (0 = no memory). */
+    setThreatMemory(id: string, seconds: number): boolean
 }
 
 export interface PickupSpawnOptions {

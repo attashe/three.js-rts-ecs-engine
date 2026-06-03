@@ -241,6 +241,7 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             setPerceptionRadius: (id, radius) => npc.setPerceptionRadius(id, radius),
             setHostile: (id, target, hostile) => npc.setHostile(id, target, hostile),
             setFlee: (id, on) => npc.setFlee(id, on),
+            setThreatMemory: (id, seconds) => npc.setThreatMemory(id, seconds),
         },
 
         flags: flagsApi,
@@ -387,6 +388,7 @@ const NOOP_NPC: NpcFacade = {
     setPerceptionRadius() { return false },
     setHostile() { return false },
     setFlee() { return false },
+    setThreatMemory() { return false },
 }
 
 const NOOP_PROPS: PropsFacade = {

@@ -7,7 +7,7 @@ import type { ChunkManager } from '../../voxel/chunk-manager'
 import { findPath } from '../../voxel/voxel-path'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
 import { type NpcAiState, type NpcRuntimeState, type Vec3Like } from '../../../game/npcs/npc-types'
-import { NPC_TARGET_PLAYER, provokeFromPlayerAttack } from '../../../game/npcs/npc-ai'
+import { NPC_TARGET_PLAYER, provokeFromPlayerAttack, rememberThreatPos } from '../../../game/npcs/npc-ai'
 import { hasActiveMeleeAttack, isMeleeActorLocked, startMeleeAttack } from '../melee-combat'
 import { MELEE_ATTACK_DEFS } from '../melee-types'
 import { spawnArrowProjectile } from '../../../game/moving-objects'
@@ -77,7 +77,9 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
                 // AI concerns and a brain-less NPC can still be provoked.
                 if (rt.provoked) {
                     rt.provoked = false
-                    provokeFromPlayerAttack(rt)
+                    // Pass the player's position so a hunter (threatMemorySeconds
+                    // > 0) charges the shot's origin even when sniped from range.
+                    provokeFromPlayerAttack(rt, player ?? undefined)
                 }
                 if (!rt.ai) continue
                 updateNpc(gw, rt, rt.ai, player, dt)
@@ -89,6 +91,7 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
         ai.thinkCooldown -= dt
         ai.repathCooldown -= dt
         ai.attackCooldown -= dt
+        if (ai.threatSeconds > 0) ai.threatSeconds = Math.max(0, ai.threatSeconds - dt)
 
         const actor = { kind: 'npc' as const, id: rt.id }
         const attacking = hasActiveMeleeAttack(gw, actor)
@@ -118,16 +121,32 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
                     ai.announcedTarget = true
                     pushScriptTriggerEvent(gw, { kind: 'npc-spotted-enemy', npcId: rt.id, targetId: enemyId })
                 }
-            } else if (ai.targetId !== null) {
-                ai.targetId = null
-                ai.announcedTarget = false
-                ai.path = null
+                ai.targetPerceived = true
+                // Refresh pursuit memory from this live sighting.
+                if ((rt.threatMemorySeconds ?? 0) > 0) {
+                    const seen = enemyPosition(gw, enemyId, player)
+                    if (seen) {
+                        rememberThreatPos(ai, seen)
+                        ai.threatSeconds = rt.threatMemorySeconds!
+                    }
+                }
+            } else {
+                ai.targetPerceived = false
+                // Lost sight: a hunter keeps the target and chases its last-known
+                // spot until memory runs out; everyone else gives up at once.
+                if (ai.targetId !== null && ai.threatSeconds <= 0) {
+                    ai.targetId = null
+                    ai.announcedTarget = false
+                    ai.path = null
+                }
             }
         }
 
         // Engaging iff we hold a target — `mode` is derivable, not stored.
         if (ai.targetId !== null) {
-            const target = enemyPosition(gw, ai.targetId, player)
+            // Perceived → track the live target and attack; remembered (lost) →
+            // walk to its last-known position without swinging at empty air.
+            const target = ai.targetPerceived ? enemyPosition(gw, ai.targetId, player) : ai.threatPos
             if (!target) {
                 ai.targetId = null
                 ai.path = null
@@ -138,7 +157,7 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
             const dz = target.z - rt.position.z
             const dist = Math.hypot(dx, dz)
             face(rt, dx, dz)
-            if (dist <= attackRange(rt)) {
+            if (ai.targetPerceived && dist <= attackRange(rt)) {
                 ai.path = null
                 tryAttack(gw, rt, ai, ai.targetId, target)
             } else {

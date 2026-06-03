@@ -24,6 +24,9 @@ function ensureAi(runtime: NpcRuntimeState): NpcAiState {
         attackCooldown: 0,
         thinkCooldown: 0,
         flee: false,
+        targetPerceived: false,
+        threatSeconds: 0,
+        threatPos: null,
     }
     runtime.ai = ai
     return ai
@@ -73,6 +76,19 @@ export function setNpcPerceptionRadius(world: GameWorld, id: string, radius: num
 }
 
 /**
+ * Set how long (seconds) the NPC keeps pursuing a target it has lost sight of,
+ * charging its last-known position before giving up. `0` (default) disables
+ * pursuit memory: the NPC only engages what is currently within perception.
+ * Raise it for a hunter that chases down a hit-and-run / sniping player.
+ */
+export function setNpcThreatMemory(world: GameWorld, id: string, seconds: number): boolean {
+    const rt = npc(world, id)
+    if (!rt) return false
+    rt.threatMemorySeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0)
+    return true
+}
+
+/**
  * Make an NPC prey: while `on`, it never attacks and instead flees any
  * perceived threat (the player or hostile NPC ids) within its perception
  * radius, wandering its post otherwise.
@@ -109,10 +125,32 @@ export function setNpcHostile(world: GameWorld, id: string, target: string, host
  * spot if it had none — unless it is `unprovokable` (essential characters) or
  * prey (which keeps fleeing). The single home of the "what does a player hit
  * do" policy; the behaviour system owns *when* it runs and clears the flag.
+ *
+ * `attackerPos` (the player's position at the hit) seeds threat memory so an
+ * NPC with `threatMemorySeconds > 0` charges the shot's origin even when the
+ * shooter is beyond its perception radius — the answer to hit-and-run sniping.
+ * A no-op for NPCs without pursuit memory.
  */
-export function provokeFromPlayerAttack(rt: NpcRuntimeState): void {
+export function provokeFromPlayerAttack(rt: NpcRuntimeState, attackerPos?: Vec3Like): void {
     if (rt.unprovokable) return
     const ai = ensureAi(rt)
     if (ai.flee) return
     ai.hostileToPlayer = true
+    if ((rt.threatMemorySeconds ?? 0) > 0 && attackerPos) {
+        ai.targetId = NPC_TARGET_PLAYER
+        ai.targetPerceived = false
+        ai.threatSeconds = rt.threatMemorySeconds!
+        rememberThreatPos(ai, attackerPos)
+    }
+}
+
+/** Copy a sighting into the reused `threatPos` slot (no per-call allocation). */
+export function rememberThreatPos(ai: NpcAiState, pos: Vec3Like): void {
+    if (ai.threatPos) {
+        ai.threatPos.x = pos.x
+        ai.threatPos.y = pos.y
+        ai.threatPos.z = pos.z
+    } else {
+        ai.threatPos = { x: pos.x, y: pos.y, z: pos.z }
+    }
 }

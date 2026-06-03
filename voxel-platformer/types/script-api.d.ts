@@ -504,6 +504,10 @@ interface NpcApi {
     /** Make the NPC prey: while `on`, it flees perceived threats within its
      *  perception radius instead of ever attacking. */
     setFlee(id: string, on: boolean): boolean
+    /** Seconds the NPC keeps chasing a lost target's last-known position before
+     *  giving up. `0` (default) = no pursuit memory; raise it for a hunter that
+     *  punishes hit-and-run / sniping. */
+    setThreatMemory(id: string, seconds: number): boolean
 }
 
 declare const npc: NpcApi

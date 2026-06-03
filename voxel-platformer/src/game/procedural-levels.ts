@@ -486,6 +486,32 @@ export function generateCombatArenaLevel(chunks: ChunkManager): LevelMeta {
                 `})`,
             ].join('\n'),
         }),
+        // A hunter that punishes hit-and-run: threat memory makes him chase the
+        // player's last-known spot long after losing sight, so sniping or
+        // ducking round a corner won't shake him.
+        normalizeNpcConfig({
+            id: 'arena-long-memory-bob',
+            name: 'Long-Memory Bob',
+            model: 'keeper',
+            position: t.stand(13, 13),
+            yaw: Math.PI,
+            gridAligned: false,
+            collisionEnabled: true,
+            interactionEnabled: false,
+            invulnerable: false,
+            equipment: { handR: 'sword', handL: 'shield' },
+            voice: { preset: 'dwarf', seed: 'arena-long-memory-bob', volume: 0.6, rate: 0.95 },
+            scriptSource: [
+                `on('level-start', () => {`,
+                `  npc.setPerceptionRadius(NPC_ID, 8)`,
+                `  npc.setHostile(NPC_ID, 'player', true)`,
+                `  // Bob never forgets: he hunts your last-known spot for 8s, so`,
+                `  // breaking line of sight or sniping from range won't shake him.`,
+                `  npc.setThreatMemory(NPC_ID, 8)`,
+                `  npc.setWaypoints(NPC_ID, [{ x: 13, y: 5, z: 13 }])`,
+                `})`,
+            ].join('\n'),
+        }),
         // ── Migrated from the base game ──────────────────────────────
         normalizeNpcConfig({
             id: 'arena-archer',
