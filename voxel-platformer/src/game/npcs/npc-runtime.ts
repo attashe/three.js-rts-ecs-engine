@@ -40,6 +40,7 @@ export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]
         const maxHp = npcDefaultHp(npc)
         world.npcRuntimeById.set(npc.id, {
             id: npc.id,
+            model: npc.model,
             position: { ...npc.position },
             yaw: npc.yaw,
             colliderRadius: npc.colliderRadius,

@@ -10,7 +10,6 @@ import {
     addInventoryItem,
     copyInventoryItems,
     inventoryItemCount,
-    type InventoryItemOptions,
     type InventoryItemMap,
     removeInventoryItem,
 } from './inventory'
@@ -20,11 +19,15 @@ import {
     HIGH_JUMP_BOOTS_ITEM_ID,
     isBootEquipmentItemId,
 } from './high-jump-boots'
-import { MANA_POTION_ITEM_ID } from './mana'
 import {
     BUYABLE_EQUIPMENT_ITEM_OPTIONS,
     isBuyableEquipmentItemId,
 } from './equipment-items'
+import {
+    CONSUMABLE_DEFS,
+    consumableItemOptions,
+    isConsumableItemId,
+} from './consumables'
 
 export interface NormalizedTradeItem {
     id: string
@@ -206,11 +209,10 @@ export function applyTradeSelection(
 export function resourceLabel(resource: TradeResource): string {
     switch (resource) {
         case 'arrows': return 'arrows'
-        case 'heal-potion': return 'healing potions'
-        case MANA_POTION_ITEM_ID: return 'mana potions'
         case HIGH_JUMP_BOOTS_ITEM_ID: return 'high jump boots'
         case 'high-speed-boots': return 'boots of high speed'
         default:
+            if (isConsumableItemId(resource)) return CONSUMABLE_DEFS[resource].name.toLowerCase()
             if (isBuyableEquipmentItemId(resource)) return BUYABLE_EQUIPMENT_ITEM_OPTIONS[resource].name?.toLowerCase() ?? resource
             return resource
     }
@@ -236,8 +238,7 @@ function normalizeTradeItem(raw: TradeItem): NormalizedTradeItem | null {
 
 function isTradeResource(value: string): value is TradeResource {
     return value === 'arrows'
-        || value === 'heal-potion'
-        || value === MANA_POTION_ITEM_ID
+        || isConsumableItemId(value)
         || isBootEquipmentItemId(value)
         || isBuyableEquipmentItemId(value)
 }
@@ -245,11 +246,10 @@ function isTradeResource(value: string): value is TradeResource {
 function resourceAmount(resource: TradeResource, inventory: TradeInventorySnapshot): number {
     switch (resource) {
         case 'arrows': return inventory.arrows
-        case 'heal-potion': return inventoryItemCount(inventory.items, resource)
-        case MANA_POTION_ITEM_ID: return inventoryItemCount(inventory.items, resource)
         case HIGH_JUMP_BOOTS_ITEM_ID: return inventoryItemCount(inventory.items, resource)
         case 'high-speed-boots': return inventoryItemCount(inventory.items, resource)
         default:
+            if (isConsumableItemId(resource)) return inventoryItemCount(inventory.items, resource)
             if (isBuyableEquipmentItemId(resource)) return inventoryItemCount(inventory.items, resource)
             return 0
     }
@@ -262,11 +262,10 @@ function resourceCapacity(
 ): number {
     switch (resource) {
         case 'arrows': return Math.max(0, limits.arrows - inventory.arrows)
-        case 'heal-potion': return Math.max(0, limits.items - inventoryItemCount(inventory.items, resource))
-        case MANA_POTION_ITEM_ID: return Math.max(0, limits.items - inventoryItemCount(inventory.items, resource))
         case HIGH_JUMP_BOOTS_ITEM_ID: return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
         case 'high-speed-boots': return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
         default:
+            if (isConsumableItemId(resource)) return Math.max(0, limits.items - inventoryItemCount(inventory.items, resource))
             if (isBuyableEquipmentItemId(resource)) return Math.max(0, 1 - inventoryItemCount(inventory.items, resource))
             return 0
     }
@@ -277,45 +276,21 @@ function tradeItemsAfterResourceChange(
     resource: TradeResource,
     delta: number,
 ): InventoryItemMap | undefined {
-    if (resource !== 'heal-potion' && resource !== MANA_POTION_ITEM_ID && !isBootEquipmentItemId(resource) && !isBuyableEquipmentItemId(resource)) {
+    if (!isConsumableItemId(resource) && !isBootEquipmentItemId(resource) && !isBuyableEquipmentItemId(resource)) {
         return inventory.items === undefined ? undefined : copyInventoryItems(inventory.items)
     }
     const items = copyInventoryItems(inventory.items)
     if (delta > 0) {
-        addInventoryItem(items, resource, delta, potionItemOptions(resource) ?? (isBootEquipmentItemId(resource)
-            ? BOOT_EQUIPMENT_ITEM_OPTIONS[resource]
-            : isBuyableEquipmentItemId(resource)
-                ? BUYABLE_EQUIPMENT_ITEM_OPTIONS[resource]
-                : {
-                name: 'Healing Potion',
-                description: 'Restores health when potion use is wired into combat.',
-                category: 'consumables',
-                icon: 'heal-potion',
-            }))
+        const options = isConsumableItemId(resource)
+            ? consumableItemOptions(resource)
+            : isBootEquipmentItemId(resource)
+                ? BOOT_EQUIPMENT_ITEM_OPTIONS[resource]
+                : BUYABLE_EQUIPMENT_ITEM_OPTIONS[resource]
+        addInventoryItem(items, resource, delta, options)
     } else if (delta < 0) {
         removeInventoryItem(items, resource, -delta)
     }
     return items
-}
-
-function potionItemOptions(resource: TradeResource): InventoryItemOptions | null {
-    if (resource === 'heal-potion') {
-        return {
-            name: 'Healing Potion',
-            description: 'Restores one heart.',
-            category: 'consumables' as const,
-            icon: 'heal-potion' as const,
-        }
-    }
-    if (resource === MANA_POTION_ITEM_ID) {
-        return {
-            name: 'Mana Potion',
-            description: 'Restores two mana orbs.',
-            category: 'consumables' as const,
-            icon: 'mana-potion' as const,
-        }
-    }
-    return null
 }
 
 function buyBlockReason(

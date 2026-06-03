@@ -37,8 +37,12 @@ import { createStuckArrowSystem } from './game/stuck-arrow-system'
 import { createHealthBarSystem } from './game/health-bar-system'
 import { createHealthHudSystem } from './game/health-hud-system'
 import { createManaHudSystem } from './game/mana-hud-system'
+import { createConsumableHudSystem } from './game/consumable-hud-system'
 import { createStoneDamageSystem } from './game/stone-damage-system'
 import { createElectricOrbSystem } from './game/electric-orb-system'
+import { createConsumableUseSystem, createDelayedConsumableSystem } from './game/consumable-use-system'
+import { createDynamiteSystem } from './game/dynamite-system'
+import { createNpcLootSystem } from './game/npc-loot-system'
 import { createAirPushSystem } from './engine/ecs/systems/air-push-system'
 import { createHighJumpSystem } from './engine/ecs/systems/high-jump-system'
 import { createPickupSystem, PickupKind } from './engine/ecs/systems/pickup-system'
@@ -251,6 +255,7 @@ async function main(): Promise<void> {
         ladders: createSystemSlot('ladders', true, FixedOrder.input + 5),
     }
     const allSlots = Object.values(slots)
+    let activeWeatherSystem: ReturnType<typeof createEnvironmentFxSystem>['weatherSystem'] | null = null
 
     const travelFacade: TravelFacade = {
         to(levelId, opts) {
@@ -408,6 +413,7 @@ async function main(): Promise<void> {
             () => renderer.iso.camera,
             () => renderer.iso.target,
         )
+        activeWeatherSystem = environmentFx.weatherSystem
         const visualFxZones = createVisualFxZoneSystem(renderer.scene, audio, meta.weatherZones, () => renderer.iso.camera, {
             audioReady,
             // Pre-compile WebGPU pipelines for every authored zone — script-toggled
@@ -544,6 +550,7 @@ async function main(): Promise<void> {
         active?.npcRuntime?.dispose()
         audio.stopMusic(0.35)
         for (const slot of allSlots) slot.set(null)
+        activeWeatherSystem = null
         if (active) {
             active.scriptEngine = null
             active.environmentHandle = null
@@ -631,6 +638,7 @@ async function main(): Promise<void> {
         }), 'playerControl')
         .addSystem(createPlayerTorchSystem(), 'playerTorch')
         .addSystem(createWeaponStanceSystem(actions, { actionId: GameAction.SwitchWeapon }), 'weaponStance')
+        .addSystem(createConsumableUseSystem(actions, { actionId: GameAction.UseConsumable }), 'consumableUse')
         .addSystem(createProjectileLaunchSystem(actions, {
             // F is the universal attack; in the ranged stance it looses an arrow.
             actionId: GameAction.BowShot,
@@ -678,6 +686,7 @@ async function main(): Promise<void> {
                 rate: 0.96 + Math.random() * 0.08,
             }),
         }), 'airPush')
+        .addSystem(createDelayedConsumableSystem(), 'delayedConsumables')
         .addSystem(createPickupSystem({
             onCollected: (kind) => audio.play(
                 kind === PickupKind.Arrow
@@ -715,12 +724,26 @@ async function main(): Promise<void> {
         .addSystem(createRigidBodyPairSystem(chunks), 'rigidBodyPairs')
         .addSystem(createImpactSystem(), 'impact')
         .addSystem(createMovingObjectSystem(), 'movingObjects')
+        .addSystem(createDynamiteSystem({
+            onExplode: (e) => {
+                activeWeatherSystem?.triggerExplosion({ x: e.x, y: e.y, z: e.z }, {
+                    size: { x: 6.5, y: 5.2, z: 6.5 },
+                    count: 420,
+                    speed: 8.5,
+                    lifetime: 1.35,
+                    lightIntensity: 10,
+                    lightDistance: 20,
+                })
+                playSpatialSfx(GameAudio.Explosion, e.x, e.y, e.z, 6, 0.96)
+            },
+        }), 'dynamite')
         .addSystem(createStoneDamageSystem({
             onHit: () => audio.play(GameAudio.StoneImpact, { deferUntilUnlocked: true, volume: 0.7, rate: 0.9 }),
         }), 'stoneDamage')
         .addSystem(createElectricOrbSystem({
             onZap: (p) => playSpatialSfx(GameAudio.SpellOrbZap, p.x, p.y, p.z, 3),
         }), 'electricOrb')
+        .addSystem(createNpcLootSystem(), 'npcLoot')
         .addSystem(createDynamicCollisionSystem(chunks), 'dynamicCollision')
         .addSystem(createPlayerDeathSystem({
             chunks,
@@ -748,6 +771,7 @@ async function main(): Promise<void> {
         }), 'debugOverlay')
         .addSystem(createHealthHudSystem(), 'healthHud')
         .addSystem(createManaHudSystem(), 'manaHud')
+        .addSystem(createConsumableHudSystem(), 'consumableHud')
         .addSystem(createInventorySystem(engine.input, actions), 'inventory')
         .addSystem(createGameMenuSystem(engine.input, actions, audio, {
             renderElement: renderer.webgpu.domElement,
@@ -843,6 +867,8 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.lastCheckpoint = null
     world.weaponStance = 'melee'
     world.selectedSpell = 'bolt'
+    world.selectedConsumable = 'heal-potion'
+    world.delayedConsumableEffects.length = 0
     world.spellEffects.length = 0
 }
 

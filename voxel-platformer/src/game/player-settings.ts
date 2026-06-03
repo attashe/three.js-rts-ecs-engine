@@ -142,7 +142,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
             'heal-potion': {
                 quantity: 2,
                 name: 'Healing Potion',
-                description: 'Restores health when potion use is wired into combat.',
+                description: 'Restores one heart immediately.',
                 category: 'consumables',
                 icon: 'heal-potion',
             },

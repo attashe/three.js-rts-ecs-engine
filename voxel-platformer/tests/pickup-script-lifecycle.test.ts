@@ -15,6 +15,10 @@ import {
     HIGH_SPEED_BOOTS_ITEM_ID,
     HIGH_SPEED_BOOTS_ITEM_OPTIONS,
 } from '../src/game/high-jump-boots'
+import { createNpcLootSystem } from '../src/game/npc-loot-system'
+import { DYNAMITE_ITEM_ID, FOOD_MEAT_ITEM_ID, FOOD_PIE_ITEM_ID } from '../src/game/consumables'
+import { normalizeNpcConfig } from '../src/game/npcs/npc-types'
+import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 
 test('spawnScriptPickup + scriptPickupExists round-trip a stable id', () => {
     const world = createGameWorld()
@@ -93,6 +97,53 @@ test('spawnScriptPickup defaults boot pickup metadata to accessory options', () 
         quantity: 1,
         options: HIGH_SPEED_BOOTS_ITEM_OPTIONS,
     })
+})
+
+test('spawnScriptPickup renders known consumables with consumable props', () => {
+    const world = createGameWorld()
+    spawnScriptPickup(world, {
+        kind: DYNAMITE_ITEM_ID,
+        position: { x: 1, y: 2, z: 3 },
+        id: 'dynamite.meta',
+    })
+    spawnScriptPickup(world, {
+        kind: FOOD_PIE_ITEM_ID,
+        position: { x: 2, y: 2, z: 3 },
+        id: 'pie.meta',
+    })
+
+    const dynamite = world.pickupEntityByScriptId.get('dynamite.meta')!
+    const pie = world.pickupEntityByScriptId.get('pie.meta')!
+    assert.equal(world.object3DByEid.get(dynamite)?.name, 'DynamiteBundle')
+    assert.equal(world.object3DByEid.get(pie)?.name, 'FoodPickup:pie')
+})
+
+test('rabbit death drops rabbit meat once', () => {
+    const world = createGameWorld()
+    registerRuntimeNpcs(world, [
+        normalizeNpcConfig({ id: 'bunny', model: 'rabbit', position: { x: 4, y: 1, z: 5 } }),
+    ])
+    const bunny = world.npcRuntimeById.get('bunny')!
+    bunny.dying = true
+    const system = createNpcLootSystem()
+
+    system.update(world, 1 / 60)
+    system.update(world, 1 / 60)
+
+    const pickup = world.pickupEntityByScriptId.get('loot:bunny:rabbit-meat')!
+    assert.ok(pickup !== undefined)
+    assert.equal(world.object3DByEid.get(pickup)?.name, 'FoodPickup:meat')
+    assert.deepEqual(world.pickupMetaByEid.get(pickup)?.inventoryItem, {
+        id: FOOD_MEAT_ITEM_ID,
+        quantity: 1,
+        options: {
+            name: 'Rabbit Meat',
+            description: 'Restores a small amount of health after digestion.',
+            category: 'consumables',
+            icon: 'food-meat',
+        },
+    })
+    assert.equal([...world.pickupEntityByScriptId.keys()].filter((id) => id === 'loot:bunny:rabbit-meat').length, 1)
 })
 
 test('despawnScriptPickup removes the live entity, clears both maps, and is idempotent', () => {

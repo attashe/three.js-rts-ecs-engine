@@ -161,6 +161,7 @@ export interface NpcAiState {
  *  system reads them to drive the AnimationController and despawn on death. */
 export interface NpcRuntimeState {
     id: string
+    model?: NpcModelKind
     position: { x: number; y: number; z: number }
     /** Facing yaw, updated by the behaviour system as the NPC moves. */
     yaw: number

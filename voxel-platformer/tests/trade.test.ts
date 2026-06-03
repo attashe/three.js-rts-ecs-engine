@@ -8,6 +8,7 @@ import {
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 import { METAL_HELMET_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
 import { MANA_POTION_ITEM_ID } from '../src/game/mana'
+import { DYNAMITE_ITEM_ID, FOOD_APPLE_ITEM_ID, FOOD_PIE_ITEM_ID } from '../src/game/consumables'
 
 const SHOP = normalizeTradeRequest({
     title: 'Field Supplies',
@@ -157,6 +158,62 @@ test('trade buy and sell can mutate durable mana potions', () => {
     if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
     assert.equal(sold.inventory.items?.[MANA_POTION_ITEM_ID]?.quantity, 1)
     assert.deepEqual(sold.removed, { [MANA_POTION_ITEM_ID]: 1 })
+})
+
+test('trade buy and sell can mutate food and dynamite consumables', () => {
+    const shop = normalizeTradeRequest({
+        title: 'Consumables',
+        items: [{
+            id: FOOD_APPLE_ITEM_ID,
+            name: 'Apple',
+            resource: FOOD_APPLE_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 2,
+            sellPrice: 1,
+        }, {
+            id: FOOD_PIE_ITEM_ID,
+            name: 'Meat Pie',
+            resource: FOOD_PIE_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 5,
+            sellPrice: 2,
+        }, {
+            id: DYNAMITE_ITEM_ID,
+            name: 'Dynamite',
+            resource: DYNAMITE_ITEM_ID,
+            unitSize: 1,
+            buyPrice: 12,
+            sellPrice: 5,
+        }],
+    })
+
+    const apple = applyTradeSelection(shop, { gold: 30, arrows: 0, items: {} }, {
+        action: 'buy',
+        itemId: FOOD_APPLE_ITEM_ID,
+        quantity: 2,
+    })
+    if (apple.status !== 'bought') throw new Error(`expected bought, got ${apple.status}`)
+    assert.equal(apple.inventory.items?.[FOOD_APPLE_ITEM_ID]?.quantity, 2)
+    assert.equal(apple.inventory.items?.[FOOD_APPLE_ITEM_ID]?.category, 'consumables')
+    assert.equal(apple.inventory.items?.[FOOD_APPLE_ITEM_ID]?.icon, 'food-apple')
+
+    const dynamite = applyTradeSelection(shop, apple.inventory, {
+        action: 'buy',
+        itemId: DYNAMITE_ITEM_ID,
+        quantity: 1,
+    })
+    if (dynamite.status !== 'bought') throw new Error(`expected bought, got ${dynamite.status}`)
+    assert.equal(dynamite.inventory.items?.[DYNAMITE_ITEM_ID]?.quantity, 1)
+    assert.equal(dynamite.inventory.items?.[DYNAMITE_ITEM_ID]?.icon, 'dynamite')
+
+    const sold = applyTradeSelection(shop, dynamite.inventory, {
+        action: 'sell',
+        itemId: FOOD_APPLE_ITEM_ID,
+        quantity: 1,
+    })
+    if (sold.status !== 'sold') throw new Error(`expected sold, got ${sold.status}`)
+    assert.equal(sold.inventory.items?.[FOOD_APPLE_ITEM_ID]?.quantity, 1)
+    assert.deepEqual(sold.removed, { [FOOD_APPLE_ITEM_ID]: 1 })
 })
 
 test('trade buy and sell can mutate unique high jump boots', () => {

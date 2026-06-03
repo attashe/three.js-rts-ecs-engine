@@ -213,9 +213,12 @@ test('large town includes the fixed dwarf market row and merchants', () => {
     assert.match(smith!.scriptSource, /resource": "metal-helmet"/)
     assert.match(clothier!.scriptSource, /resource": "hat-ranger"/)
     assert.match(clothier!.scriptSource, /resource": "high-speed-boots"/)
+    assert.match(product!.scriptSource, /resource": "food-apple"/)
+    assert.match(product!.scriptSource, /resource": "food-pie"/)
     assert.match(alchemist!.scriptSource, /resource": "heal-potion"/)
     assert.match(alchemist!.scriptSource, /resource": "mana-potion"/)
-    assert.doesNotMatch(product!.scriptSource, /trade\.open/)
+    assert.match(alchemist!.scriptSource, /resource": "dynamite"/)
+    assert.match(product!.scriptSource, /trade\.open/)
 })
 
 test('large town includes a collidable large troll NPC', () => {

@@ -30,6 +30,13 @@ export type InventoryIconId =
     | 'consumable'
     | 'heal-potion'
     | 'mana-potion'
+    | 'food-apple'
+    | 'food-fish'
+    | 'food-meat'
+    | 'food-pie'
+    | 'food'
+    | 'pie'
+    | 'dynamite'
     | 'accessory'
     | 'boots'
     | 'hat'
@@ -157,7 +164,7 @@ export function normalizeInventoryItemId(raw: string): string {
 
 export function defaultInventoryCategory(itemId: string): InventoryCategoryId {
     if (itemId === 'arrow' || itemId === 'arrows' || itemId === 'gold' || itemId === 'coin') return 'resources'
-    if (itemId.includes('potion') || itemId.includes('food')) return 'consumables'
+    if (itemId.includes('potion') || itemId.includes('food') || itemId === 'dynamite') return 'consumables'
     if (
         itemId === HIGH_JUMP_BOOTS_ITEM_ID
         || itemId === HIGH_SPEED_BOOTS_ITEM_ID
@@ -177,6 +184,12 @@ export function defaultInventoryIcon(itemId: string, category = defaultInventory
     if (itemId === 'arrow' || itemId === 'arrows') return 'arrows'
     if (itemId === 'heal-potion' || itemId === 'health-potion') return 'heal-potion'
     if (itemId === 'mana-potion') return 'mana-potion'
+    if (itemId === 'food-apple') return 'food-apple'
+    if (itemId === 'food-fish') return 'food-fish'
+    if (itemId === 'food-meat') return 'food-meat'
+    if (itemId === 'food-pie') return 'food-pie'
+    if (itemId.startsWith('food-')) return 'food'
+    if (itemId === 'dynamite') return 'dynamite'
     if (itemId === HIGH_JUMP_BOOTS_ITEM_ID || itemId === HIGH_SPEED_BOOTS_ITEM_ID || itemId.includes('boots')) return 'boots'
     if (itemId === METAL_HELMET_ITEM_ID) return 'metal-helmet'
     if (itemId === SPEAR_ITEM_ID) return 'spear'
@@ -273,6 +286,13 @@ function isInventoryIcon(value: unknown): value is InventoryIconId {
         'consumable',
         'heal-potion',
         'mana-potion',
+        'food-apple',
+        'food-fish',
+        'food-meat',
+        'food-pie',
+        'food',
+        'pie',
+        'dynamite',
         'accessory',
         'boots',
         'hat',

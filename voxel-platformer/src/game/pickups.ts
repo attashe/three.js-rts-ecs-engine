@@ -10,9 +10,23 @@ import {
 } from '../engine/ecs/components'
 import { createEntity, despawnEntity } from '../engine/ecs/entity'
 import { PickupKind } from '../engine/ecs/systems/pickup-system'
-import { createCoinPile, createHighJumpBootsProp, createQuestShard, mergeGroupByMaterial } from './assets'
+import {
+    createCoinPile,
+    createDynamiteBundle,
+    createFoodPickupProp,
+    createHighJumpBootsProp,
+    createQuestShard,
+    mergeGroupByMaterial,
+} from './assets'
 import type { InventoryCategoryId, InventoryIconId } from './inventory'
 import { BOOT_EQUIPMENT_ITEM_OPTIONS, isBootEquipmentItemId } from './high-jump-boots'
+import {
+    DYNAMITE_ITEM_ID,
+    FOOD_APPLE_ITEM_ID,
+    FOOD_FISH_ITEM_ID,
+    FOOD_MEAT_ITEM_ID,
+    FOOD_PIE_ITEM_ID,
+} from './consumables'
 
 export interface CoinPileOptions {
     /** World-space position; the pile's base sits at this Y. */
@@ -149,10 +163,18 @@ function spawnQuestItem(
     PickupValue.kind[eid] = PickupKind.ScriptItem
     PickupValue.amount[eid] = safePickupAmount(amount)
 
-    world.object3DByEid.set(eid, mergeGroupByMaterial(
-        isBootEquipmentItemId(kind) ? createHighJumpBootsProp() : createQuestShard(),
-    ))
+    world.object3DByEid.set(eid, mergeGroupByMaterial(createPickupVisual(kind)))
     return eid
+}
+
+function createPickupVisual(kind: string): ReturnType<typeof createQuestShard> {
+    if (isBootEquipmentItemId(kind)) return createHighJumpBootsProp()
+    if (kind === DYNAMITE_ITEM_ID) return createDynamiteBundle()
+    if (kind === FOOD_APPLE_ITEM_ID) return createFoodPickupProp('apple')
+    if (kind === FOOD_FISH_ITEM_ID) return createFoodPickupProp('fish')
+    if (kind === FOOD_PIE_ITEM_ID) return createFoodPickupProp('pie')
+    if (kind === FOOD_MEAT_ITEM_ID) return createFoodPickupProp('meat')
+    return createQuestShard()
 }
 
 function normalizeScriptKind(kind: string): string {

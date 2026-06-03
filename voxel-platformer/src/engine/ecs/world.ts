@@ -210,6 +210,14 @@ export interface SpellWaveEffect {
     hit: string[]
 }
 
+export interface DelayedConsumableEffect {
+    itemId: string
+    name: string
+    remainingSeconds: number
+    restoreHp: number
+    restoreMana: number
+}
+
 export type DebugHitbox =
     | DebugAabbHitbox
     | DebugCircleHitbox
@@ -362,6 +370,12 @@ export interface GameContext {
      *  spell registry (`game/spells.ts`); stored as a string so the engine
      *  stays agnostic about the spell list. Defaults to the first spell. */
     selectedSpell: string
+    /** Inventory consumable selected for the Z hotkey. Null when no owned
+     *  consumable is available. */
+    selectedConsumable: string | null
+    /** Food/pie effects that have been consumed and are waiting for their
+     *  delayed restore timer to resolve. */
+    delayedConsumableEffects: DelayedConsumableEffect[]
     /** Queue of trigger events for the script engine to drain each
      *  fixed tick. Producer systems (zone trigger, pickup, death) push
      *  events here; `script-engine-system` consumes + emits via
@@ -463,6 +477,8 @@ export function createGameWorld(): GameWorld {
         lastCheckpoint: null,
         weaponStance: 'melee',
         selectedSpell: 'bolt',
+        selectedConsumable: 'heal-potion',
+        delayedConsumableEffects: [],
         scriptTriggerEvents: [],
     })
 }

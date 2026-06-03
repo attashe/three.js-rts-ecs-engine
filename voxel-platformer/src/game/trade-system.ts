@@ -19,6 +19,13 @@ import {
     isBuyableHeadEquipmentItemId,
 } from './equipment-items'
 import { MANA_POTION_ITEM_ID } from './mana'
+import {
+    DYNAMITE_ITEM_ID,
+    FOOD_APPLE_ITEM_ID,
+    FOOD_FISH_ITEM_ID,
+    FOOD_MEAT_ITEM_ID,
+    FOOD_PIE_ITEM_ID,
+} from './consumables'
 
 interface TradeControllerOptions {
     input: Input
@@ -661,6 +668,16 @@ function resourceIcon(resource: TradeResource, size: 'small' | 'large'): HTMLEle
             return healPotionIcon(size)
         case MANA_POTION_ITEM_ID:
             return manaPotionIcon(size)
+        case FOOD_APPLE_ITEM_ID:
+            return appleIcon(size)
+        case FOOD_FISH_ITEM_ID:
+            return fishIcon(size)
+        case FOOD_MEAT_ITEM_ID:
+            return meatIcon(size)
+        case FOOD_PIE_ITEM_ID:
+            return pieIcon(size)
+        case DYNAMITE_ITEM_ID:
+            return dynamiteIcon(size)
         case HIGH_JUMP_BOOTS_ITEM_ID:
             return bootsIcon(size)
         case SPEAR_ITEM_ID:
@@ -759,6 +776,82 @@ function manaPotionIcon(size: 'small' | 'large'): HTMLElement {
         borderRadius: isLarge ? '7px 7px 10px 10px' : '5px 5px 7px 7px',
         background: 'linear-gradient(180deg, #d7f1ff 0 22%, #45b8ff 23% 100%)',
         boxShadow: '0 -7px 0 -2px #d9edf0, inset -4px -5px 0 rgba(10, 41, 85, 0.3), 0 0 8px rgba(69, 184, 255, 0.3)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function appleIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '28px' : '18px',
+        height: isLarge ? '28px' : '18px',
+        display: 'block',
+        borderRadius: '50%',
+        background: '#d94b43',
+        boxShadow: `${isLarge ? '0 -10px 0 -6px' : '0 -7px 0 -4px'} #5f7f3b, inset -4px -4px 0 rgba(85, 31, 18, 0.24)`,
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function fishIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '36px' : '24px',
+        height: isLarge ? '23px' : '15px',
+        display: 'block',
+        background: 'linear-gradient(90deg, #d7f1ff, #72bdd2)',
+        clipPath: 'polygon(0 50%, 22% 16%, 76% 18%, 100% 50%, 76% 82%, 22% 84%)',
+        boxShadow: 'inset -5px -3px 0 rgba(26, 64, 84, 0.24)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function meatIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '34px' : '24px',
+        height: isLarge ? '23px' : '16px',
+        display: 'block',
+        borderRadius: '60% 40% 48% 58%',
+        background: 'linear-gradient(135deg, #e08a60, #9f332f)',
+        boxShadow: `${isLarge ? '13px 3px 0 -5px' : '10px 2px 0 -4px'} #f2d2aa, ${isLarge ? '17px 3px 0 -7px' : '13px 2px 0 -5px'} #f2d2aa, inset -4px -3px 0 rgba(67, 22, 16, 0.28)`,
+        transform: 'rotate(-14deg)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function pieIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '34px' : '22px',
+        height: isLarge ? '19px' : '12px',
+        display: 'block',
+        borderRadius: '50% 50% 6px 6px',
+        background: 'linear-gradient(180deg, #e0a85d, #8b4c2b)',
+        boxShadow: 'inset 0 4px 0 #6f3426',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return root
+}
+
+function dynamiteIcon(size: 'small' | 'large'): HTMLElement {
+    const root = document.createElement('span')
+    root.setAttribute('aria-hidden', 'true')
+    const isLarge = size === 'large'
+    Object.assign(root.style, {
+        width: isLarge ? '36px' : '24px',
+        height: isLarge ? '21px' : '14px',
+        display: 'block',
+        borderRadius: isLarge ? '6px' : '4px',
+        background: 'repeating-linear-gradient(90deg, #e04b3f 0 8px, #9d2830 8px 11px)',
+        boxShadow: `${isLarge ? '0 -10px 0 -6px' : '0 -8px 0 -5px'} #ffd166, inset -3px -3px 0 rgba(49, 10, 14, 0.26)`,
     } satisfies Partial<CSSStyleDeclaration>)
     return root
 }

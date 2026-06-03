@@ -38,7 +38,7 @@ export const PickupValue = {
 }
 
 export const MovingObject = {
-    /** 1 = arrow, 2 = stone. */
+    /** See `MovingObjectKind` in `game/moving-objects.ts`. */
     kind: new Uint8Array(MAX_ENTITIES),
     /** Seconds since spawn. */
     age: new Float32Array(MAX_ENTITIES),
@@ -61,6 +61,10 @@ export const RidingCart = {}
 export const ClimbingLadder = {
     centerX: new Float32Array(MAX_ENTITIES),
     centerZ: new Float32Array(MAX_ENTITIES),
+    cellX: new Float32Array(MAX_ENTITIES),
+    cellZ: new Float32Array(MAX_ENTITIES),
+    normalX: new Float32Array(MAX_ENTITIES),
+    normalZ: new Float32Array(MAX_ENTITIES),
     bottomY: new Float32Array(MAX_ENTITIES),
     topY: new Float32Array(MAX_ENTITIES),
 }

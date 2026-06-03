@@ -136,10 +136,12 @@ test('game actions expose the platformer command hint set in order', () => {
         { keys: ['T'], label: 'Shield' },
         { keys: ['C'], label: 'Cast' },
         { keys: ['X'], label: 'Switch weapon' },
+        { keys: ['Z'], label: 'Use consumable' },
         { keys: ['E'], label: 'Interaction' },
         { keys: ['Tab'], label: 'Inventory' },
     ])
     assert.equal(actions.get(GameAction.BowShot).bindings?.[0]?.keys[0], 'KeyF')
+    assert.equal(actions.get(GameAction.UseConsumable).bindings?.[0]?.keys[0], 'KeyZ')
     assert.equal(actions.get(GameAction.Interact).bindings?.[0]?.keys[0], 'KeyE')
     assert.equal(actions.get(GameAction.Inventory).bindings?.[0]?.keys[0], 'Tab')
 })

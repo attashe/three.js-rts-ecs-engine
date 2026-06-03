@@ -86,7 +86,10 @@ trade.open({
   items: [{
     id: string,
     name: string,
-    resource: 'arrows',
+    resource: 'arrows' | 'heal-potion' | 'mana-potion' |
+              'food-apple' | 'food-fish' | 'food-meat' | 'food-pie' | 'dynamite' |
+              'high-jump-boots' | 'high-speed-boots' |
+              'hat-arcane' | 'hat-ranger' | 'hat-sun' | 'metal-helmet' | 'spear',
     unitSize?: number,
     buyPrice?: number,
     sellPrice?: number,

@@ -146,6 +146,97 @@ export function createHighJumpBootsProp(): Group {
     return shadows(root)
 }
 
+export function createDynamiteBundle(): Group {
+    const root = new Group()
+    root.name = 'DynamiteBundle'
+
+    const red = material(0x9d2830, 0.72)
+    const paper = material(0xd9c8a3, 0.66)
+    const cord = material(0x1f1b17, 0.78)
+    const spark = material(0xffd166, 0.4, 0.1)
+
+    for (const [z, name] of [[-0.08, 'Back'], [0, 'Middle'], [0.08, 'Front']] as const) {
+        const stick = new Mesh(sharedCylinderGeometry(0.045, 0.045, 0.36, 10), red)
+        stick.name = `DynamiteStick${name}`
+        stick.rotation.z = Math.PI * 0.5
+        stick.position.set(0, 0.12, z)
+        root.add(stick)
+    }
+
+    const bandL = new Mesh(sharedBoxGeometry(0.04, 0.12, 0.24), paper)
+    bandL.name = 'DynamitePaperBandL'
+    bandL.position.set(-0.09, 0.12, 0)
+    const bandR = bandL.clone()
+    bandR.name = 'DynamitePaperBandR'
+    bandR.position.x = 0.09
+    root.add(bandL, bandR)
+
+    const fuse = new Mesh(sharedCylinderGeometry(0.01, 0.01, 0.26, 6), cord)
+    fuse.name = 'DynamiteFuse'
+    fuse.position.set(0.19, 0.18, 0)
+    fuse.rotation.z = -0.72
+    root.add(fuse)
+
+    const ember = new Mesh(sharedSphereGeometry(0.028, 8, 6), spark)
+    ember.name = 'DynamiteFuseSpark'
+    ember.position.set(0.27, 0.26, 0)
+    root.add(ember)
+
+    return shadows(root)
+}
+
+export function createFoodPickupProp(kind: 'apple' | 'fish' | 'meat' | 'pie' = 'meat'): Group {
+    const root = new Group()
+    root.name = `FoodPickup:${kind}`
+
+    if (kind === 'apple') {
+        const apple = new Mesh(sharedSphereGeometry(0.13, 10, 8), material(0xb73436, 0.64))
+        apple.name = 'FoodAppleBody'
+        apple.scale.set(1, 0.9, 1)
+        apple.position.y = 0.14
+        const stem = new Mesh(sharedCylinderGeometry(0.015, 0.015, 0.08, 6), material(0x4c2e18, 0.78))
+        stem.name = 'FoodAppleStem'
+        stem.position.y = 0.26
+        root.add(apple, stem)
+        return shadows(root)
+    }
+
+    if (kind === 'fish') {
+        const body = new Mesh(sharedSphereGeometry(0.14, 10, 8), material(0x4f8fa6, 0.62))
+        body.name = 'FoodFishBody'
+        body.scale.set(1.45, 0.62, 0.76)
+        body.position.y = 0.12
+        const tail = new Mesh(sharedConeGeometry(0.08, 0.12, 4), material(0x75b7c4, 0.66))
+        tail.name = 'FoodFishTail'
+        tail.position.set(-0.21, 0.12, 0)
+        tail.rotation.z = Math.PI * 0.5
+        root.add(body, tail)
+        return shadows(root)
+    }
+
+    if (kind === 'pie') {
+        const crust = new Mesh(sharedCylinderGeometry(0.17, 0.15, 0.08, 14), material(0xb4783a, 0.74))
+        crust.name = 'FoodPieCrust'
+        crust.position.y = 0.07
+        const filling = new Mesh(sharedCylinderGeometry(0.13, 0.13, 0.025, 14), material(0x7d3a2a, 0.7))
+        filling.name = 'FoodPieFilling'
+        filling.position.y = 0.12
+        root.add(crust, filling)
+        return shadows(root)
+    }
+
+    const slab = new Mesh(sharedBoxGeometry(0.25, 0.09, 0.18), material(0x8a4336, 0.78))
+    slab.name = 'FoodMeatSlab'
+    slab.position.y = 0.09
+    slab.rotation.y = 0.16
+    const bone = new Mesh(sharedCylinderGeometry(0.022, 0.022, 0.26, 8), material(0xe4d4b8, 0.6))
+    bone.name = 'FoodMeatBone'
+    bone.position.y = 0.11
+    bone.rotation.z = Math.PI * 0.5
+    root.add(slab, bone)
+    return shadows(root)
+}
+
 export function createStone(opts: StoneVisualOptions = {}): Group {
     // Group origin sits at the sphere's centre so rotation tumbles the visual
     // in place. Spawners that want "stone resting on ground" should set

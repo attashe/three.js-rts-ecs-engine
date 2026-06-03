@@ -326,7 +326,11 @@ pickups.spawn(kind: string, pos: VoxelCoord,
                 inventoryItem?: {
                   id?: string; name?: string; description?: string;
                   category?: 'quest' | 'consumables' | 'accessories' | 'tools' | 'resources';
-                  icon?: 'quest-shard' | 'item' | 'gold' | 'arrows' | 'consumable' | 'accessory' | 'tool'
+                  icon?: 'quest-shard' | 'item' | 'gold' | 'arrows' | 'consumable' |
+                         'heal-potion' | 'mana-potion' |
+                         'food-apple' | 'food-fish' | 'food-meat' | 'food-pie' |
+                         'food' | 'pie' | 'dynamite' |
+                         'accessory' | 'boots' | 'tool'
                 }
               }): PickupId
 pickups.despawn(id: PickupId): boolean  // true on success, false if not live
@@ -482,8 +486,8 @@ ui.dialogue({
 }): Promise<{ choiceId?, choiceIndex?, text? }>
 
 // Trade — opens the NPC trade menu and applies a validated buy/sell
-// transaction before resolving. V1 uses gold as currency and arrows as
-// the first inventory-backed resource.
+// transaction before resolving. V1 uses gold as currency; resources can be
+// arrows, potions, food, dynamite, boots, hats, helmets, and weapons.
 trade.open({
   id?: string,
   title?: string,
@@ -493,7 +497,10 @@ trade.open({
     id: string,
     name: string,
     description?: string,
-    resource: 'arrows',
+    resource: 'arrows' | 'heal-potion' | 'mana-potion' |
+              'food-apple' | 'food-fish' | 'food-meat' | 'food-pie' | 'dynamite' |
+              'high-jump-boots' | 'high-speed-boots' |
+              'hat-arcane' | 'hat-ranger' | 'hat-sun' | 'metal-helmet' | 'spear',
     unitSize?: number,
     buyPrice?: number,
     sellPrice?: number,
@@ -502,9 +509,9 @@ trade.open({
   }]
 }): Promise<
   | { status: 'bought', itemId: string, quantity: number, spent: { gold: number },
-      gained: { arrows?: number }, inventory: { gold: number, arrows: number } }
+      gained: Record<string, number>, inventory: { gold: number, arrows: number, items? } }
   | { status: 'sold', itemId: string, quantity: number, gained: { gold: number },
-      removed: { arrows?: number }, inventory: { gold: number, arrows: number } }
+      removed: Record<string, number>, inventory: { gold: number, arrows: number, items? } }
   | { status: 'cancelled' }
   | { status: 'unavailable', reason?: string, inventory?: { gold: number, arrows: number } }
 >

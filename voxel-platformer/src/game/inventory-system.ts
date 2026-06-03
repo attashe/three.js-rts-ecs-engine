@@ -1,6 +1,5 @@
 import { query } from 'bitecs'
-import { Health, Mana, PlayerControlled } from '../engine/ecs/components'
-import { HP_PER_HEART } from '../engine/ecs/combat'
+import { Mana, PlayerControlled } from '../engine/ecs/components'
 import type { GameWorld, WeaponStance } from '../engine/ecs/world'
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { System } from '../engine/ecs/systems/system'
@@ -33,18 +32,26 @@ import {
     isBuyableHeadEquipmentItemId,
 } from './equipment-items'
 import { SPELLS } from './spells'
-import { AIR_PUSH_MANA_COST, HIGH_JUMP_MANA_COST, MANA_PER_ORB, MANA_POTION_ITEM_ID, MANA_POTION_RESTORE, restoreMana } from './mana'
+import { AIR_PUSH_MANA_COST, HIGH_JUMP_MANA_COST, MANA_PER_ORB, MANA_POTION_ITEM_ID } from './mana'
+import {
+    HEAL_POTION_ITEM_ID,
+    consumeDirectConsumable,
+    consumableSnapshotItem,
+    isConsumableItemId,
+    isDirectConsumableItemId,
+    selectConsumable,
+} from './consumables'
 import {
     INVENTORY_CATEGORIES,
     INVENTORY_CATEGORY_LABELS,
-    copyInventoryItems,
     inventoryItemCount,
     listInventoryItems,
-    removeInventoryItem,
     type InventoryCategoryId,
     type InventoryIconId,
     type InventorySnapshotItem,
 } from './inventory'
+
+export { consumeHealPotion, consumeManaPotion } from './consumables'
 
 interface InventoryDom {
     root: HTMLDivElement
@@ -68,35 +75,6 @@ const LOADOUT_OPTIONS: readonly LoadoutOption[] = [
     { stance: 'ranged', label: 'Ranged', hint: 'Bow — F looses an arrow.' },
     { stance: 'magic', label: 'Magician', hint: 'Staff — F bonks, C casts the selected spell.' },
 ]
-
-const HEAL_POTION_ITEM_ID = 'heal-potion'
-const HEAL_POTION_RESTORE_HP = HP_PER_HEART
-
-export function consumeHealPotion(world: GameWorld): boolean {
-    const players = query(world, [PlayerControlled, Health])
-    if (players.length === 0) return false
-    const player = players[0]!
-    const max = Health.max[player]!
-    const current = Health.current[player]!
-    if (!(max > 0) || current >= max) return false
-    if (inventoryItemCount(world.inventory.items, HEAL_POTION_ITEM_ID) <= 0) return false
-    if (!removeInventoryItem(world.inventory.items, HEAL_POTION_ITEM_ID, 1)) return false
-    Health.current[player] = Math.min(max, current + HEAL_POTION_RESTORE_HP)
-    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
-    return true
-}
-
-export function consumeManaPotion(world: GameWorld): boolean {
-    const players = query(world, [PlayerControlled, Mana])
-    if (players.length === 0) return false
-    const player = players[0]!
-    if (inventoryItemCount(world.inventory.items, MANA_POTION_ITEM_ID) <= 0) return false
-    if (Mana.max[player]! <= 0 || Mana.current[player]! >= Mana.max[player]!) return false
-    if (!removeInventoryItem(world.inventory.items, MANA_POTION_ITEM_ID, 1)) return false
-    restoreMana(player, MANA_POTION_RESTORE)
-    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
-    return true
-}
 
 export function setHighJumpBootsEquipped(world: GameWorld, equipped: boolean): boolean {
     return setBootsEquipped(world, HIGH_JUMP_BOOTS_ITEM_ID, equipped)
@@ -465,31 +443,9 @@ function groupInventoryItems(world: GameWorld): Map<InventoryCategoryId, Invento
         if (isBuyableHeadEquipmentItemId(item.id) || isBuyableHandEquipmentItemId(item.id)) continue
         grouped.get(item.category)?.push(item)
     }
-    grouped.get('consumables')!.unshift(manaPotionItem(world))
-    grouped.get('consumables')!.unshift(healPotionItem(world))
+    grouped.get('consumables')!.unshift(consumableSnapshotItem(world, MANA_POTION_ITEM_ID))
+    grouped.get('consumables')!.unshift(consumableSnapshotItem(world, HEAL_POTION_ITEM_ID))
     return grouped
-}
-
-function healPotionItem(world: GameWorld): InventorySnapshotItem {
-    return {
-        id: HEAL_POTION_ITEM_ID,
-        quantity: inventoryItemCount(world.inventory.items, HEAL_POTION_ITEM_ID),
-        name: 'Heal Potion',
-        description: 'Restores one heart.',
-        category: 'consumables',
-        icon: 'heal-potion',
-    }
-}
-
-function manaPotionItem(world: GameWorld): InventorySnapshotItem {
-    return {
-        id: MANA_POTION_ITEM_ID,
-        quantity: inventoryItemCount(world.inventory.items, MANA_POTION_ITEM_ID),
-        name: 'Mana Potion',
-        description: 'Restores two mana orbs.',
-        category: 'consumables',
-        icon: 'mana-potion',
-    }
 }
 
 function categoryCards(
@@ -612,31 +568,25 @@ function categorySection(category: InventoryCategoryId, cards: readonly HTMLElem
 }
 
 function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWorld): HTMLElement {
-    if (item.id === HEAL_POTION_ITEM_ID) {
+    if (isConsumableItemId(item.id)) {
+        const active = world.selectedConsumable === item.id
+        const direct = isDirectConsumableItemId(item.id)
         return menuCard({
             icon: item.icon,
             name: item.name,
-            detail: `x${item.quantity}`,
-            title: item.quantity > 0
-                ? `${item.name}\nDouble-click to drink. Restores one heart.`
-                : item.name,
+            detail: active ? `Active · x${item.quantity}` : `x${item.quantity}`,
+            title: consumableTitle(item, direct),
+            active,
             disabled: item.quantity <= 0,
-            onDoubleClick: () => {
-                if (consumeHealPotion(world)) renderInventory(dom, world)
+            onClick: () => {
+                if (selectConsumable(world, item.id)) renderInventory(dom, world)
             },
-        })
-    }
-    if (item.id === MANA_POTION_ITEM_ID) {
-        return menuCard({
-            icon: item.icon,
-            name: item.name,
-            detail: `x${item.quantity}`,
-            title: item.quantity > 0
-                ? `${item.name}\nDouble-click to drink. Restores two mana orbs.`
-                : item.name,
-            disabled: item.quantity <= 0,
             onDoubleClick: () => {
-                if (consumeManaPotion(world)) renderInventory(dom, world)
+                selectConsumable(world, item.id)
+                if (direct) {
+                    consumeDirectConsumable(world, item.id)
+                }
+                renderInventory(dom, world)
             },
         })
     }
@@ -665,6 +615,13 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
     })
 }
 
+function consumableTitle(item: InventorySnapshotItem, direct: boolean): string {
+    const base = item.description ? `${item.name}\n${item.description}` : item.name
+    return direct
+        ? `${base}\nClick to select for Z. Double-click to use now.`
+        : `${base}\nClick to select for Z.`
+}
+
 interface MenuCardOptions {
     icon: InventoryIconId
     name: string
@@ -684,15 +641,36 @@ function menuCard(opts: MenuCardOptions): HTMLElement {
     }
     if (opts.onClick) {
         ;(card as HTMLButtonElement).type = 'button'
-        card.addEventListener('click', opts.onClick)
+        let clickTimer: number | null = null
+        card.addEventListener('click', () => {
+            if (!opts.onDoubleClick) {
+                opts.onClick?.()
+                return
+            }
+            if (clickTimer !== null) window.clearTimeout(clickTimer)
+            clickTimer = window.setTimeout(() => {
+                clickTimer = null
+                opts.onClick?.()
+            }, 180)
+        })
+        if (opts.onDoubleClick) {
+            card.addEventListener('dblclick', (ev) => {
+                ev.preventDefault()
+                if (clickTimer !== null) {
+                    window.clearTimeout(clickTimer)
+                    clickTimer = null
+                }
+                opts.onDoubleClick?.()
+            })
+        }
     } else if (interactive) {
         ;(card as HTMLButtonElement).type = 'button'
-    }
-    if (opts.onDoubleClick) {
-        card.addEventListener('dblclick', (ev) => {
-            ev.preventDefault()
-            opts.onDoubleClick?.()
-        })
+        if (opts.onDoubleClick) {
+            card.addEventListener('dblclick', (ev) => {
+                ev.preventDefault()
+                opts.onDoubleClick?.()
+            })
+        }
     }
     Object.assign(card.style, {
         width: '138px',
@@ -851,6 +829,13 @@ function iconBackground(icon: InventoryIconId): string {
         case 'quest-shard': return 'linear-gradient(145deg, #2f4d5f, #77d0c9)'
         case 'heal-potion': return 'linear-gradient(145deg, #472333, #c95772)'
         case 'mana-potion': return 'linear-gradient(145deg, #17355f, #45b8ff)'
+        case 'food-apple': return 'linear-gradient(145deg, #3f4f2a, #b85a4e)'
+        case 'food-fish': return 'linear-gradient(145deg, #284254, #78bfd0)'
+        case 'food-meat': return 'linear-gradient(145deg, #5a2f26, #c76b4e)'
+        case 'food-pie': return 'linear-gradient(145deg, #5d3826, #c08544)'
+        case 'food': return 'linear-gradient(145deg, #38502e, #9bbd5c)'
+        case 'pie': return 'linear-gradient(145deg, #5d3826, #c08544)'
+        case 'dynamite': return 'linear-gradient(145deg, #4a1f25, #e04b3f)'
         case 'torch': return 'linear-gradient(145deg, #4a2b18, #d28b37)'
         case 'boots': return 'linear-gradient(145deg, #192a3a, #65d7ff)'
         case 'hat': return 'linear-gradient(145deg, #20372f, #7ac7a2)'
@@ -912,6 +897,52 @@ function glyphStyle(icon: InventoryIconId): Partial<CSSStyleDeclaration> {
             borderRadius: '5px 5px 7px 7px',
             background: 'linear-gradient(180deg, #d7f1ff 0 22%, #45b8ff 23% 100%)',
             boxShadow: '0 -6px 0 -2px #d9edf0, inset -3px -4px 0 rgba(10, 41, 85, 0.3), 0 0 10px rgba(69, 184, 255, 0.45)',
+        }
+    }
+    if (icon === 'food-apple' || icon === 'food') {
+        return {
+            width: '19px',
+            height: '19px',
+            borderRadius: '50%',
+            background: '#d94b43',
+            boxShadow: '0 -7px 0 -4px #5f7f3b, inset -4px -4px 0 rgba(85, 31, 18, 0.24)',
+        }
+    }
+    if (icon === 'food-fish') {
+        return {
+            width: '24px',
+            height: '15px',
+            background: 'linear-gradient(90deg, #d7f1ff, #72bdd2)',
+            clipPath: 'polygon(0 50%, 22% 16%, 76% 18%, 100% 50%, 76% 82%, 22% 84%)',
+            boxShadow: 'inset -5px -3px 0 rgba(26, 64, 84, 0.24)',
+        }
+    }
+    if (icon === 'food-meat') {
+        return {
+            width: '24px',
+            height: '16px',
+            borderRadius: '60% 40% 48% 58%',
+            background: 'linear-gradient(135deg, #e08a60, #9f332f)',
+            boxShadow: '10px 2px 0 -4px #f2d2aa, 13px 2px 0 -5px #f2d2aa, inset -4px -3px 0 rgba(67, 22, 16, 0.28)',
+            transform: 'rotate(-14deg)',
+        }
+    }
+    if (icon === 'food-pie' || icon === 'pie') {
+        return {
+            width: '22px',
+            height: '12px',
+            borderRadius: '50% 50% 6px 6px',
+            background: 'linear-gradient(180deg, #e0a85d, #8b4c2b)',
+            boxShadow: 'inset 0 4px 0 #6f3426',
+        }
+    }
+    if (icon === 'dynamite') {
+        return {
+            width: '23px',
+            height: '14px',
+            borderRadius: '4px',
+            background: 'repeating-linear-gradient(90deg, #e04b3f 0 6px, #9d2830 6px 8px)',
+            boxShadow: '0 -8px 0 -5px #ffd166, inset -3px -3px 0 rgba(49, 10, 14, 0.26)',
         }
     }
     if (icon === 'torch') {

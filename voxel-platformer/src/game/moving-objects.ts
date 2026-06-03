@@ -10,13 +10,14 @@ import {
     Velocity,
 } from '../engine/ecs/components'
 import { createEntity } from '../engine/ecs/entity'
-import { createArrow, createMagicBolt, createMagicOrb, createStone, mergeGroupByMaterial } from './assets'
+import { createArrow, createDynamiteBundle, createMagicBolt, createMagicOrb, createStone, mergeGroupByMaterial } from './assets'
 
 export const MovingObjectKind = {
     Arrow: 1,
     Stone: 2,
     MagicBolt: 3,
     ElectricOrb: 4,
+    Dynamite: 5,
 } as const
 
 export interface StoneSpawnOptions {
@@ -269,6 +270,49 @@ export function spawnElectricOrb(
     MovingObject.age[eid] = 0
 
     world.object3DByEid.set(eid, createMagicOrb())
+    addComponent(world, eid, Renderable)
+    return eid
+}
+
+const DYNAMITE_HALF_X = 0.18
+const DYNAMITE_HALF_Y = 0.11
+const DYNAMITE_HALF_Z = 0.14
+
+export function spawnDynamiteProjectile(
+    world: GameWorld,
+    position: { x: number; y: number; z: number },
+    velocity: { x: number; y: number; z: number },
+): number {
+    const eid = createEntity(world)
+    addComponents(world, eid, [Position, Rotation, Velocity, BoxCollider, RigidBody, MovingObject])
+    Position.x[eid] = position.x
+    Position.y[eid] = position.y
+    Position.z[eid] = position.z
+    Velocity.x[eid] = velocity.x
+    Velocity.y[eid] = velocity.y
+    Velocity.z[eid] = velocity.z
+    BoxCollider.x[eid] = DYNAMITE_HALF_X
+    BoxCollider.y[eid] = DYNAMITE_HALF_Y
+    BoxCollider.z[eid] = DYNAMITE_HALF_Z
+
+    RigidBody.mass[eid] = 1.2
+    RigidBody.restitution[eid] = 0.18
+    RigidBody.linearDamping[eid] = 0.8
+    RigidBody.gravityScale[eid] = 1
+    RigidBody.maxFallSpeed[eid] = 20
+    RigidBody.sleepThresholdSq[eid] = 0.04
+    RigidBody.sleepDelay[eid] = 0.45
+    RigidBody.sleepTimer[eid] = 0
+    RigidBody.rollOnGround[eid] = 1
+    RigidBody.centerAnchored[eid] = 1
+
+    MovingObject.kind[eid] = MovingObjectKind.Dynamite
+    MovingObject.age[eid] = 0
+    MovingObject.hostile[eid] = 0
+
+    const obj = mergeGroupByMaterial(createDynamiteBundle())
+    obj.scale.setScalar(0.95)
+    world.object3DByEid.set(eid, obj)
     addComponent(world, eid, Renderable)
     return eid
 }
