@@ -1,19 +1,24 @@
 import type { Input } from '../../engine/input/input'
 import type { System } from '../../engine/ecs/systems/system'
 import { FixedOrder } from '../../engine/ecs/systems/orders'
-import { pushLog, type GameWorld, type VoxelCoord } from '../../engine/ecs/world'
-import { makeRay, screenToWorldRay } from '../../engine/input/pointer'
-import { voxelRaycast } from '../../engine/voxel/voxel-raycast'
+import { pushLog, type GameWorld } from '../../engine/ecs/world'
+import { makeRay } from '../../engine/input/pointer'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import type { IsometricCamera } from '../../engine/render/isometric-camera'
 import type { EditorState } from '../editor-state'
 import { DEFAULT_NPC, normalizeNpcConfig, sanitizeNpcId, type NpcConfig } from '../../game/npcs/npc-types'
+import { mergeBehaviourIntoScript } from '../../game/npcs/npc-behaviour-script'
+import {
+    cursorFloorPosition,
+    raycastClick,
+    removeAnchor,
+    resolvePlacement,
+    type ClickPoint,
+    type VoxelRayHit,
+    type WorldPoint,
+} from './placement-raycast'
 
-const MAX_RAY = 60
 const REMOVE_RADIUS = 1.8
-type VoxelRayHit = NonNullable<ReturnType<typeof voxelRaycast>>
-type WorldPoint = { x: number; y: number; z: number }
-type ClickPoint = { x: number; y: number }
 
 export function createNpcPlaceSystem(
     input: Input,
@@ -41,10 +46,7 @@ export function createNpcPlaceSystem(
             const clicks = input.consumeClicks()
             if (clicks.length === 0) return
 
-            const getHit = (click: ClickPoint): VoxelRayHit | null => {
-                screenToWorldRay(click.x, click.y, iso.camera, ray)
-                return voxelRaycast(chunks, ray.origin, ray.direction, MAX_RAY)
-            }
+            const getHit = (click: ClickPoint): VoxelRayHit | null => raycastClick(click, iso, chunks, ray)
 
             for (const click of clicks) {
                 if (click.button === 2) {
@@ -66,15 +68,20 @@ export function createNpcPlaceSystem(
         getHit: (click: ClickPoint) => VoxelRayHit | null,
         nextNpcId: () => string,
     ): void {
-        const hit = state.npcGridAlign && state.cursor ? null : getHit(click)
-        const position = state.npcGridAlign
-            ? gridAlignedPosition(state.cursor, hit)
-            : hit
-                ? freeHitPosition(hit)
-                : freePlanePosition(state)
+        const position = resolvePlacement({
+            gridAligned: state.npcGridAlign,
+            cursor: state.cursor,
+            ray,
+            workingPlaneY: state.workingPlaneY,
+            hit: getHit(click),
+        })
         if (!position) return
 
         const id = sanitizeNpcId(nextNpcId())
+        // Compile the draft behaviour into the script so a templated enemy/animal
+        // works straight away with no hand-scripting.
+        const behaviour = state.npcBehaviour
+        const scriptSource = mergeBehaviourIntoScript(state.npcScriptSource, behaviour)
         const npc: NpcConfig = normalizeNpcConfig({
             id,
             name: state.npcName || DEFAULT_NPC.name,
@@ -91,6 +98,8 @@ export function createNpcPlaceSystem(
             interactionEnabled: state.npcInteractionEnabled,
             interactionRadius: state.npcInteractionRadius,
             interactionPrompt: state.npcInteractionPrompt,
+            invulnerable: state.npcInvulnerable,
+            unprovokable: state.npcUnprovokable,
             equipment: { ...state.npcEquipment },
             voice: {
                 enabled: state.npcVoiceEnabled,
@@ -101,7 +110,8 @@ export function createNpcPlaceSystem(
                 pitchOffset: state.npcVoicePitchOffset,
             },
             scriptEnabled: state.npcScriptEnabled,
-            scriptSource: state.npcScriptSource,
+            scriptSource,
+            behaviour,
         })
         state.npcs.push(npc)
         state.selectedNpcId = npc.id
@@ -131,56 +141,5 @@ export function createNpcPlaceSystem(
         const [removed] = state.npcs.splice(bestIndex, 1)
         if (state.selectedNpcId === removed?.id) state.selectedNpcId = null
         if (removed) pushLog(world, `Removed NPC "${removed.name}" (${removed.id}).`)
-    }
-
-    function freeHitPosition(hit: VoxelRayHit): WorldPoint {
-        return {
-            x: ray.origin.x + ray.direction.x * hit.t,
-            y: ray.origin.y + ray.direction.y * hit.t + 0.001,
-            z: ray.origin.z + ray.direction.z * hit.t,
-        }
-    }
-
-    function freePlanePosition(state: EditorState): WorldPoint | null {
-        return intersectWorkingPlane(ray, state.workingPlaneY) ??
-            (state.cursor ? cursorFloorPosition(state.cursor) : null)
-    }
-}
-
-function gridAlignedPosition(cursor: VoxelCoord | null, hit: VoxelRayHit | null): WorldPoint | null {
-    if (cursor) return cursorFloorPosition(cursor)
-    if (!hit) return null
-    return {
-        x: hit.voxel.x + hit.normal.x + 0.5,
-        y: hit.voxel.y + hit.normal.y,
-        z: hit.voxel.z + hit.normal.z + 0.5,
-    }
-}
-
-function removeAnchor(hit: VoxelRayHit | null): WorldPoint | null {
-    if (!hit) return null
-    return {
-        x: hit.voxel.x + hit.normal.x + 0.5,
-        y: hit.voxel.y + hit.normal.y,
-        z: hit.voxel.z + hit.normal.z + 0.5,
-    }
-}
-
-function cursorFloorPosition(cursor: VoxelCoord): WorldPoint {
-    return {
-        x: cursor.x + 0.5,
-        y: cursor.y,
-        z: cursor.z + 0.5,
-    }
-}
-
-function intersectWorkingPlane(ray: ReturnType<typeof makeRay>, planeY: number): WorldPoint | null {
-    if (Math.abs(ray.direction.y) < 1e-6) return null
-    const t = (planeY - ray.origin.y) / ray.direction.y
-    if (t < 0) return null
-    return {
-        x: ray.origin.x + ray.direction.x * t,
-        y: planeY,
-        z: ray.origin.z + ray.direction.z * t,
     }
 }

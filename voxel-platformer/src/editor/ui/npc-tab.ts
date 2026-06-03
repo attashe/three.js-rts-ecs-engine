@@ -5,6 +5,9 @@ import type { CommandStack } from '../history'
 import type { EditorState } from '../editor-state'
 import {
     DEFAULT_NPC,
+    DEFAULT_NPC_BEHAVIOUR,
+    NPC_BEHAVIOUR_MODES,
+    NPC_BEHAVIOUR_MODE_LABELS,
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
     TROLL_OUTFIT_KINDS,
@@ -17,10 +20,22 @@ import {
     npcEquipmentKey,
     npcInteractionZoneId,
     sanitizeNpcId,
+    type NpcBehaviourConfig,
+    type NpcBehaviourMode,
     type NpcConfig,
     type NpcModelKind,
     type TrollOutfitKind,
 } from '../../game/npcs/npc-types'
+import {
+    NPC_TEMPLATES,
+    applyNpcTemplate,
+    choiceDialogueTemplate,
+    collectionQuestTemplate,
+    simpleDialogueTemplate,
+    traderScriptTemplate,
+    type NpcTemplate,
+} from '../../game/npcs/npc-templates'
+import { mergeBehaviourIntoScript } from '../../game/npcs/npc-behaviour-script'
 import {
     copyHandLoadout,
     handLoadoutKey,
@@ -37,7 +52,7 @@ import {
     type DialogueVoicePreset,
     type DialogueVoiceRef,
 } from '../../game/dialogue-voice'
-import { sectionEl, trimForList, type RefreshableElement } from './common'
+import { collapsibleSection, sectionEl, trimForList, type RefreshableElement } from './common'
 import { equipmentSelect, syncEquipmentSelect } from './equipment-field'
 
 export interface NpcTabOptions {
@@ -47,6 +62,17 @@ export interface NpcTabOptions {
     history: CommandStack
 }
 
+/** Which behaviour controls a given mode reveals. */
+function modeShows(mode: NpcBehaviourMode, field: 'hostile' | 'perception' | 'threat' | 'flee' | 'route'): boolean {
+    switch (field) {
+        case 'hostile': return mode === 'patrol' || mode === 'guard' || mode === 'hunter'
+        case 'perception': return mode !== 'none'
+        case 'threat': return mode === 'hunter'
+        case 'flee': return mode === 'prey'
+        case 'route': return mode === 'patrol' || mode === 'guard' || mode === 'hunter' || mode === 'prey'
+    }
+}
+
 export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     const state = opts.editorState
     const root = document.createElement('div')
@@ -54,25 +80,39 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     root.style.flexDirection = 'column'
     root.style.gap = '10px'
 
-    const modeSection = sectionEl('Mode')
-    const modeRow = document.createElement('div')
-    modeRow.className = 'vpe-row'
+    // ── Template + place ────────────────────────────────────────────────
+    const templateSection = sectionEl('Start from a template')
+    const templateGrid = document.createElement('div')
+    templateGrid.className = 'vpe-row'
+    templateGrid.style.flexWrap = 'wrap'
+    for (const tpl of NPC_TEMPLATES) {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.textContent = `${tpl.emoji} ${tpl.label}`
+        btn.title = tpl.description
+        btn.onclick = () => applyTemplate(tpl)
+        templateGrid.appendChild(btn)
+    }
+    templateSection.appendChild(templateGrid)
+    const placeRow = document.createElement('div')
+    placeRow.className = 'vpe-row'
     const placeBtn = document.createElement('button')
     placeBtn.className = 'vpe-button'
     placeBtn.textContent = 'Place NPC'
-    placeBtn.title = 'LMB places an NPC. RMB removes the nearest NPC.'
+    placeBtn.title = 'LMB places an NPC at the cursor. RMB removes the nearest NPC.'
     placeBtn.onclick = () => {
         state.mode = state.mode === 'place-npc' ? 'select' : 'place-npc'
         refresh()
     }
-    modeRow.appendChild(placeBtn)
-    modeSection.appendChild(modeRow)
-    const hint = document.createElement('div')
-    hint.className = 'vpe-hint'
-    hint.textContent = 'Static NPCs own model, collision, interaction, and script metadata.'
-    modeSection.appendChild(hint)
-    root.appendChild(modeSection)
+    placeRow.appendChild(placeBtn)
+    templateSection.appendChild(placeRow)
+    const placeHint = document.createElement('div')
+    placeHint.className = 'vpe-hint'
+    placeHint.textContent = 'Pick a template, then Place. Tune behaviour & dialogue below.'
+    templateSection.appendChild(placeHint)
+    root.appendChild(templateSection)
 
+    // ── NPC list ────────────────────────────────────────────────────────
     const listSection = sectionEl('NPCs')
     const listEl = document.createElement('div')
     listEl.style.display = 'flex'
@@ -83,33 +123,18 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     listSection.appendChild(listEl)
     root.appendChild(listSection)
 
+    // ── Identity ────────────────────────────────────────────────────────
     const identitySection = sectionEl('Identity')
     const idField = textInput('Id', '', (value) => updateSelectedId(value))
     const nameField = textInput('Name', '', (value) => updateDraftOrSelected((npc) => { npc.name = value || DEFAULT_NPC.name }, () => { state.npcName = value }))
     identitySection.append(idField.row, nameField.row)
 
-    const modelRow = document.createElement('label')
-    modelRow.className = 'vpe-field'
-    const modelLabel = document.createElement('span')
-    modelLabel.className = 'vpe-field-label'
-    modelLabel.textContent = 'Model'
-    const modelSelect = document.createElement('select')
-    modelSelect.className = 'vpe-input'
-    modelSelect.style.flex = '1'
-    for (const model of NPC_MODEL_KINDS) {
-        const opt = document.createElement('option')
-        opt.value = model
-        opt.textContent = NPC_MODEL_LABELS[model]
-        modelSelect.appendChild(opt)
-    }
-    modelSelect.onchange = () => {
-        const model = modelSelect.value as NpcModelKind
+    const { row: modelRow, select: modelSelect } = selectField('Model', NPC_MODEL_KINDS, (m) => NPC_MODEL_LABELS[m], (value) => {
+        const model = value as NpcModelKind
         updateDraftOrSelected(
             (npc) => {
-                const previousDefault = defaultNpcEquipment(npc.model, npc.variant)
-                const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(previousDefault)
-                const previousDefaultBeard = defaultNpcBeard(npc.model, npc.variant)
-                const wasDefaultBeard = npc.beard === previousDefaultBeard
+                const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(defaultNpcEquipment(npc.model, npc.variant))
+                const wasDefaultBeard = npc.beard === defaultNpcBeard(npc.model, npc.variant)
                 const wasDefaultVoice = npcVoiceKey(npc.voice) === npcVoiceKey(defaultNpcVoice(npc.model))
                 npc.model = model
                 npc.variant = defaultNpcVariant(model)
@@ -118,10 +143,8 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
                 if (wasDefaultVoice) npc.voice = defaultNpcVoice(model)
             },
             () => {
-                const previousDefault = defaultNpcEquipment(state.npcModel, state.npcVariant)
-                const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(previousDefault)
-                const previousDefaultBeard = defaultNpcBeard(state.npcModel, state.npcVariant)
-                const wasDefaultBeard = state.npcBeard === previousDefaultBeard
+                const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(defaultNpcEquipment(state.npcModel, state.npcVariant))
+                const wasDefaultBeard = state.npcBeard === defaultNpcBeard(state.npcModel, state.npcVariant)
                 const wasDefaultVoice = npcVoiceKey(draftVoice()) === npcVoiceKey(defaultNpcVoice(state.npcModel))
                 state.npcModel = model
                 state.npcVariant = defaultNpcVariant(model)
@@ -130,73 +153,113 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
                 if (wasDefaultVoice) applyDraftVoice(defaultNpcVoice(model))
             },
         )
-    }
-    modelRow.append(modelLabel, modelSelect)
+    })
     identitySection.appendChild(modelRow)
 
-    const variantRow = document.createElement('label')
-    variantRow.className = 'vpe-field'
-    const variantLabel = document.createElement('span')
-    variantLabel.className = 'vpe-field-label'
-    variantLabel.textContent = 'Troll outfit'
-    const variantSelect = document.createElement('select')
-    variantSelect.className = 'vpe-input'
-    variantSelect.style.flex = '1'
-    for (const variant of TROLL_OUTFIT_KINDS) {
-        const opt = document.createElement('option')
-        opt.value = variant
-        opt.textContent = TROLL_OUTFIT_LABELS[variant]
-        variantSelect.appendChild(opt)
-    }
-    variantSelect.onchange = () => {
-        const variant = variantSelect.value as TrollOutfitKind
+    const { row: variantRow, select: variantSelect } = selectField('Troll outfit', TROLL_OUTFIT_KINDS, (v) => TROLL_OUTFIT_LABELS[v], (value) => {
+        const variant = value as TrollOutfitKind
         updateDraftOrSelected(
             (npc) => {
                 const nextVariant = normalizeNpcVariant(npc.model, variant)
-                const previousDefault = defaultNpcEquipment(npc.model, npc.variant)
-                const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(previousDefault)
-                const previousDefaultBeard = defaultNpcBeard(npc.model, npc.variant)
-                const wasDefaultBeard = npc.beard === previousDefaultBeard
+                const wasDefaultEquipment = npcEquipmentKey(npc) === handLoadoutKey(defaultNpcEquipment(npc.model, npc.variant))
+                const wasDefaultBeard = npc.beard === defaultNpcBeard(npc.model, npc.variant)
                 npc.variant = nextVariant
                 if (wasDefaultEquipment) npc.equipment = defaultNpcEquipment(npc.model, nextVariant)
                 if (wasDefaultBeard) npc.beard = defaultNpcBeard(npc.model, nextVariant)
             },
             () => {
                 const nextVariant = normalizeNpcVariant(state.npcModel, variant)
-                const previousDefault = defaultNpcEquipment(state.npcModel, state.npcVariant)
-                const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(previousDefault)
-                const previousDefaultBeard = defaultNpcBeard(state.npcModel, state.npcVariant)
-                const wasDefaultBeard = state.npcBeard === previousDefaultBeard
+                const wasDefaultEquipment = handLoadoutKey(state.npcEquipment) === handLoadoutKey(defaultNpcEquipment(state.npcModel, state.npcVariant))
+                const wasDefaultBeard = state.npcBeard === defaultNpcBeard(state.npcModel, state.npcVariant)
                 state.npcVariant = nextVariant
                 if (wasDefaultEquipment) state.npcEquipment = defaultNpcEquipment(state.npcModel, nextVariant)
                 if (wasDefaultBeard) state.npcBeard = defaultNpcBeard(state.npcModel, nextVariant)
             },
         )
-    }
-    variantRow.append(variantLabel, variantSelect)
+    })
     identitySection.appendChild(variantRow)
 
-    const beardRow = document.createElement('label')
-    beardRow.className = 'vpe-field'
-    const beardLabel = document.createElement('span')
-    beardLabel.className = 'vpe-field-label'
-    beardLabel.textContent = 'Beard'
-    const beardSelect = document.createElement('select')
-    beardSelect.className = 'vpe-input'
-    beardSelect.style.flex = '1'
-    for (const beard of CHARACTER_BEARD_KINDS) {
-        const opt = document.createElement('option')
-        opt.value = beard
-        opt.textContent = CHARACTER_BEARD_LABELS[beard]
-        beardSelect.appendChild(opt)
-    }
-    beardSelect.onchange = () => {
-        const beard = beardSelect.value as CharacterBeardKind
+    const { row: beardRow, select: beardSelect } = selectField('Beard', CHARACTER_BEARD_KINDS, (b) => CHARACTER_BEARD_LABELS[b], (value) => {
+        const beard = value as CharacterBeardKind
         updateDraftOrSelected((npc) => { npc.beard = beard }, () => { state.npcBeard = beard })
-    }
-    beardRow.append(beardLabel, beardSelect)
+    })
     identitySection.appendChild(beardRow)
     root.appendChild(identitySection)
+
+    // ── Behaviour ───────────────────────────────────────────────────────
+    const behaviourSection = sectionEl('Behaviour')
+    const { row: modeRow, select: modeSelect } = selectField('Mode', NPC_BEHAVIOUR_MODES, (m) => NPC_BEHAVIOUR_MODE_LABELS[m], (value) => {
+        editBehaviour((b) => { b.mode = value as NpcBehaviourMode })
+    })
+    behaviourSection.appendChild(modeRow)
+    const hostileField = checkboxInput('Hostile to player', false, (checked) => editBehaviour((b) => { b.hostileToPlayer = checked }))
+    const perceptionField = numberInput('Perception', 8, 0, 40, 1, (value) => editBehaviour((b) => { b.perceptionRadius = clamp(value, 0, 40) }))
+    const threatField = numberInput('Pursuit memory (s)', 0, 0, 30, 1, (value) => editBehaviour((b) => { b.threatMemorySeconds = clamp(value, 0, 30) }))
+    const fleeField = checkboxInput('Flee threats', false, (checked) => editBehaviour((b) => { b.flee = checked }))
+    behaviourSection.append(hostileField.row, perceptionField.row, threatField.row, fleeField.row)
+
+    const routeRow = document.createElement('div')
+    routeRow.className = 'vpe-row'
+    routeRow.style.alignItems = 'center'
+    const routeCount = document.createElement('span')
+    routeCount.className = 'vpe-hint'
+    routeCount.style.flex = '1'
+    const editWaypointsBtn = document.createElement('button')
+    editWaypointsBtn.className = 'vpe-button'
+    editWaypointsBtn.textContent = 'Edit waypoints'
+    editWaypointsBtn.title = 'Drop / drag route nodes in the scene. LMB add · drag to move · RMB remove.'
+    editWaypointsBtn.onclick = () => {
+        const npc = selectedNpc()
+        if (!npc) return
+        if (state.mode === 'edit-waypoints') {
+            state.mode = 'select'
+        } else {
+            ensureBehaviourOn(npc)
+            state.mode = 'edit-waypoints'
+        }
+        refresh()
+    }
+    const clearRouteBtn = document.createElement('button')
+    clearRouteBtn.className = 'vpe-button'
+    clearRouteBtn.textContent = 'Clear'
+    clearRouteBtn.onclick = () => editBehaviour((b) => { b.waypoints = [] })
+    routeRow.append(routeCount, editWaypointsBtn, clearRouteBtn)
+    behaviourSection.appendChild(routeRow)
+    const behaviourHint = document.createElement('div')
+    behaviourHint.className = 'vpe-hint'
+    behaviourHint.textContent = 'Behaviour is compiled into an editable level-start script (see Advanced ▸ Raw script).'
+    behaviourSection.appendChild(behaviourHint)
+    root.appendChild(behaviourSection)
+
+    // ── Interaction ─────────────────────────────────────────────────────
+    const interactionSection = sectionEl('Interaction & dialogue')
+    const interactionEnabled = checkboxInput('Interaction zone', true, (checked) => {
+        updateDraftOrSelected((npc) => { npc.interactionEnabled = checked }, () => { state.npcInteractionEnabled = checked })
+    })
+    const promptField = textInput('Prompt', DEFAULT_NPC.interactionPrompt, (value) => {
+        updateDraftOrSelected((npc) => { npc.interactionPrompt = value || DEFAULT_NPC.interactionPrompt }, () => { state.npcInteractionPrompt = value })
+    })
+    const interactionRadius = numberInput('Radius', DEFAULT_NPC.interactionRadius, 0.5, 8, 0.1, (value) => {
+        const radius = clamp(value, 0.5, 8)
+        updateDraftOrSelected((npc) => { npc.interactionRadius = radius }, () => { state.npcInteractionRadius = radius })
+    })
+    const dialogueTemplateRow = document.createElement('div')
+    dialogueTemplateRow.className = 'vpe-row'
+    dialogueTemplateRow.style.flexWrap = 'wrap'
+    dialogueTemplateRow.append(
+        interactionTemplateButton('Simple', () => simpleDialogueTemplate(currentAvatar())),
+        interactionTemplateButton('Choices', () => choiceDialogueTemplate(currentAvatar())),
+        interactionTemplateButton('Quest', () => collectionQuestTemplate(currentAvatar())),
+        interactionTemplateButton('Trade', () => traderScriptTemplate(currentAvatar())),
+    )
+    const interactionId = document.createElement('div')
+    interactionId.className = 'vpe-hint'
+    interactionSection.append(interactionEnabled.row, promptField.row, interactionRadius.row, dialogueTemplateRow, interactionId)
+    root.appendChild(interactionSection)
+
+    // ── Advanced ────────────────────────────────────────────────────────
+    const advanced = collapsibleSection('Advanced')
+    root.appendChild(advanced.details)
 
     const transformSection = sectionEl('Transform')
     const gridRow = checkboxInput('Align to voxel grid', true, (checked) => {
@@ -211,7 +274,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         updateDraftOrSelected((npc) => { npc.scale = scale }, () => { state.npcScale = scale })
     })
     transformSection.append(gridRow.row, yawField.row, scaleField.row)
-    root.appendChild(transformSection)
+    advanced.body.appendChild(transformSection)
 
     const collisionSection = sectionEl('Collision')
     const collisionEnabled = checkboxInput('Blocks player/arrows/stones', true, (checked) => {
@@ -226,20 +289,14 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         updateDraftOrSelected((npc) => { npc.colliderHeight = height }, () => { state.npcColliderHeight = height })
     })
     collisionSection.append(collisionEnabled.row, radiusField.row, heightField.row)
-    root.appendChild(collisionSection)
+    advanced.body.appendChild(collisionSection)
 
-    const equipmentSection = sectionEl('Held Items')
+    const equipmentSection = sectionEl('Held items')
     const handRSelect = equipmentSelect('Right hand', (value) => {
-        updateDraftOrSelected(
-            (npc) => { npc.equipment.handR = value },
-            () => { state.npcEquipment.handR = value },
-        )
+        updateDraftOrSelected((npc) => { npc.equipment.handR = value }, () => { state.npcEquipment.handR = value })
     })
     const handLSelect = equipmentSelect('Left hand', (value) => {
-        updateDraftOrSelected(
-            (npc) => { npc.equipment.handL = value },
-            () => { state.npcEquipment.handL = value },
-        )
+        updateDraftOrSelected((npc) => { npc.equipment.handL = value }, () => { state.npcEquipment.handL = value })
     })
     const resetEquipmentBtn = document.createElement('button')
     resetEquipmentBtn.className = 'vpe-button'
@@ -251,43 +308,38 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         )
     }
     equipmentSection.append(handRSelect.row, handLSelect.row, resetEquipmentBtn)
-    root.appendChild(equipmentSection)
+    advanced.body.appendChild(equipmentSection)
 
-    const voiceSection = sectionEl('Dialogue Voice')
+    const essentialSection = sectionEl('Essential flags')
+    const invulnerableField = checkboxInput('Invulnerable (ignores all damage)', false, (checked) => {
+        updateDraftOrSelected((npc) => { npc.invulnerable = checked }, () => { state.npcInvulnerable = checked })
+    })
+    const unprovokableField = checkboxInput('Unprovokable (never fights back)', false, (checked) => {
+        updateDraftOrSelected((npc) => { npc.unprovokable = checked }, () => { state.npcUnprovokable = checked })
+    })
+    essentialSection.append(invulnerableField.row, unprovokableField.row)
+    advanced.body.appendChild(essentialSection)
+
+    const voiceSection = sectionEl('Dialogue voice')
     const voiceEnabled = checkboxInput('Generated voice', true, (checked) => {
         updateDraftOrSelected((npc) => { npc.voice.enabled = checked }, () => { state.npcVoiceEnabled = checked })
     })
-    const voicePresetRow = document.createElement('label')
-    voicePresetRow.className = 'vpe-field'
-    const voicePresetLabel = document.createElement('span')
-    voicePresetLabel.className = 'vpe-field-label'
-    voicePresetLabel.textContent = 'Preset'
-    const voicePresetSelect = document.createElement('select')
-    voicePresetSelect.className = 'vpe-input'
-    voicePresetSelect.style.flex = '1'
-    for (const preset of DIALOGUE_VOICE_PRESETS) {
-        const opt = document.createElement('option')
-        opt.value = preset
-        opt.textContent = DIALOGUE_VOICE_PRESET_CONFIGS[preset].name
-        voicePresetSelect.appendChild(opt)
-    }
-    voicePresetSelect.onchange = () => {
-        const preset = voicePresetSelect.value as DialogueVoicePreset
+    const { row: voicePresetRow, select: voicePresetSelect } = selectField('Preset', DIALOGUE_VOICE_PRESETS, (p) => DIALOGUE_VOICE_PRESET_CONFIGS[p].name, (value) => {
+        const preset = value as DialogueVoicePreset
         updateDraftOrSelected(
             (npc) => {
                 const previousPreset = npc.voice.preset ?? defaultNpcVoice(npc.model).preset ?? 'dwarf'
-                const shouldUsePresetSeed = !npc.voice.seed || npc.voice.seed === defaultSeedForVoicePreset(previousPreset)
+                const usePresetSeed = !npc.voice.seed || npc.voice.seed === defaultSeedForVoicePreset(previousPreset)
                 npc.voice.preset = preset
-                if (shouldUsePresetSeed) npc.voice.seed = defaultSeedForVoicePreset(preset)
+                if (usePresetSeed) npc.voice.seed = defaultSeedForVoicePreset(preset)
             },
             () => {
-                const shouldUsePresetSeed = !state.npcVoiceSeed || state.npcVoiceSeed === defaultSeedForVoicePreset(state.npcVoicePreset)
+                const usePresetSeed = !state.npcVoiceSeed || state.npcVoiceSeed === defaultSeedForVoicePreset(state.npcVoicePreset)
                 state.npcVoicePreset = preset
-                if (shouldUsePresetSeed) state.npcVoiceSeed = defaultSeedForVoicePreset(preset)
+                if (usePresetSeed) state.npcVoiceSeed = defaultSeedForVoicePreset(preset)
             },
         )
-    }
-    voicePresetRow.append(voicePresetLabel, voicePresetSelect)
+    })
     const voiceSeedField = textInput('Seed', 'voice-seed', (value) => {
         updateDraftOrSelected((npc) => { npc.voice.seed = value }, () => { state.npcVoiceSeed = value })
     })
@@ -310,43 +362,18 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         void previewVoice((selectedNpc() ?? draftNpc()).voice, 'The old road remembers every footstep.')
     }
     voiceSection.append(voiceEnabled.row, voicePresetRow, voiceSeedField.row, voiceVolumeField.row, voiceRateField.row, voicePitchField.row, voicePreview)
-    root.appendChild(voiceSection)
+    advanced.body.appendChild(voiceSection)
 
-    const interactionSection = sectionEl('Interaction')
-    const interactionEnabled = checkboxInput('Interaction zone', true, (checked) => {
-        updateDraftOrSelected((npc) => { npc.interactionEnabled = checked }, () => { state.npcInteractionEnabled = checked })
-    })
-    const promptField = textInput('Prompt', DEFAULT_NPC.interactionPrompt, (value) => {
-        updateDraftOrSelected((npc) => { npc.interactionPrompt = value || DEFAULT_NPC.interactionPrompt }, () => { state.npcInteractionPrompt = value })
-    })
-    const interactionRadius = numberInput('Radius', DEFAULT_NPC.interactionRadius, 0.5, 8, 0.1, (value) => {
-        const radius = clamp(value, 0.5, 8)
-        updateDraftOrSelected((npc) => { npc.interactionRadius = radius }, () => { state.npcInteractionRadius = radius })
-    })
-    const interactionId = document.createElement('div')
-    interactionId.className = 'vpe-hint'
-    interactionSection.append(interactionEnabled.row, promptField.row, interactionRadius.row, interactionId)
-    root.appendChild(interactionSection)
-
-    const scriptSection = sectionEl('NPC Script')
+    const scriptSection = sectionEl('Raw NPC script')
     const scriptEnabled = checkboxInput('Enabled', true, (checked) => {
         updateDraftOrSelected((npc) => { npc.scriptEnabled = checked }, () => { state.npcScriptEnabled = checked })
     })
     scriptSection.appendChild(scriptEnabled.row)
-
-    const templateRow = document.createElement('div')
-    templateRow.className = 'vpe-row'
-    const simpleTemplate = templateButton('Simple Dialogue', () => simpleDialogueTemplate(currentScriptTarget()))
-    const choiceTemplate = templateButton('Choice Dialogue', () => choiceDialogueTemplate(currentScriptTarget()))
-    const questTemplate = templateButton('Collection Quest', () => collectionQuestTemplate(currentScriptTarget()))
-    templateRow.append(simpleTemplate, choiceTemplate, questTemplate)
-    scriptSection.appendChild(templateRow)
-
     const scriptArea = document.createElement('textarea')
     scriptArea.className = 'vpe-input'
     scriptArea.spellcheck = false
     scriptArea.style.font = '12px ui-monospace, monospace'
-    scriptArea.style.minHeight = '210px'
+    scriptArea.style.minHeight = '200px'
     scriptArea.style.width = '100%'
     scriptArea.style.resize = 'vertical'
     scriptArea.placeholder = `on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {\n  await ui.dialogue({ lines: [{ text: 'Hello.' }] })\n})`
@@ -359,7 +386,6 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         refresh()
     }
     scriptSection.appendChild(scriptArea)
-
     const scriptActions = document.createElement('div')
     scriptActions.className = 'vpe-row'
     const parseBtn = document.createElement('button')
@@ -372,17 +398,17 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     }
     scriptActions.appendChild(parseBtn)
     scriptSection.appendChild(scriptActions)
-
     const status = document.createElement('div')
     status.className = 'vpe-hint'
     status.style.minHeight = '16px'
     status.style.fontFamily = 'ui-monospace, monospace'
     status.style.whiteSpace = 'pre-wrap'
     scriptSection.appendChild(status)
-    root.appendChild(scriptSection)
+    advanced.body.appendChild(scriptSection)
 
     let lastListFingerprint = ''
 
+    // ── helpers ─────────────────────────────────────────────────────────
     function selectedNpc(): NpcConfig | null {
         return state.selectedNpcId
             ? state.npcs.find((npc) => npc.id === state.selectedNpcId) ?? null
@@ -394,6 +420,72 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         if (npc) editNpc(npc)
         else editDraft()
         refresh()
+    }
+
+    function currentBehaviour(): NpcBehaviourConfig | undefined {
+        const npc = selectedNpc()
+        return npc ? npc.behaviour : state.npcBehaviour
+    }
+
+    function ensureBehaviourOn(npc: NpcConfig): NpcBehaviourConfig {
+        if (!npc.behaviour || npc.behaviour.mode === 'none') {
+            npc.behaviour = { ...DEFAULT_NPC_BEHAVIOUR, mode: 'patrol', waypoints: npc.behaviour?.waypoints ?? [] }
+        }
+        return npc.behaviour
+    }
+
+    /** Edit the draft/selected behaviour, then recompile the script region. */
+    function editBehaviour(edit: (b: NpcBehaviourConfig) => void): void {
+        const cur = currentBehaviour() ?? { ...DEFAULT_NPC_BEHAVIOUR }
+        const next: NpcBehaviourConfig = { ...cur, waypoints: cur.waypoints.map((p) => ({ ...p })) }
+        edit(next)
+        const npc = selectedNpc()
+        if (npc) {
+            npc.behaviour = next
+            npc.scriptSource = mergeBehaviourIntoScript(npc.scriptSource, next)
+        } else {
+            state.npcBehaviour = next
+            state.npcScriptSource = mergeBehaviourIntoScript(state.npcScriptSource, next)
+        }
+        refresh()
+    }
+
+    function applyTemplate(tpl: NpcTemplate): void {
+        const npc = selectedNpc()
+        if (npc) {
+            const next = applyNpcTemplate(npc, tpl)
+            next.scriptSource = mergeBehaviourIntoScript(next.scriptSource, next.behaviour)
+            Object.assign(npc, next)
+        } else {
+            const result = applyNpcTemplate({ ...draftNpc(), id: 'draft', position: { x: 0, y: 0, z: 0 } }, tpl)
+            result.scriptSource = mergeBehaviourIntoScript(result.scriptSource, result.behaviour)
+            loadConfigIntoDraft(result)
+        }
+        status.textContent = ''
+        refresh()
+    }
+
+    function loadConfigIntoDraft(c: NpcConfig): void {
+        state.npcName = c.name
+        state.npcModel = c.model
+        state.npcVariant = c.variant
+        state.npcBeard = c.beard
+        state.npcGridAlign = c.gridAligned
+        state.npcYaw = c.yaw
+        state.npcScale = c.scale
+        state.npcCollisionEnabled = c.collisionEnabled
+        state.npcColliderRadius = c.colliderRadius
+        state.npcColliderHeight = c.colliderHeight
+        state.npcInteractionEnabled = c.interactionEnabled
+        state.npcInteractionRadius = c.interactionRadius
+        state.npcInteractionPrompt = c.interactionPrompt
+        state.npcInvulnerable = c.invulnerable
+        state.npcUnprovokable = c.unprovokable ?? false
+        state.npcEquipment = copyHandLoadout(c.equipment)
+        applyDraftVoice(c.voice)
+        state.npcScriptEnabled = c.scriptEnabled
+        state.npcScriptSource = c.scriptSource
+        state.npcBehaviour = c.behaviour
     }
 
     function saveScriptSource(source: string): void {
@@ -418,10 +510,30 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         refresh()
     }
 
+    function currentAvatar(): string {
+        return selectedNpc()?.model ?? state.npcModel
+    }
+
+    function interactionTemplateButton(label: string, build: () => string): HTMLButtonElement {
+        const btn = document.createElement('button')
+        btn.className = 'vpe-button'
+        btn.textContent = label
+        btn.title = `Fill the interaction script with a ${label.toLowerCase()} starter (keeps the behaviour block).`
+        btn.onclick = () => {
+            const custom = build()
+            const merged = mergeBehaviourIntoScript(custom, currentBehaviour())
+            saveScriptSource(merged)
+            advanced.details.open = true
+            status.textContent = ''
+            refresh()
+        }
+        return btn
+    }
+
     function rebuildList(): void {
         const fp = [
             `selected:${state.selectedNpcId ?? ''}`,
-            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.variant}:${npc.beard}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npcVoiceKey(npc.voice)}:${npc.scriptSource.length}`),
+            ...state.npcs.map((npc) => `${npc.id}:${npc.name}:${npc.model}:${npc.variant}:${npc.beard}:${npc.position.x},${npc.position.y},${npc.position.z}:${npc.scale}:${npcEquipmentKey(npc)}:${npcVoiceKey(npc.voice)}:${npc.scriptSource.length}:${npc.behaviour?.waypoints.length ?? -1}`),
         ].join('|')
         if (fp === lastListFingerprint) return
         lastListFingerprint = fp
@@ -441,7 +553,6 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         row.className = 'vpe-row'
         row.style.alignItems = 'center'
         if (npc.id === state.selectedNpcId) row.style.color = '#ffd166'
-
         const label = document.createElement('span')
         label.textContent = `${trimForList(npc.name || npc.id, 14)} · ${NPC_MODEL_LABELS[npc.model]}`
         label.title = `${npc.id} @ ${npc.position.x.toFixed(1)},${npc.position.y.toFixed(1)},${npc.position.z.toFixed(1)}`
@@ -449,19 +560,25 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         label.style.cursor = 'pointer'
         label.onclick = () => {
             state.selectedNpcId = npc.id
+            if (state.mode === 'edit-waypoints') state.mode = 'select'
             refresh()
         }
-
         const duplicate = document.createElement('button')
         duplicate.className = 'vpe-button'
         duplicate.textContent = 'Copy'
         duplicate.onclick = () => {
-            const copy = { ...npc, id: nextNpcId(`${npc.id}-copy`), position: { ...npc.position, x: npc.position.x + 1 } }
+            const copy: NpcConfig = {
+                ...npc,
+                id: nextNpcId(`${npc.id}-copy`),
+                position: { ...npc.position, x: npc.position.x + 1 },
+                equipment: copyHandLoadout(npc.equipment),
+                voice: { ...npc.voice },
+                behaviour: npc.behaviour ? { ...npc.behaviour, waypoints: npc.behaviour.waypoints.map((p) => ({ ...p })) } : undefined,
+            }
             state.npcs.push(copy)
             state.selectedNpcId = copy.id
             refresh()
         }
-
         const del = document.createElement('button')
         del.className = 'vpe-button'
         del.textContent = 'Remove'
@@ -471,7 +588,6 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             if (state.selectedNpcId === npc.id) state.selectedNpcId = null
             refresh()
         }
-
         row.append(label, duplicate, del)
         return row
     }
@@ -479,8 +595,8 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
     function refresh(): void {
         const npc = selectedNpc()
         placeBtn.classList.toggle('active', state.mode === 'place-npc')
-
         const source = npc ?? draftNpc()
+
         idField.row.style.display = npc ? 'flex' : 'none'
         syncInputValue(idField.input, npc?.id ?? '')
         syncInputValue(nameField.input, source.name)
@@ -489,6 +605,36 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         variantSelect.disabled = source.model !== 'large-troll'
         if (document.activeElement !== variantSelect) variantSelect.value = normalizeNpcVariant(source.model, source.variant) as string
         if (document.activeElement !== beardSelect) beardSelect.value = source.beard
+
+        // Behaviour
+        const mode = source.behaviour?.mode ?? 'none'
+        if (document.activeElement !== modeSelect) modeSelect.value = mode
+        hostileField.row.style.display = modeShows(mode, 'hostile') ? 'flex' : 'none'
+        perceptionField.row.style.display = modeShows(mode, 'perception') ? 'flex' : 'none'
+        threatField.row.style.display = modeShows(mode, 'threat') ? 'flex' : 'none'
+        fleeField.row.style.display = modeShows(mode, 'flee') ? 'flex' : 'none'
+        routeRow.style.display = modeShows(mode, 'route') ? 'flex' : 'none'
+        hostileField.input.checked = source.behaviour?.hostileToPlayer ?? false
+        syncInputValue(perceptionField.input, String(roundForInput(source.behaviour?.perceptionRadius ?? DEFAULT_NPC_BEHAVIOUR.perceptionRadius)))
+        syncInputValue(threatField.input, String(roundForInput(source.behaviour?.threatMemorySeconds ?? 0)))
+        fleeField.input.checked = source.behaviour?.flee ?? false
+        const wp = source.behaviour?.waypoints.length ?? 0
+        routeCount.textContent = `Route: ${wp} point${wp === 1 ? '' : 's'}`
+        editWaypointsBtn.disabled = !npc
+        editWaypointsBtn.classList.toggle('active', state.mode === 'edit-waypoints')
+        editWaypointsBtn.title = npc
+            ? 'Drop / drag route nodes in the scene. LMB add · drag to move · RMB remove.'
+            : 'Place the NPC first — waypoints are world positions.'
+
+        // Interaction
+        interactionEnabled.input.checked = source.interactionEnabled
+        syncInputValue(promptField.input, source.interactionPrompt)
+        syncInputValue(interactionRadius.input, String(roundForInput(source.interactionRadius)))
+        interactionId.textContent = npc
+            ? `Script target: ${npcInteractionZoneId(npc)}`
+            : 'Place an NPC to get a stable script target id.'
+
+        // Advanced
         gridRow.input.checked = source.gridAligned
         syncInputValue(yawField.input, String(Math.round((source.yaw * 180) / Math.PI)))
         syncInputValue(scaleField.input, String(roundForInput(source.scale)))
@@ -497,9 +643,8 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         syncInputValue(heightField.input, String(roundForInput(source.colliderHeight)))
         syncEquipmentSelect(handRSelect.input, source.equipment.handR)
         syncEquipmentSelect(handLSelect.input, source.equipment.handL)
-        interactionEnabled.input.checked = source.interactionEnabled
-        syncInputValue(promptField.input, source.interactionPrompt)
-        syncInputValue(interactionRadius.input, String(roundForInput(source.interactionRadius)))
+        invulnerableField.input.checked = source.invulnerable
+        unprovokableField.input.checked = source.unprovokable ?? false
         voiceEnabled.input.checked = source.voice.enabled ?? true
         if (document.activeElement !== voicePresetSelect) voicePresetSelect.value = source.voice.preset ?? defaultNpcVoice(source.model).preset ?? 'dwarf'
         syncInputValue(voiceSeedField.input, source.voice.seed ?? '')
@@ -508,9 +653,7 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         syncInputValue(voicePitchField.input, String(roundForInput(source.voice.pitchOffset ?? 0)))
         scriptEnabled.input.checked = source.scriptEnabled
         syncInputValue(scriptArea, source.scriptSource)
-        interactionId.textContent = npc
-            ? `Script target: ${npcInteractionZoneId(npc)}`
-            : 'Place an NPC to get a stable script target id.'
+
         rebuildList()
     }
 
@@ -531,20 +674,13 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
             interactionEnabled: state.npcInteractionEnabled,
             interactionRadius: state.npcInteractionRadius,
             interactionPrompt: state.npcInteractionPrompt,
-            invulnerable: false,
+            invulnerable: state.npcInvulnerable,
+            unprovokable: state.npcUnprovokable,
             equipment: copyHandLoadout(state.npcEquipment),
             voice: draftVoice(),
             scriptEnabled: state.npcScriptEnabled,
             scriptSource: state.npcScriptSource,
-        }
-    }
-
-    function currentScriptTarget(): { name: string; avatar: string; voice: DialogueVoiceRef } {
-        const npc = selectedNpc()
-        return {
-            name: npc?.name || state.npcName || DEFAULT_NPC.name,
-            avatar: npc?.model ?? state.npcModel,
-            voice: npc?.voice ?? draftVoice(),
+            behaviour: state.npcBehaviour,
         }
     }
 
@@ -577,21 +713,37 @@ export function buildNpcTab(opts: NpcTabOptions): RefreshableElement {
         return rootId
     }
 
-    function templateButton(label: string, build: () => string): HTMLButtonElement {
-        const btn = document.createElement('button')
-        btn.className = 'vpe-button'
-        btn.textContent = label
-        btn.onclick = () => {
-            scriptArea.value = build()
-            updateDraftOrSelected((npc) => { npc.scriptSource = scriptArea.value }, () => { state.npcScriptSource = scriptArea.value })
-            status.textContent = ''
-            refresh()
-        }
-        return btn
-    }
-
     refresh()
     return { element: root, refresh }
+}
+
+// ─── small generic field builders ────────────────────────────────────────────
+
+interface Field { row: HTMLElement; input: HTMLInputElement }
+
+function selectField<T extends string>(
+    label: string,
+    options: readonly T[],
+    labelOf: (value: T) => string,
+    onChange: (value: string) => void,
+): { row: HTMLElement; select: HTMLSelectElement } {
+    const row = document.createElement('label')
+    row.className = 'vpe-field'
+    const labelEl = document.createElement('span')
+    labelEl.className = 'vpe-field-label'
+    labelEl.textContent = label
+    const select = document.createElement('select')
+    select.className = 'vpe-input'
+    select.style.flex = '1'
+    for (const value of options) {
+        const opt = document.createElement('option')
+        opt.value = value
+        opt.textContent = labelOf(value)
+        select.appendChild(opt)
+    }
+    select.onchange = () => onChange(select.value)
+    row.append(labelEl, select)
+    return { row, select }
 }
 
 function syncInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
@@ -599,22 +751,7 @@ function syncInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: st
     input.value = value
 }
 
-interface TextField {
-    row: HTMLElement
-    input: HTMLInputElement
-}
-
-interface CheckField {
-    row: HTMLElement
-    input: HTMLInputElement
-}
-
-interface NumberField {
-    row: HTMLElement
-    input: HTMLInputElement
-}
-
-function textInput(label: string, placeholder: string, onChange: (value: string) => void): TextField {
+function textInput(label: string, placeholder: string, onChange: (value: string) => void): Field {
     const row = document.createElement('label')
     row.className = 'vpe-field'
     const labelEl = document.createElement('span')
@@ -630,7 +767,7 @@ function textInput(label: string, placeholder: string, onChange: (value: string)
     return { row, input }
 }
 
-function checkboxInput(label: string, checked: boolean, onChange: (checked: boolean) => void): CheckField {
+function checkboxInput(label: string, checked: boolean, onChange: (checked: boolean) => void): Field {
     const row = document.createElement('label')
     row.className = 'vpe-field'
     row.style.cursor = 'pointer'
@@ -652,7 +789,7 @@ function numberInput(
     max: number,
     step: number,
     onChange: (value: number) => void,
-): NumberField {
+): Field {
     const row = document.createElement('label')
     row.className = 'vpe-field'
     const labelEl = document.createElement('span')
@@ -676,91 +813,6 @@ function numberInput(
     }
     row.append(labelEl, input)
     return { row, input }
-}
-
-function simpleDialogueTemplate(target: { name: string; avatar: string }): string {
-    return `on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
-  await ui.dialogue({
-    title: ${JSON.stringify(target.name)},
-    npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
-    player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
-    lines: [
-      { speaker: NPC_ID, text: 'Hello, traveler.' },
-    ],
-  })
-})`
-}
-
-function choiceDialogueTemplate(target: { name: string; avatar: string }): string {
-    return `on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
-  const result = await ui.dialogue({
-    title: ${JSON.stringify(target.name)},
-    npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
-    player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
-    lines: [
-      { speaker: NPC_ID, text: 'What do you need?' },
-      {
-        speaker: NPC_ID,
-        text: 'Choose your question.',
-        choices: [
-          { id: 'quest', text: 'Do you have work?' },
-          { id: 'bye', text: 'Goodbye.' },
-        ],
-      },
-    ],
-  })
-  if (result.choiceId === 'quest') {
-    log(\`\${NPC_NAME}: maybe later.\`)
-  }
-})`
-}
-
-function collectionQuestTemplate(target: { name: string; avatar: string }): string {
-    return `const QUEST_STATE = \`npc.\${NPC_ID}.quest.state\`
-const ITEM_KIND = \`npc-\${NPC_ID}-item\`
-const ITEM_ID = \`npc.\${NPC_ID}.quest.item\`
-
-on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {
-  const state = flags.get(QUEST_STATE) ?? 'unknown'
-  if (state === 'unknown') {
-    const result = await ui.dialogue({
-      title: ${JSON.stringify(target.name)},
-      npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
-      player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
-      lines: [{
-        speaker: NPC_ID,
-        text: 'I lost something nearby. Can you bring it back?',
-        choices: [
-          { id: 'accept', text: 'I will find it.' },
-          { id: 'later', text: 'Not now.' },
-        ],
-      }],
-    })
-    if (result.choiceId !== 'accept') return
-    flags.set(QUEST_STATE, 'active')
-    const p = player.position
-    pickups.spawn(ITEM_KIND, { x: p.x + 2, y: p.y, z: p.z }, { id: ITEM_ID, label: 'Quest Item' })
-    audio.play('sfx.quest.chime')
-    return
-  }
-  if (state === 'ready') {
-    flags.set(QUEST_STATE, 'done')
-    pickups.spawn('coin', player.getPosition(), { amount: 25, label: \`\${NPC_NAME}'s reward\` })
-    audio.play('sfx.quest.fanfare')
-    await ui.dialogue({
-      title: ${JSON.stringify(target.name)},
-      npc: { id: NPC_ID, name: NPC_NAME, avatar: ${JSON.stringify(target.avatar)}, voice: NPC_VOICE },
-      player: { id: 'player', name: 'You', avatar: 'player', voice: { preset: 'player' } },
-      lines: [{ speaker: NPC_ID, text: 'Thank you. Take this.' }],
-    })
-  }
-})
-
-on('pickup-taken', { kind: ITEM_KIND }, (event) => {
-  if (event.pickupId !== ITEM_ID || flags.get(QUEST_STATE) !== 'active') return
-  flags.set(QUEST_STATE, 'ready')
-  log(\`Return to \${NPC_NAME}.\`)
-})`
 }
 
 interface ParseSuccess { ok: true }

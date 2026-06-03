@@ -159,6 +159,30 @@ export function sectionEl(title: string): HTMLElement {
     return section
 }
 
+/**
+ * A collapsible section built on `<details>`. Returns the `<details>` element and
+ * its body container; append controls to `body`. Collapsed by default unless
+ * `open` is set. Used to tuck power-user controls out of the way.
+ */
+export function collapsibleSection(title: string, open = false): { details: HTMLDetailsElement; body: HTMLElement } {
+    const details = document.createElement('details')
+    details.className = 'vpe-section'
+    details.open = open
+    const summary = document.createElement('summary')
+    summary.textContent = title
+    summary.style.cursor = 'pointer'
+    summary.style.fontWeight = '600'
+    summary.style.userSelect = 'none'
+    details.appendChild(summary)
+    const body = document.createElement('div')
+    body.style.display = 'flex'
+    body.style.flexDirection = 'column'
+    body.style.gap = '4px'
+    body.style.marginTop = '6px'
+    details.appendChild(body)
+    return { details, body }
+}
+
 export function colorToCss(entry: PaletteEntry): string {
     const [r, g, b] = entry.color
     const alpha = entry.opacity ?? 1

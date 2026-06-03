@@ -32,6 +32,7 @@ import { createWeatherZoneRenderSystem } from './editor/systems/weather-zone-ren
 import { createPropPlaceSystem } from './editor/systems/prop-place-system'
 import { createPropRenderSystem } from './game/props/prop-system'
 import { createNpcPlaceSystem } from './editor/systems/npc-place-system'
+import { createNpcWaypointSystem } from './editor/systems/npc-waypoint-system'
 import { createNpcRenderSystem } from './game/npcs/npc-render-system'
 import { createStonePlaceSystem } from './editor/systems/stone-place-system'
 import { createStoneRenderSystem } from './editor/systems/stone-render-system'
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
         .addSystem(createWeatherZonePlaceSystem(engine.input, editorState), 'weatherZonePlace')
         .addSystem(createPropPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'propPlace')
         .addSystem(createNpcPlaceSystem(engine.input, renderer.iso, chunks, editorState), 'npcPlace')
+        .addSystem(createNpcWaypointSystem(renderer.scene, renderer.iso, engine.input, renderer.webgpu.domElement, chunks, editorState), 'npcWaypoint')
         .addSystem(createStonePlaceSystem(engine.input, editorState), 'stonePlace')
         .addSystem(createRailCartPlaceSystem(engine.input, chunks, editorState), 'railCartPlace')
         .addSystem(createStructurePlaceSystem(engine.input, chunks, editorState, history), 'structurePlace')

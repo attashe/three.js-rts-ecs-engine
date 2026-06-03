@@ -109,9 +109,58 @@ export interface NpcConfig {
     voice: DialogueVoiceRef
     scriptEnabled: boolean
     scriptSource: string
+    /** Editor-authoring behaviour (patrol/guard/hunter/prey + route). The
+     *  RUNTIME IGNORES THIS — it only reads `scriptSource`. The editor stores it
+     *  so the waypoint tool has structured, draggable data that survives a
+     *  reload, and compiles it into the generated `on('level-start')` region of
+     *  `scriptSource` (see `npc-behaviour-script.ts`). Absent on legacy /
+     *  script-driven NPCs. */
+    behaviour?: NpcBehaviourConfig
 }
 
 export interface Vec3Like { x: number; y: number; z: number }
+
+/** How a templated NPC behaves. A UI grouping that the editor compiles into the
+ *  existing `npc.*` script calls — the runtime has no "mode" concept (engagement
+ *  is derived from `targetId`). See `NPC_BEHAVIOUR_MODES`. */
+export const NPC_BEHAVIOUR_MODES = ['none', 'idle', 'patrol', 'guard', 'hunter', 'prey'] as const
+export type NpcBehaviourMode = (typeof NPC_BEHAVIOUR_MODES)[number]
+
+export const NPC_BEHAVIOUR_MODE_LABELS: Record<NpcBehaviourMode, string> = {
+    none: 'None (script only)',
+    idle: 'Idle',
+    patrol: 'Patrol route',
+    guard: 'Stand guard',
+    hunter: 'Hunter (pursues)',
+    prey: 'Prey (flees)',
+}
+
+/** Structured behaviour the editor authors and compiles to a `level-start`
+ *  script. Editor metadata only — never read by the runtime. */
+export interface NpcBehaviourConfig {
+    mode: NpcBehaviourMode
+    /** Treat the player as an enemy (compiles to `npc.setHostile(..,'player',true)`). */
+    hostileToPlayer: boolean
+    /** Spotting range in world units (`npc.setPerceptionRadius`). */
+    perceptionRadius: number
+    /** Pursue-a-lost-target memory in seconds (`npc.setThreatMemory`); 0 = off. */
+    threatMemorySeconds: number
+    /** Flee perceived threats instead of fighting (`npc.setFlee`). */
+    flee: boolean
+    /** Route points (`npc.setWaypoints`): [] hold post · 1 stand guard · many loop. */
+    waypoints: Vec3Like[]
+}
+
+/** Neutral starting behaviour the tab/templates clone (mode `none` = no
+ *  generated script). Not part of `DEFAULT_NPC` — absent means "no behaviour". */
+export const DEFAULT_NPC_BEHAVIOUR: NpcBehaviourConfig = {
+    mode: 'none',
+    hostileToPlayer: false,
+    perceptionRadius: 8,
+    threatMemorySeconds: 0,
+    flee: false,
+    waypoints: [],
+}
 
 /**
  * Optional, script-driven "brain" for an NPC. Absent (`null`) until a script
@@ -481,6 +530,11 @@ export function copyNpcConfig(npc: NpcConfig): NpcConfig {
         position: { ...npc.position },
         equipment: copyHandLoadout(npc.equipment),
         voice: { ...npc.voice },
+        // Deep-copy the route when present; omit the key otherwise (`...npc`
+        // never introduces it) so cloned legacy NPCs stay shape-identical.
+        ...(npc.behaviour
+            ? { behaviour: { ...npc.behaviour, waypoints: npc.behaviour.waypoints.map((p) => ({ ...p })) } }
+            : {}),
     }
 }
 
@@ -489,6 +543,7 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         ? input.model as NpcModelKind
         : DEFAULT_NPC.model
     const variant = normalizeNpcVariant(model, input.variant)
+    const behaviour = normalizeNpcBehaviour(input.behaviour)
     return {
         id: sanitizeNpcId(input.id || 'npc'),
         name: input.name || DEFAULT_NPC.name,
@@ -514,6 +569,38 @@ export function normalizeNpcConfig(input: Partial<NpcConfig> & Pick<NpcConfig, '
         voice: compactNpcVoice(normalizeDialogueVoice(input.voice, defaultNpcVoice(model))),
         scriptEnabled: input.scriptEnabled ?? DEFAULT_NPC.scriptEnabled,
         scriptSource: input.scriptSource ?? DEFAULT_NPC.scriptSource,
+        // Omit `behaviour` entirely when absent so legacy / script-driven NPCs
+        // keep their exact shape (no stray `behaviour: undefined` key).
+        ...(behaviour ? { behaviour } : {}),
+    }
+}
+
+/**
+ * Normalize an authoring behaviour block. Returns `undefined` when absent (so
+ * legacy/script-driven NPCs round-trip byte-stable with no `behaviour` key),
+ * otherwise a fully-defaulted, sanitized block.
+ */
+export function normalizeNpcBehaviour(input: Partial<NpcBehaviourConfig> | undefined): NpcBehaviourConfig | undefined {
+    if (!input) return undefined
+    const mode = (NPC_BEHAVIOUR_MODES as readonly string[]).includes(String(input.mode))
+        ? input.mode as NpcBehaviourMode
+        : DEFAULT_NPC_BEHAVIOUR.mode
+    const waypoints = Array.isArray(input.waypoints)
+        ? input.waypoints
+            .filter((p): p is Vec3Like => !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z))
+            .map((p) => ({ x: p.x, y: p.y, z: p.z }))
+        : []
+    return {
+        mode,
+        hostileToPlayer: input.hostileToPlayer ?? DEFAULT_NPC_BEHAVIOUR.hostileToPlayer,
+        perceptionRadius: Number.isFinite(input.perceptionRadius)
+            ? Math.max(0, input.perceptionRadius!)
+            : DEFAULT_NPC_BEHAVIOUR.perceptionRadius,
+        threatMemorySeconds: Number.isFinite(input.threatMemorySeconds)
+            ? Math.max(0, input.threatMemorySeconds!)
+            : DEFAULT_NPC_BEHAVIOUR.threatMemorySeconds,
+        flee: input.flee ?? DEFAULT_NPC_BEHAVIOUR.flee,
+        waypoints,
     }
 }
 

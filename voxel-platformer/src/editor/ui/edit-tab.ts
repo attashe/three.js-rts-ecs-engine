@@ -236,6 +236,8 @@ function buildContextualForMode(ctx: EditTabContext): RefreshableElement {
             return buildRailCartModePanel()
         case 'place-structure':
             return buildStructureModePanel()
+        case 'edit-waypoints':
+            return buildNpcModePanel()
     }
 }
 

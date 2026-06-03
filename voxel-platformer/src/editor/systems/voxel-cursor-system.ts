@@ -273,6 +273,7 @@ function outlineColour(mode: EditorState['mode']): number {
         case 'place-stone-spawner': return 0xffb86b
         case 'place-rail-cart': return RAIL_CART_OUTLINE_COLOUR
         case 'place-structure': return 0x9be0ff
+        case 'edit-waypoints': return 0x6cf0a0
     }
 }
 

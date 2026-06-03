@@ -9,7 +9,7 @@ import type { BrushKind } from './brush'
 import type { TerrainBrushShape, TerrainFalloff, TerrainTool } from './terrain-brush'
 import type { PistonDirection } from './piston-direction'
 import { PROP_KINDS, type EditorProp, type EditorPropKind } from '../game/props/prop-types'
-import { DEFAULT_NPC, copyNpcConfig, type NpcConfig, type NpcModelKind, type NpcVariantKind } from '../game/npcs/npc-types'
+import { DEFAULT_NPC, copyNpcConfig, type NpcBehaviourConfig, type NpcConfig, type NpcModelKind, type NpcVariantKind } from '../game/npcs/npc-types'
 import type { DialogueVoicePreset } from '../game/dialogue-voice/types'
 import type { EquipmentHandLoadout } from '../game/anim/equipment-types'
 import type { CharacterBeardKind } from '../game/character-appearance'
@@ -58,6 +58,7 @@ export type EditorMode =
     | 'place-stone-spawner'
     | 'place-rail-cart'
     | 'place-structure'
+    | 'edit-waypoints'
 
 /** Camera view used by the editor. `top-down` enables the working-plane cut;
  *  `orbit` enables free OrbitControls-style scene inspection. */
@@ -476,6 +477,12 @@ export interface EditorState {
     npcVoicePitchOffset: number
     npcScriptEnabled: boolean
     npcScriptSource: string
+    /** Essential-character flags (Advanced panel). */
+    npcInvulnerable: boolean
+    npcUnprovokable: boolean
+    /** Structured behaviour for the draft NPC; compiled into the script on place.
+     *  Per-placed-NPC behaviour lives on each `NpcConfig.behaviour`. */
+    npcBehaviour: NpcBehaviourConfig | undefined
 
     /** Direct physics stones placed in the editor. They spawn at level start. */
     stones: StonePlacementConfig[]
@@ -747,6 +754,9 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         npcVoicePitchOffset: DEFAULT_NPC.voice.pitchOffset ?? 0,
         npcScriptEnabled: DEFAULT_NPC.scriptEnabled,
         npcScriptSource: DEFAULT_NPC.scriptSource,
+        npcInvulnerable: DEFAULT_NPC.invulnerable,
+        npcUnprovokable: DEFAULT_NPC.unprovokable ?? false,
+        npcBehaviour: undefined,
         stones: [],
         selectedStoneId: null,
         stoneTier: DEFAULT_STONE_TIER,
