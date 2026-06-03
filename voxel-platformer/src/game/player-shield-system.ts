@@ -1,5 +1,5 @@
 import { hasComponent, query } from 'bitecs'
-import { Grounded, PlayerControlled, Position, Rotation, Shield, Stunned } from '../engine/ecs/components'
+import { ClimbingLadder, Grounded, PlayerControlled, Position, Rotation, Shield, Stunned } from '../engine/ecs/components'
 import { clearDebugHitbox, debugHitboxesEnabled, pushDebugHitbox } from '../engine/ecs/debug-hitboxes'
 import type { ActionId, ActionMap } from '../engine/input/actions'
 import type { System } from '../engine/ecs/systems/system'
@@ -50,7 +50,13 @@ export function createPlayerShieldSystem(actions: ActionMap, opts: PlayerShieldO
                 const grounded = hasComponent(world, eid, Grounded)
                 Shield.reloadSeconds[eid] = Math.max(0, Shield.reloadSeconds[eid]! - dt)
                 if (!raising) Shield.heldSeconds[eid] = 0
-                if (!melee || !grounded || hasComponent(world, eid, Stunned) || Shield.reloadSeconds[eid]! > 0) {
+                if (
+                    !melee ||
+                    !grounded ||
+                    hasComponent(world, eid, Stunned) ||
+                    hasComponent(world, eid, ClimbingLadder) ||
+                    Shield.reloadSeconds[eid]! > 0
+                ) {
                     Shield.raised[eid] = 0
                     Shield.perfect[eid] = 0
                     gw.animControllerByEid.get(eid)?.machine.setParam(COMBAT_PARAM.shieldBlock, 0)

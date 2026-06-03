@@ -165,6 +165,10 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         .clear(21, groundY + 1, 5)
         .clear(21, cliffTop, 5)
 
+    // Vertical ladder test column: bottom sits on the lower plank, top exits
+    // onto the upper cliff plank at x=21,z=4.
+    t.fill([20, 20], [groundY + 1, cliffTop], [4, 4], BLOCK.ladder)
+
     const stoneSpawners: StoneFallSpawnerConfig[] = [
         {
             position: { x: 22.4, y: cliffTop + 0.6, z: 3.5 },

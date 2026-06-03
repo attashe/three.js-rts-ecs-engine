@@ -3,7 +3,7 @@
 // the authored active window.
 
 import { hasComponent, query } from 'bitecs'
-import { Grounded, PlayerControlled, Position, Rotation, Stunned } from '../components'
+import { ClimbingLadder, Grounded, PlayerControlled, Position, Rotation, Stunned } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import { isStaffEquipmentKind } from '../../../game/anim/equipment-types'
 import { SPEAR_ITEM_ID } from '../../../game/equipment-items'
@@ -48,6 +48,7 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
             const player = players[0]!
             if (opts.canUse && !opts.canUse(world, player)) return
             if (hasComponent(world, player, Stunned)) return
+            if (hasComponent(world, player, ClimbingLadder)) return
             if (!hasComponent(world, player, Grounded)) return
             if (hasActiveMeleeAttack(world, { kind: 'player', eid: player })) return
             const controller = world.animControllerByEid.get(player)

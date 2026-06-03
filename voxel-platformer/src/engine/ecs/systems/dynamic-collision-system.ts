@@ -3,6 +3,7 @@ import type { ChunkManager } from '../../voxel/chunk-manager'
 import { sweepAxis } from '../../voxel/voxel-collide'
 import {
     BoxCollider,
+    ClimbingLadder,
     MovementState,
     PlayerControlled,
     Position,
@@ -106,7 +107,7 @@ function isSolidCharacter(world: Parameters<System['update']>[0], eid: number): 
     // The platformer foundation has only one actor class: the player. NPC /
     // pathing tags from the parent engine were dropped — re-add hooks here
     // when more actor archetypes land.
-    return hasComponent(world, eid, PlayerControlled)
+    return hasComponent(world, eid, PlayerControlled) && !hasComponent(world, eid, ClimbingLadder)
 }
 
 function separatePair(world: GameWorld, chunks: ChunkManager, a: number, b: number, padding: number): void {

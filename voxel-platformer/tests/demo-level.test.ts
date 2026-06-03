@@ -100,12 +100,36 @@ test('demo pistons carry stable ids for script targeting', () => {
     assert.deepEqual(ids.sort(), ['piston.cliff-lift', 'piston.elevator', 'piston.trap'])
 })
 
+test('demo cliff has a vertical ladder with clear bottom and top dismounts', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    generatePlatformerLevel(chunks)
+
+    for (let y = 5; y <= 8; y++) {
+        assert.equal(chunks.getVoxel(20, y, 4), BLOCK.ladder, `ladder cell at 20,${y},4`)
+    }
+    assert.equal(chunks.getVoxel(20, 4, 4), BLOCK.plank, 'ladder bottom should stand on the lower plank')
+    assert.equal(chunks.getVoxel(21, 8, 4), BLOCK.plank, 'ladder top should exit onto the upper plank')
+    assertPlayerFootClear(chunks, { x: 20.5, y: 5, z: 4.5 }, 'ladder bottom')
+    assertPlayerFootClear(chunks, { x: 21.5, y: 9, z: 4.5 }, 'ladder top')
+})
+
 function assertPlayerArrivalClear(chunks: ChunkManager, zone: NonNullable<ReturnType<typeof generatePlatformerLevel>['zones'][number]>, label: string): void {
     const pos = {
         x: (zone.min.x + zone.max.x) * 0.5,
         y: zone.min.y,
         z: (zone.min.z + zone.max.z) * 0.5,
     }
+    const box: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+    aabbFromFoot(pos, {
+        x: MAIN_CHARACTER_COLLIDER_RADIUS,
+        y: MAIN_CHARACTER_COLLIDER_HALF_HEIGHT,
+        z: MAIN_CHARACTER_COLLIDER_RADIUS,
+    }, box)
+
+    assert.equal(voxelAABBOverlap(chunks, box), false, `${label} should fit the full player collider`)
+}
+
+function assertPlayerFootClear(chunks: ChunkManager, pos: { x: number; y: number; z: number }, label: string): void {
     const box: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
     aabbFromFoot(pos, {
         x: MAIN_CHARACTER_COLLIDER_RADIUS,

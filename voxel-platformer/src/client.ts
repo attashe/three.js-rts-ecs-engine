@@ -64,6 +64,8 @@ import { createTorchBlockRenderSystemV2 } from './game/torch-block-system-v2'
 import { createRailRenderSystem } from './game/rail/rail-render-system'
 import { createFenceRenderSystem } from './game/fence/fence-render-system'
 import { createRailCartSystem, nearestRailCartInteractionTarget } from './game/rail/rail-cart-system'
+import { createLadderRenderSystem } from './game/ladder/ladder-render-system'
+import { createLadderSystem, nearestLadderInteractionTarget } from './game/ladder/ladder-system'
 import { getTorchSystem } from './engine/render/render-settings'
 import { spawnCoinPile } from './game/pickups'
 import { spawnLevelStone } from './game/stones'
@@ -244,7 +246,9 @@ async function main(): Promise<void> {
         torchBlocks: createSystemSlot('torchBlocks', false, RenderOrder.worldRender + 2),
         railRender: createSystemSlot('railRender', false, RenderOrder.worldRender + 2),
         fenceRender: createSystemSlot('fenceRender', false, RenderOrder.worldRender + 2),
+        ladderRender: createSystemSlot('ladderRender', false, RenderOrder.worldRender + 2),
         railCarts: createSystemSlot('railCarts', true, FixedOrder.input + 4),
+        ladders: createSystemSlot('ladders', true, FixedOrder.input + 5),
     }
     const allSlots = Object.values(slots)
 
@@ -464,6 +468,7 @@ async function main(): Promise<void> {
             },
         }))
         slots.railCarts.set(createRailCartSystem(chunks, meta.railCarts, { actions }))
+        slots.ladders.set(createLadderSystem(chunks, { actions }))
         slots.piston.set(createPistonSystem(chunks, {
             onFlip: (piston, position) => {
                 if (!piston.moveSoundId) return
@@ -521,6 +526,7 @@ async function main(): Promise<void> {
         )
         slots.railRender.set(createRailRenderSystem(renderer.scene, chunks))
         slots.fenceRender.set(createFenceRenderSystem(renderer.scene, chunks))
+        slots.ladderRender.set(createLadderRenderSystem(renderer.scene, chunks))
     }
 
     function captureCurrentSnapshot(): void {
@@ -684,6 +690,7 @@ async function main(): Promise<void> {
         }), 'pickup')
         .addSystem(slots.piston.system, 'piston')
         .addSystem(slots.railCarts.system, 'railCarts')
+        .addSystem(slots.ladders.system, 'ladders')
         .addSystem(slots.zoneTrigger.system, 'zoneTrigger')
         .addSystem(slots.scriptEngine.system, 'scriptEngine')
         .addSystem(slots.stoneSpawner.system, 'stoneSpawner')
@@ -732,6 +739,7 @@ async function main(): Promise<void> {
         .addSystem(slots.torchBlocks.system, 'torchBlocks')
         .addSystem(slots.railRender.system, 'railRender')
         .addSystem(slots.fenceRender.system, 'fenceRender')
+        .addSystem(slots.ladderRender.system, 'ladderRender')
         .addSystem(createRenderMetricsSystem(renderer), 'renderMetrics')
         .addSystem(createDebugOverlaySystem(renderer.scene, engine.input, {
             logPosition: { top: '48px', right: '8px', maxWidth: '320px' },
@@ -753,6 +761,7 @@ async function main(): Promise<void> {
             domElement: renderer.webgpu.domElement,
             providers: [
                 (activeWorld, player) => nearestRailCartInteractionTarget(activeWorld, player, chunks),
+                (activeWorld, player) => nearestLadderInteractionTarget(activeWorld, player, chunks),
                 (activeWorld, player) => nearestDoorInteractionTarget(activeWorld, player, chunks),
             ],
         }), 'interaction')

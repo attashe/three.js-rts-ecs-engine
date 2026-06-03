@@ -1,6 +1,7 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import {
     BoxCollider,
+    ClimbingLadder,
     MovementState,
     PlayerControlled,
     Position,
@@ -69,7 +70,7 @@ export function createAirPushSystem(actions: ActionMap, opts: AirPushOptions = {
             if (players.length === 0) return
             const player = players[0]
             if (!actions.consumePressed(actionId, player)) return
-            if (hasComponent(world, player, RidingCart)) return
+            if (hasComponent(world, player, RidingCart) || hasComponent(world, player, ClimbingLadder)) return
             if (!world.playerSettings.abilities.airPush) {
                 pushLog(world, 'Air Push is disabled.')
                 return

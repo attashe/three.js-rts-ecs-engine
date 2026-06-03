@@ -55,7 +55,7 @@ export interface PaletteEntry {
      *  diagnose the shadow pipeline. */
     lightCastsShadow?: boolean
     /** Optional non-cube prop renderer for authored special blocks. */
-    renderAs?: 'torch' | 'torch-off' | 'rail' | 'fence'
+    renderAs?: 'torch' | 'torch-off' | 'rail' | 'fence' | 'ladder'
     /** Optional animated liquid surface rendered on exposed top faces. */
     liquid?: 'water' | 'lava'
     /**
@@ -143,6 +143,7 @@ export const BLOCK = {
     autumnLeafLight: 44,
     fence: 45,
     stairs: 46,
+    ladder: 47,
 } as const
 
 /**
@@ -357,6 +358,17 @@ export const DEFAULT_PALETTE: Palette = {
             renderAs: 'fence',
         },
         { name: 'stairs', color: [0.52, 0.52, 0.55], solid: true, textureKey: 'stone', height: 0.5, stepHeight: 0.5 },
+        {
+            name: 'ladder',
+            color: [0.55, 0.34, 0.16],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0,
+            renderAs: 'ladder',
+        },
     ],
 }
 
@@ -411,6 +423,11 @@ export function isFenceBlock(palette: Palette, index: number): boolean {
     return paletteEntry(palette, index).renderAs === 'fence'
 }
 
+export function isLadderBlock(palette: Palette, index: number): boolean {
+    if (index === AIR) return false
+    return paletteEntry(palette, index).renderAs === 'ladder'
+}
+
 export function railBlockIndex(palette: Palette): number {
     const direct = palette.entries[BLOCK.rail]
     if (direct?.renderAs === 'rail') return BLOCK.rail
@@ -423,6 +440,13 @@ export function fenceBlockIndex(palette: Palette): number {
     if (direct?.renderAs === 'fence') return BLOCK.fence
     const found = palette.entries.findIndex((entry) => entry.renderAs === 'fence')
     return found > AIR ? found : BLOCK.fence
+}
+
+export function ladderBlockIndex(palette: Palette): number {
+    const direct = palette.entries[BLOCK.ladder]
+    if (direct?.renderAs === 'ladder') return BLOCK.ladder
+    const found = palette.entries.findIndex((entry) => entry.renderAs === 'ladder')
+    return found > AIR ? found : BLOCK.ladder
 }
 
 export type TorchBlockState = 'lit' | 'unlit'
@@ -520,6 +544,7 @@ export function isRenderableVoxel(palette: Palette, index: number): boolean {
     if (isTorchBlock(palette, index)) return false
     if (isRailBlock(palette, index)) return false
     if (isFenceBlock(palette, index)) return false
+    if (isLadderBlock(palette, index)) return false
     return voxelOpacity(palette, index) > 0
 }
 
@@ -558,6 +583,7 @@ export function appendMissingDefaultPaletteEntries(palette: Palette): void {
     appendMissingSpecialBlock(palette, BLOCK.rail)
     appendMissingSpecialBlock(palette, BLOCK.fence)
     appendMissingDefaultBlockByName(palette, BLOCK.stairs)
+    appendMissingSpecialBlock(palette, BLOCK.ladder)
 }
 
 function normalizeNoWalkBlock(palette: Palette): void {

@@ -1,5 +1,5 @@
 import { hasComponent, query, removeComponent } from 'bitecs'
-import { BoxCollider, Grounded, PlayerControlled, Position, RidingCart, Velocity } from '../components'
+import { BoxCollider, ClimbingLadder, Grounded, PlayerControlled, Position, RidingCart, Velocity } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import type { System } from './system'
 import { FixedOrder } from './orders'
@@ -44,7 +44,7 @@ export function createHighJumpSystem(actions: ActionMap, opts: HighJumpOptions =
 
             const player = players[0]!
             if (!actions.consumePressed(actionId, player)) return
-            if (hasComponent(world, player, RidingCart)) return
+            if (hasComponent(world, player, RidingCart) || hasComponent(world, player, ClimbingLadder)) return
             if (!playerCanHighJump(world.playerSettings)) {
                 pushLog(world, 'High Jump is disabled.')
                 return

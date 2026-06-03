@@ -55,6 +55,16 @@ export const RailCart = {}
  *  systems skip this entity; the rail-cart system owns its transform. */
 export const RidingCart = {}
 
+/** Player climb mode for vertical ladder blocks. While present, player control
+ *  and physics skip this entity; the ladder system owns X/Z snap, Y movement,
+ *  and endpoint detach. */
+export const ClimbingLadder = {
+    centerX: new Float32Array(MAX_ENTITIES),
+    centerZ: new Float32Array(MAX_ENTITIES),
+    bottomY: new Float32Array(MAX_ENTITIES),
+    topY: new Float32Array(MAX_ENTITIES),
+}
+
 /**
  * Material parameters for a dynamic body. Read by physics-system every step
  * for entities that also have Position + Velocity + BoxCollider.

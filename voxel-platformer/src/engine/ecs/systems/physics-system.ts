@@ -4,6 +4,7 @@ import { isCollidable, stepHeightForBlock, voxelHeightForBlock } from '../../vox
 import { aabbFromCenter, aabbFromFoot, isGrounded, sweepAxis, voxelAABBOverlap, type AABB, type ColliderAnchor, type ObstacleSource } from '../../voxel/voxel-collide'
 import {
     BoxCollider,
+    ClimbingLadder,
     Grounded,
     HorizontalBlocked,
     MovementState,
@@ -112,7 +113,7 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
             let stuckBodies = 0
             for (let i = 0; i < eids.length; i++) {
                 const eid = eids[i]
-                if (hasComponent(world, eid, RidingCart)) continue
+                if (hasComponent(world, eid, RidingCart) || hasComponent(world, eid, ClimbingLadder)) continue
                 const hasRb = hasComponent(world, eid, RigidBody)
 
                 const gravityScale = hasRb && RigidBody.gravityScale[eid] !== 0

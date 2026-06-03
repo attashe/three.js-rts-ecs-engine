@@ -50,6 +50,7 @@ import { castShadowOnPlayer, enablePlayerVisibility } from './engine/render/rend
 import { createTorchBlockRenderSystem } from './game/torch-block-system'
 import { createRailRenderSystem } from './game/rail/rail-render-system'
 import { createFenceRenderSystem } from './game/fence/fence-render-system'
+import { createLadderRenderSystem } from './game/ladder/ladder-render-system'
 import { mountEditorPanel } from './editor/editor-ui'
 import { createCinematicPreview } from './editor/cinematic-preview'
 import { consumePlaytestLevel } from './editor/playtest'
@@ -170,6 +171,9 @@ async function main(): Promise<void> {
         .addSystem(createFenceRenderSystem(renderer.scene, chunks, {
             cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
         }), 'fenceRender')
+        .addSystem(createLadderRenderSystem(renderer.scene, chunks, {
+            cutY: () => editorState.viewMode === 'top-down' ? editorState.workingPlaneY : null,
+        }), 'ladderRender')
         .addSystem(createVoxelCursorSystem(renderer.scene, renderer.iso, engine.input, chunks, editorState), 'voxelCursor')
         .addSystem(createTerrainPreviewSystem(renderer.scene, chunks, editorState), 'terrainPreview')
         .addSystem(createWorkingPlaneSystem(renderer.scene, engine.input, renderer.iso, editorState), 'workingPlane')

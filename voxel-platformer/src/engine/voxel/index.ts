@@ -25,6 +25,7 @@ export {
     isRaycastTarget,
     isSolid,
     isFenceBlock,
+    isLadderBlock,
     isTorchBlock,
     liquidBlockKind,
     occludesFaces,
@@ -37,6 +38,7 @@ export {
     voxelLightSpec,
     blockMovementTraits,
     fenceBlockIndex,
+    ladderBlockIndex,
     appendMissingDefaultPaletteEntries,
     clonePalette,
 } from './palette'

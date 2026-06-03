@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponent, query } from 'bitecs'
 import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Vector3, type Object3D } from 'three'
-import { BoxCollider, Grounded, MovingObject, Shield, Velocity } from '../src/engine/ecs/components'
+import { BoxCollider, ClimbingLadder, Grounded, MovingObject, Shield, Velocity } from '../src/engine/ecs/components'
 import { computeLocomotionParams } from '../src/engine/anim/core'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
 import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
@@ -498,6 +498,22 @@ test('passive shield guard uses the left-side yaw offset', () => {
 
     assert.equal(Shield.raised[player], 1)
     assert.ok(Shield.blockYawOffset[player]! < 0, 'passive shield should cover the left side, not the right')
+})
+
+test('climbing ladder suppresses player shield guard', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.weaponStance = 'melee'
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    addComponent(world, player, ClimbingLadder)
+    const action = heldAction(true)
+    const system = createPlayerShieldSystem(action.actions)
+
+    system.update(world, 1 / 60)
+
+    assert.equal(Shield.raised[player], 0)
+    assert.equal(Shield.perfect[player], 0)
 })
 
 test('front shield uses a short perfect window and reload disables guard', () => {
