@@ -7,7 +7,7 @@ import type { ChunkManager } from '../../voxel/chunk-manager'
 import { findPath } from '../../voxel/voxel-path'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
 import { type NpcAiState, type NpcRuntimeState, type Vec3Like } from '../../../game/npcs/npc-types'
-import { NPC_TARGET_PLAYER } from '../../../game/npcs/npc-ai'
+import { NPC_TARGET_PLAYER, provokeFromPlayerAttack } from '../../../game/npcs/npc-ai'
 import { hasActiveMeleeAttack, isMeleeActorLocked, startMeleeAttack } from '../melee-combat'
 import { MELEE_ATTACK_DEFS } from '../melee-types'
 import { spawnArrowProjectile } from '../../../game/moving-objects'
@@ -67,9 +67,17 @@ export function createNpcBehaviourSystem(chunks: ChunkManager): System {
                 : null
 
             for (const rt of gw.npcRuntimeById.values()) {
+                updateShieldGuardCooldown(rt, dt)
                 if (rt.dying) {
                     gw.meleeAttacks.delete(`npc:${rt.id}`)
                     continue
+                }
+                // Retaliation: a player hit this frame turns the NPC hostile.
+                // Done here (not in `damageNpc`) so the data helper stays free of
+                // AI concerns and a brain-less NPC can still be provoked.
+                if (rt.provoked) {
+                    rt.provoked = false
+                    provokeFromPlayerAttack(rt)
                 }
                 if (!rt.ai) continue
                 updateNpc(gw, rt, rt.ai, player, dt)
@@ -330,7 +338,20 @@ function attackRange(rt: NpcRuntimeState): number {
 }
 
 function setShieldGuardRaised(rt: NpcRuntimeState, raised: boolean): void {
-    if (rt.shieldGuard) rt.shieldGuard.raised = raised
+    if (!rt.shieldGuard) return
+    rt.shieldGuard.raised = raised && !npcShieldGuardCoolingDown(rt)
+}
+
+function updateShieldGuardCooldown(rt: NpcRuntimeState, dt: number): void {
+    const guard = rt.shieldGuard
+    if (!guard?.cooldownSeconds) return
+    guard.cooldownSeconds = Math.max(0, guard.cooldownSeconds - dt)
+    if (guard.cooldownSeconds <= 0) guard.cooldownSeconds = undefined
+    else guard.raised = false
+}
+
+function npcShieldGuardCoolingDown(rt: NpcRuntimeState): boolean {
+    return (rt.shieldGuard?.cooldownSeconds ?? 0) > 0
 }
 
 function nearestEnemy(gw: GameWorld, rt: NpcRuntimeState, ai: NpcAiState, player: PlayerSnapshot | null): string | null {

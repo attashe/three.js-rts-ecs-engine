@@ -9,8 +9,15 @@ import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-
 import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
 import { startMeleeAttack } from '../src/engine/ecs/melee-combat'
 import { cloneMeleeAttackDef, MELEE_ATTACK_DEFS, type MeleeAttackDef } from '../src/engine/ecs/melee-types'
-import type { NpcRuntimeState } from '../src/game/npcs/npc-types'
+import {
+    NPC_SHIELD_GUARD_ARC_COS,
+    NPC_SHIELD_GUARD_MAX_Y,
+    NPC_SHIELD_GUARD_MIN_Y,
+    type NpcRuntimeState,
+} from '../src/game/npcs/npc-types'
 import { NPC_TARGET_PLAYER } from '../src/game/npcs/npc-ai'
+import { METAL_HELMET_ITEM_ID } from '../src/game/equipment-items'
+import { __resetDebugInfoCache, setDebugInfoEnabled } from '../src/engine/render/render-settings'
 
 function onePressAction(): ActionMap {
     let pressed = true
@@ -326,6 +333,96 @@ test('perfect shield block staggers the attacker with reduced defender pushback'
     assert.ok(Velocity.z[player] < 0 && Velocity.z[player] > -1, `expected small defender pushback, got vz=${Velocity.z[player]}`)
     assert.equal(Shield.reloadSeconds[player], 0)
     assert.equal(hasComponent(world, player, Stunned), false)
+})
+
+test('perfect shield block puts an NPC guard shield on cooldown so the counterattack can land', () => {
+    const world = createGameWorld()
+    const player = spawnPlayer(world)
+    const guard = spawnNpc(world, 'guard', 0, 1)
+    guard.yaw = Math.PI
+    guard.shieldGuard = {
+        raised: true,
+        arcCos: NPC_SHIELD_GUARD_ARC_COS,
+        minY: NPC_SHIELD_GUARD_MIN_Y,
+        maxY: NPC_SHIELD_GUARD_MAX_Y,
+    }
+    raiseFrontShield(player, true)
+    const combat = createMeleeCombatSystem()
+
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+    combat.update(world, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+
+    assert.equal(guard.shieldGuard.raised, false)
+    assert.ok((guard.shieldGuard.cooldownSeconds ?? 0) > 1, 'perfect block should disable the NPC guard briefly')
+
+    assert.equal(startMeleeAttack(world, { kind: 'player', eid: player }, MELEE_ATTACK_DEFS['player-thrust']), true)
+    combat.update(world, MELEE_ATTACK_DEFS['player-thrust'].startupSeconds + 0.02)
+    assert.equal(guard.hp, 1, 'guard cooldown should leave the NPC open to a counterattack')
+})
+
+test('NPC shield guard pushes a debug wedge while raised or cooling down', () => {
+    __resetDebugInfoCache()
+    setDebugInfoEnabled(true)
+    const world = createGameWorld()
+    const guard = spawnNpc(world, 'guard', 0, 1)
+    guard.yaw = Math.PI
+    guard.shieldGuard = {
+        raised: true,
+        arcCos: NPC_SHIELD_GUARD_ARC_COS,
+        minY: NPC_SHIELD_GUARD_MIN_Y,
+        maxY: NPC_SHIELD_GUARD_MAX_Y,
+    }
+    const combat = createMeleeCombatSystem()
+
+    combat.update(world, 1 / 60)
+    const active = world.debugHitboxes.find((hitbox) => hitbox.id === 'npc:guard:shield')
+    assert.equal(active?.kind, 'wedge')
+    assert.deepEqual(active?.color, [0.25, 0.95, 0.9])
+
+    guard.shieldGuard.raised = false
+    guard.shieldGuard.cooldownSeconds = 0.5
+    combat.update(world, 1 / 60)
+    const cooling = world.debugHitboxes.find((hitbox) => hitbox.id === 'npc:guard:shield')
+    assert.equal(cooling?.kind, 'wedge')
+    assert.deepEqual(cooling?.color, [0.6, 0.62, 0.68])
+    setDebugInfoEnabled(false)
+})
+
+test('metal helmet has a chance to block incoming melee attack damage', () => {
+    const blockedWorld = createGameWorld()
+    const blockedPlayer = spawnPlayer(blockedWorld)
+    blockedWorld.playerSettings.equipment.head = METAL_HELMET_ITEM_ID
+    const blockedGuard = spawnNpc(blockedWorld, 'guard', 0, 1)
+    blockedGuard.yaw = Math.PI
+    const blockedCombat = createMeleeCombatSystem({ helmetBlockRoll: () => 0.1 })
+    assert.equal(startMeleeAttack(
+        blockedWorld,
+        { kind: 'npc', id: 'guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+    blockedCombat.update(blockedWorld, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+    assert.equal(Health.current[blockedPlayer], 4, 'low roll should let the helmet block melee damage')
+
+    const hitWorld = createGameWorld()
+    const hitPlayer = spawnPlayer(hitWorld)
+    hitWorld.playerSettings.equipment.head = METAL_HELMET_ITEM_ID
+    const hitGuard = spawnNpc(hitWorld, 'guard', 0, 1)
+    hitGuard.yaw = Math.PI
+    const hitCombat = createMeleeCombatSystem({ helmetBlockRoll: () => 0.9 })
+    assert.equal(startMeleeAttack(
+        hitWorld,
+        { kind: 'npc', id: 'guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+    hitCombat.update(hitWorld, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+    assert.equal(Health.current[hitPlayer], 3, 'high roll should let melee damage through')
 })
 
 test('passive shield block is ordinary even if the perfect flag is stale', () => {

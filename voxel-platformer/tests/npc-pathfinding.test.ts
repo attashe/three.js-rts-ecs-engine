@@ -12,8 +12,9 @@ import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-
 import { createArrowHitSystem } from '../src/engine/ecs/systems/arrow-hit-system'
 import { MovingObjectKind, spawnArrowProjectile } from '../src/game/moving-objects'
 import { __resetDebugInfoCache, setDebugInfoEnabled } from '../src/engine/render/render-settings'
-import type { NpcRuntimeState } from '../src/game/npcs/npc-types'
+import { damageNpc, type NpcRuntimeState } from '../src/game/npcs/npc-types'
 import { HUMANOID_ANIM_TIMINGS } from '../src/game/anim/clip-timings'
+import { METAL_HELMET_ITEM_ID } from '../src/game/equipment-items'
 import {
     NPC_TARGET_PLAYER, setNpcFlee, setNpcHostile, setNpcPerceptionRadius, setNpcWaypoints, stopNpc,
 } from '../src/game/npcs/npc-ai'
@@ -151,6 +152,31 @@ test('a hostile NPC spots and paths toward the player', () => {
         'expected an npc-spotted-enemy event')
     // It should have closed most of the gap toward the player at x=11.
     assert.ok(rt.position.x > 7, `expected the orc to advance toward the player, x=${rt.position.x}`)
+})
+
+test('an attacked NPC retaliates: a player hit turns it hostile and it engages', () => {
+    const chunks = flatWorld()
+    const world = createGameWorld()
+    const player = createEntity(world)
+    addComponents(world, player, [Position, PlayerControlled])
+    Position.x[player] = 6
+    Position.y[player] = 1
+    Position.z[player] = 4
+
+    const victim = spawnRuntimeNpc(world, 'farmer', 4, 4) // neutral, brain-less, 2 units away
+
+    // The player lands a non-lethal strike: damage alone only records it
+    // (the brain-less → recorded contract is unit-tested in npc-system).
+    assert.equal(damageNpc(victim, 1, { byPlayer: true }), false)
+    assert.equal(victim.provoked, true)
+
+    // One behaviour tick consumes the provocation and turns it hostile.
+    const sys = createNpcBehaviourSystem(chunks)
+    sys.update!(world, 1 / 60)
+    assert.equal(victim.provoked, false, 'the flag is consumed once')
+    assert.equal(victim.ai?.hostileToPlayer, true, 'the struck NPC is now hostile to the player')
+    assert.ok(world.scriptTriggerEvents.some((e) => e.kind === 'npc-spotted-enemy'),
+        'the retaliating NPC acquires its attacker as a target')
 })
 
 test('hammer NPC attacks use a timed circular impact', () => {
@@ -355,6 +381,18 @@ test('a hostile arrow damages the player, but a raised frontal shield blocks it'
         sys.update!(world, 1 / 60)
         assert.equal(Health.current[player], 6, 'a raised frontal shield blocks the arrow')
     }
+
+    // Metal helmet: low roll blocks incoming hostile arrow damage.
+    {
+        const chunks = flatWorld(16)
+        const world = createGameWorld()
+        const player = setupPlayer(world)
+        world.playerSettings.equipment.head = METAL_HELMET_ITEM_ID
+        spawnArrowProjectile(world, { x: 8.6, y: 2, z: 8 }, { x: -30, y: 0, z: 0 }, { hostile: true })
+        const sys = createArrowHitSystem(chunks, { helmetBlockRoll: () => 0.1 })
+        sys.update!(world, 1 / 60)
+        assert.equal(Health.current[player], 6, 'metal helmet low roll blocks hostile arrow damage')
+    }
 })
 
 test('a guarding NPC shield deflects a player arrow from the front', () => {
@@ -385,6 +423,18 @@ test('a guarding NPC shield deflects a player arrow from the front', () => {
         const sys = createArrowHitSystem(chunks)
         sys.update!(world, 1 / 60)
         assert.ok(npc.hp < 2, 'an unguarded NPC takes the player arrow')
+    }
+
+    // Guard raised but cooling down: it should be open to arrows.
+    {
+        const chunks = flatWorld(20)
+        const world = createGameWorld()
+        const npc = setupGuard(world)
+        npc.shieldGuard = { raised: true, arcCos: Math.cos((65 * Math.PI) / 180), minY: -0.2, maxY: 1.75, cooldownSeconds: 0.5 }
+        spawnArrowProjectile(world, { x: 8.6, y: 1.5, z: 8 }, { x: -30, y: 0, z: 0 })
+        const sys = createArrowHitSystem(chunks)
+        sys.update!(world, 1 / 60)
+        assert.ok(npc.hp < 2, 'cooling-down NPC shield should not deflect the arrow')
     }
 })
 

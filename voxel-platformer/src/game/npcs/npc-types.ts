@@ -2,7 +2,6 @@ import type { ScriptEntry } from '../../engine/script/types'
 import type { Zone } from '../../engine/ecs/zones'
 import type { AABB } from '../../engine/voxel/voxel-collide'
 import type { NpcImpactState } from '../../engine/ecs/melee-types'
-import { ensureAi } from './npc-ai'
 import {
     copyHandLoadout,
     handLoadoutKey,
@@ -72,6 +71,7 @@ export interface NpcShieldGuardState {
     arcCos: number
     minY: number
     maxY: number
+    cooldownSeconds?: number
 }
 
 export interface NpcConfig {
@@ -168,6 +168,11 @@ export interface NpcRuntimeState {
     /** One-shot: a non-lethal hit landed this frame. Consumed by npc-render
      *  to fire the hurt sound; lethal hits set `requestDie` instead. */
     requestHurt?: boolean
+    /** One-shot: the player landed a (surviving) hit this frame. The behaviour
+     *  system consumes it to turn the NPC hostile (`provokeFromPlayerAttack`)
+     *  and clears it. Set by `damageNpc`; `unprovokable` NPCs are filtered on
+     *  consume, not here. */
+    provoked?: boolean
     dying: boolean
     /** Attack style inferred from the authored NPC loadout at registration. */
     attackClip?: NpcAttackClip
@@ -232,17 +237,14 @@ export interface NpcDamageOptions {
  * for melee, arrows, spells, and falling stones. Returns true if this hit was
  * lethal.
  *
- * Retaliation: a player-dealt hit (`opts.byPlayer`) provokes the NPC into
- * combat — it gains a brain (if it had none) and treats the player as an enemy
- * — unless it is `unprovokable` (essential characters) or prey (which keeps
- * fleeing). Invulnerable NPCs early-out before this, so they never retaliate.
+ * Retaliation: a surviving player-dealt hit (`opts.byPlayer`) only *records*
+ * the provocation (`npc.provoked`). Turning the NPC hostile is the behaviour
+ * system's job (`provokeFromPlayerAttack`) — this keeps the damage helper a
+ * pure data mutation with no AI/brain dependency, and never allocates a brain
+ * for an NPC that the same hit kills.
  */
 export function damageNpc(npc: NpcRuntimeState, amount: number, opts: NpcDamageOptions = {}): boolean {
     if (npc.invulnerable || npc.dying || !(amount > 0)) return false
-    if (opts.byPlayer && !npc.unprovokable) {
-        const ai = ensureAi(npc)
-        if (!ai.flee) ai.hostileToPlayer = true
-    }
     npc.hp -= amount
     if (npc.hp <= 0) {
         npc.requestDie = true
@@ -250,6 +252,7 @@ export function damageNpc(npc: NpcRuntimeState, amount: number, opts: NpcDamageO
         return true
     }
     npc.requestHurt = true
+    if (opts.byPlayer) npc.provoked = true
     return false
 }
 

@@ -20,6 +20,7 @@ import { damageNpc, type NpcRuntimeState } from '../../../game/npcs/npc-types'
 import type { GameWorld } from '../world'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+import { metalHelmetBlocksIncomingAttack } from '../../../game/equipment-effects'
 
 /** Damage a single enemy arrow deals to the player on a clean (unblocked) hit. */
 const ARROW_PLAYER_DAMAGE = HALF_HEART
@@ -58,6 +59,8 @@ export interface ArrowHitOptions {
     /** Fires when a magic bolt hits a wall or NPC (just before it despawns),
      *  with the bolt eid and the world-space impact point. */
     onBoltHit?: (eid: number, position: { x: number; y: number; z: number }) => void
+    /** Test hook for chance-based equipment effects. Defaults to Math.random. */
+    helmetBlockRoll?: () => number
 }
 
 export function createArrowHitSystem(
@@ -113,8 +116,11 @@ export function createArrowHitSystem(
                         if (arrowBlockedByShield(gw, playerHit.eid, dirX, dirZ, hitY)) {
                             opts.onArrowBlocked?.(arrow, hitPos)
                         } else {
-                            applyDamage(gw, playerHit.eid, ARROW_PLAYER_DAMAGE)
-                            opts.onArrowHitPlayer?.(arrow, hitPos)
+                            const helmetBlocked = metalHelmetBlocksIncomingAttack(gw.playerSettings, opts.helmetBlockRoll)
+                            if (!helmetBlocked) {
+                                applyDamage(gw, playerHit.eid, ARROW_PLAYER_DAMAGE)
+                                opts.onArrowHitPlayer?.(arrow, hitPos)
+                            }
                         }
                         despawnEntity(gw, arrow)
                         continue
@@ -255,7 +261,7 @@ function arrowBlockedByShield(gw: GameWorld, playerEid: number, dirX: number, di
  *  melee guard (`npcShieldGuardBlockResult`). */
 function npcShieldDeflectsArrow(npc: NpcRuntimeState, dirX: number, dirZ: number, hitY: number): boolean {
     const guard = npc.shieldGuard
-    if (!guard?.raised) return false
+    if (!guard?.raised || (guard.cooldownSeconds ?? 0) > 0) return false
     const len = Math.hypot(dirX, dirZ)
     if (len < 1e-4) return false
     // The arrow approaches *from* -dir; that's the direction the shield must face.

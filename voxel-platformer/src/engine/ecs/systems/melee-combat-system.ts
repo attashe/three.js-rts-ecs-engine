@@ -19,9 +19,13 @@ import type { System } from './system'
 import { FixedOrder } from './orders'
 import { damageNpc, type NpcRuntimeState } from '../../../game/npcs/npc-types'
 import { NPC_TARGET_PLAYER } from '../../../game/npcs/npc-ai'
+import { metalHelmetBlocksIncomingAttack } from '../../../game/equipment-effects'
 
 const COMMITTED_MOVEMENT_DAMPING = 32
 const MIN_DEBUG_TTL = 0.06
+const NPC_SHIELD_DEBUG_TTL = 0.09
+const NPC_SHIELD_DEBUG_RANGE_EXTRA = 1.2
+const NPC_SHIELD_PERFECT_BLOCK_COOLDOWN_SECONDS = 1.1
 const ORDINARY_BLOCK_DEFENDER_PUSH_SPEED = 1.4
 const ORDINARY_BLOCK_DEFENDER_PUSH_SECONDS = 0.10
 const ORDINARY_BLOCK_STUN_SECONDS = 0.18
@@ -91,6 +95,8 @@ export interface MeleeCombatSystemOptions {
     onBlock?: (event: MeleeBlockAudioEvent) => void
     /** A hit/block response applied stun or stagger. */
     onStun?: (event: MeleeStunAudioEvent) => void
+    /** Test hook for chance-based equipment effects. Defaults to Math.random. */
+    helmetBlockRoll?: () => number
 }
 
 export function createMeleeCombatSystem(opts: MeleeCombatSystemOptions = {}): System {
@@ -103,7 +109,10 @@ export function createMeleeCombatSystem(opts: MeleeCombatSystemOptions = {}): Sy
         update(world, dt) {
             const gw = world as GameWorld
             updatePlayerStunRuntime(gw, dt)
-            for (const npc of gw.npcRuntimeById.values()) updateNpcImpactRuntime(gw, npc, dt)
+            for (const npc of gw.npcRuntimeById.values()) {
+                updateNpcImpactRuntime(gw, npc, dt)
+                pushNpcShieldGuardDebugHitbox(gw, npc)
+            }
 
             for (const [key, attack] of Array.from(gw.meleeAttacks.entries())) {
                 const pose = currentActorPose(gw, attack.attacker)
@@ -237,9 +246,11 @@ function applyMeleeHit(gw: GameWorld, attack: ActiveMeleeAttack, target: MeleeTa
             })
             return
         }
-        applyDamage(gw, eid, attack.def.damage)
+        const helmetBlocked = metalHelmetBlocksIncomingAttack(gw.playerSettings, opts.helmetBlockRoll)
+        if (!helmetBlocked) applyDamage(gw, eid, attack.def.damage)
         applyTargetPush(gw, { kind: 'player', eid }, attack, target)
         applyTargetStun(gw, { kind: 'player', eid }, attack, target, opts, 'attack')
+        if (helmetBlocked) return
     } else {
         const npc = target.npc!
         const block = npcShieldGuardBlockResult(npc, attack)
@@ -338,6 +349,7 @@ function applyShieldBlockResponse(
                 reason: 'perfect-block',
             })
         }
+        triggerNpcShieldCooldown(gw, attack.attacker)
         Shield.perfect[eid] = 0
         return
     }
@@ -567,7 +579,7 @@ function shieldBlockResult(gw: GameWorld, playerEid: number, attack: ActiveMelee
 
 function npcShieldGuardBlockResult(npc: NpcRuntimeState, attack: ActiveMeleeAttack): ShieldBlockResult | null {
     const guard = npc.shieldGuard
-    if (!guard?.raised) return null
+    if (!guard?.raised || (guard.cooldownSeconds ?? 0) > 0) return null
     const source = hitSourcePoint(attack)
     if (!source) return null
     const ax = source.x - npc.position.x
@@ -580,6 +592,14 @@ function npcShieldGuardBlockResult(npc: NpcRuntimeState, attack: ActiveMeleeAtta
     const dy = source.y - npc.position.y
     if (dy < guard.minY || dy > guard.maxY) return null
     return { kind: 'ordinary' }
+}
+
+function triggerNpcShieldCooldown(gw: GameWorld, actor: MeleeActorRef): void {
+    if (actor.kind !== 'npc') return
+    const guard = gw.npcRuntimeById.get(actor.id)?.shieldGuard
+    if (!guard) return
+    guard.raised = false
+    guard.cooldownSeconds = Math.max(guard.cooldownSeconds ?? 0, NPC_SHIELD_PERFECT_BLOCK_COOLDOWN_SECONDS)
 }
 
 function directionFromHitSource(attack: ActiveMeleeAttack, target: MeleeTarget): { x: number; z: number } {
@@ -639,6 +659,25 @@ function pushActiveDebugHitbox(gw: GameWorld, attack: ActiveMeleeAttack): void {
         arcRadians: shape.arcRadians,
         minY: shape.minY,
         maxY: shape.maxY,
+    })
+}
+
+function pushNpcShieldGuardDebugHitbox(gw: GameWorld, npc: NpcRuntimeState): void {
+    const guard = npc.shieldGuard
+    if (!guard || npc.dying) return
+    const coolingDown = (guard.cooldownSeconds ?? 0) > 0
+    if (!guard.raised && !coolingDown) return
+    pushDebugHitbox(gw, {
+        id: `npc:${npc.id}:shield`,
+        kind: 'wedge',
+        ttl: NPC_SHIELD_DEBUG_TTL,
+        color: coolingDown ? [0.6, 0.62, 0.68] : [0.25, 0.95, 0.9],
+        origin: { x: npc.position.x, y: npc.position.y, z: npc.position.z },
+        yaw: npc.yaw,
+        range: npc.colliderRadius + NPC_SHIELD_DEBUG_RANGE_EXTRA,
+        arcRadians: Math.acos(guard.arcCos) * 2,
+        minY: guard.minY,
+        maxY: guard.maxY,
     })
 }
 

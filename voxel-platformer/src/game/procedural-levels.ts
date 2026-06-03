@@ -891,7 +891,7 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
                 {
                     id: 'metal-helmet',
                     name: 'Metal Helmet',
-                    description: 'A practical iron helmet for the hat slot.',
+                    description: 'A practical iron helmet with a 30% chance to block attack damage.',
                     resource: 'metal-helmet',
                     unitSize: 1,
                     buyPrice: 14,
@@ -1038,7 +1038,9 @@ function dwarfMerchant(
         interactionEnabled: true,
         interactionRadius: 2.6,
         interactionPrompt,
+        // Shopkeepers can't be harmed and never turn hostile if mishit.
         invulnerable: true,
+        unprovokable: true,
         equipment,
         voice: { preset: 'dwarf', seed: voiceSeed, volume: 0.55, rate: 0.95 },
         scriptEnabled: true,

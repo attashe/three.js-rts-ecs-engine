@@ -16,6 +16,7 @@ import {
     defaultNpcBeard,
     defaultNpcEquipment,
     defaultNpcVariant,
+    damageNpc,
     normalizeNpcConfig,
     npcAttackClip,
     npcDefaultHp,
@@ -25,6 +26,7 @@ import {
     type NpcConfig,
     type TrollOutfitKind,
 } from '../src/game/npcs/npc-types'
+import { provokeFromPlayerAttack, setNpcFlee } from '../src/game/npcs/npc-ai'
 
 function npc(id: string): NpcConfig {
     return normalizeNpcConfig({
@@ -271,6 +273,64 @@ test('registerRuntimeNpcs enables shield guard state for spear and shield enemie
     assert.equal(npc?.attackClip, 'spearAttack')
     assert.equal(npc?.shieldGuard?.raised, false)
     assert.ok((npc?.shieldGuard?.arcCos ?? 1) < 0.5, 'front guard should cover a broad forward arc')
+
+    runtime.dispose()
+})
+
+test('damageNpc records a player provocation only on a surviving hit', () => {
+    const world = createGameWorld()
+    const runtime = registerRuntimeNpcs(world, [
+        normalizeNpcConfig({ id: 'grunt', model: 'keeper', position: { x: 0, y: 0, z: 0 } }),
+        normalizeNpcConfig({ id: 'arlen', model: 'keeper-arlen', position: { x: 0, y: 0, z: 0 }, unprovokable: true }),
+    ])
+    const grunt = world.npcRuntimeById.get('grunt')!
+    const arlen = world.npcRuntimeById.get('arlen')!
+    assert.equal(grunt.unprovokable, false, 'a normal NPC is provokable')
+    assert.equal(arlen.unprovokable, true, 'the config flag mirrors to runtime')
+
+    // damageNpc only *records* the hit — it never touches the brain (that's the
+    // behaviour system's job), so no `ai` is allocated here.
+    damageNpc(grunt, 1, { byPlayer: true })
+    assert.equal(grunt.provoked, true, 'a surviving player hit is recorded')
+    assert.equal(grunt.ai, null, 'damageNpc never allocates a brain')
+
+    // A lethal player hit kills outright and never flags a corpse for combat.
+    grunt.provoked = false
+    damageNpc(grunt, grunt.hp, { byPlayer: true })
+    assert.equal(grunt.dying, true)
+    assert.equal(grunt.provoked, false, 'a killing blow does not provoke a corpse')
+
+    // Non-player damage never provokes.
+    damageNpc(arlen, 1)
+    assert.equal(arlen.provoked, undefined, 'environmental/NPC damage does not provoke')
+
+    runtime.dispose()
+})
+
+test('provokeFromPlayerAttack turns the struck NPC hostile, sparing prey and the unprovokable', () => {
+    const world = createGameWorld()
+    const runtime = registerRuntimeNpcs(world, [
+        normalizeNpcConfig({ id: 'grunt', model: 'keeper', position: { x: 0, y: 0, z: 0 } }),
+        normalizeNpcConfig({ id: 'arlen', model: 'keeper-arlen', position: { x: 0, y: 0, z: 0 }, unprovokable: true }),
+        normalizeNpcConfig({ id: 'bunny', model: 'rabbit', position: { x: 0, y: 0, z: 0 } }),
+    ])
+    const grunt = world.npcRuntimeById.get('grunt')!
+    const arlen = world.npcRuntimeById.get('arlen')!
+    const bunny = world.npcRuntimeById.get('bunny')!
+
+    // A normal NPC gains a brain on the spot and treats the player as an enemy.
+    provokeFromPlayerAttack(grunt)
+    assert.equal(grunt.ai?.hostileToPlayer, true, 'a struck NPC fights back')
+
+    // The unprovokable NPC stays brain-less and neutral.
+    provokeFromPlayerAttack(arlen)
+    assert.equal(arlen.ai, null, 'an unprovokable NPC is never provoked')
+
+    // Prey keeps fleeing rather than turning to fight.
+    setNpcFlee(world, 'bunny', true)
+    provokeFromPlayerAttack(bunny)
+    assert.equal(bunny.ai?.hostileToPlayer, false, 'a struck rabbit flees, it does not engage')
+    assert.equal(bunny.ai?.flee, true)
 
     runtime.dispose()
 })

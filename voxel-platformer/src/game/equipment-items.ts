@@ -47,7 +47,7 @@ export const BUYABLE_EQUIPMENT_ITEM_OPTIONS: Record<BuyableEquipmentItemId, Inve
     },
     [METAL_HELMET_ITEM_ID]: {
         name: EQUIPMENT_LABELS[METAL_HELMET_ITEM_ID],
-        description: 'A practical iron helmet for the hat slot.',
+        description: 'A practical iron helmet with a 30% chance to block attack damage.',
         category: 'accessories',
         icon: 'metal-helmet',
     },

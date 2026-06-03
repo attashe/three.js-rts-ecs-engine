@@ -413,8 +413,10 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             gridAligned: false,
             collisionEnabled: false,
             interactionEnabled: false,
-            // Essential quest-giver — cannot be harmed.
+            // Essential quest-giver — cannot be harmed, and a stray swing never
+            // provokes him into fighting the player.
             invulnerable: true,
+            unprovokable: true,
             scriptEnabled: false,
         }),
     ]
