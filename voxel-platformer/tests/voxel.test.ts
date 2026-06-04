@@ -47,6 +47,48 @@ test('bulk edits summarize changed voxels and dirty chunk keys', () => {
     assert.deepEqual(dirty, ['0,0,0', '1,0,0'])
 })
 
+test('chunk contentHash tracks real voxel edits and ignores no-op writes', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const chunk = chunks.getOrCreate(0, 0, 0)
+
+    assert.equal(chunk.contentHash, 0)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    const stoneHash = chunk.contentHash
+    assert.notEqual(stoneHash, 0)
+
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    assert.equal(chunk.contentHash, stoneHash, 'no-op writes should not change the digest')
+
+    chunks.setVoxel(0, 0, 0, BLOCK.grass)
+    const grassHash = chunk.contentHash
+    assert.notEqual(grassHash, stoneHash)
+
+    chunks.setVoxel(0, 0, 0, BLOCK.air)
+    assert.equal(chunk.contentHash, 0, 'clearing the only solid voxel returns to the empty digest')
+})
+
+test('chunk contentHash is recomputed by replaceData and survives level round-trip', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    chunks.setVoxel(2, 3, 4, BLOCK.grass)
+    const original = chunks.getChunk(0, 0, 0)!
+    const originalHash = original.contentHash
+
+    const replacement = new Uint16Array(CHUNK_DIM * CHUNK_DIM * CHUNK_DIM)
+    replacement[1] = BLOCK.wood
+    replacement[CHUNK_DIM + 5] = BLOCK.leaf
+    original.replaceData(replacement)
+    const replacedHash = original.contentHash
+
+    assert.notEqual(replacedHash, originalHash)
+    assert.equal(original.nonAirCount, 2)
+
+    const restored = deserializeLevel(serializeLevel(chunks, { name: 'hash test' }))
+    const restoredChunk = restored.chunks.getChunk(0, 0, 0)!
+    assert.equal(restoredChunk.contentHash, replacedHash)
+    assert.equal(restoredChunk.nonAirCount, 2)
+})
+
 test('ChunkManager owns a mutable palette copy and can replace it', () => {
     const initial = clonePalette(DEFAULT_PALETTE)
     initial.entries[BLOCK.grass]!.name = 'editor grass'

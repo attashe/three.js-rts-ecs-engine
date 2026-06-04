@@ -199,6 +199,84 @@ test('underground compiler reports unsupported types explicitly', () => {
     assert.ok(badConnector.report.errors.some((error) => error.code === 'unsupported_feature' && error.path === '$.connectors[0].type'))
 })
 
+// ── Per-carver isolation tests ─────────────────────────────────────────────
+// Each carver compiled alone in a solid block, asserting the carve actually
+// happened (air where it should be, solid where it should not, floors stamped
+// one cell below `floor_y` per stampFloorCell). These exercise the split
+// underground modules directly and act as behaviour-preserving guards against
+// future refactors of carvers/stamping. Default material is dark_limestone so a
+// stamped `stone`/`rail` floor is distinguishable from un-carved rock.
+
+test('vertical_shaft carves a hollow column through solid rock', () => {
+    const r = compileWorldSpec({
+        version: 1,
+        world: { id: 'shaft_only', name: 'Shaft', type: 'underground', seed: 'shaft', size: [32, 40, 32] },
+        volume: { initial: 'solid', default_material: 'dark_limestone' },
+        carvers: [{ id: 'shaft', type: 'vertical_shaft', center_xz: [16, 16], y_range: [10, 30], radius: 3, roughness: 0 }],
+    })
+    assert.notEqual(r.report.status, 'failed', diagnosticSummary(r.report.errors, r.report.warnings))
+    assert.equal(r.chunks.getVoxel(16, 12, 16), BLOCK.air, 'shaft centre carved near the bottom')
+    assert.equal(r.chunks.getVoxel(16, 28, 16), BLOCK.air, 'shaft centre carved near the top')
+    assert.notEqual(r.chunks.getVoxel(3, 20, 3), BLOCK.air, 'rock outside the shaft stays solid')
+    assert.ok(r.report.placements.some((p) => p.id === 'shaft' && p.kind === 'carver'))
+})
+
+test('chamber_ellipsoid carves a hollow cavern over a stamped floor', () => {
+    const r = compileWorldSpec({
+        version: 1,
+        world: { id: 'cave_only', name: 'Cave', type: 'underground', seed: 'cave', size: [40, 40, 40] },
+        volume: { initial: 'solid', default_material: 'dark_limestone' },
+        carvers: [{ id: 'cave', type: 'chamber_ellipsoid', center: [20, 22, 20], radius: [8, 5, 8], floor_y: 18, roughness: 0, floor_flatten: { radius_x: 5, radius_z: 5 } }],
+    })
+    assert.notEqual(r.report.status, 'failed', diagnosticSummary(r.report.errors, r.report.warnings))
+    assert.equal(r.chunks.getVoxel(20, 22, 20), BLOCK.air, 'cavern interior carved at the centre')
+    assert.equal(r.chunks.getVoxel(20, 17, 20), BLOCK.stone, 'floor stamped one cell below floor_y')
+    assert.notEqual(r.chunks.getVoxel(2, 22, 2), BLOCK.air, 'rock outside the cavern stays solid')
+})
+
+test('rect_room carves an interior above a stamped floor', () => {
+    const r = compileWorldSpec({
+        version: 1,
+        world: { id: 'room_only', name: 'Room', type: 'underground', seed: 'room', size: [32, 40, 32] },
+        volume: { initial: 'solid', default_material: 'dark_limestone' },
+        carvers: [{ id: 'hall', type: 'rect_room', center: [16, 16, 16], size: [10, 6, 8], floor_material: 'stone', support_pillars: false, lanterns: false }],
+    })
+    assert.notEqual(r.report.status, 'failed', diagnosticSummary(r.report.errors, r.report.warnings))
+    assert.equal(r.chunks.getVoxel(16, 15, 16), BLOCK.stone, 'room floor stamped one cell below floor_y')
+    assert.equal(r.chunks.getVoxel(16, 17, 16), BLOCK.air, 'room interior carved above the floor')
+    assert.notEqual(r.chunks.getVoxel(2, 17, 2), BLOCK.air, 'rock outside the room stays solid')
+})
+
+test('mine_tunnel_network carves rail-laid corridors', () => {
+    const r = compileWorldSpec({
+        version: 1,
+        world: { id: 'mine_only', name: 'Mine', type: 'underground', seed: 'mine', size: [40, 40, 40] },
+        volume: { initial: 'solid', default_material: 'dark_limestone' },
+        carvers: [{ id: 'mine', type: 'mine_tunnel_network', half_width: 2, height: 4, rails: true, floor_material: 'stone', supports_every: 0, lantern_every: 0, corridors: [[[8, 16, 20], [32, 16, 20]]] }],
+    })
+    assert.notEqual(r.report.status, 'failed', diagnosticSummary(r.report.errors, r.report.warnings))
+    assert.equal(r.chunks.getVoxel(20, 17, 20), BLOCK.air, 'corridor headroom carved above the walkway')
+    assert.equal(r.chunks.getVoxel(20, 15, 20), BLOCK.stone, 'corridor floor stamped below the walkway')
+    let railFound = false
+    for (let x = 8; x <= 32 && !railFound; x += 1) {
+        if (r.chunks.getVoxel(x, 16, 20) === BLOCK.rail) railFound = true
+    }
+    assert.ok(railFound, 'rails laid along the corridor floor')
+    assert.ok(r.report.placements.some((p) => p.id === 'mine' && p.kind === 'carver'))
+})
+
+test('noise_tube connector carves a void linking two points', () => {
+    const r = compileWorldSpec({
+        version: 1,
+        world: { id: 'tube_only', name: 'Tube', type: 'underground', seed: 'tube', size: [40, 40, 40] },
+        volume: { initial: 'solid', default_material: 'dark_limestone' },
+        connectors: [{ id: 'tube', type: 'noise_tube', from: [8, 18, 20], to: [32, 18, 20], radius: [3, 3] }],
+    })
+    assert.notEqual(r.report.status, 'failed', diagnosticSummary(r.report.errors, r.report.warnings))
+    assert.equal(r.chunks.getVoxel(20, 19, 20), BLOCK.air, 'tube carves a connecting void at its midpoint')
+    assert.ok(r.report.placements.some((p) => p.id === 'tube' && p.kind === 'connector'))
+})
+
 function diagnosticSummary(
     errors: readonly { code: string; message: string }[],
     warnings: readonly { code: string; message: string }[] = [],

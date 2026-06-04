@@ -76,14 +76,15 @@ Both compilers rejected rectangular X/Z worlds (`compile-surface.ts`,
 `compile-underground.ts`: *"requires square X/Z worlds because LevelMeta.size is
 scalar"*). Region streaming (Phase 9) presumes rectangular footprints. Inherited
 from the engine (`LevelMeta.size: number`), so worldgen designed around it but
-could not lift it alone. *Status: being addressed via a back-compat optional
-`sizeX/sizeZ`.*
+could not lift it alone. *Status: fixed via back-compat optional `sizeX/sizeZ`.*
 
 **H2. `hashWorldOutput` is O(all allocated voxels), including air.**
-`compile-result.ts` mixes every `chunk.data[i]` per compile. Underground does a
-full solid fill then carves, so large worlds hash millions of voxels each run.
-Tolerable at author time, unbounded in the dimension the project is chasing.
-Fix later: per-chunk content digests / non-air runs. *Status: deferred.*
+`compile-result.ts` used to mix every `chunk.data[i]` per compile. Underground
+does a full solid fill then carves, so large worlds hashed millions of voxels
+each run. *Status: fixed in Phase 10.* Chunks now maintain a `contentHash`, and
+worldgen finalization hashes sorted chunk coords, `nonAirCount`, and
+`contentHash`. This intentionally changes `report.worldHash` values once without
+changing generated chunks or metadata.
 
 ### MEDIUM — cohesion / maintainability
 
@@ -91,12 +92,15 @@ Fix later: per-chunk content digests / non-air runs. *Status: deferred.*
 pipelines (carvers, connectors, paths, structures, scatter, surface
 classification, spline math, parsing) stacked in one file, while the surface side
 is split. Cohesion-justified (shared in-memory `UndergroundState`) but the
-least-tested-per-line file. *Status: split deferred (documented as future work).*
+least-tested-per-line file. *Status: fixed in Phase 10.* The file now
+orchestrates modules for volume, carvers/connectors/paths, surfaces, structures,
+scatter, stamping, shared types, math, and parse helpers.
 
 **M4. Duplicated `isRecord` (4 copies).** The noise/spline/bounds "duplication" is
 mostly domain-specific (surface 2D road math vs underground 3D spline math), not
-truly shared. *Status: `isRecord` deduped into `worldgen-util.ts`; the broader
-math/parse extraction rides with the deferred underground split.*
+truly shared. *Status: fixed enough for Phase 10.* `isRecord` lives in
+`worldgen-util.ts`, and underground 3D math/parse helpers now live in
+`worldgen-math.ts` and `worldgen-parse.ts`.
 
 **M5. Generated-script templating is safe-by-convention.** `scriptLiteral`
 (JSON.stringify) is used correctly today, but safety is a convention; any future
@@ -115,7 +119,9 @@ the 8-category order is load-bearing. Diagnostics explain it. A two-pass model
   H1's runtime scalability. *Deferred.*
 - **L8. `index.ts` over-exports internals** (`compileSurfaceWorld`/
   `compileUndergroundWorld`/`resolveContent` consume `NormalizedWorldSpec` but are
-  public) — invites bypassing normalization. *Deferred.*
+  public) — invites bypassing normalization. *Status: fixed in Phase 10.*
+  Public imports use `index.ts`; white-box tests and compiler internals use
+  `internal.ts` or direct modules.
 - **L9. `WorldgenLevelDraft` mirrors `LevelMeta` by hand** — every new field must
   be added in two places. *Status: a compile-time drift guard now fails the build
   if the draft stops covering `LevelSpec`.*
@@ -126,10 +132,10 @@ Right direction, one sequencing caveat: the project was accumulating content
 breadth (Phase 7) and export polish (Phase 8) on a base that could not yet express
 a non-square or large world (H1 + H2 + no `$ref`). Recommended ordering from here:
 
-1. Rectangular `LevelMeta.size` (lifts H1; unblocks Phase 9 region footprints). — *in progress*
-2. Bound the world hash (H2) before worlds grow.
+1. Rectangular `LevelMeta.size` (lifts H1; unblocks Phase 9 region footprints). — *done*
+2. Bound the world hash (H2) before worlds grow. — *done in Phase 10*
 3. Split `compile-underground.ts` + hoist shared `worldgen-math/parse` (M3/M4) and
-   add carver/path determinism tests.
+   add carver/path determinism tests. — *done in Phase 10*
 4. Harden script codegen (M5): single `scriptIdent`, single emit helper,
    adversarial round-trip test. — *partially done*
 5. Then resume content breadth / `$ref` composition.

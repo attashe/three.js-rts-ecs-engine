@@ -4,6 +4,7 @@ import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { aabbFromFoot, voxelAABBOverlap, type AABB } from '../src/engine/voxel/voxel-collide'
 import { BLOCK, DEFAULT_PALETTE, voxelLightSpec } from '../src/engine/voxel/palette'
 import { MAIN_CHARACTER_COLLIDER_HALF_HEIGHT, MAIN_CHARACTER_COLLIDER_RADIUS } from '../src/game/assets/main-character'
+import { HELD_TORCH_ITEM_ID } from '../src/game/inventory'
 import { generatePlatformerLevel } from '../src/game/level'
 import {
     COMBAT_ARENA_LEVEL_ID,
@@ -34,7 +35,9 @@ test('generatePlatformerLevel exposes a stable level name for the script engine'
     assert.equal(meta.name, DEMO_LEVEL_ID)
     assert.equal(meta.size, 24)
     assert.equal(meta.player.abilities.highJump, false)
+    assert.equal(meta.player.abilities.torch, true)
     assert.equal(meta.player.inventory.items['heal-potion']?.quantity, 2)
+    assert.equal(meta.player.inventory.items[HELD_TORCH_ITEM_ID]?.quantity, 1)
 })
 
 test('demo level has a portal and safe return arrival for travel tests', () => {

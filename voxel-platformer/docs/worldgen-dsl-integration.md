@@ -814,34 +814,36 @@ Landed since the review:
 Scheduled future work (intentionally deferred — do not block production on
 these):
 
-- **Split `compile-underground.ts` (review M3).** The ~1.1k-line file is the
-  cohesion/coverage outlier. Split into `underground-{types,stamping,carvers,
-  connectors,paths,surfaces,structures,scatter}.ts` and hoist the genuinely
-  shared geometry into `worldgen-math.ts`/`worldgen-parse.ts`. Add carver/path
-  determinism tests. Pure mechanical move — schedule before the file grows.
-- **Bounded world hash (review H2).** `hashWorldOutput` is O(all allocated
-  voxels incl. air); replace with per-chunk content digests before worlds get
-  large. The `resident_world_budget` warning already flags the symptom.
 - **Composition (review L7).** Implement `defs`/`$ref` so large specs are
   reusable blocks instead of flat lists — the authoring-scalability counterpart
   to rectangular/region footprints.
-- **Tighten the public surface (review L8).** `index.ts` re-exports internal
-  compilers that consume `NormalizedWorldSpec`; keep `compileWorldSpec` /
-  `compileSurfaceLevelOrThrow` as the contract and stop inviting un-normalized
-  callers.
 - **Two-pass content resolution (review M6).** Lift the fixed
   props→…→scripts ordering by declaring all ids first, then resolving, so
   cross-category references stop being order-dependent.
+
+Resolved in Phase 10:
+
+- **Bounded world hash (review H2).** Chunks now maintain a `contentHash` as
+  voxel data changes, and worldgen finalization mixes sorted chunk coordinates,
+  `nonAirCount`, and `contentHash` instead of scanning every allocated voxel.
+  This intentionally changes `report.worldHash` values once while preserving
+  generated chunks and metadata.
+- **Split `compile-underground.ts` (review M3).** The underground compiler is now
+  an orchestration entrypoint backed by `underground-volume`,
+  `underground-carvers`, `underground-surfaces`, `underground-structures`,
+  `underground-scatter`, `underground-stamping`, `underground-types`,
+  `worldgen-math`, and `worldgen-parse`.
+- **Tighten public surface (review L8).** `index.ts` keeps the authoring-facing
+  APIs; white-box compiler entrypoints moved to `internal.ts`.
 
 Recommended sequence from here (the linear Phase 1→9 build is effectively
 complete; this is the forward plan the review and the rectangular-worlds work
 imply):
 
-- **Phase 10 — Stabilize before scale (behaviour-preserving).** Bounded world
-  hash (H2), split `compile-underground.ts` + shared `worldgen-math`/
-  `worldgen-parse` with carver/path determinism tests (M3), tighten the
-  `index.ts` public surface (L8). Do this while the files are still small and
-  before worlds grow; none of it changes output.
+- **Phase 10 — Stabilize before scale (behaviour-preserving).** Implemented:
+  bounded world hashing, underground compiler split, and public surface
+  tightening. Generated `.vplevel` bytes remain stable; `report.worldHash`
+  intentionally changed because the digest algorithm changed.
 - **Phase 11 — Authoring scale.** `defs`/`$ref` composition (L7) and two-pass
   content resolution (M6) so large and now non-square specs are expressed as
   reusable blocks with order-independent references instead of flat lists.

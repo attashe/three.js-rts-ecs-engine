@@ -15,6 +15,7 @@ import {
     DEFAULT_PLAYER_SETTINGS,
     type PlayerSettings,
 } from './player-settings'
+import { HELD_TORCH_ITEM_ID, HELD_TORCH_ITEM_OPTIONS } from './inventory'
 import type { ScriptEntry } from '../engine/script/types'
 import type { Cinematic } from './cinematics/cinematic-types'
 import {
@@ -101,6 +102,22 @@ export function levelMetaWithSpawn(meta: LevelMeta, spawn: { x: number; y: numbe
 export function playerSettingsWithHighJumpDisabled(): PlayerSettings {
     return applyPlayerSettingsPatch(copyPlayerSettings(DEFAULT_PLAYER_SETTINGS), {
         abilities: { highJump: false },
+    })
+}
+
+export function demoPlayerSettings(): PlayerSettings {
+    const settings = playerSettingsWithHighJumpDisabled()
+    return applyPlayerSettingsPatch(settings, {
+        abilities: { torch: true },
+        inventory: {
+            items: {
+                ...settings.inventory.items,
+                [HELD_TORCH_ITEM_ID]: {
+                    quantity: 1,
+                    ...HELD_TORCH_ITEM_OPTIONS,
+                },
+            },
+        },
     })
 }
 
@@ -509,7 +526,7 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
         name: 'demo',
         size,
         spawn: t.stand(size / 2, size / 2),
-        player: playerSettingsWithHighJumpDisabled(),
+        player: demoPlayerSettings(),
         stoneSpawners,
         coinPiles,
         pistons,

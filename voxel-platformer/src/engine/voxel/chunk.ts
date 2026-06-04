@@ -4,6 +4,8 @@ import { AIR } from './palette'
 export const CHUNK_DIM = 32
 const STRIDE_Y = CHUNK_DIM
 const STRIDE_Z = CHUNK_DIM * CHUNK_DIM
+const HASH_OFFSET = 2166136261
+const HASH_PRIME = 16777619
 
 /** Voxel-coord chunk key, used by ChunkManager's Map. */
 export type ChunkKey = string
@@ -38,6 +40,12 @@ export class Chunk {
     /** Convenience: count of non-air voxels. Maintained by setVoxel. */
     nonAirCount = 0
 
+    /**
+     * Order-independent digest of non-air voxel contents. This lets authoring
+     * reports hash chunk output without rescanning all 32³ cells.
+     */
+    contentHash = 0
+
     constructor(cx: number, cy: number, cz: number) {
         this.cx = cx
         this.cy = cy
@@ -57,6 +65,7 @@ export class Chunk {
         if (prev === value) return false
         if (prev === AIR && value !== AIR) this.nonAirCount++
         else if (prev !== AIR && value === AIR) this.nonAirCount--
+        this.contentHash = (this.contentHash ^ voxelContribution(idx, prev) ^ voxelContribution(idx, value)) >>> 0
         this.data[idx] = value
         this.version++
         return true
@@ -70,10 +79,16 @@ export class Chunk {
         }
         this.data.set(data)
         let count = 0
+        let contentHash = 0
         for (let i = 0; i < this.data.length; i++) {
-            if (this.data[i] !== AIR) count++
+            const value = this.data[i]!
+            if (value !== AIR) {
+                count++
+                contentHash = (contentHash ^ voxelContribution(i, value)) >>> 0
+            }
         }
         this.nonAirCount = count
+        this.contentHash = contentHash
         this.version++
     }
 
@@ -88,4 +103,27 @@ export class Chunk {
             }
         }
     }
+}
+
+// Cheap, NON-cryptographic per-voxel digest. `index` (< 32³) and `value`
+// (Uint16) each fit in 16 bits, so a single mix round over each captures all
+// the information — the high words are always 0, so mixing them is pointless.
+// XOR-accumulated across a chunk in `setVoxel`, this gives an order-independent
+// content hash for authoring report / determinism use only; collisions are
+// acceptable (it never feeds save data or gameplay).
+function voxelContribution(index: number, value: number): number {
+    if (value === AIR) return 0
+    let h = HASH_OFFSET
+    h = mixHash(h, index)
+    h = mixHash(h, value)
+    return h >>> 0
+}
+
+function mixHash(current: number, value: number): number {
+    let h = current >>> 0
+    h ^= value & 0xffff
+    h = Math.imul(h, HASH_PRIME) >>> 0
+    h ^= value >>> 16
+    h = Math.imul(h, HASH_PRIME) >>> 0
+    return h >>> 0
 }

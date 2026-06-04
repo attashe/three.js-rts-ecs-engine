@@ -74,7 +74,8 @@ function hashWorldOutput(chunks: ChunkManager, meta: unknown): string {
         h = mixHash(h, chunk.cx)
         h = mixHash(h, chunk.cy)
         h = mixHash(h, chunk.cz)
-        for (let i = 0; i < chunk.data.length; i += 1) h = mixHash(h, chunk.data[i]!)
+        h = mixHash(h, chunk.nonAirCount)
+        h = mixHash(h, chunk.contentHash)
     }
     return h.toString(16).padStart(8, '0')
 }

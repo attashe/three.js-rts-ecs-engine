@@ -179,9 +179,17 @@ export function createVisualFxZoneSystem(
                 })
             }
             if (opts.warmupShaders) {
-                void fx.warmShaders(opts.warmupShaders, cameraProvider()).catch((err) => {
-                    console.warn('Visual FX zones shader warmup failed:', err)
-                })
+                const warm = opts.warmupShaders
+                const warmCamera = cameraProvider()
+                // First warm the authored zones (exact configs), then the
+                // runtime-only event effects (explosions, scripted bursts) that
+                // aren't present as zones yet — so the first trigger of any FX
+                // never stalls the main thread compiling its WebGPU pipeline.
+                void fx.warmShaders(warm, warmCamera)
+                    .then(() => fx.warmEventShaders(warm, warmCamera))
+                    .catch((err) => {
+                        console.warn('Visual FX zones shader warmup failed:', err)
+                    })
             }
         },
         update(world, dt) {

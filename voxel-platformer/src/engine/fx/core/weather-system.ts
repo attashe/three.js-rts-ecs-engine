@@ -1,11 +1,12 @@
-import { Camera, Frustum, Matrix4, Object3D, Sphere, Vector3, type Scene } from 'three'
-import type { AmbientWeatherState, WeatherZoneParams } from './types'
+import { Camera, Frustum, Matrix4, Object3D, Scene, Sphere, Vector3 } from 'three'
+import type { AmbientWeatherState, EffectType, WeatherZoneParams } from './types'
 import { WeatherZone } from './weather-zone'
 import { AmbientWeather, defaultAmbientState } from './ambient-weather'
 import { TextureRegistry } from '../textures/texture-registry'
 import { MaterialRegistry } from '../materials/material-registry'
 import { LightBudget } from '../lights/light-budget'
-import { getEmitter } from '../emitters/registry'
+import { availableEmitterTypes, getEmitter } from '../emitters/registry'
+import { ZONE_PRESETS } from '../presets/zone-presets'
 
 export interface WeatherSystemOptions {
     /** Whether this system owns level-wide sky/fog/sun/weather. Default true. */
@@ -108,6 +109,7 @@ export class WeatherSystem {
     ): Promise<void> {
         const restoredZones: WeatherZone[] = []
         const reculledMeshes: Object3D[] = []
+        const revealedLights: Object3D[] = []
         for (const zone of this.zones.values()) {
             if (!zone.group.visible) {
                 zone.group.visible = true
@@ -120,15 +122,69 @@ export class WeatherSystem {
                     reculledMeshes.push(obj)
                 }
             })
+            // Reveal the zone's PointLight (kept at intensity 0, so no visible
+            // flash) so lit scene materials — the voxel terrain especially —
+            // compile WITH the FX light counted. Without this, an inactive
+            // zone's light is `visible: false` and excluded from Three's light
+            // set, so its first `setActive(true)` changes the active-light count
+            // and recompiles every lit material on the main thread — the
+            // ~half-second freeze the first time a script opens a magic/portal
+            // zone. The LightBudget keeps counts stable at runtime; this makes
+            // them stable across the inactive→active transition too.
+            const light = zone.runtime.light as Object3D | undefined
+            if (light && !light.visible) {
+                light.visible = true
+                revealedLights.push(light)
+            }
         }
         const restore = () => {
             for (const z of restoredZones) z.group.visible = false
             for (const obj of reculledMeshes) obj.frustumCulled = true
+            for (const light of revealedLights) light.visible = false
         }
         return compileAsync(this.scene, camera).then(restore, (err) => {
             restore()
             throw err
         })
+    }
+
+    /**
+     * Pre-compile GPU pipelines for effect types fired at runtime as one-shot
+     * events (explosions, scripted bursts) or otherwise not present as authored
+     * zones when {@link warmShaders} runs. Builds a throwaway count≤4 zone of
+     * each type in a *detached* scene, compiles, then disposes — so the first
+     * real trigger never stalls the main thread compiling its pipeline. The
+     * renderer's pipeline cache is global, so warming a detached scene also
+     * covers the live scene, and (unlike `warmShaders`) nothing is briefly
+     * revealed in the rendered frame.
+     *
+     * `count` is clamped small because the pipeline is independent of instance
+     * count; the warmup only needs each emitter's geometry layout + material
+     * render-state to exist once.
+     */
+    warmEventShaders(
+        compileAsync: (scene: Scene, camera: Camera) => Promise<unknown>,
+        camera: Camera,
+        types: EffectType[] = availableEmitterTypes(),
+    ): Promise<void> {
+        const warmScene = new Scene()
+        const temp: WeatherZone[] = []
+        for (const type of types) {
+            const params = warmupParamsFor(type)
+            if (!params) continue
+            try {
+                const zone = new WeatherZone(params)
+                zone.init(getEmitter(type), { textures: this.textures, materials: this.materials }, warmScene)
+                zone.group.visible = true
+                zone.group.traverse((obj) => { obj.frustumCulled = false })
+                temp.push(zone)
+            } catch (err) {
+                console.warn(`FX shader warmup skipped "${type}":`, err)
+            }
+        }
+        if (temp.length === 0) return Promise.resolve()
+        const cleanup = () => { for (const zone of temp) zone.dispose() }
+        return compileAsync(warmScene, camera).then(cleanup, (err) => { cleanup(); throw err })
     }
 
     updateZone(id: string, patch: Partial<WeatherZoneParams>): void {
@@ -274,6 +330,31 @@ class DisabledAmbientWeather {
 
     dispose(): void {
         // Nothing to release.
+    }
+}
+
+// Lazily-built EffectType → complete params lookup, sourced from the hand-tuned
+// ZONE_PRESETS (one preset covers every effect type). Used only to give the
+// shader-warmup zones valid params; gameplay never reads it.
+let warmupParamsByType: Map<EffectType, WeatherZoneParams> | null = null
+
+function warmupParamsFor(type: EffectType): WeatherZoneParams | null {
+    if (!warmupParamsByType) {
+        warmupParamsByType = new Map()
+        for (const preset of Object.values(ZONE_PRESETS)) {
+            const p = preset.params as WeatherZoneParams
+            if (!warmupParamsByType.has(p.type)) warmupParamsByType.set(p.type, p)
+        }
+    }
+    const base = warmupParamsByType.get(type)
+    if (!base) return null
+    return {
+        ...base,
+        id: `warmup:${type}`,
+        name: `warmup:${type}`,
+        count: Math.min(base.count, 4),
+        position: { x: 0, y: 0, z: 0 },
+        size: { ...base.size },
     }
 }
 
