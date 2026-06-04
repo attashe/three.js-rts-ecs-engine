@@ -1,9 +1,9 @@
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import { compileWorldSpec } from './compile-world'
-import type { VoxelCoord, WorldSpec, WorldgenCompileResult, WorldgenReport } from './spec-types'
+import type { VoxelCoord, WorldgenCompileResult, WorldgenReport } from './spec-types'
 
 export function compileSurfaceLevelOrThrow(
-    spec: WorldSpec,
+    spec: unknown,
     chunks?: ChunkManager,
 ): WorldgenCompileResult {
     const result = compileWorldSpec(spec, { chunks })

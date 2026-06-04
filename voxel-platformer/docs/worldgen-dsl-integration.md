@@ -613,10 +613,19 @@ Implemented scope:
 - `resolve-content.ts` remains the orchestration point and keeps the original
   prop, zone, NPC, and raw script behavior.
 - `content-common.ts` owns shared position resolution, required/optional
-  diagnostics, target lookup, and generated script insertion.
+  diagnostics, target lookup, runtime script-id collision checks, generated
+  script insertion, and replacement of worldgen-marked NPC template starter
+  scripts.
 - Rich generated scripts deliberately use the existing script API instead of a
   new quest/trade runtime.
 - Required rich content entries fail closed. Optional entries warn and skip.
+- Metadata content uses the same `place_at` / `place_at_xz` placement contract
+  as props, zones, NPCs, pickups, and travel entries.
+- Pickup persistence is based on explicit per-pickup taken flags. Inventory
+  checks can suppress startup spawning, but they must not mark authored pickups
+  as permanently taken.
+- Generated dialogue and cinematic payloads are validated before scripts or
+  metadata are emitted.
 
 Known limits to keep in the next phase plan:
 
@@ -633,6 +642,31 @@ Known limits to keep in the next phase plan:
 Add authoring/export utilities and register one generated spec as a procedural
 level.
 
+Status: implemented as a JSON-spec-to-editor-level pipeline.
+
+Implementation shape:
+
+- `src/editor/worldgen-level-export.ts` is the reusable bridge from
+  `WorldSpec` to editor-saveable output. It calls `compileWorldSpec`, adapts
+  runtime `LevelMeta` through `editorMetaFromRuntimeLevel`, and serializes a
+  `.vplevel` buffer only when the compiler report is not failed.
+- `scripts/compile-world-spec.ts` is the authoring CLI. It accepts a JSON spec,
+  writes a stable report JSON, writes a `.vplevel` for ok/warning reports, and
+  exits non-zero for invalid JSON or failed compiler reports.
+- `schemas/worldspec.schema.json` provides broad authoring assistance for JSON
+  files without replacing TypeScript normalization and compiler diagnostics.
+- `examples/worldgen/phase8-pipeline-sample.json` is the first checked-in JSON
+  spec. It compiles a small surface road scene with anchors, a cottage,
+  deterministic tree scatter, props, an interact sign, NPCs, a shop, a
+  collect-and-return quest, pickups, cinematic metadata, ambience, travel
+  zones, and required path validation.
+- `worldgen-pipeline-sample` is registered in
+  `PROCEDURAL_LEVEL_DEFINITIONS`, so the normal procedural export command emits
+  `public/levels/worldgen-pipeline-sample.vplevel` beside code-authored
+  locations.
+- `scripts/file-output.ts` shares idempotent file-writing helpers between the
+  worldgen CLI and the existing procedural export script.
+
 Acceptance criteria:
 
 - A CLI can compile a JSON spec, write a report, and export `.vplevel`.
@@ -643,10 +677,70 @@ Acceptance criteria:
 - The Forest Lift Valley production-slice level remains a compatibility test
   for the code-authored path while JSON specs are introduced.
 
+Implemented scope:
+
+- CLI usage:
+
+  ```bash
+  npm run worldgen:compile -- examples/worldgen/phase8-pipeline-sample.json
+  npm run worldgen:compile -- examples/worldgen/phase8-pipeline-sample.json --out public/levels/worldgen-pipeline-sample.vplevel --report .tmp/worldgen/worldgen-pipeline-sample.report.json
+  ```
+
+- Valid and warning reports export levels; failed reports write diagnostics and
+  suppress broken level output.
+- JSON parse errors produce a report with `specId: "invalid-world-spec"` and a
+  deterministic hash over the input path/source.
+- Procedural export still owns tracked level artifacts. The CLI is primarily an
+  authoring and inspection tool; it does not register levels by itself.
+- Tests cover editor serialization, procedural registration, valid CLI output,
+  failed CLI output, and warning-preserving CLI output.
+
+Critical review findings fixed after implementation:
+
+- The public compiler/export boundary now accepts `unknown`, not only
+  `WorldSpec`. JSON files and imported JSON modules flow through the same
+  normalizer as code-authored specs, so call sites no longer need unsafe casts
+  to satisfy tuple types.
+- Worldgen-authored local FX zones validate `presetId` against the runtime
+  `ZONE_PRESETS` registry before export. Unknown required presets fail closed;
+  optional entries can be downgraded by the usual content-required policy.
+- Metadata placement now accepts `offset_y` / `offsetY` in addition to `dy`.
+  This makes vertical placement explicit for effects that should be centered
+  above the surface, such as falling leaves.
+- Shared file-output helpers now derive relative paths with `path.relative`
+  instead of checking a raw string prefix.
+
+Known limits to keep in the next phase plan:
+
+- The schema is intentionally permissive. It catches authoring shape mistakes,
+  but compiler normalization remains authoritative.
+- The sample spec targets a small surface world. It proves the pipeline, not
+  large-location streaming or hybrid terrain.
+- Reports are emitted by the standalone CLI only. The editor does not yet show
+  report diagnostics or resolved anchor coordinates in a dedicated UI.
+- `PROCEDURAL_LEVEL_DEFINITIONS` still uses code registration. A future phase
+  can add a manifest-driven registry once JSON-authored production locations
+  are common enough to justify it.
+
 ### Phase 9 - Large-Location Readiness
 
 Keep v1 author-time compiled and resident, but design the spec/report so it can
 later target region generation.
+
+Updated starting state after the Phase 8 review:
+
+- The compiler pipeline is now a safe JSON boundary: CLI input, imported JSON,
+  and code literals all enter as `unknown` and are normalized before dispatch.
+- The export path can serialize ok and warning reports, while failed reports
+  suppress `.vplevel` output.
+- The first JSON sample is registered and exported, but it is still intentionally
+  small. It proves the artifact pipeline and rich-content metadata, not scale.
+- Runtime FX preset ids used by generated content are validated at compile
+  time. Future generated ambience should follow this rule for other runtime
+  registries as well: fail before export when a runtime id is unknown.
+- Hand-authored procedural locations remain the compatibility baseline. Forest
+  Lift Valley and Teleport Garden should keep passing unchanged while JSON specs
+  grow more capable.
 
 Acceptance criteria:
 
@@ -654,6 +748,18 @@ Acceptance criteria:
 - Reports include chunk/region metrics.
 - Large-world risks from `docs/large-worlds-plan.md` are documented before any
   runtime streaming work begins.
+- Phase 9 does not introduce runtime streaming yet. It should stay author-time
+  compiled and resident, but make generated outputs and reports region-aware:
+  stable chunk keys, region grouping metrics, voxel/write density summaries,
+  and explicit warnings for worlds that exceed comfortable resident budgets.
+- Add at least one larger JSON stress spec or generated test fixture that
+  compiles through the CLI without being registered as a normal game location.
+  It should exercise roads, scatter, structures, content references, and path
+  validation at a larger footprint than the Phase 8 sample.
+- Keep the schema broad, but add report-driven guardrails before more DSL
+  expressiveness: region metrics, object counts, placement-skip rates, and
+  validation summaries should be sufficient for an authoring agent to iterate
+  without opening the editor first.
 
 ## Detailed Phase 1 Work
 

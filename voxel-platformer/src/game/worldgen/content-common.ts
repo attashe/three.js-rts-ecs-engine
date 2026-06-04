@@ -5,6 +5,8 @@ import type { ContentEntrySpec, Vec2Tuple, Vec3Tuple, VoxelCoord, WorldgenDiagno
 import { WorldgenCompileContext } from './compile-context'
 import type { WorldgenLevelDraft } from './level-draft'
 
+const WORLDGEN_TEMPLATE_SCRIPT_PREFIX = '// worldgen-template-script:'
+
 export interface WorldgenContentResolveOptions {
     standYAtXZ?: (x: number, z: number) => number
 }
@@ -92,7 +94,8 @@ export function resolveContentPosition(
     if (offset) coord = { x: coord.x + offset[0], y: coord.y + offset[1], z: coord.z + offset[2] }
     const offsetXZ = readOptionalVec2(ctx, spec.offset_xz, `${path}.offset_xz`)
     if (offsetXZ) coord = { x: coord.x + offsetXZ[0], y: coord.y, z: coord.z + offsetXZ[1] }
-    if (typeof spec.dy === 'number' && Number.isFinite(spec.dy)) coord = { ...coord, y: coord.y + spec.dy }
+    const dy = spec.dy ?? spec.offset_y ?? spec.offsetY
+    if (typeof dy === 'number' && Number.isFinite(dy)) coord = { ...coord, y: coord.y + dy }
     return coord
 }
 
@@ -146,10 +149,11 @@ export function appendGeneratedScript(
     path: string,
     required: boolean,
 ): boolean {
-    if (draft.scripts.some((script) => script.id === entry.id)) {
+    const conflict = runtimeScriptIdConflict(draft, entry.id)
+    if (conflict) {
         contentDiagnostic(ctx, required, {
             code: 'duplicate_id',
-            message: `Generated script id "${entry.id}" already exists.`,
+            message: `Generated script id "${entry.id}" conflicts with ${conflict}.`,
             path,
             details: { id: entry.id },
         })
@@ -160,6 +164,33 @@ export function appendGeneratedScript(
     return true
 }
 
+export function appendAuthoredScript(
+    ctx: WorldgenCompileContext,
+    draft: WorldgenLevelDraft,
+    entry: ScriptEntry,
+    path: string,
+    required: boolean,
+): boolean {
+    const conflict = runtimeScriptIdConflict(draft, entry.id)
+    if (conflict) {
+        contentDiagnostic(ctx, required, {
+            code: 'duplicate_id',
+            message: `Script id "${entry.id}" conflicts with ${conflict}.`,
+            path,
+            details: { id: entry.id },
+        })
+        return false
+    }
+    draft.scripts.push(entry)
+    ctx.report.placements.push({ id: entry.id, kind: 'content_script', name: entry.name })
+    return true
+}
+
+export function markTemplateScript(templateId: string, source: string): string {
+    const trimmed = source.trim()
+    return trimmed ? `${WORLDGEN_TEMPLATE_SCRIPT_PREFIX}${templateId}\n${trimmed}` : ''
+}
+
 export function appendNpcScript(
     ctx: WorldgenCompileContext,
     draft: WorldgenLevelDraft,
@@ -167,6 +198,7 @@ export function appendNpcScript(
     source: string,
     path: string,
     required: boolean,
+    opts: { replaceMarkedTemplateScript?: boolean } = {},
 ): boolean {
     const npc = draft.npcs.find((entry) => entry.id === npcId)
     if (!npc) {
@@ -178,7 +210,12 @@ export function appendNpcScript(
         })
         return false
     }
-    npc.scriptSource = [npc.scriptSource.trim(), source.trim()].filter(Boolean).join('\n\n')
+    const current = npc.scriptSource.trim()
+    if (opts.replaceMarkedTemplateScript && current.startsWith(WORLDGEN_TEMPLATE_SCRIPT_PREFIX)) {
+        npc.scriptSource = source.trim()
+    } else {
+        npc.scriptSource = [current, source.trim()].filter(Boolean).join('\n\n')
+    }
     npc.scriptEnabled = true
     return true
 }
@@ -246,4 +283,12 @@ function isDeclaredContentId(ctx: WorldgenCompileContext, id: string): boolean {
         if (Array.isArray(entries) && entries.some((entry) => isRecord(entry) && entry.id === id)) return true
     }
     return false
+}
+
+function runtimeScriptIdConflict(draft: WorldgenLevelDraft, id: string): string | null {
+    const script = draft.scripts.find((entry) => entry.id === id)
+    if (script) return `level script "${script.name}"`
+    const npc = draft.npcs.find((entry) => entry.scriptEnabled && entry.scriptSource.trim().length > 0 && `npc-script:${entry.id}` === id)
+    if (npc) return `NPC script for "${npc.id}"`
+    return null
 }

@@ -66,7 +66,11 @@ export function readGeneratedPickup(
     const inventoryItem = readInventoryItem(ctx, spec.inventoryItem ?? spec.inventory_item, `${path}.inventoryItem`, required)
     const label = readString(spec.label ?? spec.name, '')
     const flag = readString(spec.flag, `worldgen.pickup.${id}.taken`)
-    const skipIfInInventory = typeof spec.skipIfInInventory === 'boolean' ? spec.skipIfInInventory : kind !== 'coin'
+    const skipIfInInventory = typeof spec.skipIfInInventory === 'boolean'
+        ? spec.skipIfInInventory
+        : typeof spec.skip_if_in_inventory === 'boolean'
+            ? spec.skip_if_in_inventory
+            : false
 
     ctx.resolveObject(id, position)
     ctx.report.placements.push({ id, kind: 'content_pickup', pickupKind: kind, x: position.x, y: position.y, z: position.z })
@@ -101,7 +105,6 @@ export function generatedPickupsScript(pickups: readonly GeneratedPickup[]): str
         `    const inventoryId = pickup.inventoryItem?.id ?? pickup.kind`,
         `    const amount = pickup.amount ?? 1`,
         `    if (pickup.skipIfInInventory && player.inventory.has(inventoryId, amount)) {`,
-        `      flags.set(pickup.flag, true)`,
         `      continue`,
         `    }`,
         `    if (!pickups.exists(pickup.id)) {`,

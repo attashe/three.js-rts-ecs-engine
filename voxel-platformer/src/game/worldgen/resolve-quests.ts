@@ -100,7 +100,8 @@ function resolveContentQuest(
     }
     const reward = readQuestReward(ctx, spec.reward, `${path}.reward`, required)
     if (reward === null) return
-    const dialogue = readQuestDialogue(spec)
+    const dialogue = readQuestDialogue(ctx, spec, path, required)
+    if (!dialogue) return
     const title = readString(spec.title ?? spec.name, id)
     const consumeItems = typeof spec.consumeItems === 'boolean'
         ? spec.consumeItems
@@ -124,7 +125,7 @@ function resolveContentQuest(
     })
 
     if (target.kind === 'npc') {
-        if (!appendNpcScript(ctx, draft, target.id, source, `${path}.target`, required)) return
+        if (!appendNpcScript(ctx, draft, target.id, source, `${path}.target`, required, { replaceMarkedTemplateScript: true })) return
     } else if (!appendGeneratedScript(ctx, draft, {
         id: `worldgen:quest:${id}`,
         name: `worldgen-quest-${id}.js`,
@@ -268,35 +269,96 @@ function readRewardItems(ctx: WorldgenCompileContext, value: unknown, path: stri
     return out
 }
 
-function readQuestDialogue(spec: ContentEntrySpec): QuestDialogue {
+function readQuestDialogue(ctx: WorldgenCompileContext, spec: ContentEntrySpec, path: string, required: boolean): QuestDialogue | null {
     const dialogue = isRecord(spec.dialogue) ? spec.dialogue : {}
-    return {
-        start: readDialogueLines(dialogue.start ?? spec.start, 'I need your help. Bring me the requested supplies.'),
-        active: readDialogueLines(dialogue.active, 'The supplies are still out there.'),
-        ready: readDialogueLines(dialogue.ready, 'You found them. Hand them over?'),
-        complete: readDialogueLines(dialogue.complete ?? spec.complete, 'Thank you. Take this for the road.'),
-        done: readDialogueLines(dialogue.done, 'Safe travels.'),
-    }
+    const start = readDialogueLines(ctx, dialogue.start ?? spec.start, `${path}.dialogue.start`, required, 'I need your help. Bring me the requested supplies.')
+    const active = readDialogueLines(ctx, dialogue.active, `${path}.dialogue.active`, required, 'The supplies are still out there.')
+    const ready = readDialogueLines(ctx, dialogue.ready, `${path}.dialogue.ready`, required, 'You found them. Hand them over?')
+    const complete = readDialogueLines(ctx, dialogue.complete ?? spec.complete, `${path}.dialogue.complete`, required, 'Thank you. Take this for the road.')
+    const done = readDialogueLines(ctx, dialogue.done, `${path}.dialogue.done`, required, 'Safe travels.')
+    if (!start || !active || !ready || !complete || !done) return null
+    return { start, active, ready, complete, done }
 }
 
-function readDialogueLines(value: unknown, fallback: string): DialogueLineSpec[] {
+function readDialogueLines(
+    ctx: WorldgenCompileContext,
+    value: unknown,
+    path: string,
+    required: boolean,
+    fallback: string,
+): DialogueLineSpec[] | null {
     if (typeof value === 'string' && value.trim().length > 0) return [{ speaker: 'npc', text: value.trim() }]
     if (Array.isArray(value)) {
         const out: DialogueLineSpec[] = []
-        for (const entry of value) {
+        let invalid = false
+        for (let i = 0; i < value.length; i += 1) {
+            const entry = value[i]
+            const entryPath = `${path}[${i}]`
             if (typeof entry === 'string' && entry.trim().length > 0) {
                 out.push({ speaker: 'npc', text: entry.trim() })
             } else if (isRecord(entry) && typeof entry.text === 'string' && entry.text.trim().length > 0) {
+                const choices = readDialogueChoices(ctx, entry.choices, `${entryPath}.choices`, required)
+                if (choices === null) invalid = true
                 out.push({
                     ...(typeof entry.speaker === 'string' ? { speaker: entry.speaker } : { speaker: 'npc' }),
                     text: entry.text.trim(),
-                    ...(Array.isArray(entry.choices) ? { choices: entry.choices as DialogueLineSpec['choices'] } : {}),
+                    ...(choices && choices.length > 0 ? { choices } : {}),
+                })
+            } else {
+                invalid = true
+                contentDiagnostic(ctx, required, {
+                    code: 'invalid_feature',
+                    message: `${entryPath} must be a non-empty string or an object with text.`,
+                    path: entryPath,
+                    details: { value: entry },
                 })
             }
         }
+        if (invalid) return null
         if (out.length > 0) return out
     }
     return [{ speaker: 'npc', text: fallback }]
+}
+
+function readDialogueChoices(
+    ctx: WorldgenCompileContext,
+    value: unknown,
+    path: string,
+    required: boolean,
+): DialogueLineSpec['choices'] | null | undefined {
+    if (value === undefined) return undefined
+    if (!Array.isArray(value)) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} must be an array when provided.`,
+            path,
+            details: { value },
+        })
+        return null
+    }
+    const out: NonNullable<DialogueLineSpec['choices']> = []
+    for (let i = 0; i < value.length; i += 1) {
+        const item = value[i]
+        const itemPath = `${path}[${i}]`
+        if (!isRecord(item)) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${itemPath} must be an object.`,
+                path: itemPath,
+                details: { value: item },
+            })
+            return null
+        }
+        const id = readRequiredString(ctx, item.id, `${itemPath}.id`, required)
+        const text = readRequiredString(ctx, item.text, `${itemPath}.text`, required)
+        if (!id || !text) return null
+        out.push({
+            id,
+            text,
+            ...(typeof item.disabled === 'boolean' ? { disabled: item.disabled } : {}),
+        })
+    }
+    return out
 }
 
 function questScriptSource(spec: {
@@ -369,7 +431,6 @@ function questScriptSource(spec: {
         `    const inventoryId = pickup.inventoryItem?.id ?? pickup.kind`,
         `    const amount = pickup.amount ?? 1`,
         `    if (pickup.skipIfInInventory && player.inventory.has(inventoryId, amount)) {`,
-        `      flags.set(pickup.flag, true)`,
         `      continue`,
         `    }`,
         `    if (!pickups.exists(pickup.id)) pickups.spawn(pickup.kind, pickup.position, { id: pickup.id, amount: pickup.amount, label: pickup.label, inventoryItem: pickup.inventoryItem })`,

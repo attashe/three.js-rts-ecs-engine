@@ -93,15 +93,21 @@ return defineLevel({
   and per-level script sources (`PROCEDURAL_LEVEL_SCRIPT_FILES`).
 - `src/editor/procedural-level-export.ts` - runtime `LevelMeta` ->
   `EditorLevelMeta` -> serialized `.vplevel`.
+- `src/editor/worldgen-level-export.ts` - JSON/code `WorldSpec` ->
+  `EditorLevelMeta` -> serialized `.vplevel` plus a compiler report.
 - `scripts/export-procedural-levels.ts` - writes generated files to
   `public/levels/` (only when bytes change).
+- `scripts/compile-world-spec.ts` - compiles one JSON WorldSpec and writes a
+  report plus a `.vplevel` when diagnostics are not failed.
 
-Generated, tracked binaries: `public/levels/{demo,demo-teleport-garden}.vplevel`.
+Generated, tracked binaries: `public/levels/*.vplevel` for every id in
+`PROCEDURAL_LEVEL_DEFINITIONS`.
 
 ## Commands
 
 ```bash
 npm run levels:procedural   # regenerate every registered level (writes on change)
+npm run worldgen:compile -- examples/worldgen/phase8-pipeline-sample.json
 npm test                    # runs the exporter first, then node --test
 npm run typecheck
 ```

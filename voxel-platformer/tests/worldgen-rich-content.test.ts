@@ -225,6 +225,155 @@ test('optional rich content warnings do not emit broken generated scripts', () =
     assert.equal(result.meta.scripts.some((script) => script.id === 'worldgen:content:pickups'), false)
 })
 
+test('rich content rejects authored script ids that collide with generated and NPC runtime scripts', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'script_collision', name: 'Script Collision', type: 'surface', seed: 'script-collision', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            npcs: [{ id: 'merchant', template: 'trader', place_at_xz: [8, 8] }],
+            pickups: [{ id: 'field_potion', kind: 'heal-potion', place_at_xz: [10, 8] }],
+            scripts: [
+                { id: 'worldgen:content:pickups', source: `log('duplicate generated')` },
+                { id: 'npc-script:merchant', source: `log('duplicate npc')` },
+            ],
+        },
+    })
+
+    assert.equal(result.report.status, 'failed')
+    const duplicateErrors = result.report.errors.filter((error) => error.code === 'duplicate_id')
+    assert.equal(duplicateErrors.length, 2, diagnosticSummary(result.report.errors))
+    assert.equal(result.meta.scripts.filter((script) => script.id === 'worldgen:content:pickups').length, 1)
+    assert.equal(result.meta.scripts.some((script) => script.source.includes('duplicate generated')), false)
+    assert.equal(result.meta.scripts.some((script) => script.id === 'npc-script:merchant'), false)
+})
+
+test('generated NPC-bound shops replace marked template starter shops instead of stacking handlers', async () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'template_shop_replace', name: 'Template Shop Replace', type: 'surface', seed: 'template-shop-replace', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            npcs: [{ id: 'merchant', template: 'trader', name: 'Marked Trader', place_at_xz: [8, 8] }],
+            shops: [{
+                id: 'merchant_shop',
+                target: 'merchant',
+                title: 'Generated Goods',
+                items: [{ id: 'mana', name: 'Mana Potion', resource: 'mana-potion', buyPrice: 9, stock: 2 }],
+            }],
+        },
+    })
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+
+    const merchant = result.meta.npcs.find((npc) => npc.id === 'merchant')
+    assert.ok(merchant)
+    assert.ok(merchant.scriptSource.includes('SHOP_merchant_shop'))
+    assert.equal(merchant.scriptSource.includes('Arrow bundle'), false, 'starter trader shop was replaced')
+
+    const harness = makeHarness([...result.meta.scripts, ...npcScriptEntries(result.meta.npcs)])
+    harness.sys.init?.(harness.world)
+    harness.interact(npcInteractionZoneId({ id: 'merchant' }))
+    await harness.tick(0.1)
+    assert.deepEqual(harness.tradeRequests.map((request) => request.id), ['merchant_shop'])
+})
+
+test('environment metadata place_at_xz uses the shared surface resolver', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'metadata_surface_y', name: 'Metadata Surface Y', type: 'surface', seed: 'metadata-surface-y', size: [32, 24, 32], defaultGroundY: 6 },
+        terrain: { base_height: 6 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            environment: {
+                soundSources: [{ id: 'wind_source', soundId: 'amb.wind', place_at_xz: [12, 12] }],
+                soundZones: [{ id: 'wind_zone', soundId: 'amb.wind', place_at_xz: [14, 12] }],
+                weatherZones: [{ id: 'mist_zone', presetId: 'fog', place_at_xz: [16, 12], offset_y: 3.5 }],
+            },
+        },
+    })
+
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.equal(result.meta.soundSources[0]?.position.y, 7)
+    assert.equal(result.meta.soundZones[0]?.min.y, 5)
+    assert.equal(result.meta.weatherZones[0]?.position.y, 10.5)
+})
+
+test('environment metadata rejects unknown required FX zone presets', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'bad_fx_preset', name: 'Bad FX Preset', type: 'surface', seed: 'bad-fx-preset', size: [32, 24, 32], defaultGroundY: 6 },
+        terrain: { base_height: 6 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            environment: {
+                weatherZones: [{ id: 'bad_fx_zone', presetId: 'falling_leafs_typo', place_at_xz: [16, 12] }],
+            },
+        },
+    })
+
+    assert.equal(result.report.status, 'failed')
+    assert.ok(result.report.errors.some((error) => error.path === '$.content.environment.weatherZones[0].presetId'))
+    assert.equal(result.meta.weatherZones.length, 0)
+})
+
+test('skipIfInInventory suppresses startup pickup spawn without marking it taken', async () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'pickup_skip_inventory', name: 'Pickup Skip Inventory', type: 'surface', seed: 'pickup-skip-inventory', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            pickups: [{
+                id: 'field_potion',
+                kind: 'heal-potion',
+                place_at_xz: [8, 8],
+                skipIfInInventory: true,
+            }],
+        },
+    })
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+
+    const harness = makeHarness(result.meta.scripts)
+    harness.addInventoryItem('heal-potion', 1)
+    harness.sys.init?.(harness.world)
+    await flushMicrotasks()
+
+    assert.equal(harness.pickupSpawns.length, 0)
+    assert.equal(harness.flag('worldgen.pickup.field_potion.taken'), undefined)
+})
+
+test('invalid generated dialogue and cinematic payloads fail closed before scripts or metadata are emitted', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'invalid_rich_payloads', name: 'Invalid Rich Payloads', type: 'surface', seed: 'invalid-rich-payloads', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            npcs: [{ id: 'quest_giver', model: 'keeper', place_at_xz: [8, 8] }],
+            quests: [{
+                id: 'bad_quest',
+                target: 'quest_giver',
+                requiredItems: [{ id: 'lost-relic', quantity: 1 }],
+                dialogue: {
+                    start: [{ text: 'Choose carefully.', choices: [{ id: 'accept' }] }],
+                },
+            }],
+            cinematics: [{
+                id: 'bad_intro',
+                steps: [{ id: 'line', type: 'subtitle', wait: true, duration: 2 }],
+            }],
+        },
+    })
+
+    assert.equal(result.report.status, 'failed')
+    assert.ok(result.report.errors.some((error) => error.path === '$.content.quests[0].dialogue.start[0].choices[0].text'))
+    assert.ok(result.report.errors.some((error) => error.path === '$.content.cinematics[0].steps[0].text'))
+    assert.equal(result.meta.npcs.find((npc) => npc.id === 'quest_giver')?.scriptSource.includes('handleQuest_bad_quest'), false)
+    assert.equal(result.meta.cinematics?.some((cinematic) => cinematic.id === 'bad_intro') ?? false, false)
+})
+
 interface Harness {
     sys: ReturnType<typeof createScriptEngineSystem>
     world: GameWorld

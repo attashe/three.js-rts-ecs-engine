@@ -15,11 +15,13 @@ import { WorldgenCompileContext } from './compile-context'
 import type { ContentEntrySpec, VoxelCoord } from './spec-types'
 import type { WorldgenLevelDraft } from './level-draft'
 import {
+    appendAuthoredScript,
     contentDiagnostic,
     contentEntryRequired,
     contentId,
     finiteNumber,
     isRecord,
+    markTemplateScript,
     positiveNumber,
     readOptionalVec2,
     readString,
@@ -165,13 +167,16 @@ function resolveContentNpcs(
         // so the `?? templated` fallbacks below just keep the template's value
         // for these optional objects when the author omitted them.
         const templated = template ? applyNpcTemplate(partial, template) : normalizeNpcConfig(partial)
+        const templateScript = partial.scriptSource === undefined && templateId
+            ? markTemplateScript(templateId, templated.scriptSource)
+            : templated.scriptSource
         const npc = normalizeNpcConfig({
             ...templated,
             ...partial,
             equipment: partial.equipment ?? templated.equipment,
             voice: partial.voice ?? templated.voice,
             behaviour: partial.behaviour ?? templated.behaviour,
-            scriptSource: partial.scriptSource ?? templated.scriptSource,
+            scriptSource: partial.scriptSource ?? templateScript,
         })
         if (npc.behaviour) npc.scriptSource = mergeBehaviourIntoScript(npc.scriptSource, npc.behaviour)
         draft.npcs.push(npc)
@@ -202,8 +207,7 @@ function resolveContentScripts(ctx: WorldgenCompileContext, draft: WorldgenLevel
             source: spec.source,
             ...(typeof spec.enabled === 'boolean' ? { enabled: spec.enabled } : {}),
         }
-        draft.scripts.push(entry)
-        ctx.report.placements.push({ id, kind: 'content_script', name: entry.name })
+        appendAuthoredScript(ctx, draft, entry, `${path}.id`, required)
     }
 }
 

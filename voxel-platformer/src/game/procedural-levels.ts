@@ -15,7 +15,8 @@ import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from './player-settings'
 import { INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS, SWORD_ITEM_ID } from './equipment-items'
 import type { CameraShot, Cinematic } from './cinematics/cinematic-types'
-import { compileSurfaceLevelOrThrow, requireResolvedAnchor, type VoxelCoord, type WorldSpec } from './worldgen'
+import { compileSurfaceLevelOrThrow, requireResolvedAnchor, type VoxelCoord } from './worldgen'
+import phase8PipelineSampleSpecJson from '../../examples/worldgen/phase8-pipeline-sample.json'
 import {
     generateStructureAsset,
     placeStructureAsset,
@@ -39,6 +40,7 @@ import {
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
+    WORLDGEN_PIPELINE_SAMPLE_LEVEL_ID,
 } from './procedural-level-ids'
 
 export {
@@ -54,6 +56,7 @@ export {
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
+    WORLDGEN_PIPELINE_SAMPLE_LEVEL_ID,
 }
 
 export interface ProceduralLevelScriptFile {
@@ -130,6 +133,12 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         name: 'Forest Lift Valley',
         generate: generateForestLiftValleyLevel,
     },
+    {
+        id: WORLDGEN_PIPELINE_SAMPLE_LEVEL_ID,
+        file: `${WORLDGEN_PIPELINE_SAMPLE_LEVEL_ID}.vplevel`,
+        name: 'Worldgen Pipeline Sample',
+        generate: generateWorldgenPipelineSampleLevel,
+    },
 ]
 
 export const PROCEDURAL_LEVEL_IDS = PROCEDURAL_LEVEL_DEFINITIONS.map((level) => level.id)
@@ -158,6 +167,10 @@ export function generateDemoProceduralLevel(
         npcs: [...meta.npcs, ...demoNpcs()],
         scripts: createDemoScripts(scriptSources),
     }
+}
+
+export function generateWorldgenPipelineSampleLevel(chunks: ChunkManager): LevelMeta {
+    return compileSurfaceLevelOrThrow(phase8PipelineSampleSpecJson, chunks).meta
 }
 
 /**
@@ -809,7 +822,7 @@ export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
     })
 }
 
-function forestLiftValleySpec(): WorldSpec {
+function forestLiftValleySpec(): unknown {
     return {
         version: 1,
         world: {

@@ -1,11 +1,12 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { createProceduralEditorLevel } from '../src/editor/procedural-level-export'
 import {
     PROCEDURAL_LEVEL_DEFINITIONS,
     PROCEDURAL_LEVEL_SCRIPT_FILES,
     type ProceduralScriptSources,
 } from '../src/game/procedural-levels'
+import { relativeOutput, writeIfChanged } from './file-output'
 
 const OUTPUT_DIR = resolve(process.cwd(), 'public', 'levels')
 
@@ -31,26 +32,6 @@ async function readScriptSources(): Promise<ProceduralScriptSources> {
         out[file.sourcePath] = await readFile(path, 'utf8')
     }
     return out
-}
-
-async function writeIfChanged(path: string, buffer: ArrayBuffer): Promise<boolean> {
-    const next = Buffer.from(new Uint8Array(buffer))
-    try {
-        const previous = await readFile(path)
-        if (Buffer.compare(previous, next) === 0) return false
-    } catch {
-        // Missing file, unreadable stale artifact, or new directory: write below.
-    }
-
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, next)
-    return true
-}
-
-function relativeOutput(path: string): string {
-    return path.startsWith(process.cwd())
-        ? path.slice(process.cwd().length + 1)
-        : path
 }
 
 void main().catch((err) => {

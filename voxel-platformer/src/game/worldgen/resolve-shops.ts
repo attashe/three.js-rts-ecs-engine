@@ -62,7 +62,7 @@ function resolveContentShop(ctx: WorldgenCompileContext, draft: WorldgenLevelDra
     const source = shopScriptSource(id, target.id, request, target.kind === 'npc')
 
     if (target.kind === 'npc') {
-        if (!appendNpcScript(ctx, draft, target.id, source, `${path}.target`, required)) return
+        if (!appendNpcScript(ctx, draft, target.id, source, `${path}.target`, required, { replaceMarkedTemplateScript: true })) return
     } else if (!appendGeneratedScript(ctx, draft, {
         id: `worldgen:shop:${id}`,
         name: `worldgen-shop-${id}.js`,

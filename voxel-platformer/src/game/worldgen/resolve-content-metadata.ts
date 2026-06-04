@@ -1,6 +1,7 @@
 import type { Zone } from '../../engine/ecs/zones'
-import type { Cinematic } from '../cinematics/cinematic-types'
-import { cloneCinematic } from '../cinematics/cinematic-types'
+import { ZONE_PRESETS } from '../../engine/fx/presets/zone-presets'
+import type { Cinematic, CinematicStep } from '../cinematics/cinematic-types'
+import { cloneCinematic, validateCinematic } from '../cinematics/cinematic-types'
 import type { ContentEntrySpec, ContentSpec, Vec3Tuple, VoxelCoord } from './spec-types'
 import { WorldgenCompileContext } from './compile-context'
 import type { WorldgenLevelDraft } from './level-draft'
@@ -25,12 +26,12 @@ export function resolveContentMetadata(
     content: ContentSpec,
     opts: WorldgenContentResolveOptions,
 ): void {
-    resolveEnvironment(ctx, draft, content.environment)
+    resolveEnvironment(ctx, draft, content.environment, opts)
     resolveCinematics(ctx, draft, content.cinematics ?? [])
     resolveTravel(ctx, draft, content.travel ?? [], opts)
 }
 
-function resolveEnvironment(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown): void {
+function resolveEnvironment(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown, opts: WorldgenContentResolveOptions): void {
     if (value === undefined) return
     if (!isRecord(value)) {
         ctx.error({ code: 'invalid_feature', message: '$.content.environment must be an object.', path: '$.content.environment', details: { value } })
@@ -56,9 +57,9 @@ function resolveEnvironment(ctx: WorldgenCompileContext, draft: WorldgenLevelDra
         ctx.report.placements.push({ id: 'ambient_weather', kind: 'content_ambient_weather', presetId: draft.ambientWeather.presetId })
     }
 
-    resolveSoundSources(ctx, draft, value.soundSources ?? value.sound_sources)
-    resolveSoundZones(ctx, draft, value.soundZones ?? value.sound_zones)
-    resolveWeatherZones(ctx, draft, value.weatherZones ?? value.weather_zones)
+    resolveSoundSources(ctx, draft, value.soundSources ?? value.sound_sources, opts)
+    resolveSoundZones(ctx, draft, value.soundZones ?? value.sound_zones, opts)
+    resolveWeatherZones(ctx, draft, value.weatherZones ?? value.weather_zones, opts)
 }
 
 function resolveCinematics(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, cinematics: readonly ContentEntrySpec[]): void {
@@ -68,15 +69,8 @@ function resolveCinematics(ctx: WorldgenCompileContext, draft: WorldgenLevelDraf
         const required = contentEntryRequired(spec)
         const id = contentId(ctx, spec, path, required)
         if (!id) continue
-        if (!Array.isArray(spec.steps)) {
-            contentDiagnostic(ctx, required, {
-                code: 'invalid_feature',
-                message: `${path}.steps must be an array of cinematic steps.`,
-                path: `${path}.steps`,
-                details: { id },
-            })
-            continue
-        }
+        const steps = readCinematicSteps(ctx, spec.steps, `${path}.steps`, required)
+        if (!steps) continue
         const cinematic: Cinematic = {
             id,
             name: readString(spec.name, id),
@@ -85,7 +79,17 @@ function resolveCinematics(ctx: WorldgenCompileContext, draft: WorldgenLevelDraf
             ...(typeof spec.letterbox === 'boolean' ? { letterbox: spec.letterbox } : {}),
             ...(typeof spec.freezePlayer === 'boolean' ? { freezePlayer: spec.freezePlayer } : {}),
             ...(typeof spec.freeze_player === 'boolean' ? { freezePlayer: spec.freeze_player } : {}),
-            steps: spec.steps as Cinematic['steps'],
+            steps,
+        }
+        const problems = validateCinematic(cinematic, new Set(draft.npcs.map((npc) => npc.id)))
+        if (problems.length > 0) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path} has invalid cinematic data.`,
+                path,
+                details: { id, problems },
+            })
+            continue
         }
         draft.cinematics = [...(draft.cinematics ?? []), cloneCinematic(cinematic)]
         ctx.report.placements.push({ id, kind: 'content_cinematic', stepCount: cinematic.steps.length })
@@ -146,7 +150,7 @@ function resolveTravel(
     }
 }
 
-function resolveSoundSources(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown): void {
+function resolveSoundSources(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown, opts: WorldgenContentResolveOptions): void {
     if (value === undefined) return
     if (!Array.isArray(value)) {
         ctx.error({ code: 'invalid_feature', message: '$.content.environment.soundSources must be an array.', path: '$.content.environment.soundSources', details: { value } })
@@ -161,7 +165,7 @@ function resolveSoundSources(ctx: WorldgenCompileContext, draft: WorldgenLevelDr
         }
         const id = readRequiredString(ctx, spec.id, `${path}.id`, true)
         const soundId = readRequiredString(ctx, spec.soundId ?? spec.sound_id, `${path}.soundId`, true)
-        const position = readMetadataPosition(ctx, spec, path)
+        const position = readMetadataPosition(ctx, spec, path, opts)
         if (!id || !soundId || !position) continue
         draft.soundSources.push({
             id,
@@ -178,7 +182,7 @@ function resolveSoundSources(ctx: WorldgenCompileContext, draft: WorldgenLevelDr
     }
 }
 
-function resolveSoundZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown): void {
+function resolveSoundZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown, opts: WorldgenContentResolveOptions): void {
     if (value === undefined) return
     if (!Array.isArray(value)) {
         ctx.error({ code: 'invalid_feature', message: '$.content.environment.soundZones must be an array.', path: '$.content.environment.soundZones', details: { value } })
@@ -193,7 +197,7 @@ function resolveSoundZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDraf
         }
         const id = readRequiredString(ctx, spec.id, `${path}.id`, true)
         const soundId = readRequiredString(ctx, spec.soundId ?? spec.sound_id, `${path}.soundId`, true)
-        const center = readMetadataPosition(ctx, spec, path)
+        const center = readMetadataPosition(ctx, spec, path, opts)
         if (!id || !soundId || !center) continue
         const size = readSize(ctx, spec.size, `${path}.size`, [6, 4, 6])
         draft.soundZones.push({
@@ -210,7 +214,7 @@ function resolveSoundZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDraf
     }
 }
 
-function resolveWeatherZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown): void {
+function resolveWeatherZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, value: unknown, opts: WorldgenContentResolveOptions): void {
     if (value === undefined) return
     if (!Array.isArray(value)) {
         ctx.error({ code: 'invalid_feature', message: '$.content.environment.weatherZones must be an array.', path: '$.content.environment.weatherZones', details: { value } })
@@ -225,8 +229,18 @@ function resolveWeatherZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDr
         }
         const id = readRequiredString(ctx, spec.id, `${path}.id`, true)
         const presetId = readRequiredString(ctx, spec.presetId ?? spec.preset_id, `${path}.presetId`, true)
-        const position = readMetadataPosition(ctx, spec, path)
+        const position = readMetadataPosition(ctx, spec, path, opts)
         if (!id || !presetId || !position) continue
+        const required = contentEntryRequired(spec as ContentEntrySpec)
+        if (!(presetId in ZONE_PRESETS)) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path}.presetId references unknown FX zone preset "${presetId}".`,
+                path: `${path}.presetId`,
+                details: { id, presetId, knownPresets: Object.keys(ZONE_PRESETS).sort() },
+            })
+            continue
+        }
         draft.weatherZones.push({
             id,
             ...(typeof spec.label === 'string' ? { label: spec.label } : {}),
@@ -244,13 +258,130 @@ function resolveWeatherZones(ctx: WorldgenCompileContext, draft: WorldgenLevelDr
     }
 }
 
-function readMetadataPosition(ctx: WorldgenCompileContext, spec: Record<string, unknown>, path: string): VoxelCoord | null {
+function readMetadataPosition(ctx: WorldgenCompileContext, spec: Record<string, unknown>, path: string, opts: WorldgenContentResolveOptions): VoxelCoord | null {
     if (isRecord(spec.position) && typeof spec.position.x === 'number' && typeof spec.position.y === 'number' && typeof spec.position.z === 'number') {
         return { x: spec.position.x, y: spec.position.y, z: spec.position.z }
     }
     const tuple = readOptionalVec3(ctx, spec.position, `${path}.position`)
     if (tuple) return { x: tuple[0], y: tuple[1], z: tuple[2] }
-    return resolveContentPosition(ctx, spec as ContentEntrySpec, path, true, {})
+    return resolveContentPosition(ctx, spec as ContentEntrySpec, path, true, opts)
+}
+
+function readCinematicSteps(
+    ctx: WorldgenCompileContext,
+    value: unknown,
+    path: string,
+    required: boolean,
+): CinematicStep[] | null {
+    if (!Array.isArray(value)) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} must be an array of cinematic steps.`,
+            path,
+            details: { value },
+        })
+        return null
+    }
+    const steps: CinematicStep[] = []
+    let invalid = false
+    for (let i = 0; i < value.length; i += 1) {
+        const step = value[i]
+        const stepPath = `${path}[${i}]`
+        if (!isRecord(step)) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${stepPath} must be an object.`,
+                path: stepPath,
+                details: { value: step },
+            })
+            invalid = true
+            continue
+        }
+        const id = readRequiredString(ctx, step.id, `${stepPath}.id`, required)
+        const type = readRequiredString(ctx, step.type, `${stepPath}.type`, required)
+        if (!id || !type || !isCinematicStepType(type)) {
+            if (type && !isCinematicStepType(type)) {
+                contentDiagnostic(ctx, required, {
+                    code: 'invalid_feature',
+                    message: `${stepPath}.type must be a supported cinematic step type.`,
+                    path: `${stepPath}.type`,
+                    details: { value: type },
+                })
+            }
+            invalid = true
+            continue
+        }
+        if (!cinematicStepShapeOk(ctx, step, stepPath, type, required)) {
+            invalid = true
+            continue
+        }
+        steps.push({ ...step, id, type } as CinematicStep)
+    }
+    if (invalid) return null
+    return steps
+}
+
+function cinematicStepShapeOk(
+    ctx: WorldgenCompileContext,
+    step: Record<string, unknown>,
+    path: string,
+    type: CinematicStep['type'],
+    required: boolean,
+): boolean {
+    switch (type) {
+        case 'camera':
+            return cameraShotOk(ctx, step.shot, `${path}.shot`, required)
+        case 'subtitle':
+            return stringFieldOk(ctx, step.text, `${path}.text`, required)
+        case 'speech':
+            return stringFieldOk(ctx, step.npcId, `${path}.npcId`, required)
+                && stringFieldOk(ctx, step.text, `${path}.text`, required)
+        case 'move':
+            return stringFieldOk(ctx, step.npcId, `${path}.npcId`, required)
+                && vec3ObjectOk(ctx, step.to, `${path}.to`, required)
+        case 'wait':
+            return finiteNumberFieldOk(ctx, step.duration, `${path}.duration`, required)
+        case 'fade':
+            return finiteNumberFieldOk(ctx, step.duration, `${path}.duration`, required)
+                && (step.to === 'black' || step.to === 'clear' || invalidField(ctx, `${path}.to`, 'must be "black" or "clear".', step.to, required))
+        case 'sound':
+            return stringFieldOk(ctx, step.soundId, `${path}.soundId`, required)
+    }
+}
+
+function cameraShotOk(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): boolean {
+    if (!isRecord(value)) return invalidField(ctx, path, 'must be a camera shot object.', value, required)
+    return vec3ObjectOk(ctx, value.position, `${path}.position`, required)
+        && vec3ObjectOk(ctx, value.target, `${path}.target`, required)
+        && finiteNumberFieldOk(ctx, value.zoom, `${path}.zoom`, required)
+}
+
+function vec3ObjectOk(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): boolean {
+    if (!isRecord(value)) return invalidField(ctx, path, 'must be a { x, y, z } object.', value, required)
+    return typeof value.x === 'number' && Number.isFinite(value.x)
+        && typeof value.y === 'number' && Number.isFinite(value.y)
+        && typeof value.z === 'number' && Number.isFinite(value.z)
+        || invalidField(ctx, path, 'must have finite x, y, and z numbers.', value, required)
+}
+
+function stringFieldOk(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): boolean {
+    return typeof value === 'string' && value.trim().length > 0
+        || invalidField(ctx, path, 'must be a non-empty string.', value, required)
+}
+
+function finiteNumberFieldOk(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): boolean {
+    return typeof value === 'number' && Number.isFinite(value)
+        || invalidField(ctx, path, 'must be a finite number.', value, required)
+}
+
+function invalidField(ctx: WorldgenCompileContext, path: string, message: string, value: unknown, required: boolean): false {
+    contentDiagnostic(ctx, required, {
+        code: 'invalid_feature',
+        message: `${path} ${message}`,
+        path,
+        details: { value },
+    })
+    return false
 }
 
 function readSize(ctx: WorldgenCompileContext, value: unknown, path: string, fallback: Vec3Tuple): Vec3Tuple {
@@ -270,4 +401,14 @@ function vec3ToObject(value: Vec3Tuple): { x: number; y: number; z: number } {
 function clamp01(value: number): number {
     if (!Number.isFinite(value)) return 0
     return Math.max(0, Math.min(1, value))
+}
+
+function isCinematicStepType(value: string): value is CinematicStep['type'] {
+    return value === 'camera'
+        || value === 'subtitle'
+        || value === 'speech'
+        || value === 'move'
+        || value === 'wait'
+        || value === 'fade'
+        || value === 'sound'
 }

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voxel-platformer.local/schemas/worldspec.schema.json",
+  "title": "Voxel Platformer WorldSpec",
+  "description": "Authoring schema for deterministic worldgen specs. The TypeScript compiler diagnostics remain authoritative.",
+  "type": "object",
+  "required": ["version", "world"],
+  "properties": {
+    "version": { "const": 1 },
+    "world": {
+      "type": "object",
+      "required": ["id", "name", "type", "seed", "size"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["surface", "underground", "hybrid"] },
+        "seed": { "type": "string", "minLength": 1 },
+        "size": { "$ref": "#/$defs/vec3" },
+        "defaultGroundY": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "materials": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "terrain": {
+      "type": "object",
+      "properties": {
+        "base_height": { "type": "number" },
+        "noise": { "type": "object", "additionalProperties": true },
+        "features": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/idObject" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "volume": { "type": "object", "additionalProperties": true },
+    "carvers": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "connectors": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "paths": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "main_paths": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "anchors": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "structures": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "scatter": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "content": {
+      "type": "object",
+      "properties": {
+        "props": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "zones": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "npcs": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "pickups": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "shops": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "quests": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "scripts": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "cinematics": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "travel": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "environment": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "require_paths": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/idObject" },
+              {
+                "type": "object",
+                "required": ["from", "to"],
+                "properties": {
+                  "from": { "type": "string", "minLength": 1 },
+                  "to": { "type": "string", "minLength": 1 },
+                  "actor": { "type": "string" },
+                  "optional": { "type": "boolean" }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "vec2": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number" }
+    },
+    "vec3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" }
+    },
+    "idObject": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "place_at": { "type": "string" },
+        "place_at_xz": { "$ref": "#/$defs/vec2" },
+        "offset": { "$ref": "#/$defs/vec3" },
+        "offset_xz": { "$ref": "#/$defs/vec2" },
+        "offset_y": { "type": "number" },
+        "dy": { "type": "number" },
+        "required": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "contentEntry": {
+      "allOf": [
+        { "$ref": "#/$defs/idObject" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string" },
+            "kind": { "type": "string" },
+            "target": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

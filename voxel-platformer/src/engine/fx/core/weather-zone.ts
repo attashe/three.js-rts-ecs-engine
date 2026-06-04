@@ -29,6 +29,7 @@ export class WeatherZone {
     private scene: Scene | null = null
     private readonly rng: () => number
     private readonly worldPosition = new Vector3()
+    private readonly initDummy = new Object3D()
 
     constructor(params: WeatherZoneParams) {
         this.group = new Group()
@@ -85,6 +86,7 @@ export class WeatherZone {
         this.syncObjects()
         // Seed every particle.
         for (let i = 0; i < this.runtime.particles.count; i++) strategy.spawn(this.runtime, i, false, this.rng)
+        this.writeInitialState(strategy)
         scene.add(this.group)
     }
 
@@ -130,6 +132,7 @@ export class WeatherZone {
         if (created.surfaceOverlay) { this.runtime.surfaceOverlay = created.surfaceOverlay; this.group.add(created.surfaceOverlay) }
         this.syncObjects()
         for (let i = 0; i < this.runtime.particles.count; i++) strategy.spawn(this.runtime, i, false, this.rng)
+        this.writeInitialState(strategy)
         this.runtime.dirty = false
         ;(void scene)
     }
@@ -218,6 +221,20 @@ export class WeatherZone {
             this.runtime.surfaceOverlay.position.set(0, y, 0)
             this.runtime.surfaceOverlay.scale.set(p.size.x * 0.94, 1, p.size.z * 0.94)
         }
+    }
+
+    private writeInitialState(strategy: EmitterStrategy): void {
+        // Shader warmup may temporarily reveal hidden zone groups before the
+        // first frame update. Write once after seeding particles so instanced
+        // meshes never render their default identity matrices as a static clump.
+        this.group.updateMatrixWorld(true)
+        this.group.getWorldPosition(this.worldPosition)
+        const ctx: WriteContext = {
+            cameraPosition: this.worldPosition,
+            zonePosition: this.worldPosition,
+            dummy: this.initDummy,
+        }
+        strategy.write(this.runtime, this.runtime.elapsed, ctx)
     }
 }
 

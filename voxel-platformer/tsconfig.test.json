@@ -70,6 +70,7 @@
     "src/game/worldgen/compile-context.ts",
     "src/game/worldgen/compile-surface.ts",
     "src/game/worldgen/index.ts",
+    "scripts/compile-world-spec.ts",
     "scripts/export-procedural-levels.ts",
     "tests/**/*.ts"
   ]

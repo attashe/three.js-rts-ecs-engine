@@ -5,10 +5,10 @@ import { compileUndergroundWorld } from './compile-underground'
 import { normalizeWorldSpec } from './normalize-spec'
 import { createWorldgenReport } from './report'
 import { hashHex, stableJson } from './rng'
-import type { NormalizedWorldSpec, WorldSpec, WorldgenCompileOptions, WorldgenCompileResult } from './spec-types'
+import type { NormalizedWorldSpec, WorldgenCompileOptions, WorldgenCompileResult } from './spec-types'
 
 export function compileWorldSpec(
-    spec: WorldSpec,
+    spec: unknown,
     opts: WorldgenCompileOptions = {},
 ): WorldgenCompileResult {
     const normalized = normalizeWorldSpec(spec)
