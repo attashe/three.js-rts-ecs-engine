@@ -4,22 +4,9 @@ import { findPath } from '../../engine/voxel/voxel-path'
 import type { Zone } from '../../engine/ecs/zones'
 import type { EditorProp } from '../props/prop-types'
 import { defineLevel, outdoorDay } from '../level-builder'
-import {
-    generateStructureAsset,
-    measureStructurePlacement,
-    placeStructureAsset,
-    prefabSource,
-    proceduralSource,
-    structurePropPlacements,
-    type StructureAsset,
-    type StructureRotation,
-    type StructureSource,
-} from '../../procedural-structures'
 import type {
     AnchorSpec,
     NormalizedWorldSpec,
-    ScatterSpec,
-    StructurePlacementSpec,
     SurfaceFeatureSpec,
     Vec2Tuple,
     VoxelCoord,
@@ -29,14 +16,16 @@ import type {
 } from './spec-types'
 import { createWorldgenReport, finalizeWorldgenReport, setWorldgenMetricCounts } from './report'
 import { hash32, hashHex, stableJson } from './rng'
-import { WorldgenCompileContext, clamp, footprintBounds, lerp, smoothstep } from './compile-context'
-
-interface SurfaceGrid {
-    readonly size: number
-    readonly sizeY: number
-    readonly height: Int16Array
-    readonly material: Uint16Array
-}
+import { WorldgenCompileContext, clamp, lerp, smoothstep } from './compile-context'
+import {
+    createSurfaceGrid,
+    setSurface,
+    surfaceBlock,
+    surfaceY,
+    writeTerrainColumn,
+    type SurfaceGrid,
+} from './surface-grid'
+import { placeStructures, scatterStructures } from './surface-structures'
 
 interface PointDistance {
     dist: number
@@ -44,12 +33,6 @@ interface PointDistance {
     t: number
     cx: number
     cz: number
-}
-
-interface ResolvedAsset {
-    source: StructureSource
-    structuralOnly: boolean
-    kind: 'portal' | 'house' | 'tree' | 'generic'
 }
 
 const SUPPORTED_FEATURES = new Set(['cliff_band', 'road_spline', 'flatten_disc', 'mountain_peak'])
@@ -126,16 +109,6 @@ export function compileSurfaceWorld(
     })
 
     return finish(ctx, meta)
-}
-
-function createSurfaceGrid(ctx: WorldgenCompileContext): SurfaceGrid {
-    const count = ctx.sizeX * ctx.sizeZ
-    return {
-        size: ctx.sizeX,
-        sizeY: ctx.sizeY,
-        height: new Int16Array(count),
-        material: new Uint16Array(count),
-    }
 }
 
 function compileBaseHeightfield(ctx: WorldgenCompileContext, grid: SurfaceGrid): void {
@@ -355,350 +328,6 @@ function writeInitialTerrain(ctx: WorldgenCompileContext, grid: SurfaceGrid): vo
     }
 }
 
-function writeTerrainColumn(ctx: WorldgenCompileContext, grid: SurfaceGrid, x: number, z: number, topY: number, topBlock: number): void {
-    const oldY = surfaceY(grid, x, z)
-    const nextY = ctx.clampSurfaceY(topY)
-    const soilY = Math.max(0, nextY - 1)
-    const clearFrom = Math.max(oldY, nextY) + 1
-    for (let y = clearFrom; y < ctx.sizeY; y += 1) ctx.setVoxel(x, y, z, BLOCK.air)
-    for (let y = 0; y < nextY; y += 1) ctx.setVoxel(x, y, z, y === soilY ? BLOCK.dirt : BLOCK.stone)
-    ctx.setVoxel(x, nextY, z, topBlock)
-    setSurface(grid, x, z, nextY, topBlock)
-}
-
-function placeStructures(ctx: WorldgenCompileContext, grid: SurfaceGrid, props: EditorProp[], zones: Zone[]): void {
-    const structures = ctx.spec.structures ?? []
-    for (let i = 0; i < structures.length; i += 1) {
-        placeOneStructure(ctx, grid, structures[i]!, `$.structures[${i}]`, props, zones, null)
-    }
-}
-
-function scatterStructures(ctx: WorldgenCompileContext, grid: SurfaceGrid, props: EditorProp[]): void {
-    const scatter = ctx.spec.scatter ?? []
-    for (let i = 0; i < scatter.length; i += 1) {
-        const sc = scatter[i]!
-        const path = `$.scatter[${i}]`
-        const count = Math.max(0, Math.floor(ctx.number(sc.count, 0, `${path}.count`, { min: 0 })))
-        if (count <= 0) {
-            ctx.report.placements.push({ id: sc.id, kind: 'scatter_summary', requested: count, placed: 0, skipped: 0 })
-            continue
-        }
-        const resolved = resolveAsset(ctx, sc.asset, path, sc.id, false)
-        if (!resolved) continue
-        const asset = generateStructureAsset(resolved.source, { palette: ctx.chunks.palette, structuralOnly: resolved.structuralOnly })
-        const cell = Math.max(1, Math.floor(ctx.number(readNestedNumber(sc, 'deterministic_grid', 'cell'), 6, `${path}.deterministic_grid.cell`, { min: 1 })))
-        const jitter = Math.max(0, Math.floor(ctx.number(readNestedNumber(sc, 'deterministic_grid', 'jitter'), 2, `${path}.deterministic_grid.jitter`, { min: 0 })))
-        const candidates: { score: number; x: number; z: number }[] = []
-        for (let gx = 0; gx < ctx.sizeX; gx += cell) {
-            for (let gz = 0; gz < ctx.sizeZ; gz += cell) {
-                const x = clamp(gx + Math.floor(cell / 2) + ctx.randInt(-jitter, jitter, sc.id, gx, gz, 'x'), 0, ctx.sizeX - 1)
-                const z = clamp(gz + Math.floor(cell / 2) + ctx.randInt(-jitter, jitter, sc.id, gx, gz, 'z'), 0, ctx.sizeZ - 1)
-                candidates.push({ score: ctx.rand01(sc.id, gx, gz, 'score'), x: Math.floor(x), z: Math.floor(z) })
-            }
-        }
-        candidates.sort((a, b) => b.score - a.score || a.x - b.x || a.z - b.z)
-
-        let placed = 0
-        let skipped = 0
-        for (const candidate of candidates) {
-            if (placed >= count) break
-            if (!scatterCandidateAllowed(ctx, grid, sc, path, asset, resolved.kind, candidate.x, candidate.z)) {
-                skipped += 1
-                continue
-            }
-            const id = `${sc.id}_${String(placed).padStart(3, '0')}`
-            if (placeResolvedStructure(ctx, grid, {
-                id,
-                path,
-                asset,
-                assetKind: resolved.kind,
-                required: false,
-                x: candidate.x,
-                z: candidate.z,
-                autoY: { strategy: 'center' },
-                rotation: 0,
-                allowOwner: null,
-                props,
-                zones: [],
-            })) {
-                placed += 1
-            } else {
-                skipped += 1
-            }
-        }
-        ctx.report.placements.push({ id: sc.id, kind: 'scatter_summary', requested: count, placed, skipped })
-        if (placed < count) {
-            ctx.warning({
-                code: 'placement_failed',
-                message: `Scatter "${sc.id}" placed ${placed} of ${count} requested items.`,
-                path,
-                details: { requested: count, placed, skipped },
-            })
-        }
-    }
-}
-
-function placeOneStructure(
-    ctx: WorldgenCompileContext,
-    grid: SurfaceGrid,
-    spec: StructurePlacementSpec,
-    path: string,
-    props: EditorProp[],
-    zones: Zone[],
-    overrideId: string | null,
-): boolean {
-    const id = overrideId ?? spec.id
-    const resolved = resolveAsset(ctx, spec.asset, path, id, spec.required !== false)
-    if (!resolved) return false
-    const point = resolveStructurePoint(ctx, spec, path)
-    if (!point) return false
-    const asset = generateStructureAsset(resolved.source, { palette: ctx.chunks.palette, structuralOnly: resolved.structuralOnly })
-    return placeResolvedStructure(ctx, grid, {
-        id,
-        path,
-        asset,
-        assetKind: resolved.kind,
-        required: spec.required !== false,
-        x: point.x,
-        z: point.z,
-        autoY: isRecord(spec.auto_y) ? spec.auto_y : spec.auto_y === true ? { strategy: 'surface_max' } : {},
-        rotation: readRotation(ctx, spec.rotation, `${path}.rotation`),
-        allowOwner: point.allowOwner,
-        props,
-        zones,
-    })
-}
-
-function placeResolvedStructure(
-    ctx: WorldgenCompileContext,
-    grid: SurfaceGrid,
-    request: {
-        id: string
-        path: string
-        asset: StructureAsset
-        assetKind: ResolvedAsset['kind']
-        required: boolean
-        x: number
-        z: number
-        autoY: Record<string, unknown>
-        rotation: StructureRotation
-        allowOwner: string | null
-        props: EditorProp[]
-        zones: Zone[]
-    },
-): boolean {
-    const measure = measureStructurePlacement(request.asset, {
-        origin: { x: request.x, y: 0, z: request.z },
-        rotation: request.rotation,
-        anchor: 'bottom-center',
-    })
-    if (
-        measure.bounds.minX < 0 ||
-        measure.bounds.minZ < 0 ||
-        measure.bounds.maxX >= ctx.sizeX ||
-        measure.bounds.maxZ >= ctx.sizeZ
-    ) {
-        return placementProblem(ctx, request.required, request.path, `Structure "${request.id}" visual bounds leave world bounds.`, {
-            id: request.id,
-            bounds: measure.bounds,
-        })
-    }
-    const logicalFootprint = reservationFootprint(request.asset, request.assetKind)
-    const sample = sampleFootprint(ctx, grid, request.x, request.z, logicalFootprint.width, logicalFootprint.depth)
-    if (!sample) {
-        return placementProblem(ctx, request.required, request.path, `Structure "${request.id}" footprint leaves world bounds.`, { id: request.id })
-    }
-
-    const strategy = typeof request.autoY.strategy === 'string' ? request.autoY.strategy : 'surface_max'
-    const terraform = typeof request.autoY.terraform === 'string' ? request.autoY.terraform : 'none'
-    const minY = Math.min(...sample.heights)
-    const maxY = Math.max(...sample.heights)
-    const centerY = surfaceY(grid, request.x, request.z)
-    const terrainDelta = maxY - minY
-    const maxDelta = typeof request.autoY.max_terrain_delta === 'number' ? request.autoY.max_terrain_delta : null
-    if (maxDelta !== null && terrainDelta > maxDelta && terraform !== 'flatten_footprint') {
-        return placementProblem(ctx, request.required, request.path, `Terrain under "${request.id}" is too uneven.`, {
-            id: request.id,
-            terrainDelta,
-            maxDelta,
-        })
-    }
-
-    const baseSurfaceY = strategy === 'center' ? centerY : strategy === 'surface_min' ? minY : maxY
-    const material = ctx.material(request.autoY.material, 'grass', `${request.path}.auto_y.material`)
-    if (terraform === 'flatten_footprint') {
-        for (const cell of sample.cells) writeTerrainColumn(ctx, grid, cell.x, cell.z, baseSurfaceY, material)
-    }
-
-    if (!ctx.reserveFootprint(request.id, request.x, request.z, logicalFootprint.width, logicalFootprint.depth, request.allowOwner)) {
-        return placementProblem(ctx, request.required, request.path, `Footprint is not free for "${request.id}".`, {
-            id: request.id,
-            x: request.x,
-            z: request.z,
-            footprint: logicalFootprint,
-        })
-    }
-
-    const transform = {
-        origin: { x: request.x, y: baseSurfaceY + 1, z: request.z },
-        rotation: request.rotation,
-        anchor: 'bottom-center' as const,
-    }
-    const result = placeStructureAsset(ctx.chunks, request.asset, transform)
-    ctx.writtenVoxels += result.changedVoxels
-    request.props.push(...structurePropPlacements(request.asset, transform, `worldgen:${request.id}`))
-    const access = structureAccessPoint(request.asset, transform, request.assetKind)
-    ctx.resolveObject(request.id, access)
-    ctx.report.placements.push({
-        id: request.id,
-        kind: 'structure',
-        assetKind: request.assetKind,
-        x: request.x,
-        y: transform.origin.y,
-        z: request.z,
-        access,
-        changedVoxels: result.changedVoxels,
-        auto_y: {
-            strategy,
-            center_surface_y: centerY,
-            footprint_min_surface_y: minY,
-            footprint_max_surface_y: maxY,
-            terrain_delta: terrainDelta,
-            max_terrain_delta: maxDelta,
-            chosen_surface_y: baseSurfaceY,
-            terraform,
-        },
-        visualBounds: result.bounds,
-        reservedFootprint: logicalFootprint,
-    })
-    if (request.assetKind === 'portal') request.zones.push(inactivePortalMarkerZone(request.id, access))
-    return true
-}
-
-function resolveStructurePoint(
-    ctx: WorldgenCompileContext,
-    spec: StructurePlacementSpec,
-    path: string,
-): { x: number; z: number; allowOwner: string | null } | null {
-    if (typeof spec.place_at === 'string') {
-        const anchor = ctx.report.resolvedAnchors[spec.place_at]
-        if (!anchor) {
-            ctx.error({
-                code: 'missing_reference',
-                message: `Structure "${spec.id}" references missing anchor "${spec.place_at}".`,
-                path: `${path}.place_at`,
-                details: { id: spec.id, place_at: spec.place_at },
-            })
-            return null
-        }
-        return { x: Math.floor(anchor.x), z: Math.floor(anchor.z), allowOwner: spec.place_at }
-    }
-    const point = ctx.vec2(spec.place_at_xz, `${path}.place_at_xz`)
-    if (!point) return null
-    return { x: Math.round(point[0]), z: Math.round(point[1]), allowOwner: null }
-}
-
-function resolveAsset(
-    ctx: WorldgenCompileContext,
-    assetId: unknown,
-    path: string,
-    id: string,
-    required: boolean,
-): ResolvedAsset | null {
-    if (typeof assetId !== 'string' || assetId.trim().length === 0) {
-        const diagnostic = {
-            code: 'unsupported_structure_asset',
-            message: `Structure "${id}" must declare an asset id.`,
-            path: `${path}.asset`,
-            details: { id, asset: assetId },
-        }
-        if (required) ctx.error(diagnostic)
-        else ctx.warning(diagnostic)
-        return null
-    }
-    const asset = assetId.trim()
-    if (asset === 'fixed.portal.blue_stone' || asset === 'prefab.portal-gate') {
-        return { source: prefabSource('portal-gate'), structuralOnly: false, kind: 'portal' }
-    }
-    if (asset === 'proc.house.hermit_cottage') {
-        return {
-            source: proceduralSource('house', ctx.key(id, asset), {
-                house: {
-                    scale: 'folk',
-                    style: 'cottage',
-                    width: 7,
-                    depth: 6,
-                    floors: 1,
-                    floorHeight: 3,
-                    roofStyle: 'gable',
-                    sideWing: false,
-                    porch: true,
-                    chimney: true,
-                },
-            }),
-            structuralOnly: true,
-            kind: 'house',
-        }
-    }
-    if (asset === 'proc.tree.pine') {
-        return {
-            source: prefabSource('compact-pine'),
-            structuralOnly: false,
-            kind: 'tree',
-        }
-    }
-    const diagnostic = {
-        code: 'unsupported_structure_asset',
-        message: `Unsupported Phase 3 structure asset "${asset}".`,
-        path: `${path}.asset`,
-        details: { id, asset },
-    }
-    if (required) ctx.error(diagnostic)
-    else ctx.warning(diagnostic)
-    return null
-}
-
-function scatterCandidateAllowed(
-    ctx: WorldgenCompileContext,
-    grid: SurfaceGrid,
-    sc: ScatterSpec,
-    path: string,
-    asset: StructureAsset,
-    assetKind: ResolvedAsset['kind'],
-    x: number,
-    z: number,
-): boolean {
-    if (!ctx.inXZ(x, z)) return false
-    const mask = isRecord(sc.mask) ? sc.mask : {}
-    const logicalFootprint = reservationFootprint(asset, assetKind)
-    if (mask.avoid_reserved === true && !ctx.isFootprintFree(x, z, logicalFootprint.width, logicalFootprint.depth)) return false
-    if (typeof mask.min_distance_to_road === 'number' && mask.min_distance_to_road > 0 && ctx.roadCells.size > 0) {
-        const minD2 = mask.min_distance_to_road * mask.min_distance_to_road
-        for (const cell of ctx.roadCells) {
-            const [rx, rz] = cell.split(',').map(Number)
-            if (((rx ?? 0) - x) ** 2 + ((rz ?? 0) - z) ** 2 < minD2) return false
-        }
-    }
-    if (typeof mask.slope_lte === 'number' && slopeAt(grid, x, z) > mask.slope_lte) return false
-    if (typeof mask.elevation_gte === 'number' && surfaceY(grid, x, z) < mask.elevation_gte) return false
-    if (typeof mask.elevation_lte === 'number' && surfaceY(grid, x, z) > mask.elevation_lte) return false
-    if (mask.avoid_reserved !== undefined && typeof mask.avoid_reserved !== 'boolean') {
-        ctx.error({
-            code: 'invalid_feature',
-            message: `${path}.mask.avoid_reserved must be a boolean.`,
-            path: `${path}.mask.avoid_reserved`,
-            details: { value: mask.avoid_reserved },
-        })
-        return false
-    }
-    return true
-}
-
-function reservationFootprint(asset: StructureAsset, kind: ResolvedAsset['kind']): { width: number; depth: number } {
-    if (kind === 'tree') return { width: Math.min(asset.footprint.width, 5), depth: Math.min(asset.footprint.depth, 5) }
-    return asset.footprint
-}
-
 function validateRequiredPaths(ctx: WorldgenCompileContext): void {
     const rules = ctx.spec.validation?.require_paths ?? []
     for (let i = 0; i < rules.length; i += 1) {
@@ -815,75 +444,6 @@ function applyFlattenDisc(
     }
 }
 
-function sampleFootprint(ctx: WorldgenCompileContext, grid: SurfaceGrid, cx: number, cz: number, width: number, depth: number): {
-    heights: number[]
-    cells: { x: number; z: number }[]
-} | null {
-    const bounds = footprintBounds(cx, cz, width, depth)
-    const heights: number[] = []
-    const cells: { x: number; z: number }[] = []
-    for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
-        for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
-            if (!ctx.inXZ(x, z)) return null
-            heights.push(surfaceY(grid, x, z))
-            cells.push({ x, z })
-        }
-    }
-    return { heights, cells }
-}
-
-function placementProblem(
-    ctx: WorldgenCompileContext,
-    required: boolean,
-    path: string,
-    message: string,
-    details: unknown,
-): false {
-    const diagnostic = { code: 'placement_failed', message, path, details }
-    if (required) ctx.error(diagnostic)
-    else ctx.warning(diagnostic)
-    return false
-}
-
-function inactivePortalMarkerZone(id: string, access: VoxelCoord): Zone {
-    return {
-        id: `worldgen:${id}:portal-zone`,
-        kind: 'portal',
-        label: id,
-        min: { x: access.x - 1, y: access.y - 1, z: access.z - 1 },
-        max: { x: access.x + 1, y: access.y + 2, z: access.z + 1 },
-        active: false,
-    }
-}
-
-function structureAccessPoint(asset: StructureAsset, transform: { origin: VoxelCoord; rotation: StructureRotation }, kind: ResolvedAsset['kind']): VoxelCoord {
-    const front = kind === 'tree' ? 0 : Math.floor(asset.footprint.depth / 2) + 1
-    const offset = rotateOffset(0, front, transform.rotation)
-    return { x: transform.origin.x + offset.x + 0.5, y: transform.origin.y, z: transform.origin.z + offset.z + 0.5 }
-}
-
-function rotateOffset(dx: number, dz: number, rotation: StructureRotation): { x: number; z: number } {
-    switch (rotation) {
-        case 90: return { x: dz, z: -dx }
-        case 180: return { x: -dx, z: -dz }
-        case 270: return { x: -dz, z: dx }
-        case 0:
-        default: return { x: dx, z: dz }
-    }
-}
-
-function readRotation(ctx: WorldgenCompileContext, value: unknown, path: string): StructureRotation {
-    if (value === undefined) return 0
-    if (value === 0 || value === 90 || value === 180 || value === 270) return value
-    ctx.error({
-        code: 'invalid_feature',
-        message: `${path} must be one of 0, 90, 180, or 270.`,
-        path,
-        details: { value },
-    })
-    return 0
-}
-
 function readPointList(ctx: WorldgenCompileContext, value: unknown, path: string): Vec2Tuple[] {
     if (!Array.isArray(value)) {
         ctx.error({
@@ -911,12 +471,6 @@ function readReserve(value: unknown): [number, number, number] | null {
         return [Math.floor(Number(value[0])), Math.floor(Number(value[1])), Math.floor(Number(value[2]))]
     }
     return null
-}
-
-function readNestedNumber(source: unknown, objectKey: string, fieldKey: string): unknown {
-    if (!isRecord(source)) return undefined
-    const object = source[objectKey]
-    return isRecord(object) ? object[fieldKey] : undefined
 }
 
 function pointSegmentDistance(x: number, z: number, from: Vec2Tuple, to: Vec2Tuple): PointDistance {
@@ -976,40 +530,6 @@ function signedValueNoise2D(seed: string, x: number, z: number, scale = 18, octa
         frequency *= 2
     }
     return total / Math.max(totalAmp, 0.0001)
-}
-
-function slopeAt(grid: SurfaceGrid, x: number, z: number): number {
-    const y = surfaceY(grid, x, z)
-    let slope = 0
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const nx = x + dx
-        const nz = z + dz
-        if (nx < 0 || nz < 0 || nx >= grid.size || nz >= grid.size) continue
-        slope = Math.max(slope, Math.abs(surfaceY(grid, nx, nz) - y))
-    }
-    return slope
-}
-
-function surfaceIndex(grid: SurfaceGrid, x: number, z: number): number {
-    return x + z * grid.size
-}
-
-function surfaceY(grid: SurfaceGrid, x: number, z: number): number {
-    const xx = clamp(Math.floor(x), 0, grid.size - 1)
-    const zz = clamp(Math.floor(z), 0, grid.size - 1)
-    return grid.height[surfaceIndex(grid, xx, zz)]!
-}
-
-function surfaceBlock(grid: SurfaceGrid, x: number, z: number): number {
-    const xx = clamp(Math.floor(x), 0, grid.size - 1)
-    const zz = clamp(Math.floor(z), 0, grid.size - 1)
-    return grid.material[surfaceIndex(grid, xx, zz)]!
-}
-
-function setSurface(grid: SurfaceGrid, x: number, z: number, y: number, block: number): void {
-    const idx = surfaceIndex(grid, x, z)
-    grid.height[idx] = Math.round(y)
-    grid.material[idx] = block
 }
 
 function voxelPoint(point: VoxelCoord): { x: number; y: number; z: number } {

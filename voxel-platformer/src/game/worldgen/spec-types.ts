@@ -100,14 +100,31 @@ export interface AnchorSpec extends IdSpec {
 }
 
 export interface StructurePlacementSpec extends IdSpec {
-    asset: string
+    type?: 'group' | string
+    asset?: string
+    items?: StructureGroupItemSpec[]
     required?: boolean
     material?: string
     [key: string]: unknown
 }
 
+export interface StructureGroupItemSpec extends IdSpec {
+    asset: string
+    offset_xz?: Vec2Tuple
+    required?: boolean
+    material?: string
+    [key: string]: unknown
+}
+
+export interface ScatterAssetSpec {
+    asset: string
+    weight?: number
+    [key: string]: unknown
+}
+
 export interface ScatterSpec extends IdSpec {
     asset?: string
+    assets?: ScatterAssetSpec[]
     material?: string
     [key: string]: unknown
 }

@@ -406,17 +406,48 @@ Acceptance criteria:
 ### Phase 4 - Structures And Scatter
 
 Generalize the asset registry and scatter placement for villages, forests,
-prop clusters, and structure groups.
+prop clusters, and structure groups. Phase 4 keeps the compiler native: specs
+resolve into existing `prefabSource` / `proceduralSource` values, assets are
+measured with the procedural-structures package, and placements mutate the same
+Phase 3 compile context/report.
+
+Implementation shape:
+
+- `surface-grid.ts` owns surface-height sampling, terrain-column rewrites, and
+  footprint sampling so terrain and placement code share one grid contract.
+- `asset-registry.ts` maps DSL ids to engine assets. Legacy ids remain stable:
+  `fixed.portal.blue_stone`, `proc.house.hermit_cottage`, and `proc.tree.pine`.
+  General ids now include `prefab.<prefab-id>`, `proc.house.<style>`,
+  `proc.tree.<style>`, `proc.tower.<style>`, and `proc.wall.<style>`.
+- `surface-structures.ts` owns structure placement, group placement, weighted
+  scatter, reservation checks, prop recovery, and placement diagnostics.
+- `compile-surface.ts` stays focused on surface terrain, anchors, orchestration,
+  validation, and final report/metadata assembly.
 
 Acceptance criteria:
 
 - Structure/scatter placement consumes resolved anchors and compile-context
   services from Phase 3 rather than re-reading raw placement coordinates.
-- Structure specs resolve to `prefabSource` or `proceduralSource`.
+- Structure specs resolve to `prefabSource` or `proceduralSource` through a
+  central registry that can classify portals, trees, houses, towers, walls,
+  shops, forges, and generic prefabs for report and access-point behavior.
 - Placement uses `measureStructurePlacement` and `placeStructureAsset`.
 - Footprint reservation prevents overlap.
 - Prop recovery through `structurePropPlacements` is preserved.
-- Scatter reports requested, placed, skipped, and warning counts.
+- Structure groups support a parent `place_at` / `place_at_xz`, parent rotation,
+  per-child `offset_xz`, child rotation, inherited `auto_y`, and stable
+  resolved object ids such as `village_core.well`.
+- Scatter supports either one `asset` or weighted `assets[]`, deterministic
+  asset choice, deterministic rotations, footprint-aware candidate checks, and
+  explicit skip reasons (`bounds`, `reserved`, `road`, `slope`, `elevation`,
+  `mask`, `placement`, `asset`).
+- Scatter reports requested, candidates, placed, skipped, `skippedByReason`,
+  and warning counts.
+- Unsupported structure assets and invalid scatter masks produce explicit
+  report diagnostics instead of silently dropping content.
+- Tests cover prefab shop prop recovery, procedural tower placement, grouped
+  structures, weighted scatter rotations, skip reason reporting, and the legacy
+  Phase 3 valley spec.
 
 ### Phase 5 - Underground MVP
 

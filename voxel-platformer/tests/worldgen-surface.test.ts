@@ -244,6 +244,156 @@ test('missing validation references and optional placement skips are reported cl
     }
 })
 
+test('phase 4 registry resolves general prefabs, procedural structures, and recovered props', () => {
+    const spec: WorldSpec = {
+        version: 1,
+        world: {
+            id: 'phase4.registry',
+            name: 'Phase 4 Registry',
+            type: 'surface',
+            seed: 'phase4-registry',
+            size: [80, 40, 80],
+        },
+        terrain: { base_height: 6 },
+        anchors: [{ id: 'spawn', place_at_xz: [6, 6], reserve: [3, 4, 3] }],
+        structures: [
+            {
+                id: 'dwarf_market',
+                asset: 'prefab.dwarf-product-market',
+                place_at_xz: [18, 18],
+                rotation: 90,
+                auto_y: { strategy: 'surface_max', terraform: 'flatten_footprint', material: 'platform' },
+                required: true,
+            },
+            {
+                id: 'lookout_tower',
+                asset: 'proc.tower.round',
+                place_at_xz: [52, 18],
+                auto_y: { strategy: 'surface_max', terraform: 'flatten_footprint', material: 'platform' },
+                params: { tower: { radius: 3, height: 9, spire: false } },
+                required: true,
+            },
+        ],
+    }
+    const normalized = normalizeWorldSpec(spec)
+    assert.equal(normalized.ok, true)
+    if (!normalized.ok) return
+
+    const result = compileSurfaceWorld(normalized.spec)
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors))
+    const market = result.report.placements.find((placement) => placement.id === 'dwarf_market' && placement.kind === 'structure')
+    assert.equal(market?.assetKind, 'shop')
+    assert.equal(market?.sourceKind, 'prefab')
+    assert.ok(Number(market?.propCount) > 0)
+    assert.ok(result.meta.props.some((prop) => prop.id.startsWith('worldgen:dwarf_market:') && prop.kind === 'market-meat'))
+
+    const tower = result.report.placements.find((placement) => placement.id === 'lookout_tower' && placement.kind === 'structure')
+    assert.equal(tower?.assetKind, 'tower')
+    assert.equal(tower?.sourceKind, 'procedural')
+    assert.ok(result.report.resolvedObjects.lookout_tower)
+})
+
+test('phase 4 structure groups place rotated child structures with stable object ids', () => {
+    const spec: WorldSpec = {
+        version: 1,
+        world: {
+            id: 'phase4.group',
+            name: 'Phase 4 Group',
+            type: 'surface',
+            seed: 'phase4-group',
+            size: [64, 32, 64],
+        },
+        terrain: { base_height: 6 },
+        anchors: [{ id: 'spawn', place_at_xz: [6, 6], reserve: [3, 4, 3] }],
+        structures: [
+            {
+                id: 'village_core',
+                type: 'group',
+                place_at_xz: [34, 34],
+                rotation: 90,
+                auto_y: { strategy: 'surface_max', terraform: 'flatten_footprint', material: 'platform' },
+                items: [
+                    { id: 'well', asset: 'prefab.well', offset_xz: [0, 0] },
+                    { id: 'camp', asset: 'prefab.campfire', offset_xz: [8, 0], rotation: 270 },
+                ],
+            },
+        ],
+    }
+    const normalized = normalizeWorldSpec(spec)
+    assert.equal(normalized.ok, true)
+    if (!normalized.ok) return
+
+    const result = compileSurfaceWorld(normalized.spec)
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors))
+    assert.ok(result.report.resolvedObjects.village_core)
+    assert.ok(result.report.resolvedObjects['village_core.well'])
+    assert.ok(result.report.resolvedObjects['village_core.camp'])
+    const group = result.report.placements.find((placement) => placement.id === 'village_core' && placement.kind === 'structure_group')
+    assert.equal(group?.childCount, 2)
+    assert.equal(group?.placed, 2)
+    const camp = result.report.placements.find((placement) => placement.id === 'village_core.camp' && placement.kind === 'structure')
+    assert.equal(camp?.z, 26)
+})
+
+test('phase 4 weighted scatter supports rotations and skip reason reporting', () => {
+    const spec: WorldSpec = {
+        version: 1,
+        world: {
+            id: 'phase4.scatter',
+            name: 'Phase 4 Scatter',
+            type: 'surface',
+            seed: 'phase4-scatter',
+            size: [48, 32, 48],
+        },
+        terrain: {
+            base_height: 6,
+            features: [
+                { id: 'road', type: 'road_spline', points: [[4, 20], [44, 20]], width: 1, shoulder: 1, material: 'path' },
+            ],
+        },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4], reserve: [7, 4, 7] }],
+        scatter: [
+            {
+                id: 'mixed_scatter',
+                count: 6,
+                assets: [
+                    { asset: 'prefab.compact-pine', weight: 2 },
+                    { asset: 'prefab.campfire', weight: 1 },
+                ],
+                rotations: [0, 90, 180, 270],
+                mask: { avoid_reserved: true },
+                deterministic_grid: { cell: 8, jitter: 0 },
+            },
+            {
+                id: 'too_high',
+                asset: 'prefab.compact-pine',
+                count: 3,
+                mask: { elevation_gte: 99 },
+                deterministic_grid: { cell: 8, jitter: 0 },
+            },
+        ],
+    }
+    const normalized = normalizeWorldSpec(spec)
+    assert.equal(normalized.ok, true)
+    if (!normalized.ok) return
+
+    const result = compileSurfaceWorld(normalized.spec)
+    assert.equal(result.report.status, 'warning')
+    const mixed = result.report.placements.find((placement) => placement.id === 'mixed_scatter' && placement.kind === 'scatter_summary')
+    assert.equal(mixed?.requested, 6)
+    assert.equal(mixed?.placed, 6)
+    assert.ok(Number(mixed?.candidates) > 0)
+    const placed = result.report.placements.filter((placement) => typeof placement.id === 'string' && placement.id.startsWith('mixed_scatter_'))
+    assert.equal(placed.length, 6)
+    assert.ok(placed.every((placement) => [0, 90, 180, 270].includes(Number(placement.rotation))))
+    assert.ok(placed.every((placement) => placement.assetId === 'prefab.compact-pine' || placement.assetId === 'prefab.campfire'))
+
+    const high = result.report.placements.find((placement) => placement.id === 'too_high' && placement.kind === 'scatter_summary')
+    assert.equal(high?.placed, 0)
+    assert.ok(Number((high?.skippedByReason as Record<string, unknown> | undefined)?.elevation) > 0)
+    assert.ok(result.report.warnings.some((warning) => warning.code === 'placement_failed' && warning.message.includes('too_high')))
+})
+
 function topYAt(result: ReturnType<typeof compileSurfaceWorld>, x: number, z: number): number {
     for (let y = result.report.metrics.size?.[1] ?? 64; y >= 0; y -= 1) {
         if (result.chunks.getVoxel(x, y, z) !== BLOCK.air) return y
