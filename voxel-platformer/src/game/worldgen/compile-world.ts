@@ -1,6 +1,7 @@
 import { WorldgenCompileContext } from './compile-context'
 import { emptyWorldgenMeta, finishWorldgenCompile, invalidWorldgenMeta, worldgenChunks } from './compile-result'
 import { compileSurfaceWorld } from './compile-surface'
+import { compileUndergroundWorld } from './compile-underground'
 import { normalizeWorldSpec } from './normalize-spec'
 import { createWorldgenReport } from './report'
 import { hashHex, stableJson } from './rng'
@@ -29,6 +30,7 @@ export function compileNormalizedWorldSpec(
         case 'surface':
             return compileSurfaceWorld(spec, opts)
         case 'underground':
+            return compileUndergroundWorld(spec, opts)
         case 'hybrid':
             return unsupportedWorldType(spec, opts)
     }

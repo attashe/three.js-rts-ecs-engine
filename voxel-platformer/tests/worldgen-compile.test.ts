@@ -80,21 +80,21 @@ test('compileWorldSpec dispatches surface specs and compiles MVP content into Le
     assert.equal(result.meta.scripts[0]?.name, 'intro.js')
 })
 
-test('compileWorldSpec reports unsupported non-surface world types explicitly', () => {
+test('compileWorldSpec reports unsupported hybrid world types explicitly', () => {
     const result = compileWorldSpec({
         version: 1,
         world: {
-            id: 'underground_soon',
-            name: 'Underground Soon',
-            type: 'underground',
-            seed: 'underground-soon',
+            id: 'hybrid_soon',
+            name: 'Hybrid Soon',
+            type: 'hybrid',
+            seed: 'hybrid-soon',
             size: [32, 32, 32],
         },
     })
 
     assert.equal(result.report.status, 'failed')
     assert.ok(result.report.errors.some((error) => error.code === 'unsupported_world_type'))
-    assert.equal(result.meta.name, 'Underground Soon')
+    assert.equal(result.meta.name, 'Hybrid Soon')
 })
 
 test('compileWorldSpec rejects incomplete portal content without emitting a broken zone', () => {

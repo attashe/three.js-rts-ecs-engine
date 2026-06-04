@@ -17,7 +17,7 @@ export function finishWorldgenCompile(ctx: WorldgenCompileContext, meta: LevelMe
         terrainFeatureCount: ctx.spec.terrain?.features?.length ?? 0,
         carverCount: ctx.spec.carvers?.length ?? 0,
         connectorCount: ctx.spec.connectors?.length ?? 0,
-        pathCount: ctx.spec.paths?.length ?? 0,
+        pathCount: (ctx.spec.paths?.length ?? 0) + (ctx.spec.main_paths?.length ?? 0),
         structureCount: ctx.spec.structures?.length ?? 0,
         scatterRuleCount: ctx.spec.scatter?.length ?? 0,
         validationRuleCount: ctx.spec.validation?.require_paths?.length ?? 0,

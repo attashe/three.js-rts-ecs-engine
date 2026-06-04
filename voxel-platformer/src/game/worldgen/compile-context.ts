@@ -121,6 +121,10 @@ export class WorldgenCompileContext {
         return Number.isInteger(x) && Number.isInteger(z) && x >= 0 && z >= 0 && x < this.sizeX && z < this.sizeZ
     }
 
+    inXYZ(x: number, y: number, z: number): boolean {
+        return this.inXZ(x, z) && Number.isInteger(y) && y >= 0 && y < this.sizeY
+    }
+
     clampSurfaceY(y: number): number {
         const minY = Math.min(3, Math.max(0, this.sizeY - 3))
         const maxY = Math.max(minY, this.sizeY - 8)

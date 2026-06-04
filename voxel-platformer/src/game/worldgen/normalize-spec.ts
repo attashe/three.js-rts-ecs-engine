@@ -228,6 +228,7 @@ function validateIds(input: Record<string, unknown>, report: WorldgenReport): vo
     forEachRequiredIdSpec(input.carvers, '$.carvers', report, (item, path) => check(item.id, path))
     forEachRequiredIdSpec(input.connectors, '$.connectors', report, (item, path) => check(item.id, path))
     forEachRequiredIdSpec(input.paths, '$.paths', report, (item, path) => check(item.id, path))
+    forEachRequiredIdSpec(input.main_paths, '$.main_paths', report, (item, path) => check(item.id, path))
     forEachRequiredIdSpec(input.anchors, '$.anchors', report, (item, path) => check(item.id, path))
     forEachRequiredIdSpec(input.structures, '$.structures', report, (item, path) => check(item.id, path))
     forEachRequiredIdSpec(input.scatter, '$.scatter', report, (item, path) => check(item.id, path))
@@ -326,6 +327,7 @@ function validateKnownSectionShapes(input: Record<string, unknown>, report: Worl
     validateArraySection(input.carvers, '$.carvers', report)
     validateArraySection(input.connectors, '$.connectors', report)
     validateArraySection(input.paths, '$.paths', report)
+    validateArraySection(input.main_paths, '$.main_paths', report)
     validateArraySection(input.anchors, '$.anchors', report)
     validateArraySection(input.structures, '$.structures', report)
     validateArraySection(input.scatter, '$.scatter', report)
@@ -367,6 +369,7 @@ function validateMaterialReferences(
     scanMaterialRefs(input.carvers, '$.carvers', aliases, report)
     scanMaterialRefs(input.connectors, '$.connectors', aliases, report)
     scanMaterialRefs(input.paths, '$.paths', aliases, report)
+    scanMaterialRefs(input.main_paths, '$.main_paths', aliases, report)
     scanMaterialRefs(input.structures, '$.structures', aliases, report)
     scanMaterialRefs(input.scatter, '$.scatter', aliases, report)
 }
@@ -425,7 +428,7 @@ function collectMetrics(spec: NormalizedWorldSpec) {
         terrainFeatureCount,
         carverCount: spec.carvers?.length ?? 0,
         connectorCount: spec.connectors?.length ?? 0,
-        pathCount: spec.paths?.length ?? 0,
+        pathCount: (spec.paths?.length ?? 0) + (spec.main_paths?.length ?? 0),
         structureCount: spec.structures?.length ?? 0,
         scatterRuleCount: spec.scatter?.length ?? 0,
         validationRuleCount: spec.validation?.require_paths?.length ?? 0,

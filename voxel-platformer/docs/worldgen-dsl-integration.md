@@ -526,6 +526,9 @@ Acceptance criteria:
 
 Compile the dungeon and mineshaft examples natively.
 
+Status: implemented as a native `NormalizedWorldSpec` compiler in
+`src/game/worldgen/compile-underground.ts`.
+
 Acceptance criteria:
 
 - Underground compilation reuses the same report, material, bounds, and
@@ -533,9 +536,43 @@ Acceptance criteria:
 - Volume fill, strata, shafts, chambers, rooms, tunnels, canyons, mine networks,
   main path stamping, surface queries, and underground scatter work.
 - Required underground paths validate with `findPath`.
-- Reports include feature surfaces and room/object access anchors.
+- Reports include carver, connector, structure, scatter, resolved object, and
+  validation entries. Raw feature surface sets remain compiler-internal so the
+  report stays stable and compact.
 - Underground features compile into the same `WorldgenLevelDraft` and
   `finishWorldgenCompile` path as surface worlds.
+
+Implemented scope:
+
+- `compileWorldSpec` dispatches `world.type: "underground"` to the native
+  underground compiler; `hybrid` remains explicitly unsupported until the
+  surface/underground merge contract is designed.
+- Solid volume fill and strata write directly through the shared
+  `WorldgenCompileContext`, material resolver, bounds checks, keyed RNG, and
+  diagnostics.
+- Supported carvers are `vertical_shaft`, `chamber_ellipsoid`, `rect_room`,
+  `dwarf_room`, `mine_tunnel_network`, and `underground_canyon`.
+- Supported connectors are `noise_tube`; guaranteed walkable routes use
+  top-level `main_paths`.
+- Underground structures support metadata markers, portal gates, bridge
+  sockets, shrine decor, and dwarf room decor. Full prefab growth should move
+  into a reusable underground asset registry in a later phase.
+- Underground scatter supports passable glow mushrooms, wall crystals, and
+  stalactites with deterministic candidate scoring and minimum-distance
+  filtering.
+- Required path validation uses the shared `findPath` validator, so surface and
+  underground specs fail through the same report path.
+
+Known limits to keep in the next phase plan:
+
+- The MVP compiler still assumes square X/Z worlds because `LevelMeta.size` is
+  scalar.
+- `hybrid` worlds are not merged yet.
+- Feature surface sets are local compiler indexes, not report payloads or
+  stable external API.
+- Some underground decor is stamped in the compiler as temporary lightweight
+  assets; future work should move it behind the same asset-source registry used
+  by surface structures.
 
 ### Phase 7 - Rich Content Compilers
 

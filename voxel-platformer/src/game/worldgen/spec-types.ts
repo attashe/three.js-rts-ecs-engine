@@ -29,6 +29,7 @@ export interface WorldSpec {
     carvers?: CarverSpec[]
     connectors?: ConnectorSpec[]
     paths?: PathSpec[]
+    main_paths?: PathSpec[]
     anchors?: AnchorSpec[]
     structures?: StructurePlacementSpec[]
     scatter?: ScatterSpec[]
