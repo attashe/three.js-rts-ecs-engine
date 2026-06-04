@@ -195,6 +195,17 @@ Implemented modules:
   zones, props, NPCs, scripts, and other engine metadata.
 - `resolve-content.ts`: MVP content compiler for props, zones, NPCs, and
   explicit scripts.
+- `content-common.ts`: shared rich-content placement, target lookup,
+  diagnostics, and generated-script helpers.
+- `resolve-pickups.ts` / `resolve-shops.ts` / `resolve-quests.ts`: rich
+  content compilers that emit ordinary `ScriptEntry` source or NPC
+  `scriptSource` snippets.
+- `resolve-content-metadata.ts`: direct mapping for cinematics, environment,
+  sound/weather metadata, and travel zones.
+- `compile-underground.ts`: native underground compiler for volume fill,
+  strata, rooms, shafts, tunnels, canyons, mine networks, and underground
+  scatter.
+- `validate.ts`: shared required-path validation using engine `findPath`.
 - `compile-world.ts`: orchestration API.
 - `compile-result.ts`: shared finalization for world hash, metrics, and
   normalized compile results.
@@ -202,14 +213,10 @@ Implemented modules:
 Planned modules:
 
 - `carve3d.ts`: reusable 3D carving primitives.
-- `compile-underground.ts`: volume fill, strata, rooms, shafts, tunnels,
-  canyons, mine networks, and underground surface classification.
-- `resolve-quests.ts` / `resolve-shops.ts` / `resolve-pickups.ts`: rich
-  content compilers that emit ordinary `ScriptEntry` and metadata.
 - `compile-world-cli.ts`: JSON spec input, schema validation, report output,
   and `.vplevel` export.
-- `validate.ts`: cross-phase validation that goes beyond required paths:
-  required objects, emitted metadata checks, and content reference checks.
+- Rich validation extensions beyond required paths: required objects, emitted
+  metadata checks, and content reference checks.
 
 Public API:
 
@@ -485,8 +492,9 @@ Implementation shape:
 - `compileWorldSpec(spec, opts)` normalizes raw specs and dispatches by
   normalized `world.type`.
 - `compileNormalizedWorldSpec(spec, opts)` is the internal typed dispatcher.
-- Non-surface worlds fail explicitly with `unsupported_world_type` until the
-  underground compiler exists.
+- Phase 5 originally failed non-surface worlds explicitly. After Phase 6,
+  `underground` dispatches to the native compiler and `hybrid` remains the
+  only unsupported world type.
 - `compile-result.ts` owns inert fallback metadata, shared chunk allocation,
   fail-fast checks, world hashing, and final metric counts.
 - `WorldgenLevelDraft` is the only intermediate metadata surface. It mirrors
@@ -506,8 +514,8 @@ Acceptance criteria:
   levels use the same public orchestration path as future JSON specs.
 - Normalization failures return a failed report plus inert fallback metadata,
   not thrown exceptions from the public compiler.
-- Unsupported `underground` and `hybrid` specs fail with explicit diagnostics
-  and inert metadata.
+- Unsupported world types fail with explicit diagnostics and inert metadata;
+  after Phase 6 this applies to `hybrid`.
 - MVP content supports `place_at`, `place_at_xz`, offsets, resolved object ids,
   and placement report entries.
 - Props validate against known `PROP_KINDS`.
@@ -579,18 +587,46 @@ Known limits to keep in the next phase plan:
 Compile higher-level interactive content into existing engine metadata and
 scripts. This builds on the MVP content resolver rather than replacing it.
 
+Status: implemented as focused content resolvers that compile to existing
+`LevelMeta`, NPC `scriptSource`, and plain `ScriptEntry` source.
+
 Acceptance criteria:
 
 - NPCs continue to compile to `NpcConfig` with behavior scripts where
   requested.
-- Shops compile to `trade.open` scripts.
-- Quests compile to idempotent `ScriptEntry` state machines.
-- Pickups, props, cinematics, weather, sound metadata, and travel metadata
-  round-trip through export.
+- Shops compile to `trade.open` scripts. NPC-bound shops append an NPC script
+  snippet; zone-bound shops emit a level script.
+- Collect-and-return quests compile to idempotent state machines using
+  `flags`, `pickups.spawn`, `pickup-taken`, `ui.dialogue`, rewards, and
+  stable ids.
+- Pickups compile to idempotent startup scripts with per-pickup collected
+  flags, stable pickup ids, and durable inventory metadata.
+- Cinematics, level environment, sound sources, sound zones, weather zones, and
+  travel zones compile into existing metadata arrays.
 - Content reference validation detects missing NPC/zone/prop ids before
   scripts are emitted.
 - Tests run generated scripts with stub facades for at least one generated
   quest and shop.
+
+Implemented scope:
+
+- `resolve-content.ts` remains the orchestration point and keeps the original
+  prop, zone, NPC, and raw script behavior.
+- `content-common.ts` owns shared position resolution, required/optional
+  diagnostics, target lookup, and generated script insertion.
+- Rich generated scripts deliberately use the existing script API instead of a
+  new quest/trade runtime.
+- Required rich content entries fail closed. Optional entries warn and skip.
+
+Known limits to keep in the next phase plan:
+
+- Quest compilation supports the collect-and-return pattern only.
+- Generated shops and quests target NPCs or interact zones; arbitrary props
+  still need an interact zone.
+- Pickup persistence is flag-based inside generated scripts, not a separate
+  world persistence layer.
+- Rich content does not yet include a JSON schema or CLI report output; that
+  remains Phase 8.
 
 ### Phase 8 - Pipeline And Export
 

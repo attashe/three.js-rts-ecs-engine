@@ -12,12 +12,26 @@ import {
 import { mergeBehaviourIntoScript } from '../npcs/npc-behaviour-script'
 import { PROP_KINDS, type EditorPropKind } from '../props/prop-types'
 import { WorldgenCompileContext } from './compile-context'
-import type { ContentEntrySpec, Vec2Tuple, Vec3Tuple, VoxelCoord, WorldgenDiagnostic } from './spec-types'
+import type { ContentEntrySpec, VoxelCoord } from './spec-types'
 import type { WorldgenLevelDraft } from './level-draft'
+import {
+    contentDiagnostic,
+    contentEntryRequired,
+    contentId,
+    finiteNumber,
+    isRecord,
+    positiveNumber,
+    readOptionalVec2,
+    readString,
+    resolveContentPosition,
+    type WorldgenContentResolveOptions,
+} from './content-common'
+import { resolveContentMetadata } from './resolve-content-metadata'
+import { resolveContentPickups } from './resolve-pickups'
+import { resolveContentShops } from './resolve-shops'
+import { resolveContentQuests } from './resolve-quests'
 
-export interface WorldgenContentResolveOptions {
-    standYAtXZ?: (x: number, z: number) => number
-}
+export type { WorldgenContentResolveOptions } from './content-common'
 
 const PROP_KIND_SET = new Set<string>(PROP_KINDS)
 const TRIGGER_SOURCES = new Set<ZoneTriggerSource>(['player', 'arrow'])
@@ -32,6 +46,10 @@ export function resolveContent(ctx: WorldgenCompileContext, draft: WorldgenLevel
     resolveContentProps(ctx, draft, content.props ?? [], opts)
     resolveContentZones(ctx, draft, content.zones ?? [], opts)
     resolveContentNpcs(ctx, draft, content.npcs ?? [], opts)
+    resolveContentMetadata(ctx, draft, content, opts)
+    resolveContentPickups(ctx, draft, content.pickups ?? [], opts)
+    resolveContentShops(ctx, draft, content.shops ?? [])
+    resolveContentQuests(ctx, draft, content.quests ?? [], opts)
     resolveContentScripts(ctx, draft, content.scripts ?? [])
 }
 
@@ -44,8 +62,8 @@ function resolveContentProps(
     for (let i = 0; i < props.length; i += 1) {
         const spec = props[i]!
         const path = `$.content.props[${i}]`
-        const required = spec.required !== false
-        const id = contentId(spec, path, ctx, required)
+        const required = contentEntryRequired(spec)
+        const id = contentId(ctx, spec, path, required)
         if (!id) continue
         const kind = readPropKind(ctx, spec.kind, `${path}.kind`, required)
         if (!kind) continue
@@ -75,8 +93,8 @@ function resolveContentZones(
     for (let i = 0; i < zones.length; i += 1) {
         const spec = zones[i]!
         const path = `$.content.zones[${i}]`
-        const required = spec.required !== false
-        const id = contentId(spec, path, ctx, required)
+        const required = contentEntryRequired(spec)
+        const id = contentId(ctx, spec, path, required)
         if (!id) continue
         const center = resolveContentPosition(ctx, spec, path, required, opts)
         if (!center) continue
@@ -123,8 +141,8 @@ function resolveContentNpcs(
     for (let i = 0; i < npcs.length; i += 1) {
         const spec = npcs[i]!
         const path = `$.content.npcs[${i}]`
-        const required = spec.required !== false
-        const id = contentId(spec, path, ctx, required)
+        const required = contentEntryRequired(spec)
+        const id = contentId(ctx, spec, path, required)
         if (!id) continue
         const position = resolveContentPosition(ctx, spec, path, required, opts)
         if (!position) continue
@@ -166,8 +184,8 @@ function resolveContentScripts(ctx: WorldgenCompileContext, draft: WorldgenLevel
     for (let i = 0; i < scripts.length; i += 1) {
         const spec = scripts[i]!
         const path = `$.content.scripts[${i}]`
-        const required = spec.required !== false
-        const id = contentId(spec, path, ctx, required)
+        const required = contentEntryRequired(spec)
+        const id = contentId(ctx, spec, path, required)
         if (!id) continue
         if (typeof spec.source !== 'string' || spec.source.trim().length === 0) {
             contentDiagnostic(ctx, required, {
@@ -187,73 +205,6 @@ function resolveContentScripts(ctx: WorldgenCompileContext, draft: WorldgenLevel
         draft.scripts.push(entry)
         ctx.report.placements.push({ id, kind: 'content_script', name: entry.name })
     }
-}
-
-function resolveContentPosition(
-    ctx: WorldgenCompileContext,
-    spec: ContentEntrySpec,
-    path: string,
-    required: boolean,
-    opts: WorldgenContentResolveOptions,
-): VoxelCoord | null {
-    let coord: VoxelCoord | null = null
-    if (typeof spec.place_at === 'string' && spec.place_at.trim().length > 0) {
-        const id = spec.place_at.trim()
-        const found = ctx.report.resolvedAnchors[id] ?? ctx.report.resolvedObjects[id]
-        if (!found) {
-            const message = isDeclaredContentId(ctx, id)
-                ? `${path}.place_at references "${id}", which is declared but has not resolved yet. `
-                    + 'Content resolves in order props -> zones -> npcs -> scripts, so place_at may only target '
-                    + 'an anchor or an earlier-resolved object.'
-                : `${path}.place_at references unknown anchor or object "${id}".`
-            contentDiagnostic(ctx, required, {
-                code: 'missing_reference',
-                message,
-                path: `${path}.place_at`,
-                details: { id },
-            })
-            return null
-        }
-        coord = { ...found }
-    } else if (spec.place_at_xz !== undefined) {
-        const point = readOptionalVec2(ctx, spec.place_at_xz, `${path}.place_at_xz`)
-        if (!point) return null
-        const x = Math.round(point[0])
-        const z = Math.round(point[1])
-        if (!ctx.inXZ(x, z)) {
-            contentDiagnostic(ctx, required, {
-                code: 'invalid_feature',
-                message: `${path}.place_at_xz leaves world bounds.`,
-                path: `${path}.place_at_xz`,
-                details: { x, z },
-            })
-            return null
-        }
-        if (!opts.standYAtXZ && typeof spec.y !== 'number') {
-            contentDiagnostic(ctx, required, {
-                code: 'invalid_feature',
-                message: `${path}.place_at_xz needs a surface resolver or explicit y.`,
-                path: `${path}.place_at_xz`,
-                details: { x, z },
-            })
-            return null
-        }
-        coord = { x: x + 0.5, y: finiteNumber(spec.y, opts.standYAtXZ ? opts.standYAtXZ(x, z) : 1), z: z + 0.5 }
-    } else {
-        contentDiagnostic(ctx, required, {
-            code: 'missing_reference',
-            message: `${path} must declare place_at or place_at_xz.`,
-            path,
-        })
-        return null
-    }
-
-    const offset = readOptionalVec3(ctx, spec.offset, `${path}.offset`)
-    if (offset) coord = { x: coord.x + offset[0], y: coord.y + offset[1], z: coord.z + offset[2] }
-    const offsetXZ = readOptionalVec2(ctx, spec.offset_xz, `${path}.offset_xz`)
-    if (offsetXZ) coord = { x: coord.x + offsetXZ[0], y: coord.y, z: coord.z + offsetXZ[1] }
-    if (typeof spec.dy === 'number' && Number.isFinite(spec.dy)) coord = { ...coord, y: coord.y + spec.dy }
-    return coord
 }
 
 function npcPartial(spec: ContentEntrySpec, id: string, position: VoxelCoord): Partial<NpcConfig> & Pick<NpcConfig, 'id' | 'position'> {
@@ -340,67 +291,4 @@ function readPropKind(ctx: WorldgenCompileContext, value: unknown, path: string,
         details: { value },
     })
     return null
-}
-
-// True when `id` is declared somewhere in the spec (an anchor or any content
-// entry) but is not yet resolved — i.e. a likely ordering mistake rather than a
-// typo. Used only to choose a clearer diagnostic message.
-function isDeclaredContentId(ctx: WorldgenCompileContext, id: string): boolean {
-    if (ctx.spec.anchors?.some((anchor) => anchor.id === id)) return true
-    const content = ctx.spec.content
-    if (!content) return false
-    for (const entries of Object.values(content)) {
-        if (Array.isArray(entries) && entries.some((entry) => isRecord(entry) && entry.id === id)) return true
-    }
-    return false
-}
-
-function contentId(spec: ContentEntrySpec, path: string, ctx: WorldgenCompileContext, required: boolean): string | null {
-    if (typeof spec.id === 'string' && spec.id.trim().length > 0) return spec.id.trim()
-    contentDiagnostic(ctx, required, {
-        code: 'missing_id',
-        message: `${path}.id is required.`,
-        path: `${path}.id`,
-        details: { value: spec.id },
-    })
-    return null
-}
-
-function contentDiagnostic(ctx: WorldgenCompileContext, required: boolean, diagnostic: WorldgenDiagnostic): void {
-    if (required) ctx.error(diagnostic)
-    else ctx.warning(diagnostic)
-}
-
-function readOptionalVec2(ctx: WorldgenCompileContext, value: unknown, path: string): Vec2Tuple | null {
-    if (value === undefined) return null
-    if (Array.isArray(value) && value.length === 2 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
-        return [value[0] as number, value[1] as number]
-    }
-    ctx.error({ code: 'invalid_feature', message: `${path} must be a [x, z] tuple.`, path, details: { value } })
-    return null
-}
-
-function readOptionalVec3(ctx: WorldgenCompileContext, value: unknown, path: string): Vec3Tuple | null {
-    if (value === undefined) return null
-    if (Array.isArray(value) && value.length === 3 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
-        return [value[0] as number, value[1] as number, value[2] as number]
-    }
-    ctx.error({ code: 'invalid_feature', message: `${path} must be a [x, y, z] tuple.`, path, details: { value } })
-    return null
-}
-
-function readString(value: unknown, fallback: string): string {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback
-}
-
-function finiteNumber(value: unknown, fallback: number): number {
-    return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function positiveNumber(value: unknown, fallback: number): number {
-    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
