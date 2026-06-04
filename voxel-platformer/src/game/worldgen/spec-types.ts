@@ -136,6 +136,7 @@ export interface ContentSpec {
     shops?: ContentEntrySpec[]
     pickups?: ContentEntrySpec[]
     props?: ContentEntrySpec[]
+    scripts?: ContentEntrySpec[]
     cinematics?: ContentEntrySpec[]
     environment?: Record<string, unknown>
     travel?: ContentEntrySpec[]
@@ -253,7 +254,9 @@ export interface WorldgenCompileResult {
     report: WorldgenReport
 }
 
-export interface WorldgenSurfaceCompileOptions {
+export interface WorldgenCompileOptions {
     chunks?: ChunkManager
     failFast?: boolean
 }
+
+export type WorldgenSurfaceCompileOptions = WorldgenCompileOptions

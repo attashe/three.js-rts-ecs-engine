@@ -1,18 +1,12 @@
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
-import { compileSurfaceWorld } from './compile-surface'
-import { normalizeWorldSpec } from './normalize-spec'
+import { compileWorldSpec } from './compile-world'
 import type { VoxelCoord, WorldSpec, WorldgenCompileResult, WorldgenReport } from './spec-types'
 
 export function compileSurfaceLevelOrThrow(
     spec: WorldSpec,
     chunks?: ChunkManager,
 ): WorldgenCompileResult {
-    const normalized = normalizeWorldSpec(spec)
-    if (!normalized.ok) {
-        throw new Error(formatWorldgenDiagnostics('Worldgen normalization failed', normalized.report))
-    }
-
-    const result = compileSurfaceWorld(normalized.spec, { chunks })
+    const result = compileWorldSpec(spec, { chunks })
     if (result.report.status === 'failed') {
         throw new Error(formatWorldgenDiagnostics('Worldgen surface compilation failed', result.report))
     }

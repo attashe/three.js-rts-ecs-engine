@@ -1,9 +1,6 @@
-import { ChunkManager } from '../../engine/voxel/chunk-manager'
-import { BLOCK, DEFAULT_PALETTE } from '../../engine/voxel/palette'
+import { BLOCK } from '../../engine/voxel/palette'
 import { findPath } from '../../engine/voxel/voxel-path'
-import type { Zone } from '../../engine/ecs/zones'
-import type { EditorProp } from '../props/prop-types'
-import { defineLevel, outdoorDay } from '../level-builder'
+import { outdoorDay } from '../level-builder'
 import type {
     AnchorSpec,
     NormalizedWorldSpec,
@@ -11,12 +8,13 @@ import type {
     Vec2Tuple,
     VoxelCoord,
     WorldgenCompileResult,
-    WorldgenReport,
-    WorldgenSurfaceCompileOptions,
+    WorldgenCompileOptions,
 } from './spec-types'
-import { createWorldgenReport, finalizeWorldgenReport, setWorldgenMetricCounts } from './report'
+import { createWorldgenReport } from './report'
 import { hash32, hashHex, stableJson } from './rng'
 import { WorldgenCompileContext, clamp, lerp, smoothstep } from './compile-context'
+import { emptyWorldgenMeta, finishWorldgenCompile, shouldStopWorldgen, worldgenChunks } from './compile-result'
+import { WorldgenLevelDraft } from './level-draft'
 import {
     createSurfaceGrid,
     setSurface,
@@ -26,6 +24,7 @@ import {
     type SurfaceGrid,
 } from './surface-grid'
 import { placeStructures, scatterStructures } from './surface-structures'
+import { resolveContent } from './resolve-content'
 
 interface PointDistance {
     dist: number
@@ -39,10 +38,10 @@ const SUPPORTED_FEATURES = new Set(['cliff_band', 'road_spline', 'flatten_disc',
 
 export function compileSurfaceWorld(
     spec: NormalizedWorldSpec,
-    opts: WorldgenSurfaceCompileOptions = {},
+    opts: WorldgenCompileOptions = {},
 ): WorldgenCompileResult {
     const report = createWorldgenReport(spec.world.id, hashHex(stableJson(spec)))
-    const chunks = opts.chunks ?? new ChunkManager(DEFAULT_PALETTE)
+    const chunks = worldgenChunks(opts)
     const ctx = new WorldgenCompileContext(spec, report, chunks)
 
     if (spec.world.type !== 'surface') {
@@ -52,7 +51,7 @@ export function compileSurfaceWorld(
             path: '$.world.type',
             details: { type: spec.world.type },
         })
-        return finish(ctx, emptyMeta(spec))
+        return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
     }
 
     if (ctx.sizeX !== ctx.sizeZ) {
@@ -62,53 +61,38 @@ export function compileSurfaceWorld(
             path: '$.world.size',
             details: { size: spec.world.size },
         })
-        return finish(ctx, emptyMeta(spec))
+        return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
     }
 
     const grid = createSurfaceGrid(ctx)
     compileBaseHeightfield(ctx, grid)
-    if (shouldStop(ctx, opts)) return finish(ctx, emptyMeta(spec))
+    if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
     applySurfaceFeatures(ctx, grid)
-    if (shouldStop(ctx, opts)) return finish(ctx, emptyMeta(spec))
+    if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
     resolveAnchors(ctx, grid)
-    if (shouldStop(ctx, opts)) return finish(ctx, emptyMeta(spec))
+    if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
 
     ctx.chunks.withBulkEdit(() => {
         writeInitialTerrain(ctx, grid)
     })
 
-    const props: EditorProp[] = []
-    const zones: Zone[] = []
-    placeStructures(ctx, grid, props, zones)
-    if (shouldStop(ctx, opts)) return finish(ctx, emptyMeta(spec))
-    scatterStructures(ctx, grid, props)
-    if (shouldStop(ctx, opts)) return finish(ctx, emptyMeta(spec))
-    validateRequiredPaths(ctx)
-    if (shouldStop(ctx, opts)) return finish(ctx, emptyMeta(spec))
-
-    const spawn = ctx.report.resolvedAnchors.spawn ?? {
-        x: Math.floor(ctx.sizeX / 2) + 0.5,
-        y: surfaceY(grid, Math.floor(ctx.sizeX / 2), Math.floor(ctx.sizeZ / 2)) + 1,
-        z: Math.floor(ctx.sizeZ / 2) + 0.5,
-    }
-    if (!ctx.report.resolvedAnchors.spawn) {
-        ctx.warning({
-            code: 'missing_reference',
-            message: 'No "spawn" anchor was declared; using world center.',
-            path: '$.anchors',
-        })
-    }
-
-    const meta = defineLevel({
+    const draft = new WorldgenLevelDraft({
         name: spec.world.name,
         size: ctx.sizeX,
-        spawn,
-        zones,
-        props,
-        ambient: outdoorDay({ timeOfDay: 10, cycleEnabled: true }),
+        spawn: surfaceSpawn(ctx, grid),
+        ambientWeather: outdoorDay({ timeOfDay: 10, cycleEnabled: true }),
     })
 
-    return finish(ctx, meta)
+    placeStructures(ctx, grid, draft.props, draft.zones)
+    if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
+    scatterStructures(ctx, grid, draft.props)
+    if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
+    resolveContent(ctx, draft, { standYAtXZ: (x, z) => surfaceY(grid, x, z) + 1 })
+    if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
+    validateRequiredPaths(ctx)
+    if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
+
+    return finishWorldgenCompile(ctx, draft.toMeta())
 }
 
 function compileBaseHeightfield(ctx: WorldgenCompileContext, grid: SurfaceGrid): void {
@@ -380,41 +364,21 @@ function resolveValidationPoint(ctx: WorldgenCompileContext, id: string): VoxelC
     return ctx.report.resolvedAnchors[id] ?? ctx.report.resolvedObjects[id] ?? null
 }
 
-function emptyMeta(spec: NormalizedWorldSpec) {
-    const size = spec.world.size[0] ?? 1
-    return defineLevel({
-        name: spec.world.name,
-        size,
-        spawn: { x: 0.5, y: 1, z: 0.5 },
-        zones: [],
-        props: [],
+function surfaceSpawn(ctx: WorldgenCompileContext, grid: SurfaceGrid): VoxelCoord {
+    const spawn = ctx.report.resolvedAnchors.spawn
+    if (spawn) return spawn
+    ctx.warning({
+        code: 'missing_reference',
+        message: 'No "spawn" anchor was declared; using world center.',
+        path: '$.anchors',
     })
-}
-
-function shouldStop(ctx: WorldgenCompileContext, opts: WorldgenSurfaceCompileOptions): boolean {
-    return opts.failFast === true && ctx.report.errors.length > 0
-}
-
-function finish(ctx: WorldgenCompileContext, meta: ReturnType<typeof defineLevel>): WorldgenCompileResult {
-    ctx.report.worldHash = hashWorldOutput(ctx.chunks, meta)
-    setWorldgenMetricCounts(ctx.report, {
-        size: ctx.spec.world.size,
-        chunkCount: ctx.chunks.chunkCount(),
-        writtenVoxels: countNonAir(ctx.chunks),
-        anchorCount: ctx.spec.anchors?.length ?? 0,
-        terrainFeatureCount: ctx.spec.terrain?.features?.length ?? 0,
-        carverCount: ctx.spec.carvers?.length ?? 0,
-        connectorCount: ctx.spec.connectors?.length ?? 0,
-        pathCount: ctx.spec.paths?.length ?? 0,
-        structureCount: ctx.spec.structures?.length ?? 0,
-        scatterRuleCount: ctx.spec.scatter?.length ?? 0,
-        validationRuleCount: ctx.spec.validation?.require_paths?.length ?? 0,
-        npcCount: ctx.spec.content?.npcs?.length ?? 0,
-        zoneCount: (ctx.spec.content?.zones?.length ?? 0) + meta.zones.length,
-        scriptCount: (ctx.spec.content?.quests?.length ?? 0) + (ctx.spec.content?.shops?.length ?? 0),
-    })
-    finalizeWorldgenReport(ctx.report)
-    return { chunks: ctx.chunks, meta, report: ctx.report }
+    const x = Math.floor(ctx.sizeX / 2)
+    const z = Math.floor(ctx.sizeZ / 2)
+    return {
+        x: x + 0.5,
+        y: surfaceY(grid, x, z) + 1,
+        z: z + 0.5,
+    }
 }
 
 function applyFlattenDisc(
@@ -534,33 +498,6 @@ function signedValueNoise2D(seed: string, x: number, z: number, scale = 18, octa
 
 function voxelPoint(point: VoxelCoord): { x: number; y: number; z: number } {
     return { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z) }
-}
-
-function countNonAir(chunks: ChunkManager): number {
-    let total = 0
-    for (const chunk of chunks.allChunks()) total += chunk.nonAirCount
-    return total
-}
-
-function hashWorldOutput(chunks: ChunkManager, meta: unknown): string {
-    let h = hash32('worldgen-output', stableJson(meta))
-    const sorted = [...chunks.allChunks()].sort((a, b) => a.cx - b.cx || a.cy - b.cy || a.cz - b.cz)
-    for (const chunk of sorted) {
-        h = mixHash(h, chunk.cx)
-        h = mixHash(h, chunk.cy)
-        h = mixHash(h, chunk.cz)
-        for (let i = 0; i < chunk.data.length; i += 1) h = mixHash(h, chunk.data[i]!)
-    }
-    return h.toString(16).padStart(8, '0')
-}
-
-function mixHash(current: number, value: number): number {
-    let h = current >>> 0
-    h ^= value & 0xffff
-    h = Math.imul(h, 16777619) >>> 0
-    h ^= value >>> 16
-    h = Math.imul(h, 16777619) >>> 0
-    return h >>> 0
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

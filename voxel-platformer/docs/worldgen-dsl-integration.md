@@ -172,30 +172,44 @@ placed object so scripts and content are never forced to guess numbers.
 
 ## Native Compiler Architecture
 
-Add a new package under `src/game/worldgen/`.
+Add a package under `src/game/worldgen/`.
 
-Planned modules:
+Implemented modules:
 
 - `spec-types.ts`: public spec, normalized spec, and report types.
 - `normalize-spec.ts`: defaulting, `$ref` expansion, ID checks, and reference
   collection.
 - `material-map.ts`: material aliases to engine `BLOCK` values.
 - `rng.ts`: stable hash, seeded random, and world hash helpers.
+- `compile-context.ts`: shared access to the normalized spec, chunk manager,
+  material resolution, keyed random, bounds checks, and report mutation.
+- `surface-grid.ts`: surface-height sampling, column rewrites, and footprint
+  sampling.
 - `compile-surface.ts`: surface heightfields, roads, cliffs, peaks, terraces,
-  flattening, paths, and surface anchors.
+  flattening, paths, surface anchors, and surface validation.
+- `asset-registry.ts`: maps stable DSL asset ids to engine prefab/procedural
+  structure sources.
+- `surface-structures.ts`: structure placement, group placement, scatter,
+  footprint reservation, prop recovery, and placement diagnostics.
+- `level-draft.ts`: mutable `LevelMeta` draft used while compiler phases add
+  zones, props, NPCs, scripts, and other engine metadata.
+- `resolve-content.ts`: MVP content compiler for props, zones, NPCs, and
+  explicit scripts.
+- `compile-world.ts`: orchestration API.
+- `compile-result.ts`: shared finalization for world hash, metrics, and
+  normalized compile results.
+
+Planned modules:
+
 - `carve3d.ts`: reusable 3D carving primitives.
 - `compile-underground.ts`: volume fill, strata, rooms, shafts, tunnels,
   canyons, mine networks, and underground surface classification.
-- `anchors.ts`: coordinate and access-point resolution.
-- `resolve-structures.ts`: asset registry, placement policies, footprint
-  reservation, and prop recovery.
-- `scatter.ts`: deterministic placement over masks, paths, features, and
-  reserved footprints.
-- `resolve-content.ts`: NPCs, shops, quests, zones, pickups, travel,
-  cinematics, sound, weather, and scripts.
-- `validate.ts`: required paths, required objects, missing references, and
-  emitted metadata checks.
-- `compile-world.ts`: orchestration API.
+- `resolve-quests.ts` / `resolve-shops.ts` / `resolve-pickups.ts`: rich
+  content compilers that emit ordinary `ScriptEntry` and metadata.
+- `compile-world-cli.ts`: JSON spec input, schema validation, report output,
+  and `.vplevel` export.
+- `validate.ts`: cross-phase validation that goes beyond required paths:
+  required objects, emitted metadata checks, and content reference checks.
 
 Public API:
 
@@ -244,16 +258,22 @@ warning, not silently degrade the result.
 The playground has no interactivity. The native extension should add content as
 first-class spec data, then compile it into existing engine metadata.
 
-Supported content categories:
+Current MVP content categories:
 
 - `npcs`: emit `NpcConfig`; optional template ID; optional behavior config;
-  optional custom dialogue, shop, or quest binding.
-- `zones`: emit trigger, interact, arrival, portal, kill, or custom zones.
+  optional script source.
+- `zones`: emit trigger, interact, arrival, portal, or custom zones. Portal
+  zones fail closed: a missing destination is a report error and does not emit
+  a broken runtime zone.
+- `props`: emit `EditorProp` placements with resolved object ids.
+- `scripts`: emit explicit `ScriptEntry` source.
+
+Remaining rich content categories:
+
 - `quests`: compile small state-machine scripts using flags, pickups, dialogue,
   rewards, and stable IDs.
 - `shops`: compile trade-opening scripts using current `TradeResource` values.
 - `pickups`: emit coin piles or script-spawned pickup bootstrap code.
-- `props`: emit `EditorProp` placements.
 - `cinematics`: emit current cinematic metadata.
 - `environment`: emit ambient music and weather state.
 - `travel`: emit portal zones and arrival zones.
@@ -405,6 +425,8 @@ Acceptance criteria:
 
 ### Phase 4 - Structures And Scatter
 
+Status: implemented and checkpointed.
+
 Generalize the asset registry and scatter placement for villages, forests,
 prop clusters, and structure groups. Phase 4 keeps the compiler native: specs
 resolve into existing `prefabSource` / `proceduralSource` values, assets are
@@ -449,7 +471,58 @@ Acceptance criteria:
   structures, weighted scatter rotations, skip reason reporting, and the legacy
   Phase 3 valley spec.
 
-### Phase 5 - Underground MVP
+### Phase 5 - Orchestration And Content MVP
+
+Status: implemented as the architecture bridge before underground work.
+
+This phase introduces the public compiler entrypoint and the first usable
+content compiler without creating a parallel runtime model. Surface generation
+still owns terrain; shared finalization owns hashes and metrics; content
+resolves into a mutable `WorldgenLevelDraft` that emits ordinary `LevelMeta`.
+
+Implementation shape:
+
+- `compileWorldSpec(spec, opts)` normalizes raw specs and dispatches by
+  normalized `world.type`.
+- `compileNormalizedWorldSpec(spec, opts)` is the internal typed dispatcher.
+- Non-surface worlds fail explicitly with `unsupported_world_type` until the
+  underground compiler exists.
+- `compile-result.ts` owns inert fallback metadata, shared chunk allocation,
+  fail-fast checks, world hashing, and final metric counts.
+- `WorldgenLevelDraft` is the only intermediate metadata surface. It mirrors
+  existing `LevelMeta` fields and finishes through `defineLevel`.
+- `resolve-content.ts` compiles MVP content in this order: props, zones, NPCs,
+  scripts. Later content may bind to earlier content ids through
+  `resolvedObjects`.
+- Forest Lift Valley uses content specs for its road sign, lift props, levers,
+  wagon scene, repair crate, arrival/interact zones, and Brann NPC. Its custom
+  quest script, piston mechanism, intro cinematic, rabbits, and starter player
+  settings remain in the procedural wrapper because they are not generic
+  content compilers yet.
+
+Acceptance criteria:
+
+- `compileSurfaceLevelOrThrow` routes through `compileWorldSpec`, so procedural
+  levels use the same public orchestration path as future JSON specs.
+- Normalization failures return a failed report plus inert fallback metadata,
+  not thrown exceptions from the public compiler.
+- Unsupported `underground` and `hybrid` specs fail with explicit diagnostics
+  and inert metadata.
+- MVP content supports `place_at`, `place_at_xz`, offsets, resolved object ids,
+  and placement report entries.
+- Props validate against known `PROP_KINDS`.
+- Zones support arrival, interact, portal, trigger/custom kinds, active flags,
+  trigger sources, prompts, and portal destinations. Invalid required portals
+  do not emit broken runtime zones.
+- NPCs support template application, direct config overrides, equipment,
+  voices, behavior-to-script merging, and custom script source.
+- Explicit content scripts emit `ScriptEntry`.
+- Metrics count emitted metadata (`meta.npcs`, `meta.zones`, `meta.scripts`)
+  rather than broad spec intent.
+- Focused tests cover successful content compilation, unsupported world types,
+  normalization fallback metadata, and invalid portal fail-closed behavior.
+
+### Phase 6 - Underground MVP
 
 Compile the dungeon and mineshaft examples natively.
 
@@ -461,34 +534,43 @@ Acceptance criteria:
   main path stamping, surface queries, and underground scatter work.
 - Required underground paths validate with `findPath`.
 - Reports include feature surfaces and room/object access anchors.
+- Underground features compile into the same `WorldgenLevelDraft` and
+  `finishWorldgenCompile` path as surface worlds.
 
-### Phase 6 - Content Layer
+### Phase 7 - Rich Content Compilers
 
-Compile interactive content into existing engine metadata.
+Compile higher-level interactive content into existing engine metadata and
+scripts. This builds on the MVP content resolver rather than replacing it.
 
 Acceptance criteria:
 
-- NPCs compile to `NpcConfig` with behavior scripts where requested.
+- NPCs continue to compile to `NpcConfig` with behavior scripts where
+  requested.
 - Shops compile to `trade.open` scripts.
 - Quests compile to idempotent `ScriptEntry` state machines.
-- Portals, interact zones, pickups, props, cinematics, weather, and sound
-  metadata round-trip through export.
+- Pickups, props, cinematics, weather, sound metadata, and travel metadata
+  round-trip through export.
+- Content reference validation detects missing NPC/zone/prop ids before
+  scripts are emitted.
 - Tests run generated scripts with stub facades for at least one generated
   quest and shop.
 
-### Phase 7 - Pipeline And Export
+### Phase 8 - Pipeline And Export
 
 Add authoring/export utilities and register one generated spec as a procedural
 level.
 
 Acceptance criteria:
 
-- `compileWorldSpec` can be called by a procedural level definition.
 - A CLI can compile a JSON spec, write a report, and export `.vplevel`.
+- The CLI reports resolved anchors, resolved objects, placements, validation,
+  metrics, warnings, and world hash in a stable machine-readable format.
 - Generated levels can be loaded in game and refined in the editor.
 - Existing procedural levels remain unchanged.
+- The Forest Lift Valley production-slice level remains a compatibility test
+  for the code-authored path while JSON specs are introduced.
 
-### Phase 8 - Large-Location Readiness
+### Phase 9 - Large-Location Readiness
 
 Keep v1 author-time compiled and resident, but design the spec/report so it can
 later target region generation.

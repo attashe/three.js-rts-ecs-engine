@@ -737,12 +737,8 @@ const FOREST_LIFT_ROAD_SIGN_PROP_ID = 'forest-lift:road-sign'
 export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
     const compiled = compileSurfaceLevelOrThrow(forestLiftValleySpec(), chunks)
     const spawn = requireResolvedAnchor(compiled.report, 'spawn')
-    const roadSign = requireResolvedAnchor(compiled.report, 'road_sign')
-    const house = requireResolvedAnchor(compiled.report, 'house_site')
     const liftBase = requireResolvedAnchor(compiled.report, 'lift_base')
     const liftTop = requireResolvedAnchor(compiled.report, 'lift_top')
-    const wagon = requireResolvedAnchor(compiled.report, 'wagon_site')
-    const driver = requireResolvedAnchor(compiled.report, 'driver_corpse')
     const materials = requireResolvedAnchor(compiled.report, 'materials_pickup')
     const sword = requireResolvedAnchor(compiled.report, 'sword_pickup')
     const rabbitA = requireResolvedAnchor(compiled.report, 'rabbit_west_meadow')
@@ -753,107 +749,6 @@ export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
     const baseY = Math.floor(liftBase.y)
     const topFloorY = Math.floor(liftTop.y) - 1
     const liftCell = { x: Math.floor(liftBase.x), z: Math.floor(liftBase.z) }
-    const zones: Zone[] = [
-        {
-            id: FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
-            kind: 'arrival',
-            label: 'Forest road edge',
-            ...zoneBox({ x: spawn.x, z: spawn.z }, { x: 1.0, z: 1.0 }, spawn.y, spawn.y + 2.2),
-        },
-        {
-            id: FOREST_LIFT_ROAD_SIGN_ZONE_ID,
-            kind: 'interact',
-            label: 'Road Sign',
-            ...zoneBox({ x: roadSign.x, z: roadSign.z }, { x: 1.0, z: 1.0 }, roadSign.y, roadSign.y + 2.2),
-            interaction: {
-                prompt: 'Read Sign',
-                anchor: { x: roadSign.x, y: roadSign.y + 1.15, z: roadSign.z },
-                radius: 2.2,
-            },
-        },
-        {
-            id: FOREST_LIFT_BOTTOM_ZONE_ID,
-            kind: 'interact',
-            label: 'Broken Cliff Lift',
-            ...zoneBox({ x: liftBase.x, z: liftBase.z }, { x: 1.45, z: 1.45 }, baseY, baseY + 2.4),
-            interaction: {
-                prompt: 'Repair / Operate Lift',
-                anchor: { x: liftBase.x, y: baseY + 1.1, z: liftBase.z },
-                radius: 2.75,
-            },
-        },
-        {
-            id: FOREST_LIFT_TOP_ZONE_ID,
-            kind: 'interact',
-            label: 'Cliff Lift',
-            ...zoneBox({ x: liftTop.x, z: liftTop.z }, { x: 1.45, z: 1.45 }, topFloorY + 1, topFloorY + 3.4),
-            interaction: {
-                prompt: 'Operate Lift',
-                anchor: { x: liftTop.x, y: topFloorY + 1.25, z: liftTop.z },
-                radius: 2.75,
-            },
-        },
-    ]
-
-    const props: EditorProp[] = [
-        ...compiled.meta.props,
-        {
-            id: FOREST_LIFT_ROAD_SIGN_PROP_ID,
-            kind: 'road-sign',
-            position: { x: roadSign.x, y: roadSign.y, z: roadSign.z },
-            yaw: Math.PI * 0.24,
-            scale: 1.12,
-            gridAligned: false,
-        },
-        {
-            id: FOREST_LIFT_BROKEN_PROP_ID,
-            kind: 'lift-cabin-broken',
-            position: { x: liftBase.x, y: liftBase.y, z: liftBase.z },
-            yaw: -Math.PI * 0.08,
-            scale: 1,
-            gridAligned: false,
-        },
-        {
-            id: 'forest-lift:lever-bottom',
-            kind: 'lift-control-lever',
-            position: { x: liftBase.x - 2.15, y: liftBase.y, z: liftBase.z - 2.05 },
-            yaw: Math.PI * 0.18,
-            scale: 1.05,
-            gridAligned: false,
-        },
-        {
-            id: 'forest-lift:lever-top',
-            kind: 'lift-control-lever',
-            position: { x: liftTop.x - 1.85, y: liftTop.y, z: liftTop.z + 2.05 },
-            yaw: -Math.PI * 0.38,
-            scale: 1.05,
-            gridAligned: false,
-        },
-        {
-            id: 'forest-lift:broken-wagon',
-            kind: 'broken-wagon',
-            position: { x: wagon.x, y: wagon.y, z: wagon.z },
-            yaw: -Math.PI * 0.22,
-            scale: 1.25,
-            gridAligned: false,
-        },
-        {
-            id: 'forest-lift:fallen-driver',
-            kind: 'fallen-driver',
-            position: { x: driver.x, y: driver.y, z: driver.z },
-            yaw: Math.PI * 0.36,
-            scale: 1,
-            gridAligned: false,
-        },
-        {
-            id: FOREST_LIFT_MATERIAL_PROP_ID,
-            kind: 'repair-materials-crate',
-            position: { x: materials.x, y: materials.y, z: materials.z },
-            yaw: Math.PI * 0.1,
-            scale: 1.05,
-            gridAligned: false,
-        },
-    ]
 
     const npcs: NpcConfig[] = [
         forestLiftRabbit('forest-lift-rabbit-west', 'Valley Rabbit', rabbitA, 0.24, [
@@ -866,28 +761,7 @@ export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
             { x: rabbitB.x + 2.3, y: rabbitB.y, z: rabbitB.z + 2.6 },
             { x: rabbitB.x - 2.9, y: rabbitB.y, z: rabbitB.z + 1.4 },
         ]),
-        normalizeNpcConfig({
-            id: FOREST_LIFT_NPC_ID,
-            name: 'Brann Cliffwright',
-            model: 'keeper',
-            beard: 'full',
-            position: { x: liftBase.x - 2.2, y: liftBase.y, z: liftBase.z + 1.15 },
-            yaw: Math.PI * 0.46,
-            scale: 0.98,
-            gridAligned: false,
-            collisionEnabled: true,
-            colliderRadius: 0.34,
-            colliderHeight: 1.62,
-            interactionEnabled: true,
-            interactionRadius: 2.7,
-            interactionPrompt: 'Talk',
-            invulnerable: true,
-            unprovokable: true,
-            equipment: { handR: null, handL: 'book' },
-            voice: { preset: 'dwarf', seed: 'brann-cliffwright', volume: 0.58, rate: 0.94 },
-            scriptEnabled: true,
-            scriptSource: forestLiftValleyNpcScript(),
-        }),
+        ...compiled.meta.npcs,
     ]
 
     return defineLevel({
@@ -895,8 +769,8 @@ export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
         size: compiled.meta.size,
         spawn,
         player: forestLiftStarterPlayerSettings(),
-        zones: [...compiled.meta.zones, ...zones],
-        props,
+        zones: compiled.meta.zones,
+        props: compiled.meta.props,
         npcs,
         pistons: [{
             id: FOREST_LIFT_PISTON_ID,
@@ -1076,6 +950,129 @@ function forestLiftValleySpec(): WorldSpec {
                 deterministic_grid: { cell: 7, jitter: 3 },
             },
         ],
+        content: {
+            props: [
+                {
+                    id: FOREST_LIFT_ROAD_SIGN_PROP_ID,
+                    kind: 'road-sign',
+                    place_at: 'road_sign',
+                    yaw: Math.PI * 0.24,
+                    scale: 1.12,
+                },
+                {
+                    id: FOREST_LIFT_BROKEN_PROP_ID,
+                    kind: 'lift-cabin-broken',
+                    place_at: 'lift_base',
+                    yaw: -Math.PI * 0.08,
+                    scale: 1,
+                },
+                {
+                    id: 'forest-lift:lever-bottom',
+                    kind: 'lift-control-lever',
+                    place_at: 'lift_base',
+                    offset: [-2.15, 0, -2.05],
+                    yaw: Math.PI * 0.18,
+                    scale: 1.05,
+                },
+                {
+                    id: 'forest-lift:lever-top',
+                    kind: 'lift-control-lever',
+                    place_at: 'lift_top',
+                    offset: [-1.85, 0, 2.05],
+                    yaw: -Math.PI * 0.38,
+                    scale: 1.05,
+                },
+                {
+                    id: 'forest-lift:broken-wagon',
+                    kind: 'broken-wagon',
+                    place_at: 'wagon_site',
+                    yaw: -Math.PI * 0.22,
+                    scale: 1.25,
+                },
+                {
+                    id: 'forest-lift:fallen-driver',
+                    kind: 'fallen-driver',
+                    place_at: 'driver_corpse',
+                    yaw: Math.PI * 0.36,
+                    scale: 1,
+                },
+                {
+                    id: FOREST_LIFT_MATERIAL_PROP_ID,
+                    kind: 'repair-materials-crate',
+                    place_at: 'materials_pickup',
+                    yaw: Math.PI * 0.1,
+                    scale: 1.05,
+                },
+            ],
+            zones: [
+                {
+                    id: FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
+                    type: 'arrival',
+                    label: 'Forest road edge',
+                    place_at: 'spawn',
+                    half_xz: [1, 1],
+                    height: 2.2,
+                },
+                {
+                    id: FOREST_LIFT_ROAD_SIGN_ZONE_ID,
+                    type: 'interact',
+                    label: 'Road Sign',
+                    place_at: 'road_sign',
+                    half_xz: [1, 1],
+                    height: 2.2,
+                    prompt: 'Read Sign',
+                    radius: 2.2,
+                    anchor_dy: 1.15,
+                },
+                {
+                    id: FOREST_LIFT_BOTTOM_ZONE_ID,
+                    type: 'interact',
+                    label: 'Broken Cliff Lift',
+                    place_at: 'lift_base',
+                    half_xz: [1.45, 1.45],
+                    height: 2.4,
+                    prompt: 'Repair / Operate Lift',
+                    radius: 2.75,
+                    anchor_dy: 1.1,
+                },
+                {
+                    id: FOREST_LIFT_TOP_ZONE_ID,
+                    type: 'interact',
+                    label: 'Cliff Lift',
+                    place_at: 'lift_top',
+                    half_xz: [1.45, 1.45],
+                    height: 2.4,
+                    prompt: 'Operate Lift',
+                    radius: 2.75,
+                    anchor_dy: 0.25,
+                },
+            ],
+            npcs: [
+                {
+                    id: FOREST_LIFT_NPC_ID,
+                    name: 'Brann Cliffwright',
+                    model: 'keeper',
+                    beard: 'full',
+                    place_at: 'lift_base',
+                    offset: [-2.2, 0, 1.15],
+                    yaw: Math.PI * 0.46,
+                    scale: 0.98,
+                    gridAligned: false,
+                    collisionEnabled: true,
+                    colliderRadius: 0.34,
+                    colliderHeight: 1.62,
+                    interactionEnabled: true,
+                    interactionRadius: 2.7,
+                    interactionPrompt: 'Talk',
+                    invulnerable: true,
+                    unprovokable: true,
+                    equipment: { handR: null, handL: 'book' },
+                    voice: { preset: 'dwarf', seed: 'brann-cliffwright', volume: 0.58, rate: 0.94 },
+                    scriptEnabled: true,
+                    scriptSource: forestLiftValleyNpcScript(),
+                },
+            ],
+        },
         validation: {
             require_paths: [
                 { id: 'spawn_to_house', from: 'spawn', to: 'lone_house', actor: 'player_basic' },

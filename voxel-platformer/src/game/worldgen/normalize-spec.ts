@@ -331,7 +331,7 @@ function validateKnownSectionShapes(input: Record<string, unknown>, report: Worl
     validateArraySection(input.scatter, '$.scatter', report)
     validateArraySection(isRecord(input.validation) ? input.validation.require_paths : undefined, '$.validation.require_paths', report)
     if (isRecord(input.content)) {
-        for (const key of ['npcs', 'zones', 'quests', 'shops', 'pickups', 'props', 'cinematics', 'travel']) {
+        for (const key of ['npcs', 'zones', 'quests', 'shops', 'pickups', 'props', 'scripts', 'cinematics', 'travel']) {
             validateArraySection(input.content[key], `$.content.${key}`, report)
         }
     }
@@ -431,7 +431,7 @@ function collectMetrics(spec: NormalizedWorldSpec) {
         validationRuleCount: spec.validation?.require_paths?.length ?? 0,
         npcCount: content?.npcs?.length ?? 0,
         zoneCount: content?.zones?.length ?? 0,
-        scriptCount: (content?.quests?.length ?? 0) + (content?.shops?.length ?? 0),
+        scriptCount: (content?.quests?.length ?? 0) + (content?.shops?.length ?? 0) + (content?.scripts?.length ?? 0),
     }
 }
 

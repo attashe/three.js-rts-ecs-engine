@@ -34,6 +34,7 @@ export type {
     WorldgenWarning,
     WorldgenWorldType,
     WorldgenCompileResult,
+    WorldgenCompileOptions,
     WorldgenSurfaceCompileOptions,
     WorldSpec,
     WorldSpecHeader,
@@ -56,5 +57,8 @@ export {
     setWorldgenMetricCounts,
 } from './report'
 export { normalizeWorldSpec } from './normalize-spec'
+export { compileWorldSpec, compileNormalizedWorldSpec } from './compile-world'
 export { compileSurfaceWorld } from './compile-surface'
 export { compileSurfaceLevelOrThrow, formatWorldgenDiagnostics, requireResolvedAnchor } from './level-helpers'
+export { WorldgenLevelDraft, type WorldgenLevelDraftInit } from './level-draft'
+export { resolveContent, type WorldgenContentResolveOptions } from './resolve-content'
