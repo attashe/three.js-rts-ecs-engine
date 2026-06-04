@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "world": {
+    "id": "phase11-authoring-scale",
+    "name": "Phase 11 Authoring Scale",
+    "type": "surface",
+    "seed": "phase11/authoring-scale/v1",
+    "size": [72, 36, 72],
+    "defaultGroundY": 7
+  },
+  "defs": {
+    "terrain": {
+      "road": {
+        "type": "road_spline",
+        "width": 2.2,
+        "shoulder": 3.5,
+        "material": "path",
+        "edge_material": "grass",
+        "profile_smoothing_iterations": 2
+      },
+      "campFlatten": {
+        "terrain_patch": { "type": "flatten_disc", "radius": 5, "blend": 2, "material": "grass" },
+        "reserve": [7, 4, 7]
+      }
+    },
+    "props": {
+      "roadSign": { "kind": "road-sign", "yaw": 0.4, "scale": 1 },
+      "smallTable": { "kind": "table", "yaw": 0.1, "scale": 1 }
+    },
+    "zones": {
+      "smallInteract": { "type": "interact", "half_xz": [1, 1], "height": 2.2, "radius": 2.3 }
+    },
+    "npcs": {
+      "keeper": { "model": "keeper", "interactionEnabled": true, "interactionPrompt": "Talk", "scriptSource": "" },
+      "trader": { "template": "trader", "interactionPrompt": "Trade" }
+    },
+    "tradeItems": {
+      "apple": { "id": "apple", "name": "Apple", "resource": "food-apple", "buyPrice": 2, "sellPrice": 1, "stock": 10 },
+      "mana": { "id": "mana", "name": "Mana Potion", "resource": "mana-potion", "buyPrice": 9, "sellPrice": 4, "stock": 3 }
+    },
+    "dialogue": {
+      "recoverCache": {
+        "start": "The trail cache should be near the far ridge marker.",
+        "active": "Keep following the road; the cache is past the trader table.",
+        "complete": "That is the cache. Take these supplies for the next climb.",
+        "done": "The road is stocked again."
+      }
+    }
+  },
+  "terrain": {
+    "base_height": 7,
+    "noise": { "amplitude": 1.2, "scale": 24, "octaves": 3 },
+    "features": [
+      {
+        "id": "main_road",
+        "$ref": "#/defs/terrain/road",
+        "points": [[6, 62], [18, 52], [32, 39], [49, 25], [64, 10]]
+      },
+      {
+        "id": "north_ridge",
+        "type": "mountain_peak",
+        "center": [9, 19],
+        "radius": 16,
+        "height": 6,
+        "profile": "mesa",
+        "roughness": 0.12,
+        "material": "stone"
+      }
+    ]
+  },
+  "anchors": [
+    { "id": "spawn", "$ref": "#/defs/terrain/campFlatten", "place_at_xz": [6, 62], "terrain_patch": { "material": "path" } },
+    { "id": "camp", "$ref": "#/defs/terrain/campFlatten", "place_at_xz": [32, 39] },
+    { "id": "market", "$ref": "#/defs/terrain/campFlatten", "place_at_xz": [47, 26] },
+    { "id": "cache", "place_at_xz": [62, 12], "terrain_patch": { "type": "flatten_disc", "radius": 3, "blend": 1, "material": "path" } },
+    { "id": "exit", "place_at_xz": [65, 9], "terrain_patch": { "type": "flatten_disc", "radius": 3, "blend": 1, "material": "path" } }
+  ],
+  "structures": [
+    {
+      "id": "camp_cottage",
+      "asset": "proc.house.hermit_cottage",
+      "place_at": "camp",
+      "rotation": 180,
+      "auto_y": {
+        "strategy": "surface_max",
+        "terraform": "flatten_footprint",
+        "material": "platform",
+        "max_terrain_delta": 4
+      }
+    }
+  ],
+  "scatter": [
+    {
+      "id": "phase11_pines",
+      "asset": "proc.tree.pine",
+      "count": 32,
+      "mask": { "min_distance_to_road": 4, "avoid_reserved": true, "slope_lte": 3 },
+      "deterministic_grid": { "cell": 7, "jitter": 2 }
+    }
+  ],
+  "content": {
+    "zones": [
+      { "id": "sign_zone", "$ref": "#/defs/zones/smallInteract", "place_at": "road_sign", "prompt": "Read Sign" },
+      { "id": "trader_zone", "$ref": "#/defs/zones/smallInteract", "place_at": "market_table", "prompt": "Trade" }
+    ],
+    "npcs": [
+      { "id": "guide", "$ref": "#/defs/npcs/keeper", "name": "Nara the Cartographer", "place_at": "sign_zone" },
+      { "id": "trader", "$ref": "#/defs/npcs/trader", "name": "Tovin Trail-Goods", "place_at": "trader_zone" }
+    ],
+    "props": [
+      { "id": "road_sign", "$ref": "#/defs/props/roadSign", "place_at": "spawn", "offset": [2.1, 0, -1.2] },
+      { "id": "market_table", "$ref": "#/defs/props/smallTable", "place_at": "market", "offset": [1.2, 0, 0.2] },
+      { "id": "cache_crate", "kind": "repair-materials-crate", "place_at": "cache", "scale": 0.9 }
+    ],
+    "pickups": [
+      {
+        "id": "trail_cache_pickup",
+        "kind": "trail-cache",
+        "place_at": "cache_crate",
+        "offset": [0.7, 0, -0.4],
+        "label": "Trail Cache",
+        "inventoryItem": { "id": "trail-cache", "name": "Trail Cache", "category": "quest", "icon": "quest-shard" }
+      }
+    ],
+    "shops": [
+      {
+        "id": "trail_shop",
+        "target": "trader_zone",
+        "title": "Trail Supplies",
+        "items": [
+          { "$ref": "#/defs/tradeItems/apple" },
+          { "$ref": "#/defs/tradeItems/mana" }
+        ]
+      }
+    ],
+    "quests": [
+      {
+        "id": "recover_trail_cache",
+        "type": "collect_return",
+        "target": "guide",
+        "title": "Recover the Trail Cache",
+        "requiredItems": [{ "id": "trail-cache", "quantity": 1 }],
+        "reward": {
+          "gold": 14,
+          "items": [{ "id": "food-pie", "quantity": 1, "options": { "name": "Trail Pie", "category": "consumables", "icon": "food-pie" } }]
+        },
+        "dialogue": { "$ref": "#/defs/dialogue/recoverCache" }
+      }
+    ],
+    "environment": {
+      "soundId": "music.amb.start",
+      "volume": 0.24,
+      "ambientWeather": { "presetId": "clear", "state": { "timeOfDay": 9.5 } },
+      "weatherZones": [
+        { "id": "leaf_canopy", "presetId": "leaves", "place_at": "camp", "offset_y": 4, "size": [16, 8, 16] }
+      ]
+    },
+    "travel": [
+      { "id": "arrival.phase11.start", "type": "arrival", "place_at": "spawn" },
+      { "id": "portal.phase11.exit", "type": "portal", "place_at": "exit", "targetLevelId": "demo", "targetArrivalId": "arrival.from-garden" }
+    ]
+  },
+  "validation": {
+    "require_paths": [
+      { "id": "spawn-to-guide", "from": "spawn", "to": "guide" },
+      { "id": "spawn-to-cache", "from": "spawn", "to": "cache" },
+      { "id": "spawn-to-exit", "from": "spawn", "to": "exit" }
+    ]
+  }
+}

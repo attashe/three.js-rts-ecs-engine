@@ -811,15 +811,15 @@ Landed since the review:
   covering every `LevelSpec` field, so generated levels can't silently drop a
   new level field.
 
-Scheduled future work (intentionally deferred — do not block production on
+Remaining future work (intentionally deferred — do not block production on
 these):
 
-- **Composition (review L7).** Implement `defs`/`$ref` so large specs are
-  reusable blocks instead of flat lists — the authoring-scalability counterpart
-  to rectangular/region footprints.
-- **Two-pass content resolution (review M6).** Lift the fixed
-  props→…→scripts ordering by declaring all ids first, then resolving, so
-  cross-category references stop being order-dependent.
+- Richer macro syntax beyond simple object reuse. Phase 11 adds practical
+  `defs`/`$ref`, but not loops, parameters, conditionals, or expression
+  evaluation.
+- Full content dependency graphs for future generated script categories. Phase
+  11 removes order dependence for spatial content placement and current
+  shop/quest targets, while keeping deterministic metadata/script emission.
 
 Resolved in Phase 10:
 
@@ -836,6 +836,26 @@ Resolved in Phase 10:
 - **Tighten public surface (review L8).** `index.ts` keeps the authoring-facing
   APIs; white-box compiler entrypoints moved to `internal.ts`.
 
+Resolved in Phase 11:
+
+- **Authoring composition (review L7).** Normalization now expands local
+  `#/defs/...` `$ref` objects before ID/material validation and before any
+  compiler sees the spec. Local fields override referenced fields, nested plain
+  objects merge, arrays replace, and `defs` are removed from
+  `NormalizedWorldSpec` so `specHash` reflects expanded semantics.
+- **Order-independent spatial content (review M6, practical scope).** Content
+  resolution now builds a spatial declaration index for props, zones, NPCs,
+  pickups, and travel entries. `place_at` may target those IDs regardless of
+  category or array order, with cycle detection and fail-closed diagnostics.
+- **Generated-script hardening.** Quest, shop, and pickup script emitters share
+  helpers for generated constants, line assembly, and script-entry naming. The
+  invariant remains: all author/runtime values go through `scriptLiteral`, and
+  only `scriptIdent` output may become raw identifiers.
+- **Authoring-scale fixture.** `examples/worldgen/phase11-authoring-scale.json`
+  is a report-only JSON fixture that exercises `defs`, nested `$ref`, forward
+  content placement, shop/quest generation, ambience, travel, and path
+  validation without registering a new playable level.
+
 Recommended sequence from here (the linear Phase 1→9 build is effectively
 complete; this is the forward plan the review and the rectangular-worlds work
 imply):
@@ -844,9 +864,9 @@ imply):
   bounded world hashing, underground compiler split, and public surface
   tightening. Generated `.vplevel` bytes remain stable; `report.worldHash`
   intentionally changed because the digest algorithm changed.
-- **Phase 11 — Authoring scale.** `defs`/`$ref` composition (L7) and two-pass
-  content resolution (M6) so large and now non-square specs are expressed as
-  reusable blocks with order-independent references instead of flat lists.
+- **Phase 11 — Authoring scale.** Implemented: `defs`/`$ref` object
+  composition, order-independent spatial content references, generated-script
+  helper hardening, and a report-only authoring-scale fixture.
 - **Phase 12 — Runtime scale.** Region footprints (now expressible thanks to
   rectangular worlds) → optional streaming. Research note: the world shape is
   the chunk geometry — the editor and serializer never depended on a square
@@ -922,8 +942,8 @@ Future implementation should add tests incrementally:
 
 - Whether `WorldSpec` should be authored primarily as JSON files, TypeScript
   literals, or both.
-- How much composition support is needed in v1: simple `defs`/`$ref`, or a
-  richer macro language.
+- Whether composition should grow beyond simple `defs`/`$ref` into
+  parameterized macros once specs become repetitive enough to justify it.
 - Which generated location should be the first registered in
   `PROCEDURAL_LEVEL_DEFINITIONS`.
 - Whether underground vertical traversal should prefer stairs, ladders, rails,

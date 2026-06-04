@@ -12,7 +12,8 @@ import {
     readRequiredString,
     readString,
     resolveContentPosition,
-    scriptLiteral,
+    scriptConst,
+    scriptLines,
     type WorldgenContentResolveOptions,
 } from './content-common'
 
@@ -87,8 +88,8 @@ export function readGeneratedPickup(
 }
 
 export function generatedPickupsScript(pickups: readonly GeneratedPickup[]): string {
-    return [
-        `const PICKUPS = ${scriptLiteral(pickups)}`,
+    return scriptLines([
+        scriptConst('PICKUPS', pickups),
         ``,
         `on('level-start', () => {`,
         `  ensureWorldgenPickups()`,
@@ -117,7 +118,7 @@ export function generatedPickupsScript(pickups: readonly GeneratedPickup[]): str
         `    }`,
         `  }`,
         `}`,
-    ].join('\n')
+    ])
 }
 
 function readPickupAmount(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): number | undefined | null {

@@ -14,6 +14,7 @@ import { hashHex, stableJson } from './rng'
 import { addWorldgenError, createWorldgenReport, finalizeWorldgenReport, setWorldgenMetricCounts } from './report'
 import { isEngineBlockKey, normalizeMaterialName, resolveMaterial } from './material-map'
 import { isRecord } from './worldgen-util'
+import { expandWorldSpecRefs } from './composition'
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
 const WORLD_TYPES = new Set<WorldgenWorldType>(['surface', 'underground', 'hybrid'])
@@ -51,18 +52,18 @@ export function normalizeWorldSpec(input: unknown): WorldgenNormalizeResult {
         return { ok: false, report }
     }
 
-    scanUnsupportedRefs(input, report)
+    const expanded = expandWorldSpecRefs(input, report)
 
-    if (input.version !== 1) {
+    if (expanded.version !== 1) {
         addWorldgenError(report, {
             code: 'invalid_version',
             message: 'WorldSpec.version must be 1.',
             path: '$.version',
-            details: { value: input.version },
+            details: { value: expanded.version },
         })
     }
 
-    const world = isRecord(input.world) ? input.world : null
+    const world = isRecord(expanded.world) ? expanded.world : null
     if (!world) {
         addWorldgenError(report, {
             code: 'missing_world',
@@ -83,17 +84,17 @@ export function normalizeWorldSpec(input: unknown): WorldgenNormalizeResult {
         validateId(id, '$.world.id', report)
     }
 
-    const materials = normalizeMaterialAliases(input.materials, report)
-    validateKnownSectionShapes(input, report)
-    validateIds(input, report)
-    validateMaterialReferences(input, materials, report)
+    const materials = normalizeMaterialAliases(expanded.materials, report)
+    validateKnownSectionShapes(expanded, report)
+    validateIds(expanded, report)
+    validateMaterialReferences(expanded, materials, report)
 
     if (report.errors.length > 0 || !id || !name || !type || !seed || !size) {
         finalizeWorldgenReport(report)
         return { ok: false, report }
     }
 
-    const normalized = deepClone(input) as unknown as NormalizedWorldSpec
+    const normalized = deepClone(expanded) as unknown as NormalizedWorldSpec
     normalized.world = {
         id,
         name,
@@ -104,6 +105,7 @@ export function normalizeWorldSpec(input: unknown): WorldgenNormalizeResult {
     }
     if (Object.keys(materials).length > 0) normalized.materials = materials
     else delete normalized.materials
+    delete normalized.defs
 
     report.specHash = hashHex(stableJson(normalized))
     setWorldgenMetricCounts(report, collectMetrics(normalized))
@@ -396,27 +398,6 @@ function scanMaterialRefs(value: unknown, path: string, aliases: NormalizedMater
             continue
         }
         if (Array.isArray(item) || isRecord(item)) scanMaterialRefs(item, nextPath, aliases, report)
-    }
-}
-
-function scanUnsupportedRefs(value: unknown, report: WorldgenReport, path = '$'): void {
-    if (Array.isArray(value)) {
-        for (let i = 0; i < value.length; i += 1) scanUnsupportedRefs(value[i], report, `${path}[${i}]`)
-        return
-    }
-    if (!isRecord(value)) return
-    for (const [key, item] of Object.entries(value)) {
-        const nextPath = `${path}.${key}`
-        if (key === '$ref') {
-            addWorldgenError(report, {
-                code: 'unsupported_ref',
-                message: '$ref composition is reserved for a later worldgen phase.',
-                path: nextPath,
-                details: { value: item },
-            })
-            continue
-        }
-        scanUnsupportedRefs(item, report, nextPath)
     }
 }
 

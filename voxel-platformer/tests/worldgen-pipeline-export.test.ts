@@ -21,6 +21,7 @@ import type { WorldgenReport } from '../src/game/worldgen'
 const execFileAsync = promisify(execFile)
 const SAMPLE_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase8-pipeline-sample.json')
 const STRESS_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase9-region-stress.json')
+const AUTHORING_SCALE_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase11-authoring-scale.json')
 const CLI_PATH = resolve(process.cwd(), '.tmp/test-build/scripts/compile-world-spec.js')
 
 test('Phase 8 sample worldspec exports to editor-saveable metadata and a stable report', async () => {
@@ -144,6 +145,26 @@ test('Phase 9 stress worldspec compiles as an unregistered report-only fixture',
     assert.ok(report.validation.every((entry) => entry.ok))
     assert.ok(report.warnings.some((warning) => warning.code === 'resident_world_budget'))
     assert.equal(PROCEDURAL_LEVEL_DEFINITIONS.some((definition) => definition.id === 'phase9-region-stress'), false)
+    await assert.rejects(access(defaultLevelPath))
+})
+
+test('Phase 11 authoring-scale worldspec compiles refs and forward content as report-only', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'worldgen-cli-phase11-'))
+    const reportPath = join(dir, 'phase11.report.json')
+    const defaultLevelPath = join(dir, 'public/levels/phase11-authoring-scale.vplevel')
+
+    await execFileAsync(process.execPath, [CLI_PATH, AUTHORING_SCALE_SPEC_PATH, '--report', reportPath, '--report-only'], { cwd: dir })
+
+    const report = await readReport(reportPath)
+    assert.equal(report.specId, 'phase11-authoring-scale')
+    assert.equal(report.status, 'ok', diagnosticSummary(report))
+    assert.ok(report.resolvedObjects.road_sign)
+    assert.ok(report.resolvedObjects.sign_zone)
+    assert.ok(report.resolvedObjects.guide)
+    assert.ok(report.placements.some((placement) => placement.kind === 'content_shop' && placement.id === 'trail_shop'))
+    assert.ok(report.placements.some((placement) => placement.kind === 'content_quest' && placement.id === 'recover_trail_cache'))
+    assert.ok(report.validation.every((entry) => entry.ok))
+    assert.equal(PROCEDURAL_LEVEL_DEFINITIONS.some((definition) => definition.id === 'phase11-authoring-scale'), false)
     await assert.rejects(access(defaultLevelPath))
 })
 

@@ -137,5 +137,8 @@ a non-square or large world (H1 + H2 + no `$ref`). Recommended ordering from her
 3. Split `compile-underground.ts` + hoist shared `worldgen-math/parse` (M3/M4) and
    add carver/path determinism tests. — *done in Phase 10*
 4. Harden script codegen (M5): single `scriptIdent`, single emit helper,
-   adversarial round-trip test. — *partially done*
-5. Then resume content breadth / `$ref` composition.
+   adversarial round-trip test. — *done in Phase 11 for current generated quest/shop/pickup scripts*
+5. Resume authoring scale with `$ref` composition and order-independent content
+   placement. — *done in Phase 11 for local defs and current spatial content*
+6. Then evaluate richer macros or runtime region streaming only when a concrete
+   production location needs them.

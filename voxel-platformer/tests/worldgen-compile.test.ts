@@ -219,7 +219,7 @@ test('compileWorldSpec warns when surface features are clamped at the world ceil
     assert.ok((clamp?.details as { hits?: number } | undefined)?.hits ?? 0 > 0)
 })
 
-test('compileWorldSpec distinguishes forward-referenced ids from unknown ids in place_at', () => {
+test('compileWorldSpec resolves forward content place_at refs but rejects unknown ids', () => {
     const forward = compileWorldSpec({
         version: 1,
         world: { id: 'fwd', name: 'Forward', type: 'surface', seed: 'fwd-seed', size: [32, 32, 32] },
@@ -230,9 +230,9 @@ test('compileWorldSpec distinguishes forward-referenced ids from unknown ids in 
             npcs: [{ id: 'late_npc', model: 'keeper', place_at: 'spawn' }],
         },
     })
-    assert.equal(forward.report.status, 'failed')
-    assert.ok(forward.report.errors.some((error) =>
-        error.path === '$.content.zones[0].place_at' && /declared but has not resolved/.test(error.message)))
+    assert.equal(forward.report.status, 'ok', diagnosticSummary(forward.report.errors))
+    assert.ok(forward.meta.zones.some((zone) => zone.id === 'guard_zone'))
+    assert.deepEqual(forward.report.resolvedObjects.guard_zone, forward.report.resolvedObjects.late_npc)
 
     const unknown = compileWorldSpec({
         version: 1,

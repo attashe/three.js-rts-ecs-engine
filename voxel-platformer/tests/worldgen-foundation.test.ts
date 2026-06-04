@@ -218,14 +218,94 @@ test('stable json and keyed random helpers are deterministic', () => {
     assert.throws(() => randInt(Number.NaN, 2, 'seed'), /invalid range/)
 })
 
-test('$ref composition is rejected during phase 2', () => {
+test('$ref composition expands defs before validation with deterministic hash', () => {
+    const composed = normalizeWorldSpec({
+        ...MINIMAL_SPEC,
+        defs: {
+            plaza: {
+                type: 'flatten_disc',
+                radius: 4,
+                material: 'grass',
+                nested: { a: 1, b: 2 },
+                list: [1, 2],
+            },
+            guide: {
+                model: 'keeper',
+                place_at_xz: [8, 8],
+                voice: { preset: 'elder', pitch: 1 },
+            },
+        },
+        terrain: {
+            features: [{
+                id: 'shared_plaza',
+                $ref: '#/defs/plaza',
+                material: 'stone',
+                nested: { b: 3 },
+                list: [3],
+            }],
+        },
+        content: {
+            npcs: [{ id: 'guide_npc', $ref: '#/defs/guide', name: 'Guide' }],
+        },
+    })
+
+    const expanded = normalizeWorldSpec({
+        ...MINIMAL_SPEC,
+        terrain: {
+            features: [{
+                id: 'shared_plaza',
+                type: 'flatten_disc',
+                radius: 4,
+                material: 'stone',
+                nested: { a: 1, b: 3 },
+                list: [3],
+            }],
+        },
+        content: {
+            npcs: [{
+                id: 'guide_npc',
+                model: 'keeper',
+                place_at_xz: [8, 8],
+                voice: { preset: 'elder', pitch: 1 },
+                name: 'Guide',
+            }],
+        },
+    })
+
+    assert.equal(composed.ok, true, diagnosticSummary(composed.report.errors))
+    assert.equal(expanded.ok, true, diagnosticSummary(expanded.report.errors))
+    if (!composed.ok || !expanded.ok) return
+    assert.equal(composed.report.specHash, expanded.report.specHash)
+    assert.equal(composed.spec.defs, undefined)
+    assert.deepEqual(composed.spec.terrain?.features?.[0], expanded.spec.terrain?.features?.[0])
+    assert.deepEqual(composed.spec.content?.npcs?.[0], expanded.spec.content?.npcs?.[0])
+})
+
+test('$ref composition reports unsupported locations, bad references, and cycles', () => {
     const result = normalizeWorldSpec({
         ...MINIMAL_SPEC,
-        structures: [{ id: 'house-a', $ref: '#/defs/house' }],
+        world: { ...MINIMAL_SPEC.world, $ref: '#/defs/world' },
+        defs: {
+            text: 'not an object',
+            cycleA: { $ref: '#/defs/cycleB', type: 'flatten_disc' },
+            cycleB: { $ref: '#/defs/cycleA', radius: 3 },
+        },
+        terrain: {
+            features: [
+                { id: 'missing_ref', $ref: '#/defs/missing' },
+                { id: 'bad_ref_target', $ref: '#/defs/text' },
+                { id: 'bad_ref_path', $ref: '#/other/place' },
+                { id: 'cycle_ref', $ref: '#/defs/cycleA' },
+            ],
+        },
     })
 
     assert.equal(result.ok, false)
-    assert.ok(result.report.errors.some((error) => error.code === 'unsupported_ref'))
+    assert.ok(result.report.errors.some((error) => error.code === 'unsupported_ref' && error.path === '$.world.$ref'))
+    assert.ok(result.report.errors.some((error) => error.code === 'missing_reference' && error.path === '$.terrain.features[0].$ref'))
+    assert.ok(result.report.errors.some((error) => error.code === 'invalid_ref' && error.path === '$.terrain.features[1].$ref'))
+    assert.ok(result.report.errors.some((error) => error.code === 'invalid_ref' && error.path === '$.terrain.features[2].$ref'))
+    assert.ok(result.report.errors.some((error) => error.code === 'ref_cycle'))
 })
 
 test('report finalization derives ok, warning, and failed status', () => {
@@ -241,3 +321,7 @@ test('report finalization derives ok, warning, and failed status', () => {
     addWorldgenError(failed, { code: 'test_error', message: 'error' })
     assert.equal(finalizeWorldgenReport(failed).status, 'failed')
 })
+
+function diagnosticSummary(errors: readonly { code: string; message: string }[]): string {
+    return errors.map((entry) => `${entry.code}: ${entry.message}`).join('\n')
+}

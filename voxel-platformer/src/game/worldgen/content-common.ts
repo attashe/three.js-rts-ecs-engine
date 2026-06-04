@@ -1,7 +1,7 @@
 import type { Zone } from '../../engine/ecs/zones'
 import type { ScriptEntry } from '../../engine/script/types'
 import type { NpcConfig } from '../npcs/npc-types'
-import type { ContentEntrySpec, Vec2Tuple, Vec3Tuple, VoxelCoord, WorldgenDiagnostic } from './spec-types'
+import type { ContentEntrySpec, ContentSpec, Vec2Tuple, Vec3Tuple, VoxelCoord, WorldgenDiagnostic } from './spec-types'
 import { WorldgenCompileContext } from './compile-context'
 import type { WorldgenLevelDraft } from './level-draft'
 import { isRecord } from './worldgen-util'
@@ -14,6 +14,24 @@ const WORLDGEN_TEMPLATE_SCRIPT_PREFIX = '// worldgen-template-script:'
 
 export interface WorldgenContentResolveOptions {
     standYAtXZ?: (x: number, z: number) => number
+    contentIndex?: ContentResolutionIndex
+}
+
+export type ContentResolutionKind = 'props' | 'zones' | 'npcs' | 'pickups' | 'travel'
+
+export interface ContentResolutionEntry {
+    id: string
+    kind: ContentResolutionKind
+    spec: ContentEntrySpec
+    path: string
+    required: boolean
+}
+
+export interface ContentResolutionIndex {
+    entries: Map<string, ContentResolutionEntry>
+    positions: Map<string, VoxelCoord>
+    resolving: string[]
+    failed: Set<string>
 }
 
 export function contentEntryRequired(spec: ContentEntrySpec): boolean {
@@ -36,7 +54,81 @@ export function contentDiagnostic(ctx: WorldgenCompileContext, required: boolean
     else ctx.warning(diagnostic)
 }
 
+export function createContentResolutionIndex(content: ContentSpec): ContentResolutionIndex {
+    const entries = new Map<string, ContentResolutionEntry>()
+    for (const kind of ['props', 'zones', 'npcs', 'pickups', 'travel'] as const) {
+        const list = content[kind]
+        if (!Array.isArray(list)) continue
+        for (let i = 0; i < list.length; i += 1) {
+            const spec = list[i]!
+            if (typeof spec.id !== 'string' || spec.id.trim().length === 0) continue
+            const id = spec.id.trim()
+            if (!entries.has(id)) {
+                entries.set(id, {
+                    id,
+                    kind,
+                    spec,
+                    path: `$.content.${kind}[${i}]`,
+                    required: contentEntryRequired(spec),
+                })
+            }
+        }
+    }
+    return { entries, positions: new Map(), resolving: [], failed: new Set() }
+}
+
 export function resolveContentPosition(
+    ctx: WorldgenCompileContext,
+    spec: ContentEntrySpec,
+    path: string,
+    required: boolean,
+    opts: WorldgenContentResolveOptions,
+): VoxelCoord | null {
+    const ownId = typeof spec.id === 'string' ? spec.id.trim() : ''
+    if (ownId && opts.contentIndex?.entries.has(ownId)) {
+        return resolveIndexedContentPosition(ctx, ownId, path, required, opts)
+    }
+    return resolveContentPositionDirect(ctx, spec, path, required, opts)
+}
+
+function resolveIndexedContentPosition(
+    ctx: WorldgenCompileContext,
+    id: string,
+    requestPath: string,
+    required: boolean,
+    opts: WorldgenContentResolveOptions,
+): VoxelCoord | null {
+    const index = opts.contentIndex
+    if (!index) return null
+    const cached = index.positions.get(id)
+    if (cached) return { ...cached }
+    if (index.failed.has(id)) return null
+    const entry = index.entries.get(id)
+    if (!entry) return null
+    if (index.resolving.includes(id)) {
+        contentDiagnostic(ctx, required, {
+            code: 'ref_cycle',
+            message: `${requestPath} creates a cycle between content placements.`,
+            path: requestPath,
+            details: { id, stack: [...index.resolving, id] },
+        })
+        index.failed.add(id)
+        return null
+    }
+
+    index.resolving.push(id)
+    const position = resolveContentPositionDirect(ctx, entry.spec, entry.path, entry.required, opts)
+    index.resolving.pop()
+    if (!position) {
+        index.failed.add(id)
+        return null
+    }
+    index.positions.set(id, position)
+    ctx.resolveObject(id, position)
+    return { ...position }
+}
+
+function resolveContentPositionDirect(
     ctx: WorldgenCompileContext,
     spec: ContentEntrySpec,
     path: string,
@@ -46,12 +138,10 @@ export function resolveContentPosition(
     let coord: VoxelCoord | null = null
     if (typeof spec.place_at === 'string' && spec.place_at.trim().length > 0) {
         const id = spec.place_at.trim()
-        const found = resolvedContentObject(ctx, id)
+        const found = resolvedContentObject(ctx, id, opts, `${path}.place_at`, required)
         if (!found) {
             const message = isDeclaredContentId(ctx, id)
-                ? `${path}.place_at references "${id}", which is declared but has not resolved yet. `
-                    + 'Content resolves in order props -> zones -> npcs -> travel/metadata -> pickups -> shops -> quests -> scripts, '
-                    + 'so place_at may only target an anchor or an earlier-resolved object.'
+                ? `${path}.place_at references "${id}", but that content id is not a resolved spatial target.`
                 : `${path}.place_at references unknown anchor or object "${id}".`
             contentDiagnostic(ctx, required, {
                 code: 'missing_reference',
@@ -104,8 +194,17 @@ export function resolveContentPosition(
     return coord
 }
 
-export function resolvedContentObject(ctx: WorldgenCompileContext, id: string): VoxelCoord | null {
-    return ctx.report.resolvedAnchors[id] ?? ctx.report.resolvedObjects[id] ?? null
+export function resolvedContentObject(
+    ctx: WorldgenCompileContext,
+    id: string,
+    opts: WorldgenContentResolveOptions = {},
+    requestPath = '$',
+    required = true,
+): VoxelCoord | null {
+    const resolved = ctx.report.resolvedAnchors[id] ?? ctx.report.resolvedObjects[id]
+    if (resolved) return { ...resolved }
+    if (opts.contentIndex?.entries.has(id)) return resolveIndexedContentPosition(ctx, id, requestPath, required, opts)
+    return null
 }
 
 export function resolveContentTarget(
@@ -234,6 +333,22 @@ export function appendNpcScript(
 export function scriptLiteral(value: unknown): string {
     const encoded = JSON.stringify(value)
     return encoded === undefined ? 'null' : encoded
+}
+
+export function scriptLines(lines: readonly string[]): string {
+    return lines.join('\n')
+}
+
+export function scriptConst(name: string, value: unknown): string {
+    return `const ${name} = ${scriptLiteral(value)}`
+}
+
+export function generatedScriptEntry(kind: string, id: string, source: string): ScriptEntry {
+    return {
+        id: `worldgen:${kind}:${id}`,
+        name: `worldgen-${kind}-${id}.js`,
+        source,
+    }
 }
 
 /** Sanitise an arbitrary content id into a safe JS identifier suffix, for use

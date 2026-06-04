@@ -181,6 +181,8 @@ export type WorldgenDiagnosticCode =
     | 'invalid_id'
     | 'duplicate_id'
     | 'invalid_material'
+    | 'invalid_ref'
+    | 'ref_cycle'
     | 'unsupported_ref'
     | 'unsupported_world_type'
     | 'unsupported_world_shape'

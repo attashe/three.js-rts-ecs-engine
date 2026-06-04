@@ -9,11 +9,14 @@ import {
     contentEntryRequired,
     contentId,
     finiteNumber,
+    generatedScriptEntry,
     isRecord,
     readRequiredString,
     readString,
     resolveContentTarget,
     scriptIdent,
+    scriptConst,
+    scriptLines,
     scriptLiteral,
 } from './content-common'
 
@@ -65,9 +68,7 @@ function resolveContentShop(ctx: WorldgenCompileContext, draft: WorldgenLevelDra
     if (target.kind === 'npc') {
         if (!appendNpcScript(ctx, draft, target.id, source, `${path}.target`, required, { replaceMarkedTemplateScript: true })) return
     } else if (!appendGeneratedScript(ctx, draft, {
-        id: `worldgen:shop:${id}`,
-        name: `worldgen-shop-${id}.js`,
-        source,
+        ...generatedScriptEntry('shop', id, source),
     }, path, required)) {
         return
     }
@@ -178,8 +179,8 @@ function shopScriptSource(id: string, targetId: string, request: TradeRequest, n
     const requestExpr = npcBound
         ? `{ ...SHOP_${suffix}, npc: SHOP_${suffix}.npc ?? { id: NPC_ID, name: NPC_NAME, avatar: 'npc', voice: NPC_VOICE } }`
         : `SHOP_${suffix}`
-    return [
-        `const SHOP_${suffix} = ${scriptLiteral(request)}`,
+    return scriptLines([
+        scriptConst(`SHOP_${suffix}`, request),
         ``,
         `on('input', { action: 'interact', targetId: ${targetExpr} }, async () => {`,
         `  const result = await trade.open(${requestExpr})`,
@@ -191,5 +192,5 @@ function shopScriptSource(id: string, targetId: string, request: TradeRequest, n
         `    ui.say(${targetExpr}, result.reason ?? 'That trade is unavailable.', { seconds: 2.5 })`,
         `  }`,
         `})`,
-    ].join('\n')
+    ])
 }

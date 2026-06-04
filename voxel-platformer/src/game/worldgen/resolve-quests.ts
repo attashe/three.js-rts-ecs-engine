@@ -9,11 +9,14 @@ import {
     contentEntryRequired,
     contentId,
     finiteNumber,
+    generatedScriptEntry,
     isRecord,
     readRequiredString,
     readString,
     resolveContentTarget,
     scriptIdent,
+    scriptConst,
+    scriptLines,
     scriptLiteral,
     type WorldgenContentResolveOptions,
 } from './content-common'
@@ -128,9 +131,7 @@ function resolveContentQuest(
     if (target.kind === 'npc') {
         if (!appendNpcScript(ctx, draft, target.id, source, `${path}.target`, required, { replaceMarkedTemplateScript: true })) return
     } else if (!appendGeneratedScript(ctx, draft, {
-        id: `worldgen:quest:${id}`,
-        name: `worldgen-quest-${id}.js`,
-        source,
+        ...generatedScriptEntry('quest', id, source),
     }, path, required)) {
         return
     }
@@ -382,8 +383,8 @@ function questScriptSource(spec: {
     const npcSpeakerExpr = spec.npcBound
         ? `(QUEST_${suffix}.speaker ?? { id: NPC_ID, name: NPC_NAME, avatar: 'npc', voice: NPC_VOICE })`
         : `(QUEST_${suffix}.speaker ?? { id: 'npc', name: QUEST_${suffix}.title, avatar: 'npc' })`
-    return [
-        `const QUEST_${suffix} = ${scriptLiteral({ ...spec, speaker: spec.speaker })}`,
+    return scriptLines([
+        scriptConst(`QUEST_${suffix}`, { ...spec, speaker: spec.speaker }),
         `QUEST_${suffix}.speaker = ${staticSpeaker}`,
         ``,
         `on('level-start', () => {`,
@@ -465,7 +466,7 @@ function questScriptSource(spec: {
         `    lines,`,
         `  })`,
         `}`,
-    ].join('\n')
+    ])
 }
 
 function readPositiveInteger(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean, fallback: number): number | null {

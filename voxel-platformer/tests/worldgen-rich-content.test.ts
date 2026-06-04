@@ -187,6 +187,116 @@ test('generated rich content scripts run through the script engine', async () =>
     assert.equal(harness.gold, 25, 'quest reward is granted once')
 })
 
+test('content placement references are order-independent for spatial content', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'forward_content_refs', name: 'Forward Content Refs', type: 'surface', seed: 'forward-content-refs', size: [40, 24, 40], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            zones: [
+                { id: 'zone_at_later_prop', type: 'interact', place_at: 'later_prop', prompt: 'Inspect' },
+                { id: 'later_zone', type: 'interact', place_at_xz: [12, 10], prompt: 'Talk' },
+            ],
+            npcs: [
+                { id: 'npc_at_later_zone', model: 'keeper', place_at: 'later_zone', interactionEnabled: true, scriptSource: '' },
+            ],
+            travel: [
+                { id: 'arrival_at_later_pickup', type: 'arrival', place_at: 'later_pickup' },
+            ],
+            pickups: [
+                { id: 'later_pickup', kind: 'heal-potion', place_at: 'npc_at_later_zone' },
+            ],
+            props: [
+                { id: 'later_prop', kind: 'road-sign', place_at_xz: [10, 10] },
+            ],
+            shops: [{
+                id: 'forward_shop',
+                target: 'zone_at_later_prop',
+                items: [{ id: 'heal', name: 'Healing Potion', resource: 'heal-potion', buyPrice: 8 }],
+            }],
+            quests: [{
+                id: 'forward_quest',
+                target: 'npc_at_later_zone',
+                requiredItems: [{ id: 'lost-relic', quantity: 1 }],
+            }],
+        },
+    })
+
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.ok(result.report.resolvedObjects.later_prop)
+    assert.ok(result.report.resolvedObjects.zone_at_later_prop)
+    assert.ok(result.report.resolvedObjects.npc_at_later_zone)
+    assert.ok(result.report.resolvedObjects.later_pickup)
+    assert.ok(result.report.resolvedObjects.arrival_at_later_pickup)
+    assert.ok(result.meta.scripts.some((script) => script.id === 'worldgen:shop:forward_shop'))
+    assert.ok(result.meta.npcs.find((npc) => npc.id === 'npc_at_later_zone')?.scriptSource.includes('handleQuest_forward_quest'))
+})
+
+test('content placement cycles fail closed', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'content_cycle', name: 'Content Cycle', type: 'surface', seed: 'content-cycle', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            props: [
+                { id: 'cycle_a', kind: 'flower', place_at: 'cycle_b' },
+                { id: 'cycle_b', kind: 'flower-2', place_at: 'cycle_a' },
+            ],
+        },
+    })
+
+    assert.equal(result.report.status, 'failed')
+    assert.ok(result.report.errors.some((error) => error.code === 'ref_cycle'))
+    assert.equal(result.meta.props.some((prop) => prop.id === 'cycle_a' || prop.id === 'cycle_b'), false)
+})
+
+test('generated quest and shop scripts escape adversarial author strings', async () => {
+    const tricky = 'Quote " backtick ` newline\n interpolation ${player.kill()}'
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'script_escape_content', name: 'Script Escape Content', type: 'surface', seed: 'script-escape-content', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            zones: [{ id: 'trade_zone', type: 'interact', place_at_xz: [9, 8], prompt: tricky }],
+            npcs: [{ id: 'quest_npc_odd', model: 'keeper', name: tricky, place_at_xz: [8, 8], interactionEnabled: true, scriptSource: '' }],
+            shops: [{
+                id: 'odd-shop:id',
+                target: 'trade_zone',
+                title: tricky,
+                npc: { name: tricky, avatar: 'keeper' },
+                items: [{ id: 'odd-item', name: tricky, description: tricky, resource: 'heal-potion', buyPrice: 1 }],
+            }],
+            quests: [{
+                id: 'odd.quest:id',
+                target: 'quest_npc_odd',
+                title: tricky,
+                requiredItems: [{ id: 'lost-relic', quantity: 1 }],
+                reward: { items: [{ id: 'held-torch', quantity: 1, options: { name: tricky, category: 'tools', icon: 'torch' } }] },
+                dialogue: { start: tricky, complete: tricky, done: tricky },
+                speaker: { name: tricky, avatar: 'keeper' },
+            }],
+        },
+    })
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+
+    const harness = makeHarness([...result.meta.scripts, ...npcScriptEntries(result.meta.npcs)])
+    harness.sys.init?.(harness.world)
+    await flushMicrotasks()
+    assert.equal(harness.sys.broken.size, 0)
+
+    harness.interact('trade_zone')
+    await harness.tick(0.1)
+    assert.equal(harness.tradeRequests[0]?.title, tricky)
+    assert.equal(harness.tradeRequests[0]?.items[0]?.name, tricky)
+
+    harness.interact(npcInteractionZoneId({ id: 'quest_npc_odd' }))
+    await harness.tick(0.1)
+    assert.equal(harness.dialogueRequests.length, 1)
+})
+
 test('optional rich content warnings do not emit broken generated scripts', () => {
     const result = compileWorldSpec({
         version: 1,

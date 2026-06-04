@@ -19,6 +19,7 @@ import {
     contentDiagnostic,
     contentEntryRequired,
     contentId,
+    createContentResolutionIndex,
     finiteNumber,
     isRecord,
     markTemplateScript,
@@ -45,13 +46,14 @@ const ZONE_KINDS = new Set<string>(['trigger', 'interact', 'arrival', 'portal', 
 export function resolveContent(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, opts: WorldgenContentResolveOptions = {}): void {
     const content = ctx.spec.content
     if (!content) return
-    resolveContentProps(ctx, draft, content.props ?? [], opts)
-    resolveContentZones(ctx, draft, content.zones ?? [], opts)
-    resolveContentNpcs(ctx, draft, content.npcs ?? [], opts)
-    resolveContentMetadata(ctx, draft, content, opts)
-    resolveContentPickups(ctx, draft, content.pickups ?? [], opts)
+    const resolveOpts = { ...opts, contentIndex: createContentResolutionIndex(content) }
+    resolveContentProps(ctx, draft, content.props ?? [], resolveOpts)
+    resolveContentZones(ctx, draft, content.zones ?? [], resolveOpts)
+    resolveContentNpcs(ctx, draft, content.npcs ?? [], resolveOpts)
+    resolveContentMetadata(ctx, draft, content, resolveOpts)
+    resolveContentPickups(ctx, draft, content.pickups ?? [], resolveOpts)
     resolveContentShops(ctx, draft, content.shops ?? [])
-    resolveContentQuests(ctx, draft, content.quests ?? [], opts)
+    resolveContentQuests(ctx, draft, content.quests ?? [], resolveOpts)
     resolveContentScripts(ctx, draft, content.scripts ?? [])
 }
 
