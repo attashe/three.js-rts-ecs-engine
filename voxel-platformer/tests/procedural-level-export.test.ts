@@ -40,6 +40,12 @@ function zoneCenterCell(zone: Zone): { x: number; y: number; z: number } {
     }
 }
 
+function pointInZone(zone: Zone, point: { x: number; y: number; z: number }): boolean {
+    return point.x >= zone.min.x && point.x < zone.max.x &&
+        point.y >= zone.min.y && point.y < zone.max.y &&
+        point.z >= zone.min.z && point.z < zone.max.z
+}
+
 function hasSurfacePath(
     chunks: ChunkManager,
     start: { x: number; y: number; z: number },
@@ -241,6 +247,8 @@ test('forest lift valley generates an unarmed quest scenario with an unreachable
         liftControlLevers.some((prop) => Math.abs(prop.position.y - topZone!.min.y) < 0.1),
         'top lift control should have a lever at the upper station',
     )
+    const topLever = liftControlLevers.find((prop) => Math.abs(prop.position.y - topZone!.min.y) < 0.1)
+    assert.ok(topLever && pointInZone(topZone!, topLever.position), 'upper lift lever should sit inside the upper activation zone')
 
     assert.ok(cliffwright, 'quest giver should stand near the broken lift')
     assert.equal(cliffwright!.name, 'Brann Cliffwright')
@@ -264,6 +272,10 @@ test('forest lift valley generates an unarmed quest scenario with an unreachable
     assert.equal(piston!.visualKind, 'lift-cabin-repaired')
     assert.equal(piston!.deployed, false)
     assert.ok(piston!.to.y - piston!.from.y >= 16, 'lift should bridge the cliff height')
+    assert.ok(
+        pointInZone(topZone!, { x: piston!.to.x + 0.5, y: topZone!.min.y, z: piston!.to.z + 0.5 }),
+        'upper lift activation zone should be reachable while standing in the raised cabin',
+    )
 
     assert.ok(script, 'forest valley should include the repair quest script')
     assert.match(script!.source, /pickups\.spawn\(MATERIAL_ID, MATERIAL_POS/)

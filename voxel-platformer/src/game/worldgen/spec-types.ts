@@ -190,6 +190,7 @@ export type WorldgenDiagnosticCode =
     | 'unsupported_structure_asset'
     | 'placement_failed'
     | 'validation_failed'
+    | 'surface_clamped'
 
 export interface WorldgenDiagnostic {
     code: WorldgenDiagnosticCode | string

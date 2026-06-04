@@ -788,10 +788,16 @@ export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
             visualOffset: { x: 0, y: 0.94, z: 0 },
             deployed: false,
         }],
-        scripts: [forestLiftValleyLevelScript({
-            materials: { ...materials },
-            sword: { ...sword },
-        })],
+        scripts: [
+            // Preserve any scripts emitted by the worldgen content compiler
+            // (currently none for this spec) so adding a content script later
+            // is not silently dropped by this wrapper.
+            ...compiled.meta.scripts,
+            forestLiftValleyLevelScript({
+                materials: { ...materials },
+                sword: { ...sword },
+            }),
+        ],
         cinematics: [forestLiftIntroCinematic(spawn, liftBase, liftTop)],
         environment: { soundId: 'music.amb.start', volume: 0.28 },
         ambient: outdoorDay({
@@ -978,7 +984,7 @@ function forestLiftValleySpec(): WorldSpec {
                     id: 'forest-lift:lever-top',
                     kind: 'lift-control-lever',
                     place_at: 'lift_top',
-                    offset: [-1.85, 0, 2.05],
+                    offset: [-8.5, 0, 2],
                     yaw: -Math.PI * 0.38,
                     scale: 1.05,
                 },
@@ -1040,10 +1046,11 @@ function forestLiftValleySpec(): WorldSpec {
                     type: 'interact',
                     label: 'Cliff Lift',
                     place_at: 'lift_top',
-                    half_xz: [1.45, 1.45],
+                    offset: [-9.5, 0, 0],
+                    half_xz: [2.4, 2.4],
                     height: 2.4,
                     prompt: 'Operate Lift',
-                    radius: 2.75,
+                    radius: 3.1,
                     anchor_dy: 0.25,
                 },
             ],

@@ -71,6 +71,7 @@ export function compileSurfaceWorld(
     if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
     resolveAnchors(ctx, grid)
     if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
+    warnOnCeilingClamp(ctx)
 
     ctx.chunks.withBulkEdit(() => {
         writeInitialTerrain(ctx, grid)
@@ -240,6 +241,18 @@ function applyMountainPeak(ctx: WorldgenCompileContext, grid: SurfaceGrid, featu
             setSurface(grid, x, z, top, material)
         }
     }
+}
+
+function warnOnCeilingClamp(ctx: WorldgenCompileContext): void {
+    if (ctx.surfaceCeilingHits <= 0) return
+    const ceiling = Math.max(0, ctx.sizeY - 8)
+    ctx.warning({
+        code: 'surface_clamped',
+        message: `${ctx.surfaceCeilingHits} surface column(s) were clamped to the world ceiling (y=${ceiling}); `
+            + 'increase world.size Y or lower feature heights to avoid truncated terrain.',
+        path: '$.world.size',
+        details: { hits: ctx.surfaceCeilingHits, ceiling, sizeY: ctx.sizeY },
+    })
 }
 
 function resolveAnchors(ctx: WorldgenCompileContext, grid: SurfaceGrid): void {

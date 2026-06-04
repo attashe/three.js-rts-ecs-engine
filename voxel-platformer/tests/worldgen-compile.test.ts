@@ -131,6 +131,76 @@ test('compileWorldSpec returns normalization failures with an inert fallback lev
     assert.equal(result.meta.size, 1)
 })
 
+test('compileWorldSpec rejects an unknown zone kind and emits no zone', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'zk', name: 'ZoneKind', type: 'surface', seed: 'zk-seed', size: [32, 32, 32] },
+        anchors: [{ id: 'spawn', place_at_xz: [8, 8] }],
+        content: { zones: [{ id: 'weird_zone', type: 'forcefield', place_at: 'spawn' }] },
+    })
+
+    assert.equal(result.report.status, 'failed')
+    assert.ok(result.report.errors.some((error) =>
+        error.path === '$.content.zones[0].type' && /unknown zone kind/.test(error.message)))
+    assert.equal(result.meta.zones.some((zone) => zone.id === 'weird_zone'), false)
+})
+
+test('compileWorldSpec warns and skips an optional zone with an unknown kind', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'zk2', name: 'ZoneKind2', type: 'surface', seed: 'zk2-seed', size: [32, 32, 32] },
+        anchors: [{ id: 'spawn', place_at_xz: [8, 8] }],
+        content: { zones: [{ id: 'weird_zone', type: 'forcefield', place_at: 'spawn', required: false }] },
+    })
+
+    assert.notEqual(result.report.status, 'failed')
+    assert.ok(result.report.warnings.some((warning) => warning.path === '$.content.zones[0].type'))
+    assert.equal(result.meta.zones.length, 0)
+})
+
+test('compileWorldSpec warns when surface features are clamped at the world ceiling', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'tall_peak', name: 'Tall Peak', type: 'surface', seed: 'tall-peak', size: [48, 16, 48] },
+        terrain: {
+            base_height: 6,
+            features: [{ id: 'peak', type: 'mountain_peak', center_xz: [24, 24], radius: 16, height: 24 }],
+        },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+    })
+
+    assert.notEqual(result.report.status, 'failed')
+    const clamp = result.report.warnings.find((warning) => warning.code === 'surface_clamped')
+    assert.ok(clamp, 'expected a surface_clamped warning')
+    assert.ok((clamp?.details as { hits?: number } | undefined)?.hits ?? 0 > 0)
+})
+
+test('compileWorldSpec distinguishes forward-referenced ids from unknown ids in place_at', () => {
+    const forward = compileWorldSpec({
+        version: 1,
+        world: { id: 'fwd', name: 'Forward', type: 'surface', seed: 'fwd-seed', size: [32, 32, 32] },
+        anchors: [{ id: 'spawn', place_at_xz: [8, 8] }],
+        content: {
+            // A zone references an NPC that resolves later (npcs after zones).
+            zones: [{ id: 'guard_zone', type: 'interact', place_at: 'late_npc' }],
+            npcs: [{ id: 'late_npc', model: 'keeper', place_at: 'spawn' }],
+        },
+    })
+    assert.equal(forward.report.status, 'failed')
+    assert.ok(forward.report.errors.some((error) =>
+        error.path === '$.content.zones[0].place_at' && /declared but has not resolved/.test(error.message)))
+
+    const unknown = compileWorldSpec({
+        version: 1,
+        world: { id: 'unk', name: 'Unknown', type: 'surface', seed: 'unk-seed', size: [32, 32, 32] },
+        anchors: [{ id: 'spawn', place_at_xz: [8, 8] }],
+        content: { zones: [{ id: 'guard_zone', type: 'interact', place_at: 'nope' }] },
+    })
+    assert.equal(unknown.report.status, 'failed')
+    assert.ok(unknown.report.errors.some((error) =>
+        error.path === '$.content.zones[0].place_at' && /unknown anchor or object/.test(error.message)))
+})
+
 function diagnosticSummary(errors: readonly { code: string; message: string }[]): string {
     return errors.map((error) => `${error.code}: ${error.message}`).join('\n')
 }

@@ -26,6 +26,11 @@ export class WorldgenCompileContext {
     readonly roadCells = new Set<string>()
     readonly reserved = new Map<string, string>()
     writtenVoxels = 0
+    /** Count of surface samples truncated at the world ceiling by
+     *  {@link clampSurfaceY}. A non-zero value means a feature wanted to be
+     *  taller than the world allows; the surface compiler surfaces this as a
+     *  single warning so authors do not silently lose terrain height. */
+    surfaceCeilingHits = 0
 
     constructor(
         readonly spec: NormalizedWorldSpec,
@@ -119,7 +124,9 @@ export class WorldgenCompileContext {
     clampSurfaceY(y: number): number {
         const minY = Math.min(3, Math.max(0, this.sizeY - 3))
         const maxY = Math.max(minY, this.sizeY - 8)
-        return clamp(Math.round(y), minY, maxY)
+        const rounded = Math.round(y)
+        if (rounded > maxY) this.surfaceCeilingHits += 1
+        return clamp(rounded, minY, maxY)
     }
 
     setVoxel(x: number, y: number, z: number, block: number): void {

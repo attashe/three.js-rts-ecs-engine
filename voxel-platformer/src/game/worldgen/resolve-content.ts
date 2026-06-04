@@ -21,6 +21,10 @@ export interface WorldgenContentResolveOptions {
 
 const PROP_KIND_SET = new Set<string>(PROP_KINDS)
 const TRIGGER_SOURCES = new Set<ZoneTriggerSource>(['player', 'arrow'])
+// Zone kinds the runtime understands (see src/engine/ecs/zones.ts consumers),
+// plus 'custom' for script-handled generic zones. Unknown kinds compile to a
+// zone the runtime silently ignores, so reject them instead.
+const ZONE_KINDS = new Set<string>(['trigger', 'interact', 'arrival', 'portal', 'custom', 'killzone'])
 
 export function resolveContent(ctx: WorldgenCompileContext, draft: WorldgenLevelDraft, opts: WorldgenContentResolveOptions = {}): void {
     const content = ctx.spec.content
@@ -78,6 +82,15 @@ function resolveContentZones(
         if (!center) continue
         const type = readString(spec.type ?? spec.kind, 'trigger')
         const kind = type === 'interact' || type === 'arrival' || type === 'portal' ? type : readString(spec.kind, type)
+        if (!ZONE_KINDS.has(kind)) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path} has unknown zone kind "${kind}". Expected one of: ${[...ZONE_KINDS].join(', ')}.`,
+                path: `${path}.type`,
+                details: { id, kind },
+            })
+            continue
+        }
         const half = readOptionalVec2(ctx, spec.half_xz ?? spec.half, `${path}.half_xz`) ?? [1, 1]
         const height = positiveNumber(spec.height, 2.2)
         const yMin = finiteNumber(spec.y_min, center.y)
@@ -127,6 +140,12 @@ function resolveContentNpcs(
             })
             continue
         }
+        // Two-phase precedence. `applyNpcTemplate` builds the archetype with the
+        // template winning over `partial` for most fields, then we overlay the
+        // author's explicit `partial` fields on top so spec values win again.
+        // `partial` only carries keys the author actually set (see npcPartial),
+        // so the `?? templated` fallbacks below just keep the template's value
+        // for these optional objects when the author omitted them.
         const templated = template ? applyNpcTemplate(partial, template) : normalizeNpcConfig(partial)
         const npc = normalizeNpcConfig({
             ...templated,
@@ -182,9 +201,14 @@ function resolveContentPosition(
         const id = spec.place_at.trim()
         const found = ctx.report.resolvedAnchors[id] ?? ctx.report.resolvedObjects[id]
         if (!found) {
+            const message = isDeclaredContentId(ctx, id)
+                ? `${path}.place_at references "${id}", which is declared but has not resolved yet. `
+                    + 'Content resolves in order props -> zones -> npcs -> scripts, so place_at may only target '
+                    + 'an anchor or an earlier-resolved object.'
+                : `${path}.place_at references unknown anchor or object "${id}".`
             contentDiagnostic(ctx, required, {
                 code: 'missing_reference',
-                message: `${path}.place_at references unresolved anchor or object "${id}".`,
+                message,
                 path: `${path}.place_at`,
                 details: { id },
             })
@@ -316,6 +340,19 @@ function readPropKind(ctx: WorldgenCompileContext, value: unknown, path: string,
         details: { value },
     })
     return null
+}
+
+// True when `id` is declared somewhere in the spec (an anchor or any content
+// entry) but is not yet resolved — i.e. a likely ordering mistake rather than a
+// typo. Used only to choose a clearer diagnostic message.
+function isDeclaredContentId(ctx: WorldgenCompileContext, id: string): boolean {
+    if (ctx.spec.anchors?.some((anchor) => anchor.id === id)) return true
+    const content = ctx.spec.content
+    if (!content) return false
+    for (const entries of Object.values(content)) {
+        if (Array.isArray(entries) && entries.some((entry) => isRecord(entry) && entry.id === id)) return true
+    }
+    return false
 }
 
 function contentId(spec: ContentEntrySpec, path: string, ctx: WorldgenCompileContext, required: boolean): string | null {
