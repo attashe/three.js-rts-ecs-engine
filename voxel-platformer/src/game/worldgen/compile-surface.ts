@@ -1,4 +1,5 @@
 import { BLOCK } from '../../engine/voxel/palette'
+import { isRecord } from './worldgen-util'
 import { outdoorDay } from '../level-builder'
 import type {
     AnchorSpec,
@@ -54,16 +55,6 @@ export function compileSurfaceWorld(
         return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
     }
 
-    if (ctx.sizeX !== ctx.sizeZ) {
-        ctx.error({
-            code: 'unsupported_world_shape',
-            message: 'Phase 3 surface compiler requires square X/Z worlds because LevelMeta.size is scalar.',
-            path: '$.world.size',
-            details: { size: spec.world.size },
-        })
-        return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
-    }
-
     const grid = createSurfaceGrid(ctx)
     compileBaseHeightfield(ctx, grid)
     if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
@@ -79,7 +70,9 @@ export function compileSurfaceWorld(
 
     const draft = new WorldgenLevelDraft({
         name: spec.world.name,
-        size: ctx.sizeX,
+        size: Math.max(ctx.sizeX, ctx.sizeZ),
+        sizeX: ctx.sizeX,
+        sizeZ: ctx.sizeZ,
         spawn: surfaceSpawn(ctx, grid),
         ambientWeather: outdoorDay({ timeOfDay: 10, cycleEnabled: true }),
     })
@@ -455,8 +448,4 @@ function signedValueNoise2D(seed: string, x: number, z: number, scale = 18, octa
         frequency *= 2
     }
     return total / Math.max(totalAmp, 0.0001)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

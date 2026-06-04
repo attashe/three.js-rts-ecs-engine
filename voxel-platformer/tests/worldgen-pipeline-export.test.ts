@@ -12,6 +12,7 @@ import {
     createProceduralEditorLevel,
 } from '../src/editor/procedural-level-export'
 import {
+    PROCEDURAL_LEVEL_DEFINITIONS,
     WORLDGEN_PIPELINE_SAMPLE_LEVEL_ID,
     type ProceduralScriptSources,
 } from '../src/game/procedural-levels'
@@ -19,6 +20,7 @@ import type { WorldgenReport } from '../src/game/worldgen'
 
 const execFileAsync = promisify(execFile)
 const SAMPLE_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase8-pipeline-sample.json')
+const STRESS_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase9-region-stress.json')
 const CLI_PATH = resolve(process.cwd(), '.tmp/test-build/scripts/compile-world-spec.js')
 
 test('Phase 8 sample worldspec exports to editor-saveable metadata and a stable report', async () => {
@@ -29,6 +31,8 @@ test('Phase 8 sample worldspec exports to editor-saveable metadata and a stable 
     assert.equal(exported.report.specId, WORLDGEN_PIPELINE_SAMPLE_LEVEL_ID)
     assert.ok(exported.report.specHash)
     assert.ok(exported.report.worldHash)
+    assert.equal(exported.report.metrics.regionCount, 1)
+    assert.equal(exported.report.metrics.regions.length, 1)
     assert.ok(exported.report.resolvedAnchors.spawn)
     assert.ok(exported.report.resolvedObjects['sample-guide'])
     assert.ok(exported.report.placements.some((entry) => entry.kind === 'content_quest' && entry.id === 'sample-recover-cache'))
@@ -120,6 +124,39 @@ test('compile-world-spec CLI exports warning specs and preserves warning diagnos
     assert.ok(report.warnings.some((warning) => warning.path === '$.content.zones[0].type'))
     const restored = deserializeLevel<EditorLevelMeta>(arrayBufferFrom(await readFile(outPath)))
     assert.equal(restored.metadata.name, 'Warning Spec')
+})
+
+test('Phase 9 stress worldspec compiles as an unregistered report-only fixture', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'worldgen-cli-stress-'))
+    const reportPath = join(dir, 'stress.report.json')
+    const defaultLevelPath = join(dir, 'public/levels/phase9-region-stress.vplevel')
+
+    await execFileAsync(process.execPath, [CLI_PATH, STRESS_SPEC_PATH, '--report', reportPath, '--report-only'], { cwd: dir })
+
+    const report = await readReport(reportPath)
+    assert.equal(report.specId, 'phase9-region-stress')
+    assert.equal(report.status, 'warning', diagnosticSummary(report))
+    assert.equal(report.metrics.regionSizeChunks, 8)
+    assert.equal(report.metrics.regionCount, 4)
+    assert.ok(report.metrics.chunkCount > 96)
+    assert.ok(report.metrics.regions.length > 1)
+    assert.ok(report.metrics.regions.every((region) => region.chunkCount > 0))
+    assert.ok(report.validation.every((entry) => entry.ok))
+    assert.ok(report.warnings.some((warning) => warning.code === 'resident_world_budget'))
+    assert.equal(PROCEDURAL_LEVEL_DEFINITIONS.some((definition) => definition.id === 'phase9-region-stress'), false)
+    await assert.rejects(access(defaultLevelPath))
+})
+
+test('compile-world-spec CLI rejects report-only when an output level is requested', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'worldgen-cli-report-only-conflict-'))
+    const outPath = join(dir, 'sample.vplevel')
+    const reportPath = join(dir, 'sample.report.json')
+
+    await assert.rejects(
+        execFileAsync(process.execPath, [CLI_PATH, SAMPLE_SPEC_PATH, '--out', outPath, '--report', reportPath, '--report-only'], { cwd: process.cwd() }),
+    )
+    await assert.rejects(access(outPath))
+    await assert.rejects(access(reportPath))
 })
 
 async function readWorldSpec(path: string): Promise<unknown> {

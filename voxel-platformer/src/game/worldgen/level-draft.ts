@@ -4,6 +4,7 @@ import type { ScriptEntry } from '../../engine/script/types'
 import type { Cinematic } from '../cinematics/cinematic-types'
 import type { LevelMeta, CoinPileSpawn } from '../level'
 import { defineLevel } from '../level-builder'
+import type { LevelSpec } from '../level-builder/meta'
 import type { PistonMechanismConfig } from '../mechanisms'
 import type { StoneFallSpawnerConfig, StonePlacementConfig } from '../moving-objects'
 import type { NpcConfig } from '../npcs/npc-types'
@@ -16,6 +17,8 @@ import type { VoxelCoord } from './spec-types'
 export interface WorldgenLevelDraftInit {
     name: string
     size: number
+    sizeX?: number
+    sizeZ?: number
     spawn: VoxelCoord
     player?: PlayerSettings
     environment?: EnvironmentConfig
@@ -25,6 +28,8 @@ export interface WorldgenLevelDraftInit {
 export class WorldgenLevelDraft {
     name: string
     size: number
+    sizeX?: number
+    sizeZ?: number
     spawn: VoxelCoord
     player?: PlayerSettings
     stoneSpawners: StoneFallSpawnerConfig[] = []
@@ -46,6 +51,8 @@ export class WorldgenLevelDraft {
     constructor(init: WorldgenLevelDraftInit) {
         this.name = init.name
         this.size = init.size
+        this.sizeX = init.sizeX
+        this.sizeZ = init.sizeZ
         this.spawn = init.spawn
         this.player = init.player
         this.environment = init.environment
@@ -56,6 +63,8 @@ export class WorldgenLevelDraft {
         return defineLevel({
             name: this.name,
             size: this.size,
+            sizeX: this.sizeX,
+            sizeZ: this.sizeZ,
             spawn: this.spawn,
             player: this.player,
             stoneSpawners: this.stoneSpawners,
@@ -76,3 +85,14 @@ export class WorldgenLevelDraft {
         })
     }
 }
+
+// Compile-time drift guard. Every field `defineLevel` accepts (i.e. every
+// `LevelSpec` field) must have a matching property on `WorldgenLevelDraft`,
+// except `ambient` — the alias of `ambientWeather`, which the draft always
+// emits directly. If a future `LevelMeta`/`LevelSpec` field is added without
+// mirroring it on the draft (and forwarding it in `toMeta`), this resolves to
+// the missing field name and the `= true` assignment fails to compile — so
+// generated levels can never silently drop a new level field.
+type DraftMissingLevelSpecFields = Exclude<keyof Omit<LevelSpec, 'ambient'>, keyof WorldgenLevelDraft>
+const _draftCoversLevelSpec: [DraftMissingLevelSpecFields] extends [never] ? true : DraftMissingLevelSpecFields = true
+void _draftCoversLevelSpec

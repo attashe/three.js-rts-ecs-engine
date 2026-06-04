@@ -69,12 +69,44 @@ export function castViewObstruction(
 }
 
 export interface LocalCut {
-    /** Capsule start (player) in world XZ. */
+    /** Corridor start (player) in world XZ. */
     a: { x: number; z: number }
-    /** Capsule end (toward the camera, past the occluder) in world XZ. */
+    /** Corridor end (toward the camera, past the occluder) in world XZ. */
     b: { x: number; z: number }
     radius: number
     y: number
+    /** World units the cut may reach *behind* the player (the side away from
+     *  the camera). The corridor is clipped flat at this line so it forms an
+     *  L/corner that opens toward the camera, instead of a disc that also
+     *  hides blocks in front of the player. Default 0. */
+    back?: number
+}
+
+/**
+ * Whether a world-XZ point lies inside the localised cutaway corridor (ignoring
+ * the Y test, which the shader applies separately). This is the exact CPU mirror
+ * of the corridor math in `voxel-vertex-color.ts` — keep the two in sync.
+ *
+ * The shape is a capsule of half-width `radius` along `a`→`b`, clipped by a
+ * plane through `a` perpendicular to the camera direction so it only opens
+ * toward the camera (an L/corner with its corner at the player). `back` allows a
+ * little slack behind the player.
+ */
+export function localCutContainsXZ(
+    point: { x: number; z: number },
+    cut: { a: { x: number; z: number }; b: { x: number; z: number }; radius: number; back?: number },
+): boolean {
+    const abx = cut.b.x - cut.a.x
+    const abz = cut.b.z - cut.a.z
+    const pax = point.x - cut.a.x
+    const paz = point.z - cut.a.z
+    const ab2 = abx * abx + abz * abz
+    const proj = pax * abx + paz * abz
+    const t = ab2 > 1e-4 ? Math.min(1, Math.max(0, proj / ab2)) : 0
+    const dist = Math.hypot(pax - abx * t, paz - abz * t)
+    const segLen = Math.sqrt(ab2)
+    const nearOk = proj + (cut.back ?? 0) * segLen >= 0
+    return dist < cut.radius && nearOk
 }
 
 export interface IndoorCutOptions {
@@ -91,6 +123,11 @@ export interface IndoorCutOptions {
     yAxisRadius?: number
     /** Half-width of the cutaway corridor. Default 4. */
     revealRadius?: number
+    /** World units the corridor may reach behind the player (away from the
+     *  camera). 0 clips the corridor exactly at the player so blocks in front of
+     *  them stay visible; raise it slightly to also clear a little behind the
+     *  player. Default 0. */
+    revealBackReach?: number
     /** Blocks of headroom kept above the player's feet inside the cut.
      *  Default 1 (a shin-level lip stays; head and above are cleared). */
     revealHeadroom?: number
@@ -111,6 +148,7 @@ export interface IndoorCutOptions {
 }
 
 const DEFAULT_RADIUS = 4
+const DEFAULT_BACK_REACH = 0
 const DEFAULT_Y_AXIS_RADIUS = 256
 const DEFAULT_HEADROOM = 1
 const DEFAULT_MARGIN = 3
@@ -121,6 +159,7 @@ const DEFAULT_EXIT_GRACE = 4
 
 export function createIndoorCutSystem(chunks: ChunkManager, opts: IndoorCutOptions): System {
     const radius = opts.revealRadius ?? DEFAULT_RADIUS
+    const backReach = opts.revealBackReach ?? DEFAULT_BACK_REACH
     const yAxisRadius = opts.yAxisRadius ?? DEFAULT_Y_AXIS_RADIUS
     const headroom = opts.revealHeadroom ?? DEFAULT_HEADROOM
     const margin = opts.occluderMargin ?? DEFAULT_MARGIN
@@ -194,6 +233,7 @@ export function createIndoorCutSystem(chunks: ChunkManager, opts: IndoorCutOptio
                         b: { x: px + dx * corridorLen, z: pz + dz * corridorLen },
                         radius,
                         y,
+                        back: backReach,
                     })
                 }
                 applied = true

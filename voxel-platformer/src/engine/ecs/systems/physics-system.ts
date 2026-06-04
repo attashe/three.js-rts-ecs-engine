@@ -150,16 +150,31 @@ export function createPhysicsSystem(chunks: ChunkManager, opts: PhysicsOptions =
                 const sweepZ = sweepAxis(chunks, pos, half, 'z', dz, obstacles, eid, anchor)
 
                 let horizontalBlocked = sweepX.blocked || sweepZ.blocked
-                if (
-                    horizontalBlocked &&
-                    !hasRb &&
-                    anchor === 'foot' &&
-                    (wasGrounded || wasGroundedAt(chunks, obstacles, eid, startX, startY, startZ, half, anchor)) &&
-                    tryStepUp(chunks, obstacles, eid, pos, half, dx, dz, startX + dx, startZ + dz, sweepX.blocked, sweepZ.blocked)
-                ) {
-                    horizontalBlocked = false
+                // Foot-anchored actors (player/NPCs) get ledge handling that
+                // depends on whether they were standing on something this frame.
+                let retainHorizontalMomentum = false
+                if (horizontalBlocked && !hasRb && anchor === 'foot') {
+                    const groundedAtStart = wasGrounded ||
+                        wasGroundedAt(chunks, obstacles, eid, startX, startY, startZ, half, anchor)
+                    if (groundedAtStart) {
+                        // On the ground: auto-step small opt-in ledges (stairs);
+                        // ordinary one-block ledges still block (you must jump).
+                        if (tryStepUp(chunks, obstacles, eid, pos, half, dx, dz, startX + dx, startZ + dz, sweepX.blocked, sweepZ.blocked)) {
+                            horizontalBlocked = false
+                        }
+                    } else {
+                        // Airborne (mid-jump/fall): keep horizontal momentum so the
+                        // jump arc carries the body over a one-block lip the instant
+                        // the feet clear it. Zeroing velocity every blocked frame
+                        // (as we do on the ground) kills the forward speed needed to
+                        // mantle, which is why jumping onto noisy-terrain ledges used
+                        // to pin the player to the voxel side and take several tries.
+                        // The sweep already kept the body outside the wall; we only
+                        // preserve velocity for the next frame, never push into it.
+                        retainHorizontalMomentum = true
+                    }
                 }
-                if (horizontalBlocked) {
+                if (horizontalBlocked && !retainHorizontalMomentum) {
                     if (sweepX.blocked) Velocity.x[eid] = 0
                     if (sweepZ.blocked) Velocity.z[eid] = 0
                 }

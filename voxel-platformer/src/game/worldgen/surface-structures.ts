@@ -1,4 +1,5 @@
 import type { Zone } from '../../engine/ecs/zones'
+import { isRecord } from './worldgen-util'
 import type { EditorProp } from '../props/prop-types'
 import {
     generateStructureAsset,
@@ -699,8 +700,4 @@ function readNestedNumber(source: unknown, objectKey: string, fieldKey: string):
     if (!isRecord(source)) return undefined
     const object = source[objectKey]
     return isRecord(object) ? object[fieldKey] : undefined
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

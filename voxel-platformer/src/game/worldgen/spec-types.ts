@@ -203,10 +203,28 @@ export interface WorldgenDiagnostic {
 export type WorldgenWarning = WorldgenDiagnostic
 export type WorldgenError = WorldgenDiagnostic
 
+export interface WorldgenChunkBounds {
+    min: VoxelCoord
+    max: VoxelCoord
+}
+
+export interface WorldgenRegionMetrics {
+    key: string
+    rx: number
+    rz: number
+    chunkCount: number
+    nonAirVoxels: number
+    chunkBounds: WorldgenChunkBounds
+}
+
 export interface WorldgenMetrics {
     size?: Vec3Tuple
+    chunkBounds?: WorldgenChunkBounds
     chunkCount: number
     writtenVoxels: number
+    regionSizeChunks: number
+    regionCount: number
+    regions: WorldgenRegionMetrics[]
     anchorCount: number
     terrainFeatureCount: number
     carverCount: number

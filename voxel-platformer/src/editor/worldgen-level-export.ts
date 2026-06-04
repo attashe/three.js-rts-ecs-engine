@@ -17,13 +17,17 @@ export interface WorldgenEditorLevel {
     readonly buffer: ArrayBuffer | null
 }
 
+export interface WorldgenEditorLevelOptions extends WorldgenCompileOptions {
+    readonly serialize?: boolean
+}
+
 export function compileWorldSpecToEditorLevel(
     spec: unknown,
-    opts: WorldgenCompileOptions = {},
+    opts: WorldgenEditorLevelOptions = {},
 ): WorldgenEditorLevel {
     const result = compileWorldSpec(spec, opts)
     const editorMeta = editorMetaFromRuntimeLevel(result.meta)
-    const buffer = result.report.status === 'failed'
+    const buffer = opts.serialize === false || result.report.status === 'failed'
         ? null
         : serializeLevel(result.chunks, editorMeta)
     return {

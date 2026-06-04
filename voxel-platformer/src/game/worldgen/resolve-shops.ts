@@ -13,6 +13,7 @@ import {
     readRequiredString,
     readString,
     resolveContentTarget,
+    scriptIdent,
     scriptLiteral,
 } from './content-common'
 
@@ -191,9 +192,4 @@ function shopScriptSource(id: string, targetId: string, request: TradeRequest, n
         `  }`,
         `})`,
     ].join('\n')
-}
-
-function scriptIdent(id: string): string {
-    const cleaned = id.replace(/[^A-Za-z0-9_$]/g, '_')
-    return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`
 }

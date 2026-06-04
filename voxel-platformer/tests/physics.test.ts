@@ -248,6 +248,35 @@ test('PhysicsSystem: ordinary one-block ledges still block actors', () => {
     assert.equal(Velocity.x[eid], 0)
 })
 
+test('PhysicsSystem: a jump carries the actor over a one-block ledge instead of sticking to its side', () => {
+    // Floor at y=0; a one-block ledge plateau (top at y=2) starts at column x=1.
+    // The actor jumps from column x=0 and must end up standing on the plateau,
+    // not pinned to the ledge's vertical face (the legacy bug).
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    for (let x = 0; x <= 4; x++) chunks.setVoxel(x, 0, 0, BLOCK.stone)
+    for (let x = 1; x <= 4; x++) chunks.setVoxel(x, 1, 0, BLOCK.stone) // raised plateau
+    const world = createGameWorld()
+    const eid = addMovableActor(world, 0.5, 1, 0.5)
+
+    const physics = createPhysicsSystem(chunks) // default gravity 24
+    Velocity.y[eid] = 8 // a single jump (apex ≈ 1.33 voxels, clears the 1-block lip)
+    const dt = 1 / 60
+    let landedOnLedge = false
+    for (let step = 0; step < 120; step++) {
+        if (!landedOnLedge) Velocity.x[eid] = 3 // held forward input, re-applied each fixed step
+        physics.update(world, dt)
+        // Landed on the plateau: resting at y=2 with vertical motion arrested,
+        // after having actually cleared the lip horizontally.
+        if (step > 5 && Velocity.y[eid] === 0 && Math.abs(Position.y[eid] - 2) < 1e-3 && Position.x[eid] > 1) {
+            landedOnLedge = true
+            break
+        }
+    }
+
+    assert.ok(landedOnLedge, `actor should mantle onto the ledge; ended at x=${Position.x[eid].toFixed(3)} y=${Position.y[eid].toFixed(3)}`)
+    assert.ok(Position.x[eid] > 1, `should stand on the raised plateau (x>1), got x=${Position.x[eid]}`)
+})
+
 test('sweepAxis: actor pair-separation displacement is capped by voxel walls (regression)', () => {
     // Regression for: dynamic-collision-system used to write Position directly
     // when separating overlapping actor AABBs, which let one actor shove

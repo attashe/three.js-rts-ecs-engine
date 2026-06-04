@@ -15,6 +15,7 @@ import type {
 import { WorldgenCompileContext } from './compile-context'
 import { stableJson } from './rng'
 import type { WorldgenDiagnostic } from './spec-types'
+import { isRecord } from './worldgen-util'
 
 export type WorldgenAssetKind = 'portal' | 'house' | 'tree' | 'tower' | 'wall' | 'shop' | 'forge' | 'generic'
 
@@ -201,8 +202,4 @@ function reportAssetProblem<T extends WorldgenDiagnostic>(
     if (required) ctx.error(diagnostic)
     else ctx.warning(diagnostic)
     return null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

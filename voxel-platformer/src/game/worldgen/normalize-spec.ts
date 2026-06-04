@@ -13,6 +13,7 @@ import type {
 import { hashHex, stableJson } from './rng'
 import { addWorldgenError, createWorldgenReport, finalizeWorldgenReport, setWorldgenMetricCounts } from './report'
 import { isEngineBlockKey, normalizeMaterialName, resolveMaterial } from './material-map'
+import { isRecord } from './worldgen-util'
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
 const WORLD_TYPES = new Set<WorldgenWorldType>(['surface', 'underground', 'hybrid'])
@@ -446,8 +447,4 @@ function deepClone<T>(value: T): T {
         return out as T
     }
     return value
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

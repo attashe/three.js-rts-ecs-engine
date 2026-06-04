@@ -38,6 +38,10 @@ interface XZ {
 export interface LevelSpec {
     name: string
     size: number
+    /** Optional per-axis extents for rectangular levels. Default to `size`
+     *  (square) when omitted, so existing square levels are unchanged. */
+    sizeX?: number
+    sizeZ?: number
     spawn: { x: number; y: number; z: number }
     player?: PlayerSettings
     stoneSpawners?: StoneFallSpawnerConfig[]
@@ -83,6 +87,8 @@ export function defineLevel(spec: LevelSpec): LevelMeta {
         cinematics: spec.cinematics,
         ambientWeather: spec.ambientWeather ?? spec.ambient,
         size: spec.size,
+        sizeX: spec.sizeX ?? spec.size,
+        sizeZ: spec.sizeZ ?? spec.size,
     }
 }
 

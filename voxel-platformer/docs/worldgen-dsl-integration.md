@@ -761,6 +761,97 @@ Acceptance criteria:
   validation summaries should be sufficient for an authoring agent to iterate
   without opening the editor first.
 
+Phase 9 implementation direction:
+
+- Region readiness is a report contract, not a save/load contract. The compiler
+  still emits one resident `ChunkManager` and, for exported specs, one ordinary
+  `.vplevel`.
+- Reports group stored chunks into report-only X/Z regions using 8x8 chunk
+  regions, matching the future `large-worlds-plan.md` direction without
+  versioning a region file format yet.
+- `WorldgenReport.metrics` now includes chunk bounds, region size, region
+  count, and per-region chunk/non-air voxel summaries. These numbers are for
+  authoring feedback and automated review.
+- The compiler emits a non-failing `resident_world_budget` warning when a
+  generated world exceeds the current comfortable resident footprint:
+  `chunkCount > 96`, `writtenVoxels > 1,500,000`, or `regionCount > 4`.
+- `scripts/compile-world-spec.ts --report-only` compiles a JSON spec and writes
+  the report without serializing or writing a `.vplevel`. This is the preferred
+  loop for stress fixtures and large authoring iterations.
+- `examples/worldgen/phase9-region-stress.json` is the first large JSON stress
+  fixture. It exercises roads, scatter, structures, content references,
+  environment metadata, and path validation, but is intentionally not registered
+  as a normal playable location.
+- The generated-level falling-leaves regression fixed before this phase was a
+  render initialization/lifecycle issue. Phase 9 should not add false placement
+  restrictions for FX zones; runtime registry validation remains the right
+  worldgen guardrail for FX metadata.
+
+## Architecture Review And Deferred Debt (post Phase 8/9 checkpoint)
+
+A full architectural review of the Phase 5→9 pipeline lives in
+`docs/worldgen-architecture-review.md`. It rates the direction sound and
+disciplined (the "no parallel runtime / emit the same artifacts hand-authored
+levels emit" rule held across all content phases). Outcomes recorded here so the
+roadmap reflects reality:
+
+Landed since the review:
+
+- **Rectangular worlds (review item H1).** `LevelMeta`/`LevelSpec` gained optional
+  `sizeX`/`sizeZ` that default to the scalar `size` (square stays the
+  zero-change path). The surface grid and both compilers are now per-axis; the
+  square-only guards are gone. This is the enabler for non-square region
+  footprints — the world shape is the chunk geometry (the editor and serializer
+  never depended on a square `size`), so it is a back-compat, geometry-true
+  change.
+- **Shared `isRecord` util** (`worldgen-util.ts`) and a single `scriptIdent`
+  (in `content-common.ts`, alongside the documented "all interpolated runtime
+  values go through `scriptLiteral`" invariant).
+- **Draft drift guard.** `WorldgenLevelDraft` now fails to compile if it stops
+  covering every `LevelSpec` field, so generated levels can't silently drop a
+  new level field.
+
+Scheduled future work (intentionally deferred — do not block production on
+these):
+
+- **Split `compile-underground.ts` (review M3).** The ~1.1k-line file is the
+  cohesion/coverage outlier. Split into `underground-{types,stamping,carvers,
+  connectors,paths,surfaces,structures,scatter}.ts` and hoist the genuinely
+  shared geometry into `worldgen-math.ts`/`worldgen-parse.ts`. Add carver/path
+  determinism tests. Pure mechanical move — schedule before the file grows.
+- **Bounded world hash (review H2).** `hashWorldOutput` is O(all allocated
+  voxels incl. air); replace with per-chunk content digests before worlds get
+  large. The `resident_world_budget` warning already flags the symptom.
+- **Composition (review L7).** Implement `defs`/`$ref` so large specs are
+  reusable blocks instead of flat lists — the authoring-scalability counterpart
+  to rectangular/region footprints.
+- **Tighten the public surface (review L8).** `index.ts` re-exports internal
+  compilers that consume `NormalizedWorldSpec`; keep `compileWorldSpec` /
+  `compileSurfaceLevelOrThrow` as the contract and stop inviting un-normalized
+  callers.
+- **Two-pass content resolution (review M6).** Lift the fixed
+  props→…→scripts ordering by declaring all ids first, then resolving, so
+  cross-category references stop being order-dependent.
+
+Recommended sequence from here (the linear Phase 1→9 build is effectively
+complete; this is the forward plan the review and the rectangular-worlds work
+imply):
+
+- **Phase 10 — Stabilize before scale (behaviour-preserving).** Bounded world
+  hash (H2), split `compile-underground.ts` + shared `worldgen-math`/
+  `worldgen-parse` with carver/path determinism tests (M3), tighten the
+  `index.ts` public surface (L8). Do this while the files are still small and
+  before worlds grow; none of it changes output.
+- **Phase 11 — Authoring scale.** `defs`/`$ref` composition (L7) and two-pass
+  content resolution (M6) so large and now non-square specs are expressed as
+  reusable blocks with order-independent references instead of flat lists.
+- **Phase 12 — Runtime scale.** Region footprints (now expressible thanks to
+  rectangular worlds) → optional streaming. Research note: the world shape is
+  the chunk geometry — the editor and serializer never depended on a square
+  scalar `size` — so region streaming is less risky than the original
+  `large-worlds-plan.md` framing assumed. Still gate the streaming work on a
+  concrete world-size need, not on capability for its own sake.
+
 ## Detailed Phase 1 Work
 
 Phase 1 is intentionally documentation-only. It should turn the design from a

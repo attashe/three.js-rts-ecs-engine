@@ -4,6 +4,11 @@ import type { NpcConfig } from '../npcs/npc-types'
 import type { ContentEntrySpec, Vec2Tuple, Vec3Tuple, VoxelCoord, WorldgenDiagnostic } from './spec-types'
 import { WorldgenCompileContext } from './compile-context'
 import type { WorldgenLevelDraft } from './level-draft'
+import { isRecord } from './worldgen-util'
+
+// Re-exported so existing `import { isRecord } from './content-common'` sites
+// keep working; the canonical definition lives in worldgen-util.ts.
+export { isRecord }
 
 const WORLDGEN_TEMPLATE_SCRIPT_PREFIX = '// worldgen-template-script:'
 
@@ -220,9 +225,22 @@ export function appendNpcScript(
     return true
 }
 
+// INVARIANT for all generated `ScriptEntry` source: every *runtime value*
+// (ids, names, dialogue text, item configs, positions) interpolated into a
+// generated script string MUST be emitted through `scriptLiteral()` so it is
+// JSON-escaped. Only hard-coded literals and identifiers produced by
+// `scriptIdent()` may be interpolated raw. This keeps generated scripts immune
+// to injection/syntax breakage from author-supplied strings.
 export function scriptLiteral(value: unknown): string {
     const encoded = JSON.stringify(value)
     return encoded === undefined ? 'null' : encoded
+}
+
+/** Sanitise an arbitrary content id into a safe JS identifier suffix, for use
+ *  in generated `const QUEST_<suffix>`/`SHOP_<suffix>` names. */
+export function scriptIdent(id: string): string {
+    const cleaned = id.replace(/[^A-Za-z0-9_$]/g, '_')
+    return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`
 }
 
 export function readRequiredString(
@@ -271,9 +289,6 @@ export function positiveNumber(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function isDeclaredContentId(ctx: WorldgenCompileContext, id: string): boolean {
     if (ctx.spec.anchors?.some((anchor) => anchor.id === id)) return true

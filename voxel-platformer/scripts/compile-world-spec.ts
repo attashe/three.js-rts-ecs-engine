@@ -14,6 +14,7 @@ interface CliOptions {
     specPath: string
     outPath?: string
     reportPath?: string
+    reportOnly: boolean
 }
 
 async function main(): Promise<void> {
@@ -31,14 +32,26 @@ async function main(): Promise<void> {
         return
     }
 
-    const compiled = compileWorldSpecToEditorLevel(parsed.spec)
+    const compiled = compileWorldSpecToEditorLevel(parsed.spec, { serialize: !opts.reportOnly })
     const outputId = safeOutputId(compiled.report.specId ?? rawWorldId(parsed.spec) ?? 'worldgen-spec')
     const reportPath = resolve(process.cwd(), opts.reportPath ?? `.tmp/worldgen/${outputId}.report.json`)
     await writeReport(reportPath, compiled.report)
+    printReportSummary(compiled.report, reportPath)
 
-    if (compiled.report.status === 'failed' || !compiled.buffer) {
+    if (compiled.report.status === 'failed') {
         printReportDiagnostics(compiled.report)
         console.error(`worldgen compile failed; wrote ${relativeOutput(reportPath)}`)
+        process.exitCode = 1
+        return
+    }
+
+    if (opts.reportOnly) {
+        console.log(`report-only: skipped level export for ${outputId}`)
+        return
+    }
+
+    if (!compiled.buffer) {
+        console.error(`worldgen compile failed; no level buffer was produced; wrote ${relativeOutput(reportPath)}`)
         process.exitCode = 1
         return
     }
@@ -53,6 +66,7 @@ function parseArgs(argv: readonly string[]): CliOptions | null {
     let specPath = ''
     let outPath: string | undefined
     let reportPath: string | undefined
+    let reportOnly = false
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i]!
         if (arg === '--out') {
@@ -61,6 +75,8 @@ function parseArgs(argv: readonly string[]): CliOptions | null {
         } else if (arg === '--report') {
             reportPath = requiredValue(argv, i, arg)
             i += 1
+        } else if (arg === '--report-only') {
+            reportOnly = true
         } else if (arg === '--help' || arg === '-h') {
             printUsage()
             return null
@@ -76,7 +92,10 @@ function parseArgs(argv: readonly string[]): CliOptions | null {
         printUsage()
         throw new CliUsageError('Missing spec JSON path.')
     }
-    return { specPath: resolve(process.cwd(), specPath), outPath, reportPath }
+    if (reportOnly && outPath) {
+        throw new CliUsageError('--report-only cannot be combined with --out.')
+    }
+    return { specPath: resolve(process.cwd(), specPath), outPath, reportPath, reportOnly }
 }
 
 function requiredValue(argv: readonly string[], index: number, option: string): string {
@@ -116,6 +135,14 @@ function printReportDiagnostics(report: WorldgenReport): void {
     }
 }
 
+function printReportSummary(report: WorldgenReport, reportPath: string): void {
+    const metrics = report.metrics
+    console.log(
+        `worldgen ${report.status}: warnings=${report.warnings.length} errors=${report.errors.length} `
+        + `chunks=${metrics.chunkCount} regions=${metrics.regionCount} wrote ${relativeOutput(reportPath)}`,
+    )
+}
+
 function safeOutputId(value: string): string {
     const safe = value
         .trim()
@@ -136,7 +163,7 @@ function rawWorldId(value: unknown): string | undefined {
 }
 
 function printUsage(): void {
-    console.log('Usage: npm run worldgen:compile -- <spec.json> [--out <file.vplevel>] [--report <report.json>]')
+    console.log('Usage: npm run worldgen:compile -- <spec.json> [--out <file.vplevel>] [--report <report.json>] [--report-only]')
 }
 
 class CliUsageError extends Error {

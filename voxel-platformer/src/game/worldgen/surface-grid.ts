@@ -2,7 +2,10 @@ import { BLOCK } from '../../engine/voxel/palette'
 import { WorldgenCompileContext, clamp, footprintBounds } from './compile-context'
 
 export interface SurfaceGrid {
-    readonly size: number
+    /** X extent in cells (row stride of the height/material arrays). */
+    readonly sizeX: number
+    /** Z extent in cells. Equals `sizeX` for square worlds. */
+    readonly sizeZ: number
     readonly sizeY: number
     readonly height: Int16Array
     readonly material: Uint16Array
@@ -11,7 +14,8 @@ export interface SurfaceGrid {
 export function createSurfaceGrid(ctx: WorldgenCompileContext): SurfaceGrid {
     const count = ctx.sizeX * ctx.sizeZ
     return {
-        size: ctx.sizeX,
+        sizeX: ctx.sizeX,
+        sizeZ: ctx.sizeZ,
         sizeY: ctx.sizeY,
         height: new Int16Array(count),
         material: new Uint16Array(count),
@@ -19,14 +23,14 @@ export function createSurfaceGrid(ctx: WorldgenCompileContext): SurfaceGrid {
 }
 
 export function surfaceY(grid: SurfaceGrid, x: number, z: number): number {
-    const xx = clamp(Math.floor(x), 0, grid.size - 1)
-    const zz = clamp(Math.floor(z), 0, grid.size - 1)
+    const xx = clamp(Math.floor(x), 0, grid.sizeX - 1)
+    const zz = clamp(Math.floor(z), 0, grid.sizeZ - 1)
     return grid.height[surfaceIndex(grid, xx, zz)]!
 }
 
 export function surfaceBlock(grid: SurfaceGrid, x: number, z: number): number {
-    const xx = clamp(Math.floor(x), 0, grid.size - 1)
-    const zz = clamp(Math.floor(z), 0, grid.size - 1)
+    const xx = clamp(Math.floor(x), 0, grid.sizeX - 1)
+    const zz = clamp(Math.floor(z), 0, grid.sizeZ - 1)
     return grid.material[surfaceIndex(grid, xx, zz)]!
 }
 
@@ -70,12 +74,12 @@ export function slopeAt(grid: SurfaceGrid, x: number, z: number): number {
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
         const nx = x + dx
         const nz = z + dz
-        if (nx < 0 || nz < 0 || nx >= grid.size || nz >= grid.size) continue
+        if (nx < 0 || nz < 0 || nx >= grid.sizeX || nz >= grid.sizeZ) continue
         slope = Math.max(slope, Math.abs(surfaceY(grid, nx, nz) - y))
     }
     return slope
 }
 
 function surfaceIndex(grid: SurfaceGrid, x: number, z: number): number {
-    return x + z * grid.size
+    return x + z * grid.sizeX
 }

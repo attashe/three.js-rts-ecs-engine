@@ -82,9 +82,11 @@ export interface VoxelMaterial {
     setCoverMaskCells(cells: Iterable<{ x: number; z: number }>): void
     /** Localised cutaway: hide voxels above `y` within `radius` of the world-XZ
      *  segment `a`→`b` (a = player, b = toward the camera past the occluder).
-     *  Shader-only — no remesh — so it can follow a moving target every frame.
-     *  Pass `null` to clear. */
-    setLocalCut(params: { a: { x: number; z: number }; b: { x: number; z: number }; radius: number; y: number } | null): void
+     *  The near end is clipped flat behind the player so the corridor only opens
+     *  toward the camera (an L/corner, not a disc); `back` is the world-unit
+     *  slack allowed behind the player (default 0). Shader-only — no remesh — so
+     *  it can follow a moving target every frame. Pass `null` to clear. */
+    setLocalCut(params: { a: { x: number; z: number }; b: { x: number; z: number }; radius: number; y: number; back?: number } | null): void
     /** Toggle the atlas-sampling pass at runtime. When `false` every
      *  block — textured or not — renders as pure vertex colour. */
     setTexturesEnabled(enabled: boolean): void
@@ -135,6 +137,11 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const localCutAUniform = uniform(new Vector2(0, 0))
     const localCutBUniform = uniform(new Vector2(0, 0))
     const localCutRadiusUniform = uniform(0)
+    // World units the cut may extend *behind* the player (negative side of the
+    // A→camera direction). 0 clips exactly at the player so the corridor is an
+    // L/corner — its corner sits at the player (farthest from the camera) and it
+    // only opens toward the camera, leaving blocks in front of the player visible.
+    const localCutBackUniform = uniform(0)
     const useTexturesUniform = uniform(opts.texturesEnabled === false ? 0 : 1)
     const maskData = new Uint8Array(maskSize * maskSize)
     const maskTex = new DataTexture(maskData, maskSize, maskSize, RedFormat, UnsignedByteType)
@@ -184,20 +191,32 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const maskValue = tslTexture(maskTex, maskUV).r
     const isCovered = cutActive.and(isActiveLayer).and(maskValue.greaterThan(0.5))
 
-    // ── Localised cutaway capsule ─────────────────────────────────────
-    // A fragment inside the capsule (above the local cut Y and within
+    // ── Localised cutaway corridor (L / corner shape) ─────────────────
+    // A fragment inside the corridor (above the local cut Y and within
     // `localCutRadius` of the segment A→B) is forced fully transparent;
     // `alphaTest` then discards it so it neither draws nor writes depth — the
     // geometry stays meshed but stops hiding the character. Only the corridor
     // from the player toward the camera is affected, so distant
     // terrain/buildings are never sliced.
+    //
+    // The near end is clipped flat behind the player instead of rounded: the
+    // corridor only opens toward the camera (its corner is at the player, the
+    // point farthest from the camera). Without this clip the rounded cap carved
+    // a full disc around the player and made blocks *in front of* them vanish
+    // whenever they walked close. `proj` is the forward distance along A→camera
+    // (`= segLen * forward`); keep the fragment only when it is on the camera
+    // side, allowing `localCutBack` world units of slack behind the player.
+    // Mirror of `localCutContainsXZ` in indoor-cut-system.ts (unit-tested).
     const segAB = localCutBUniform.sub(localCutAUniform)
     const segPA = positionWorld.xz.sub(localCutAUniform)
-    const segT = segPA.dot(segAB).div(segAB.dot(segAB).max(float(0.0001))).clamp(0, 1)
+    const proj = segPA.dot(segAB)
+    const segT = proj.div(segAB.dot(segAB).max(float(0.0001))).clamp(0, 1)
     const segDist = segPA.sub(segAB.mul(segT)).length()
+    const nearOk = proj.add(localCutBackUniform.mul(segAB.length())).greaterThanEqual(float(0))
     const inLocalDome = localCutActiveUniform.greaterThan(0.5)
         .and(y.greaterThan(localCutYUniform))
         .and(segDist.lessThan(localCutRadiusUniform))
+        .and(nearOk)
 
     const base = vertexColor()
     const baseColor = base.rgb.mul(tileFactor)
@@ -249,6 +268,7 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
             localCutAUniform.value.set(params.a.x, params.a.z)
             localCutBUniform.value.set(params.b.x, params.b.z)
             localCutRadiusUniform.value = params.radius
+            localCutBackUniform.value = params.back ?? 0
         },
         setTexturesEnabled(enabled) {
             useTexturesUniform.value = enabled ? 1 : 0

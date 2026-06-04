@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { BLOCK } from '../src/engine/voxel/palette'
 import { deserializeLevel, serializeLevel } from '../src/engine/voxel/level-serializer'
-import { compileSurfaceWorld, normalizeWorldSpec } from '../src/game/worldgen'
+import { compileSurfaceWorld, compileWorldSpec, normalizeWorldSpec } from '../src/game/worldgen'
 import type { WorldSpec } from '../src/game/worldgen'
 import type { LevelMeta } from '../src/game/level'
 
@@ -148,18 +148,33 @@ test('surface compilation is deterministic across chunks, metadata, and reports'
     assert.ok(restored.chunks.chunkCount() > 0)
 })
 
-test('surface compiler reports unsupported world shapes and feature types', () => {
-    const nonSquare = normalizeWorldSpec({
-        ...SURFACE_VALLEY_SPEC,
-        world: { ...SURFACE_VALLEY_SPEC.world, size: [48, 32, 64] },
-    })
-    assert.equal(nonSquare.ok, true)
-    if (nonSquare.ok) {
-        const result = compileSurfaceWorld(nonSquare.spec)
-        assert.equal(result.report.status, 'failed')
-        assert.ok(result.report.errors.some((error) => error.code === 'unsupported_world_shape'))
+test('surface compiler builds rectangular (non-square) worlds', () => {
+    const spec = {
+        version: 1 as const,
+        world: { id: 'rect_vale', name: 'Rect Vale', type: 'surface' as const, seed: 'rect-vale', size: [48, 32, 80] as [number, number, number] },
+        terrain: { base_height: 6 },
+        anchors: [
+            { id: 'spawn', place_at_xz: [6, 6] as [number, number] },
+            { id: 'far', place_at_xz: [40, 72] as [number, number] },
+        ],
+        validation: { require_paths: [{ id: 'spawn_to_far', from: 'spawn', to: 'far' }] },
     }
 
+    const result = compileWorldSpec(spec)
+    assert.notEqual(result.report.status, 'failed', JSON.stringify(result.report.errors))
+    assert.equal(result.meta.sizeX, 48)
+    assert.equal(result.meta.sizeZ, 80)
+    assert.equal(result.meta.size, 80) // scalar = max(sizeX, sizeZ)
+    assert.ok(result.chunks.chunkCount() > 0)
+    assert.ok(result.report.resolvedAnchors.spawn, 'spawn anchor resolves')
+    assert.ok(result.report.resolvedAnchors.far, 'far anchor resolves inside the long Z axis')
+    assert.equal(result.report.validation[0]?.ok, true, 'path validates across the rectangle')
+
+    // Deterministic for the same spec.
+    assert.equal(compileWorldSpec(spec).report.worldHash, result.report.worldHash)
+})
+
+test('surface compiler reports unsupported feature types', () => {
     const unsupportedFeature = normalizeWorldSpec({
         ...SURFACE_VALLEY_SPEC,
         terrain: {

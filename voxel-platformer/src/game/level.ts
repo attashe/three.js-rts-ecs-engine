@@ -81,8 +81,14 @@ export interface LevelMeta {
     /** Level-wide visual environment snapshot (sky/fog/sun/drifting
      *  rain & snow). Optional - absent means engine defaults. */
     ambientWeather?: AmbientWeatherRuntimeConfig
-    /** XZ extent of the generated level, used by the demo to centre the camera. */
+    /** XZ extent of the level. For square levels this is the side length; for
+     *  rectangular levels it is `max(sizeX, sizeZ)` and {@link sizeX}/{@link sizeZ}
+     *  carry the per-axis extents. Used by the demo to centre the camera. */
     size: number
+    /** X extent in cells. Absent on legacy/square levels — treat as `size`. */
+    sizeX?: number
+    /** Z extent in cells. Absent on legacy/square levels — treat as `size`. */
+    sizeZ?: number
 }
 
 export function levelMetaWithSpawn(meta: LevelMeta, spawn: { x: number; y: number; z: number }): LevelMeta {

@@ -61,6 +61,11 @@ test('compileWorldSpec dispatches surface specs and compiles MVP content into Le
     assert.equal(result.report.metrics.npcCount, 1)
     assert.equal(result.report.metrics.zoneCount, 2)
     assert.equal(result.report.metrics.scriptCount, 1)
+    assert.equal(result.report.metrics.regionSizeChunks, 8)
+    assert.equal(result.report.metrics.regionCount, 1)
+    assert.equal(result.report.metrics.regions.length, 1)
+    assert.deepEqual(result.report.metrics.chunkBounds?.min, { x: 0, y: 0, z: 0 })
+    assert.deepEqual(result.report.metrics.chunkBounds?.max, { x: 1, y: 0, z: 1 })
     assert.ok(result.report.resolvedObjects.road_sign_prop)
     assert.ok(result.report.resolvedObjects.road_sign_zone)
     assert.ok(result.report.resolvedObjects.gate_guard)
@@ -95,6 +100,45 @@ test('compileWorldSpec reports unsupported hybrid world types explicitly', () =>
     assert.equal(result.report.status, 'failed')
     assert.ok(result.report.errors.some((error) => error.code === 'unsupported_world_type'))
     assert.equal(result.meta.name, 'Hybrid Soon')
+})
+
+test('compileWorldSpec reports resident-budget warnings for large generated footprints', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: {
+            id: 'large_region_report',
+            name: 'Large Region Report',
+            type: 'surface',
+            seed: 'large-region-report',
+            size: [320, 24, 320],
+            defaultGroundY: 5,
+        },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [8, 304] }],
+    })
+
+    assert.equal(result.report.status, 'warning', diagnosticSummary(result.report.errors))
+    assert.equal(result.report.metrics.chunkCount, 100)
+    assert.equal(result.report.metrics.regionCount, 4)
+    assert.equal(result.report.metrics.regions.length, 4)
+    assert.ok(result.report.metrics.writtenVoxels > 0)
+    assert.ok(result.report.warnings.some((warning) => warning.code === 'resident_world_budget'))
+
+    const again = compileWorldSpec({
+        version: 1,
+        world: {
+            id: 'large_region_report',
+            name: 'Large Region Report',
+            type: 'surface',
+            seed: 'large-region-report',
+            size: [320, 24, 320],
+            defaultGroundY: 5,
+        },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [8, 304] }],
+    })
+    assert.deepEqual(result.report.metrics.chunkBounds, again.report.metrics.chunkBounds)
+    assert.deepEqual(result.report.metrics.regions, again.report.metrics.regions)
 })
 
 test('compileWorldSpec rejects incomplete portal content without emitting a broken zone', () => {

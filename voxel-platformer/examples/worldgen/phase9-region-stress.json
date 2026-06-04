@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "world": {
+    "id": "phase9-region-stress",
+    "name": "Phase 9 Region Stress",
+    "type": "surface",
+    "seed": "phase9/region-stress/v1",
+    "size": [320, 48, 320],
+    "defaultGroundY": 8
+  },
+  "terrain": {
+    "base_height": 8,
+    "noise": { "amplitude": 1.1, "scale": 36, "octaves": 3 },
+    "features": [
+      {
+        "id": "north_cliff",
+        "type": "cliff_band",
+        "from": [8, 70],
+        "to": [312, 54],
+        "height": 14,
+        "width": 8,
+        "face": "south",
+        "material": "stone"
+      },
+      {
+        "id": "high_ridge",
+        "type": "mountain_peak",
+        "center": [270, 42],
+        "radius": 58,
+        "height": 10,
+        "profile": "mesa",
+        "roughness": 0.08,
+        "material": "stone"
+      },
+      {
+        "id": "valley_road",
+        "type": "road_spline",
+        "points": [[10, 304], [64, 260], [128, 208], [192, 152], [256, 86], [306, 18]],
+        "width": 3,
+        "shoulder": 5,
+        "material": "path",
+        "edge_material": "grass",
+        "profile_smoothing_iterations": 4
+      }
+    ]
+  },
+  "anchors": [
+    {
+      "id": "spawn",
+      "place_at_xz": [10, 304],
+      "reserve": [5, 4, 5],
+      "terrain_patch": { "type": "flatten_disc", "radius": 5, "blend": 2, "material": "path" }
+    },
+    {
+      "id": "waystation",
+      "place_at_xz": [82, 248],
+      "reserve": [15, 6, 15],
+      "terrain_patch": { "type": "flatten_disc", "radius": 9, "blend": 3, "material": "grass" }
+    },
+    {
+      "id": "market_post",
+      "place_at_xz": [160, 188],
+      "reserve": [9, 5, 9],
+      "terrain_patch": { "type": "flatten_disc", "radius": 5, "blend": 2, "material": "path" }
+    },
+    {
+      "id": "lost_cache",
+      "place_at_xz": [220, 126],
+      "reserve": [5, 4, 5],
+      "terrain_patch": { "type": "flatten_disc", "radius": 4, "blend": 2, "material": "path" }
+    },
+    {
+      "id": "watch_post",
+      "place_at_xz": [248, 94],
+      "reserve": [13, 8, 13],
+      "terrain_patch": { "type": "flatten_disc", "radius": 8, "blend": 3, "material": "grass" }
+    },
+    {
+      "id": "exit_gate",
+      "place_at_xz": [306, 18],
+      "reserve": [5, 5, 5],
+      "terrain_patch": { "type": "flatten_disc", "radius": 5, "blend": 2, "material": "path" }
+    },
+    {
+      "id": "wind_marker",
+      "place_at_xz": [112, 224]
+    }
+  ],
+  "structures": [
+    {
+      "id": "waystation_cottage",
+      "asset": "proc.house.hermit_cottage",
+      "place_at": "waystation",
+      "auto_y": {
+        "strategy": "surface_max",
+        "terraform": "flatten_footprint",
+        "material": "platform",
+        "max_terrain_delta": 4
+      },
+      "rotation": 180,
+      "required": true
+    },
+    {
+      "id": "watch_tower",
+      "asset": "proc.tower.square",
+      "place_at": "watch_post",
+      "auto_y": {
+        "strategy": "surface_max",
+        "terraform": "flatten_footprint",
+        "material": "platform",
+        "max_terrain_delta": 5
+      },
+      "rotation": 270,
+      "required": true
+    }
+  ],
+  "scatter": [
+    {
+      "id": "valley_pines",
+      "asset": "proc.tree.pine",
+      "count": 80,
+      "mask": {
+        "min_distance_to_road": 7,
+        "avoid_reserved": true,
+        "slope_lte": 5
+      },
+      "deterministic_grid": { "cell": 16, "jitter": 0 },
+      "rotations": [0, 90, 180, 270]
+    }
+  ],
+  "content": {
+    "props": [
+      {
+        "id": "stress-road-sign",
+        "kind": "road-sign",
+        "place_at": "spawn",
+        "offset": [2.5, 0, -1.5],
+        "yaw": 0.65
+      },
+      {
+        "id": "stress-cache-crate",
+        "kind": "repair-materials-crate",
+        "place_at": "lost_cache",
+        "yaw": 0.25,
+        "scale": 0.95
+      },
+      {
+        "id": "stress-market-table",
+        "kind": "table",
+        "place_at": "market_post",
+        "offset": [1.4, 0, 0.2],
+        "yaw": 0.1
+      }
+    ],
+    "zones": [
+      {
+        "id": "stress-road-sign-zone",
+        "type": "interact",
+        "place_at": "stress-road-sign",
+        "half_xz": [1, 1],
+        "height": 2.2,
+        "prompt": "Read Sign",
+        "radius": 2.4
+      }
+    ],
+    "npcs": [
+      {
+        "id": "stress-guide",
+        "model": "keeper",
+        "name": "Mara of the Long Road",
+        "place_at": "waystation",
+        "offset_xz": [4, 0],
+        "interactionEnabled": true,
+        "interactionPrompt": "Talk"
+      },
+      {
+        "id": "stress-trader",
+        "template": "trader",
+        "name": "Tovin Longtrail",
+        "place_at": "market_post",
+        "offset_xz": [-1.6, 0.4]
+      }
+    ],
+    "pickups": [
+      {
+        "id": "stress-road-potion",
+        "kind": "heal-potion",
+        "place_at_xz": [128, 208],
+        "inventoryItem": {
+          "id": "heal-potion",
+          "name": "Healing Potion",
+          "category": "consumables",
+          "icon": "heal-potion"
+        },
+        "label": "Roadside Healing Potion"
+      }
+    ],
+    "shops": [
+      {
+        "id": "stress-trader-shop",
+        "target": "stress-trader",
+        "title": "Long Road Supplies",
+        "items": [
+          { "id": "apple", "name": "Apple", "resource": "food-apple", "buyPrice": 2, "sellPrice": 1, "stock": 12 },
+          { "id": "mana", "name": "Mana Potion", "resource": "mana-potion", "buyPrice": 9, "sellPrice": 4, "stock": 3 }
+        ]
+      }
+    ],
+    "quests": [
+      {
+        "id": "stress-recover-cache",
+        "type": "collect_return",
+        "target": "stress-guide",
+        "title": "Recover the Ridge Cache",
+        "pickups": [
+          {
+            "id": "stress-lost-cache",
+            "kind": "stress-cache",
+            "place_at": "lost_cache",
+            "offset": [0.8, 0, -0.5],
+            "label": "Ridge Cache",
+            "inventoryItem": {
+              "id": "stress-cache",
+              "name": "Ridge Cache",
+              "category": "quest",
+              "icon": "quest-shard"
+            }
+          }
+        ],
+        "reward": {
+          "gold": 10,
+          "items": [
+            { "id": "food-pie", "quantity": 1, "options": { "name": "Waystation Pie", "category": "consumables", "icon": "food-pie" } }
+          ]
+        },
+        "dialogue": {
+          "start": "A cache was lost beyond the watch tower. Bring it back if the road still holds.",
+          "active": "Keep to the road and watch the ridge. The cache is near a small crate.",
+          "complete": "Good. Take this pie and coin for the rest of your road.",
+          "done": "The valley is easier to cross when supplies are counted."
+        }
+      }
+    ],
+    "environment": {
+      "soundId": "music.amb.start",
+      "volume": 0.22,
+      "ambientWeather": { "presetId": "clear", "state": { "timeOfDay": 11 } },
+      "soundSources": [
+        { "id": "stress-wind-source", "soundId": "sfx.amb.wind", "place_at": "wind_marker", "radius": 18, "volume": 0.22 }
+      ],
+      "weatherZones": [
+        { "id": "stress-leaf-zone", "label": "Road Leaves", "presetId": "leaves", "place_at": "waystation", "offset_y": 5, "size": [24, 10, 24] }
+      ]
+    },
+    "travel": [
+      { "id": "arrival.phase9.start", "type": "arrival", "place_at": "spawn", "half_xz": [1, 1] }
+    ],
+    "scripts": [
+      {
+        "id": "stress-road-sign-script",
+        "source": "on('input', { action: 'interact', targetId: 'stress-road-sign-zone' }, () => { ui.say('stress-road-sign-zone', 'Keep to the road. The north cliff is not for travelers.', { seconds: 3 }) })"
+      }
+    ]
+  },
+  "validation": {
+    "require_paths": [
+      { "id": "stress-spawn-to-guide", "from": "spawn", "to": "stress-guide" },
+      { "id": "stress-spawn-to-cache", "from": "spawn", "to": "lost_cache" },
+      { "id": "stress-spawn-to-exit", "from": "spawn", "to": "exit_gate" }
+    ]
+  }
+}

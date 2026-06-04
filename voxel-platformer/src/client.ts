@@ -377,7 +377,7 @@ async function main(): Promise<void> {
 
         defaultAmbient.visible = !meta.ambientWeather
         sun.visible = !meta.ambientWeather
-        sun.target.position.set(meta.size / 2, 0, meta.size / 2)
+        sun.target.position.set((meta.sizeX ?? meta.size) / 2, 0, (meta.sizeZ ?? meta.size) / 2)
         renderer.iso.target.set(effectiveSpawn.x, effectiveSpawn.y, effectiveSpawn.z)
         renderer.iso.syncPosition()
 

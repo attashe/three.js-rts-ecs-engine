@@ -13,6 +13,7 @@ import {
     readRequiredString,
     readString,
     resolveContentTarget,
+    scriptIdent,
     scriptLiteral,
     type WorldgenContentResolveOptions,
 } from './content-common'
@@ -491,9 +492,4 @@ function readOptionalNonNegativeInteger(ctx: WorldgenCompileContext, value: unkn
         details: { value },
     })
     return null
-}
-
-function scriptIdent(id: string): string {
-    const cleaned = id.replace(/[^A-Za-z0-9_$]/g, '_')
-    return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`
 }

@@ -1,4 +1,5 @@
 import type { Zone } from '../../engine/ecs/zones'
+import { isRecord } from './worldgen-util'
 import { BLOCK, isCollidable, isPathSurface } from '../../engine/voxel/palette'
 import {
     generateStructureAsset,
@@ -94,16 +95,6 @@ export function compileUndergroundWorld(
         })
         return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
     }
-    if (ctx.sizeX !== ctx.sizeZ) {
-        ctx.error({
-            code: 'unsupported_world_shape',
-            message: 'Phase 6 underground compiler requires square X/Z worlds because LevelMeta.size is scalar.',
-            path: '$.world.size',
-            details: { size: spec.world.size },
-        })
-        return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
-    }
-
     ctx.chunks.withBulkEdit(() => {
         fillUnderground(ctx)
         applyStrata(ctx)
@@ -116,7 +107,9 @@ export function compileUndergroundWorld(
 
     const draft = new WorldgenLevelDraft({
         name: spec.world.name,
-        size: ctx.sizeX,
+        size: Math.max(ctx.sizeX, ctx.sizeZ),
+        sizeX: ctx.sizeX,
+        sizeZ: ctx.sizeZ,
         spawn: undergroundFallbackSpawn(ctx, state),
     })
 
@@ -1114,8 +1107,4 @@ function signedNoise2(ctx: WorldgenCompileContext, id: string, x: number, z: num
 
 function distance3(a: readonly number[], b: readonly number[]): number {
     return Math.hypot((b[0] ?? 0) - (a[0] ?? 0), (b[1] ?? 0) - (a[1] ?? 0), (b[2] ?? 0) - (a[2] ?? 0))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

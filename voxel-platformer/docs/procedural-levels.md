@@ -98,7 +98,9 @@ return defineLevel({
 - `scripts/export-procedural-levels.ts` - writes generated files to
   `public/levels/` (only when bytes change).
 - `scripts/compile-world-spec.ts` - compiles one JSON WorldSpec and writes a
-  report plus a `.vplevel` when diagnostics are not failed.
+  report plus a `.vplevel` when diagnostics are not failed. Pass
+  `--report-only` for large or experimental specs that should produce only a
+  compiler report.
 
 Generated, tracked binaries: `public/levels/*.vplevel` for every id in
 `PROCEDURAL_LEVEL_DEFINITIONS`.
@@ -108,9 +110,15 @@ Generated, tracked binaries: `public/levels/*.vplevel` for every id in
 ```bash
 npm run levels:procedural   # regenerate every registered level (writes on change)
 npm run worldgen:compile -- examples/worldgen/phase8-pipeline-sample.json
+npm run worldgen:compile -- examples/worldgen/phase9-region-stress.json --report-only
 npm test                    # runs the exporter first, then node --test
 npm run typecheck
 ```
+
+Worldgen reports include chunk bounds and report-only 8x8-chunk X/Z region
+summaries. A `resident_world_budget` warning means the spec still compiles, but
+the current runtime will load it as one resident location rather than streaming
+regions.
 
 ## Adding a level
 

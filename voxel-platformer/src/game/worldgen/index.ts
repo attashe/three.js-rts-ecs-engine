@@ -25,9 +25,11 @@ export type {
     WorldgenDiagnostic,
     WorldgenDiagnosticCode,
     WorldgenError,
+    WorldgenChunkBounds,
     WorldgenMetrics,
     WorldgenNormalizeResult,
     WorldgenPlacementReport,
+    WorldgenRegionMetrics,
     WorldgenReport,
     WorldgenStatus,
     WorldgenValidationReport,
@@ -56,6 +58,7 @@ export {
     finalizeWorldgenReport,
     setWorldgenMetricCounts,
 } from './report'
+export { WORLDGEN_REGION_SIZE_CHUNKS, collectWorldgenChunkMetrics } from './region-metrics'
 export { normalizeWorldSpec } from './normalize-spec'
 export { compileWorldSpec, compileNormalizedWorldSpec } from './compile-world'
 export { compileSurfaceWorld } from './compile-surface'

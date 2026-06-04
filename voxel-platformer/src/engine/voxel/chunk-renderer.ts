@@ -147,7 +147,7 @@ export class ChunkRenderer {
      *  segment `a`→`b` (player → toward the camera). Shader-only (no remesh),
      *  so it follows the player every frame and leaves the rest of the world
      *  intact. Pass `null` to clear. */
-    setLocalCut(params: { a: { x: number; z: number }; b: { x: number; z: number }; radius: number; y: number } | null): void {
+    setLocalCut(params: { a: { x: number; z: number }; b: { x: number; z: number }; radius: number; y: number; back?: number } | null): void {
         this.voxelMaterial.setLocalCut(params)
     }
 

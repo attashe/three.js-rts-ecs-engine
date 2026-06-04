@@ -6,6 +6,7 @@ import type {
     WorldgenReport,
     WorldgenWarning,
 } from './spec-types'
+import { WORLDGEN_REGION_SIZE_CHUNKS } from './region-metrics'
 
 export function createWorldgenReport(specId: string | undefined, specHash: string): WorldgenReport {
     return {
@@ -26,6 +27,9 @@ export function createEmptyMetrics(): WorldgenMetrics {
     return {
         chunkCount: 0,
         writtenVoxels: 0,
+        regionSizeChunks: WORLDGEN_REGION_SIZE_CHUNKS,
+        regionCount: 0,
+        regions: [],
         anchorCount: 0,
         terrainFeatureCount: 0,
         carverCount: 0,
