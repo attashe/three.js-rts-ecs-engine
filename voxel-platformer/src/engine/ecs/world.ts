@@ -291,6 +291,9 @@ export interface GameContext {
     /** Per-NPC combat/animation runtime (NPCs aren't ECS entities). Melee +
      *  scripts write request flags; npc-render reads them. */
     npcRuntimeById: Map<string, NpcRuntimeState>
+    /** NPC ids defeated in the current location. Travel snapshots copy this so
+     *  returning to a location does not resurrect enemies already killed there. */
+    defeatedNpcIds: Set<string>
     /** Active timed melee attacks keyed by actor (`player:<eid>` / `npc:<id>`).
      *  The melee combat system owns timeline advancement and hit resolution. */
     meleeAttacks: Map<string, ActiveMeleeAttack>
@@ -445,6 +448,7 @@ export function createGameWorld(): GameWorld {
         animControllerByEid: new Map<number, AnimationController>(),
         equipmentByEid: new Map<number, Map<string, Object3D>>(),
         npcRuntimeById: new Map<string, NpcRuntimeState>(),
+        defeatedNpcIds: new Set<string>(),
         meleeAttacks: new Map<string, ActiveMeleeAttack>(),
         cinematicActive: false,
         obstacles: new ObstacleRegistry(),

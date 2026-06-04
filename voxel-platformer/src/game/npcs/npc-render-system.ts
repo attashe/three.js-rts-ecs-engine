@@ -13,7 +13,7 @@ import type { GameWorld } from '../../engine/ecs/world'
 import { createNpcModel, npcModelUsesDefaultRig } from './npc-models'
 import { createCritterAnimator, type NpcAnimator } from './npc-critter-animator'
 import { npcAttackClip, npcCollisionAabb, npcEquipmentKey, type NpcAttackClip, type NpcConfig } from './npc-types'
-import { disposeNpc } from './npc-runtime'
+import { disposeNpc, markNpcDefeated } from './npc-runtime'
 import type { AABB } from '../../engine/voxel/voxel-collide'
 import { getDebugInfoEnabled, subscribeDebugInfo } from '../../engine/render/render-settings'
 import { AnimationController, attachToSocket, partRigSource } from '../../engine/anim'
@@ -128,11 +128,11 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         // the same id later rebuilds it.
         for (const id of despawned) if (!live.has(id)) despawned.delete(id)
         for (const [id, entry] of rendered) {
-            if (live.has(id)) continue
+            if (live.has(id) && !world?.defeatedNpcIds.has(id)) continue
             removeNpc(id, entry)
         }
         for (const npc of npcs) {
-            if (despawned.has(npc.id)) continue
+            if (despawned.has(npc.id) || world?.defeatedNpcIds.has(npc.id)) continue
             const existing = rendered.get(npc.id)
             if (existing && (
                 existing.visualKey !== npcVisualKey(npc) ||
@@ -150,7 +150,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
         }
         const boxes: AABB[] = []
         for (const npc of npcs) {
-            if (despawned.has(npc.id)) continue
+            if (despawned.has(npc.id) || world?.defeatedNpcIds.has(npc.id)) continue
             const box = liveNpcAabb(world, npc)
             if (box) boxes.push(box)
         }
@@ -194,6 +194,7 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
             // Despawn once the body has lain dead/settled for a beat.
             if (animator.deadSettled()) {
                 removeNpc(id, entry)
+                markNpcDefeated(world, id)
                 despawned.add(id)
                 disposeNpc(world, id)
             }

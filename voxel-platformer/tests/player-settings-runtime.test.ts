@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addComponent, query } from 'bitecs'
-import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Vector3, type Object3D } from 'three'
-import { BoxCollider, ClimbingLadder, Grounded, MovingObject, Shield, Velocity } from '../src/engine/ecs/components'
+import { Euler, Mesh, MeshBasicMaterial, PointLight, Quaternion, Scene, Vector3, type Object3D } from 'three'
+import { BoxCollider, ClimbingLadder, Grounded, Health, Mana, MovingObject, Shield, Velocity } from '../src/engine/ecs/components'
 import { computeLocomotionParams } from '../src/engine/anim/core'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../src/engine/voxel/palette'
@@ -39,6 +39,7 @@ import { partCharacterClips } from '../src/game/anim/part-clips'
 import {
     PLAYER_MODEL_KIND_USER_DATA,
     applyWeaponStance,
+    readPlayerVitals,
     spawnPlayer,
     syncPlayerHeldTorchVisibility,
     syncPlayerVisuals,
@@ -46,7 +47,11 @@ import {
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 import { normalizeNpcConfig } from '../src/game/npcs/npc-types'
-import { predictSniperArrowTrajectory, sniperTrajectoryPreviewEnabled } from '../src/game/sniper-hat-trajectory-system'
+import {
+    createSniperHatTrajectorySystem,
+    predictSniperArrowTrajectory,
+    sniperTrajectoryPreviewEnabled,
+} from '../src/game/sniper-hat-trajectory-system'
 
 function onePressAction(): ActionMap {
     let pressed = true
@@ -166,6 +171,62 @@ test('sniper hat trajectory prediction marks first terrain hit point', () => {
 
     assert.equal(prediction.hit?.kind, 'voxel')
     assert.ok(prediction.hit.position.z >= 4 && prediction.hit.position.z <= 4.1)
+})
+
+test('sniper hat trajectory renderer uses overlay line and dots that do not frustum cull', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const scene = new Scene()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.head = SNIPER_HAT_ITEM_ID
+    world.weaponStance = 'ranged'
+    world.inventory.arrows = 1
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+
+    const system = createSniperHatTrajectorySystem(scene, chunks)
+    system.init?.(world)
+    system.update(world, 1 / 60)
+
+    const root = findObjectByName(scene, 'SniperHatTrajectoryPreview')
+    const line = findObjectByName(scene, 'SniperHatTrajectoryLine')
+    const dots = findObjectByName(scene, 'SniperHatTrajectoryDots')
+    assert.ok(root?.visible)
+    assert.ok(line)
+    assert.ok(dots)
+    assert.equal(line.frustumCulled, false)
+    assert.equal(dots.frustumCulled, false)
+    assert.ok(line.renderOrder > 0)
+    assert.ok(dots.renderOrder > line.renderOrder)
+
+    system.dispose?.()
+})
+
+test('spawnPlayer restores carried health and mana snapshots for location travel', () => {
+    const departingWorld = createGameWorld()
+    const departingPlayer = spawnPlayer(departingWorld, {
+        spawn: { x: 0, y: 1, z: 0 },
+        settings: departingWorld.playerSettings,
+    })
+    Health.max[departingPlayer] = 7
+    Health.current[departingPlayer] = 3
+    Mana.max[departingPlayer] = 8
+    Mana.current[departingPlayer] = 5
+
+    const carried = readPlayerVitals(departingWorld)
+    assert.ok(carried)
+
+    const arrivingWorld = createGameWorld()
+    const arrivingPlayer = spawnPlayer(arrivingWorld, {
+        spawn: { x: 8, y: 2, z: 8 },
+        settings: arrivingWorld.playerSettings,
+        vitals: carried,
+    })
+
+    assert.equal(Health.max[arrivingPlayer], 7)
+    assert.equal(Health.current[arrivingPlayer], 3)
+    assert.equal(Mana.max[arrivingPlayer], 8)
+    assert.equal(Mana.current[arrivingPlayer], 5)
 })
 
 test('high speed boots increase player control base speed', () => {

@@ -30,13 +30,24 @@ import { playerEquipmentKey, type EquipmentHandLoadout } from './anim/equipment-
 import { RENDER_LAYER, setLayerRecursive } from '../engine/render/render-layers'
 import { disposeObject3D } from '../engine/render/dispose-object'
 import { DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from './player-settings'
-import { initMana, PLAYER_DEFAULT_MAX_MANA } from './mana'
+import { initMana, PLAYER_DEFAULT_MAX_MANA, readMana, type ManaSnapshot } from './mana'
 
 export interface PlayerOptions {
     spawn: { x: number; y: number; z: number }
     bodyColor?: number
     rimColor?: number
     settings?: PlayerSettings
+    vitals?: PlayerVitalsSnapshot
+}
+
+export interface HealthSnapshot {
+    current: number
+    max: number
+}
+
+export interface PlayerVitalsSnapshot {
+    health: HealthSnapshot
+    mana: ManaSnapshot
 }
 
 /** Lean HP model rendered as hearts: the player starts with two full hearts
@@ -94,6 +105,7 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     Health.max[eid] = PLAYER_DEFAULT_MAX_HEALTH
     Health.current[eid] = PLAYER_DEFAULT_MAX_HEALTH
     initMana(eid, PLAYER_DEFAULT_MAX_MANA)
+    if (opts.vitals) applyPlayerVitals(eid, opts.vitals)
     // Directional block covering the body height. Lowered by default; the
     // player-shield-system drives `raised`, the arc width, and the arc
     // direction (front when T is held, left-flank when passive).
@@ -130,6 +142,43 @@ export function spawnPlayer(world: GameWorld, opts: PlayerOptions): number {
     })
 
     return eid
+}
+
+export function readPlayerVitals(world: GameWorld): PlayerVitalsSnapshot | null {
+    const players = query(world, [PlayerControlled, Health, Mana])
+    if (players.length === 0) return null
+    return readPlayerVitalsForEntity(players[0]!)
+}
+
+export function readPlayerVitalsForEntity(eid: number): PlayerVitalsSnapshot {
+    return {
+        health: readHealth(eid),
+        mana: readMana(eid),
+    }
+}
+
+export function applyPlayerVitals(eid: number, vitals: PlayerVitalsSnapshot): void {
+    const healthMax = normalizeHealthMax(vitals.health.max)
+    Health.max[eid] = healthMax
+    Health.current[eid] = clampHealth(vitals.health.current, healthMax)
+    initMana(eid, vitals.mana.max, vitals.mana.current)
+}
+
+function readHealth(eid: number): HealthSnapshot {
+    const max = normalizeHealthMax(Health.max[eid]!)
+    return {
+        current: clampHealth(Health.current[eid]!, max),
+        max,
+    }
+}
+
+function normalizeHealthMax(value: number): number {
+    return Number.isFinite(value) && value > 0 ? value : PLAYER_DEFAULT_MAX_HEALTH
+}
+
+function clampHealth(value: number, max: number): number {
+    if (!Number.isFinite(value)) return max
+    return Math.max(0, Math.min(max, value))
 }
 
 /**

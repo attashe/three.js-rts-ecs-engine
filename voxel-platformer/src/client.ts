@@ -58,7 +58,7 @@ import { Pickup as PickupComponent, PickupValue, Position } from './engine/ecs/c
 import { despawnEntity } from './engine/ecs/entity'
 import { DEMO_LEVEL_ID } from './game/procedural-level-ids'
 import { getProceduralLevelDefinition, type ProceduralScriptSources } from './game/procedural-levels'
-import { spawnPlayer } from './game/player'
+import { readPlayerVitals, spawnPlayer, type PlayerVitalsSnapshot } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
 import { createIndoorCutSystem } from './game/indoor-cut-system'
 import { createSunFollowSystem } from './engine/render/sun-follow-system'
@@ -83,7 +83,7 @@ import { createNpcRenderSystem } from './game/npcs/npc-render-system'
 import { createNpcBehaviourSystem } from './engine/ecs/systems/npc-behaviour-system'
 import { createPlayerShieldSystem } from './game/player-shield-system'
 import { createPlayerStunBlinkSystem } from './game/player-stun-blink-system'
-import { registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-runtime'
+import { defeatedNpcSnapshot, registerRuntimeNpcs, type RegisteredNpcRuntime } from './game/npcs/npc-runtime'
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
 import { nearestDoorInteractionTarget, scanDoors } from './game/doors'
@@ -129,6 +129,7 @@ interface LoadedLocation {
     editorMeta?: EditorLevelMeta
     sourceBuffer?: ArrayBuffer
     restoredFlags?: Map<string, FlagValue>
+    restoredDefeatedNpcIds?: Set<string>
 }
 
 interface ActiveLocation {
@@ -149,6 +150,7 @@ interface ActiveLocation {
 interface LocationSnapshot {
     buffer: ArrayBuffer
     flags: Map<string, FlagValue>
+    defeatedNpcIds: Set<string>
 }
 
 interface SystemSlot {
@@ -276,11 +278,13 @@ async function main(): Promise<void> {
         if (!targetId) return
         travelInFlight = true
         const carried = currentPlayerSettings(world)
+        const carriedVitals = readPlayerVitals(world)
         try {
             const loaded = await loadProjectLocation(targetId, snapshots)
             activateLocation(loaded, {
                 arrivalId: opts.arrivalId,
                 playerSettings: carried,
+                playerVitals: carriedVitals,
                 saveCurrent: true,
                 useCheckpoint: false,
             })
@@ -317,6 +321,7 @@ async function main(): Promise<void> {
             arrivalId?: string
             entrySpawn?: { x: number; y: number; z: number }
             playerSettings: PlayerSettings
+            playerVitals?: PlayerVitalsSnapshot | null
             saveCurrent: boolean
             useCheckpoint: boolean
         },
@@ -344,8 +349,9 @@ async function main(): Promise<void> {
         world.inventory.gold = world.playerSettings.inventory.gold
         world.inventory.arrows = world.playerSettings.inventory.arrows
         world.inventory.items = copyInventoryItems(world.playerSettings.inventory.items)
+        world.defeatedNpcIds = new Set(loaded.restoredDefeatedNpcIds ?? [])
 
-        spawnPlayer(world, { spawn: effectiveSpawn, settings: world.playerSettings })
+        spawnPlayer(world, { spawn: effectiveSpawn, settings: world.playerSettings, vitals: opts.playerVitals ?? undefined })
         for (const stone of meta.stones) spawnLevelStone(world, stone)
         for (const coin of meta.coinPiles) spawnCoinPile(world, coin)
         for (const piston of meta.pistons) registerPistonMechanism(world, chunks, piston)
@@ -542,6 +548,7 @@ async function main(): Promise<void> {
         snapshots.set(active.id, {
             buffer: serializeLevel(chunks, active.editorMeta),
             flags: new Map(active.scriptEngine?.flags ?? []),
+            defeatedNpcIds: new Set(defeatedNpcSnapshot(world)),
         })
     }
 
@@ -865,6 +872,7 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.popupClears.length = 0
     world.nextPopupClearId = 1
     world.scriptTriggerEvents.length = 0
+    world.defeatedNpcIds.clear()
     world.deathSignal = null
     world.lastCheckpoint = null
     world.weaponStance = 'melee'
@@ -971,6 +979,7 @@ async function loadProjectLocation(
         return {
             ...loadedEditorLocationFromBuffer(normalized, snapshot.buffer),
             restoredFlags: new Map(snapshot.flags),
+            restoredDefeatedNpcIds: new Set(snapshot.defeatedNpcIds),
         }
     }
     // Canonical procedural levels must come from source during game travel.
@@ -993,6 +1002,7 @@ function loadLocationForRestart(active: ActiveLocation): LoadedLocation {
     return {
         ...loadedEditorLocationFromBuffer(active.id, active.entrySnapshot.buffer),
         restoredFlags: new Map(active.entrySnapshot.flags),
+        restoredDefeatedNpcIds: new Set(active.entrySnapshot.defeatedNpcIds),
     }
 }
 
@@ -1001,12 +1011,14 @@ function entrySnapshotFromLoaded(loaded: LoadedLocation): LocationSnapshot {
         return {
             buffer: loaded.sourceBuffer.slice(0),
             flags: new Map(loaded.restoredFlags ?? []),
+            defeatedNpcIds: new Set(loaded.restoredDefeatedNpcIds ?? []),
         }
     }
     if (loaded.editorMeta) {
         return {
             buffer: serializeLevel(loaded.chunks, loaded.editorMeta),
             flags: new Map(loaded.restoredFlags ?? []),
+            defeatedNpcIds: new Set(loaded.restoredDefeatedNpcIds ?? []),
         }
     }
     throw new Error(`Location "${loaded.id}" has no serializable restart baseline`)

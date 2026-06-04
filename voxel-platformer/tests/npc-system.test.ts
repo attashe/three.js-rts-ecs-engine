@@ -4,7 +4,7 @@ import { Group, LineSegments, Scene, type Object3D } from 'three'
 import { createGameWorld } from '../src/engine/ecs/world'
 import { createNpcModel } from '../src/game/npcs/npc-models'
 import { createNpcRenderSystem } from '../src/game/npcs/npc-render-system'
-import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
+import { defeatedNpcSnapshot, registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 import {
     NPC_MODEL_KINDS,
     NPC_MODEL_LABELS,
@@ -243,6 +243,35 @@ test('registerRuntimeNpcs adds interaction zones, collision obstacles, and scrip
     assert.equal(world.obstacles.has(obstacleId), false)
 })
 
+test('registerRuntimeNpcs skips NPCs defeated in this location snapshot', () => {
+    const world = createGameWorld()
+    world.defeatedNpcIds.add('arlen')
+    const config = npc('arlen')
+    const runtime = registerRuntimeNpcs(world, [config])
+
+    assert.equal(world.npcRuntimeById.has('arlen'), false)
+    assert.equal(world.zones.has(npcInteractionZoneId(config)), false)
+    assert.equal(world.obstacles.has(npcObstacleId(config, 0)), false)
+    assert.equal(runtime.scripts.length, 0)
+
+    runtime.dispose()
+})
+
+test('defeatedNpcSnapshot includes despawned and still-dying NPCs for travel', () => {
+    const world = createGameWorld()
+    const runtime = registerRuntimeNpcs(world, [
+        npc('down'),
+        npc('dying'),
+        npc('alive'),
+    ])
+    world.defeatedNpcIds.add('down')
+    damageNpc(world.npcRuntimeById.get('dying')!, 999)
+
+    assert.deepEqual(defeatedNpcSnapshot(world), ['down', 'dying'])
+
+    runtime.dispose()
+})
+
 test('registerRuntimeNpcs gives large trolls the troll default HP pool', () => {
     const world = createGameWorld()
     const config = normalizeNpcConfig({
@@ -358,6 +387,20 @@ test('NPC renderer tracks add, move, and remove changes', () => {
 
     system.dispose?.()
     assert.equal(scene.children.includes(group!), false)
+})
+
+test('NPC renderer does not draw NPCs defeated in the current location', () => {
+    const scene = new Scene()
+    const world = createGameWorld()
+    world.defeatedNpcIds.add('arlen')
+    const system = createNpcRenderSystem(scene, { getNpcs: () => [npc('arlen')] })
+
+    system.init?.(world)
+    const group = scene.children.find((child) => child.name === 'NPCs') as Group | undefined
+    assert.ok(group)
+    assert.equal(group!.children.length, 0)
+
+    system.dispose?.()
 })
 
 test('NPC renderer rebuilds visuals when hand equipment changes', () => {

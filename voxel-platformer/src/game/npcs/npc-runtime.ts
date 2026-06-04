@@ -19,8 +19,11 @@ export interface RegisteredNpcRuntime {
 
 export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]): RegisteredNpcRuntime {
     const registeredIds: string[] = []
+    const activeNpcs: NpcConfig[] = []
 
     npcs.forEach((npc, index) => {
+        if (world.defeatedNpcIds.has(npc.id)) return
+        activeNpcs.push(npc)
         let zoneId: string | null = null
         const zone = npcInteractionZone(npc)
         if (zone) {
@@ -63,11 +66,23 @@ export function registerRuntimeNpcs(world: GameWorld, npcs: readonly NpcConfig[]
     })
 
     return {
-        scripts: npcScriptEntries(npcs),
+        scripts: npcScriptEntries(activeNpcs),
         dispose() {
             for (const id of registeredIds) disposeNpc(world, id)
         },
     }
+}
+
+export function markNpcDefeated(world: GameWorld, id: string): void {
+    world.defeatedNpcIds.add(id)
+}
+
+export function defeatedNpcSnapshot(world: GameWorld): string[] {
+    const ids = new Set(world.defeatedNpcIds)
+    for (const npc of world.npcRuntimeById.values()) {
+        if (npc.dying) ids.add(npc.id)
+    }
+    return [...ids].sort()
 }
 
 /**

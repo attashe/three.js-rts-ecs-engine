@@ -8,6 +8,8 @@ import {
     LineBasicMaterial,
     Mesh,
     MeshBasicMaterial,
+    Points,
+    PointsMaterial,
     RingGeometry,
     SphereGeometry,
     Vector3,
@@ -36,6 +38,8 @@ const ARROW_PREVIEW_STEP_SECONDS = 1 / 60
 const ARROW_PREVIEW_MAX_SECONDS = 2.4
 const ARROW_PREVIEW_MUZZLE_FORWARD = 0.55
 const ARROW_PREVIEW_MUZZLE_Y = 1.05
+const TRAJECTORY_RENDER_ORDER = 10_000
+const TRAJECTORY_DOT_STRIDE = 4
 
 export interface ArrowTrajectoryPrediction {
     points: Vector3[]
@@ -48,6 +52,7 @@ export interface ArrowTrajectoryPrediction {
 export function createSniperHatTrajectorySystem(scene: Scene, chunks: ChunkManager): System {
     let root: Group | null = null
     let line: Line<BufferGeometry, LineBasicMaterial> | null = null
+    let dots: Points<BufferGeometry, PointsMaterial> | null = null
     let hitMarker: Group | null = null
     let markerCoreMaterial: MeshBasicMaterial | null = null
 
@@ -58,6 +63,7 @@ export function createSniperHatTrajectorySystem(scene: Scene, chunks: ChunkManag
             root = new Group()
             root.name = 'SniperHatTrajectoryPreview'
             root.visible = false
+            root.renderOrder = TRAJECTORY_RENDER_ORDER
             const lineGeometry = new BufferGeometry()
             const lineMaterial = new LineBasicMaterial({
                 color: 0x80d8ff,
@@ -69,6 +75,23 @@ export function createSniperHatTrajectorySystem(scene: Scene, chunks: ChunkManag
             line = new Line(lineGeometry, lineMaterial)
             line.name = 'SniperHatTrajectoryLine'
             line.frustumCulled = false
+            line.renderOrder = TRAJECTORY_RENDER_ORDER
+
+            dots = new Points(
+                new BufferGeometry(),
+                new PointsMaterial({
+                    color: 0xbcefff,
+                    size: 5,
+                    sizeAttenuation: false,
+                    transparent: true,
+                    opacity: 0.86,
+                    depthTest: false,
+                    depthWrite: false,
+                }),
+            )
+            dots.name = 'SniperHatTrajectoryDots'
+            dots.frustumCulled = false
+            dots.renderOrder = TRAJECTORY_RENDER_ORDER + 1
 
             markerCoreMaterial = new MeshBasicMaterial({
                 color: 0xffe083,
@@ -78,11 +101,12 @@ export function createSniperHatTrajectorySystem(scene: Scene, chunks: ChunkManag
                 depthWrite: false,
             })
             hitMarker = createHitMarker(markerCoreMaterial)
-            root.add(line, hitMarker)
+            hitMarker.renderOrder = TRAJECTORY_RENDER_ORDER + 2
+            root.add(line, dots, hitMarker)
             scene.add(root)
         },
         update(world) {
-            if (!root || !line || !hitMarker || !markerCoreMaterial) return
+            if (!root || !line || !dots || !hitMarker || !markerCoreMaterial) return
             const player = firstSniperPreviewPlayer(world)
             if (player === null) {
                 root.visible = false
@@ -93,7 +117,9 @@ export function createSniperHatTrajectorySystem(scene: Scene, chunks: ChunkManag
                 root.visible = false
                 return
             }
-            line.geometry.setFromPoints(prediction.points)
+            if (root.parent !== scene) scene.add(root)
+            setGeometryPoints(line.geometry, prediction.points)
+            setGeometryPoints(dots.geometry, trajectoryDotPoints(prediction.points))
             hitMarker.visible = prediction.hit !== null
             if (prediction.hit) {
                 hitMarker.position.copy(prediction.hit.position)
@@ -105,6 +131,8 @@ export function createSniperHatTrajectorySystem(scene: Scene, chunks: ChunkManag
             if (root) scene.remove(root)
             line?.geometry.dispose()
             line?.material.dispose()
+            dots?.geometry.dispose()
+            dots?.material.dispose()
             hitMarker?.traverse((obj) => {
                 if (obj instanceof Mesh) {
                     obj.geometry.dispose()
@@ -117,6 +145,7 @@ export function createSniperHatTrajectorySystem(scene: Scene, chunks: ChunkManag
             })
             root = null
             line = null
+            dots = null
             hitMarker = null
             markerCoreMaterial = null
         },
@@ -131,6 +160,8 @@ function createHitMarker(coreMaterial: MeshBasicMaterial): Group {
     group.name = 'SniperHatHitMarker'
     const core = new Mesh(new SphereGeometry(0.08, 10, 8), coreMaterial)
     core.name = 'SniperHatHitCore'
+    core.frustumCulled = false
+    core.renderOrder = TRAJECTORY_RENDER_ORDER + 2
     const ringMat = new MeshBasicMaterial({
         color: 0xffe083,
         transparent: true,
@@ -142,8 +173,25 @@ function createHitMarker(coreMaterial: MeshBasicMaterial): Group {
     const ring = new Mesh(new RingGeometry(0.18, 0.21, 24), ringMat)
     ring.name = 'SniperHatHitRing'
     ring.rotation.x = -Math.PI / 2
+    ring.frustumCulled = false
+    ring.renderOrder = TRAJECTORY_RENDER_ORDER + 2
     group.add(core, ring)
     return group
+}
+
+function setGeometryPoints(geometry: BufferGeometry, points: readonly Vector3[]): void {
+    geometry.setFromPoints([...points])
+    geometry.computeBoundingSphere()
+}
+
+function trajectoryDotPoints(points: readonly Vector3[]): Vector3[] {
+    const out: Vector3[] = []
+    for (let i = 0; i < points.length; i += TRAJECTORY_DOT_STRIDE) {
+        out.push(points[i]!)
+    }
+    const last = points[points.length - 1]
+    if (last && out[out.length - 1] !== last) out.push(last)
+    return out
 }
 
 function firstSniperPreviewPlayer(world: GameWorld): number | null {
