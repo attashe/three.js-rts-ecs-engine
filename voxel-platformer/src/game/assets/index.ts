@@ -9,8 +9,8 @@ export {
 } from './main-character'
 export type { MainCharacterOptions } from './main-character'
 
-export { createArrow, createBow, createMagicBolt, createMagicOrb, createQuiver } from './weapons'
-export type { BowOptions, QuiverOptions } from './weapons'
+export { createArrow, createBow, createMagicBolt, createMagicOrb, createQuiver, createSword } from './weapons'
+export type { BowOptions, QuiverOptions, SwordOptions } from './weapons'
 
 export { createCoinPile, createDynamiteBundle, createFoodPickupProp, createHighJumpBootsProp, createQuestShard, createStone } from './props'
 export type { StoneVisualOptions } from './props'

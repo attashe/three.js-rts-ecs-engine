@@ -100,6 +100,36 @@ test('shop display props are registered as compact decorative assets', () => {
     }
 })
 
+test('forest lift quest props are registered as compact readable assets', () => {
+    const kinds = [
+        'broken-wagon',
+        'fallen-driver',
+        'repair-materials-crate',
+        'lift-control-lever',
+        'road-sign',
+    ] as const
+    for (const kind of kinds) {
+        assert.ok(PROP_KINDS.includes(kind))
+        assert.ok(PROP_LABELS[kind].length > 0)
+        const geometry = getPropModel(kind).geometry
+        geometry.computeBoundingBox()
+        assert.ok(geometry.boundingBox)
+        assert.ok(geometry.boundingBox!.min.y >= -0.001, `${kind} should sit on its placement base`)
+        assert.ok(geometry.boundingBox!.max.y > 0.12, `${kind} should have a visible silhouette`)
+    }
+
+    const wagon = getPropModel('broken-wagon').geometry.boundingBox!
+    assert.ok(wagon.max.x - wagon.min.x > 1.2, 'broken wagon should read wider than a small crate')
+    const driver = getPropModel('fallen-driver').geometry.boundingBox!
+    assert.ok(driver.max.z - driver.min.z > 0.7, 'fallen driver should read as a prone body')
+    const lever = getPropModel('lift-control-lever').geometry.boundingBox!
+    assert.ok(lever.max.y > 0.75, 'lift control lever should be tall enough to read as an interaction marker')
+    assert.ok(lever.max.x - lever.min.x < 0.7, 'lift control lever should stay compact beside a lift platform')
+    const sign = getPropModel('road-sign').geometry.boundingBox!
+    assert.ok(sign.max.y > 1.2, 'road sign should stand above short ground props')
+    assert.ok(sign.max.x - sign.min.x > 1.1, 'road sign should have a readable plank silhouette')
+})
+
 test('disposePropModels clears the cache so the next lookup rebuilds', () => {
     const before = getPropModel('bush').geometry
     disposePropModels()

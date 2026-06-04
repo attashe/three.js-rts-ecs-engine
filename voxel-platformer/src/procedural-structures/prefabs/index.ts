@@ -1,6 +1,7 @@
 import type { StructurePrefab } from './prefab-types'
 import { PORTAL_GATE } from './portal-gate'
 import { CAMPFIRE } from './campfire'
+import { COMPACT_PINE } from './compact-pine'
 import { WELL } from './well'
 import { BANNER_ARCH } from './banner-arch'
 import { TRAIN_STATION } from './train-station'
@@ -26,6 +27,7 @@ export type { StructurePrefab, StructurePrefabProp } from './prefab-types'
 export const STRUCTURE_PREFABS: readonly StructurePrefab[] = [
     PORTAL_GATE,
     CAMPFIRE,
+    COMPACT_PINE,
     WELL,
     BANNER_ARCH,
     TRAIN_STATION,

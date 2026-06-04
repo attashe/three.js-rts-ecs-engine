@@ -6,6 +6,7 @@ import { FixedOrder } from '../engine/ecs/systems/orders'
 import { pushLog, type GameWorld } from '../engine/ecs/world'
 import { spawnElectricOrb, spawnMagicBolt } from './moving-objects'
 import { spendMana } from './mana'
+import { isStaffEquipmentKind } from './anim/equipment-types'
 
 /** A castable spell. `cast` runs the gameplay effect; `anim` is the combat
  *  overlay param played on the caster; `castLog` is the flavour line. */
@@ -135,6 +136,10 @@ export function createSpellCastSystem(actions: ActionMap, opts: SpellCastOptions
             if (hasComponent(world, player, ClimbingLadder)) return
             if (!hasComponent(world, player, Grounded)) return
             if (!actions.consumePressed(actionId, player)) return
+            if (!activeLoadoutUsesStaff(gw)) {
+                pushLog(gw, 'No staff equipped.')
+                return
+            }
 
             const spell = getSpell(gw.selectedSpell)
             if (!spendMana(player, spell.manaCost)) {
@@ -147,4 +152,9 @@ export function createSpellCastSystem(actions: ActionMap, opts: SpellCastOptions
             opts.onCast?.(spell)
         },
     }
+}
+
+function activeLoadoutUsesStaff(world: GameWorld): boolean {
+    const loadout = world.playerSettings.equipment[world.weaponStance]
+    return isStaffEquipmentKind(loadout.handR) || isStaffEquipmentKind(loadout.handL)
 }

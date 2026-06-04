@@ -6,9 +6,10 @@ import { hasComponent, query } from 'bitecs'
 import { ClimbingLadder, Grounded, PlayerControlled, Position, Rotation, Stunned } from '../components'
 import type { ActionId, ActionMap } from '../../input/actions'
 import { isStaffEquipmentKind } from '../../../game/anim/equipment-types'
-import { SPEAR_ITEM_ID } from '../../../game/equipment-items'
+import { SPEAR_ITEM_ID, SWORD_ITEM_ID } from '../../../game/equipment-items'
 import type { System } from './system'
 import { FixedOrder } from './orders'
+import { pushLog } from '../world'
 import { hasActiveMeleeAttack, startMeleeAttack } from '../melee-combat'
 import {
     cloneMeleeAttackDef,
@@ -57,6 +58,11 @@ export function createMeleeAttackSystem(actions: ActionMap, opts: MeleeAttackOpt
 
             const useStaff = activeLoadoutUsesStaff(world)
             const useSpear = activeLoadoutUsesSpear(world)
+            const useSword = activeLoadoutUsesSword(world)
+            if (!useStaff && !useSpear && !useSword) {
+                pushLog(world, 'No melee weapon equipped.')
+                return
+            }
             const useWideSwing = !useStaff && !useSpear && nextWideSwing
             const def = useStaff ? staffSlam : useSpear ? spearThrust : useWideSwing ? swing : thrust
             if (!startMeleeAttack(world, { kind: 'player', eid: player }, def)) return
@@ -78,6 +84,11 @@ function activeLoadoutUsesStaff(world: Parameters<System['update']>[0]): boolean
 function activeLoadoutUsesSpear(world: Parameters<System['update']>[0]): boolean {
     const loadout = world.playerSettings.equipment[world.weaponStance]
     return loadout.handR === SPEAR_ITEM_ID || loadout.handL === SPEAR_ITEM_ID
+}
+
+function activeLoadoutUsesSword(world: Parameters<System['update']>[0]): boolean {
+    const loadout = world.playerSettings.equipment[world.weaponStance]
+    return loadout.handR === SWORD_ITEM_ID || loadout.handL === SWORD_ITEM_ID
 }
 
 function playerAttackDef(id: MeleeAttackId, range: number, arcCos: number, damage: number): MeleeAttackDef {

@@ -46,6 +46,7 @@ function onePressAction(): ActionMap {
 
 function spawnCastingPlayer(mana = PLAYER_DEFAULT_MAX_MANA) {
     const world = createGameWorld()
+    world.weaponStance = 'magic'
     const player = createEntity(world)
     addComponents(world, player, [PlayerControlled, Position, Rotation, Grounded, Mana])
     Position.x[player] = 0
@@ -90,6 +91,18 @@ test('spell cast system consumes the press but does not cast without enough mana
     assert.equal(Mana.current[player], 0)
     assert.equal([...query(world, [MovingObject])].length, 0)
     assert.ok(world.log.includes('Not enough mana.'))
+})
+
+test('spell cast system requires an equipped staff loadout', () => {
+    const { world, player } = spawnCastingPlayer()
+    world.playerSettings.equipment.magic = { handR: null, handL: null }
+    world.selectedSpell = 'bolt'
+
+    createSpellCastSystem(onePressAction()).update(world, 1 / 60)
+
+    assert.equal(Mana.current[player], PLAYER_DEFAULT_MAX_MANA)
+    assert.equal([...query(world, [MovingObject])].length, 0)
+    assert.ok(world.log.includes('No staff equipped.'))
 })
 
 test('Arcane Bolt cast spawns a magic-bolt projectile', () => {

@@ -3,8 +3,17 @@ import {
     METAL_HELMET_ITEM_ID,
     SNIPER_HAT_ITEM_ID,
     SPEAR_ITEM_ID,
+    SWORD_ITEM_ID,
     isBuyableHeadEquipmentItemId,
 } from './equipment-items'
+
+export const HELD_TORCH_ITEM_ID = 'held-torch'
+export const HELD_TORCH_ITEM_OPTIONS = {
+    name: 'Hand Torch',
+    description: 'A travel torch for dark roads and night journeys.',
+    category: 'tools',
+    icon: 'torch',
+} as const satisfies InventoryItemOptions
 
 export const INVENTORY_CATEGORIES = [
     'resources',
@@ -176,7 +185,7 @@ export function defaultInventoryCategory(itemId: string): InventoryCategoryId {
         || itemId.includes('amulet')
         || itemId.includes('boots')
     ) return 'accessories'
-    if (itemId === SPEAR_ITEM_ID || itemId.includes('weapon')) return 'tools'
+    if (itemId === SWORD_ITEM_ID || itemId === SPEAR_ITEM_ID || itemId === HELD_TORCH_ITEM_ID || itemId.includes('weapon')) return 'tools'
     if (itemId.includes('key') || itemId.includes('tool')) return 'tools'
     return 'quest'
 }
@@ -195,7 +204,9 @@ export function defaultInventoryIcon(itemId: string, category = defaultInventory
     if (itemId === HIGH_JUMP_BOOTS_ITEM_ID || itemId === HIGH_SPEED_BOOTS_ITEM_ID || itemId.includes('boots')) return 'boots'
     if (itemId === METAL_HELMET_ITEM_ID) return 'metal-helmet'
     if (itemId === SNIPER_HAT_ITEM_ID) return 'hat-sniper'
+    if (itemId === SWORD_ITEM_ID) return 'sword'
     if (itemId === SPEAR_ITEM_ID) return 'spear'
+    if (itemId === HELD_TORCH_ITEM_ID) return 'torch'
     if (itemId.includes('shard') || category === 'quest') return 'quest-shard'
     if (category === 'consumables') return 'consumable'
     if (category === 'accessories') return 'accessory'

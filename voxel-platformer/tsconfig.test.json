@@ -62,6 +62,14 @@
     "src/engine/anim/core/graph-serialization.ts",
     "src/engine/anim/core/index.ts",
     "src/game/anim/graph-defaults.ts",
+    "src/game/worldgen/spec-types.ts",
+    "src/game/worldgen/rng.ts",
+    "src/game/worldgen/material-map.ts",
+    "src/game/worldgen/report.ts",
+    "src/game/worldgen/normalize-spec.ts",
+    "src/game/worldgen/compile-context.ts",
+    "src/game/worldgen/compile-surface.ts",
+    "src/game/worldgen/index.ts",
     "scripts/export-procedural-levels.ts",
     "tests/**/*.ts"
   ]

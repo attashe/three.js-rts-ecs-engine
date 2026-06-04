@@ -28,8 +28,10 @@ import {
 import {
     METAL_HELMET_ITEM_ID,
     SPEAR_ITEM_ID,
+    SWORD_ITEM_ID,
     isBuyableHandEquipmentItemId,
     isBuyableHeadEquipmentItemId,
+    isInventoryHandEquipmentItemId,
 } from './equipment-items'
 import { SPELLS } from './spells'
 import { AIR_PUSH_MANA_COST, HIGH_JUMP_MANA_COST, MANA_PER_ORB, MANA_POTION_ITEM_ID } from './mana'
@@ -42,8 +44,12 @@ import {
     selectConsumable,
 } from './consumables'
 import {
+    HELD_TORCH_ITEM_ID,
+    HELD_TORCH_ITEM_OPTIONS,
     INVENTORY_CATEGORIES,
     INVENTORY_CATEGORY_LABELS,
+    addInventoryItem,
+    copyInventoryItems,
     inventoryItemCount,
     listInventoryItems,
     type InventoryCategoryId,
@@ -440,7 +446,8 @@ function groupInventoryItems(world: GameWorld): Map<InventoryCategoryId, Invento
     )
     for (const item of listInventoryItems(world.inventory.items)) {
         if (item.id === HEAL_POTION_ITEM_ID || item.id === MANA_POTION_ITEM_ID) continue
-        if (isBuyableHeadEquipmentItemId(item.id) || isBuyableHandEquipmentItemId(item.id)) continue
+        if (item.id === HELD_TORCH_ITEM_ID) continue
+        if (isBuyableHeadEquipmentItemId(item.id) || isBuyableHandEquipmentItemId(item.id) || isInventoryHandEquipmentItemId(item.id)) continue
         grouped.get(item.category)?.push(item)
     }
     grouped.get('consumables')!.unshift(consumableSnapshotItem(world, MANA_POTION_ITEM_ID))
@@ -456,7 +463,7 @@ function categoryCards(
 ): HTMLElement[] {
     const cards = items.map((item) => itemCard(item, dom, world))
     if (category === 'accessories') cards.unshift(...hatSelectorCards(dom, world))
-    if (category === 'tools') cards.unshift(...meleeWeaponSelectorCards(dom, world), torchToggleCard(dom, world))
+    if (category === 'tools') cards.unshift(...meleeWeaponSelectorCards(dom, world), ...torchToggleCards(dom, world))
     return cards
 }
 
@@ -479,7 +486,7 @@ function hatSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
 }
 
 function meleeWeaponSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
-    const kinds = ['sword', SPEAR_ITEM_ID] as const satisfies readonly HandEquipmentKind[]
+    const kinds = [SWORD_ITEM_ID, SPEAR_ITEM_ID] as const satisfies readonly HandEquipmentKind[]
     return kinds
         .filter((kind) => playerCanEquipMeleeHand(world, kind))
         .map((kind) => {
@@ -504,9 +511,23 @@ function playerCanEquipHead(world: GameWorld, kind: HeadEquipmentKind): boolean 
 }
 
 function playerCanEquipMeleeHand(world: GameWorld, kind: HandEquipmentKind): boolean {
-    return kind === 'sword'
-        || world.playerSettings.equipment.melee.handR === kind
+    return world.playerSettings.equipment.melee.handR === kind
         || inventoryItemCount(world.inventory.items, kind) > 0
+}
+
+function torchToggleCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    if (!playerHasHeldTorch(world)) return []
+    return [torchToggleCard(dom, world)]
+}
+
+function playerHasHeldTorch(world: GameWorld): boolean {
+    return world.playerSettings.abilities.torch || inventoryItemCount(world.inventory.items, HELD_TORCH_ITEM_ID) > 0
+}
+
+function ensureHeldTorchInventoryItem(world: GameWorld): void {
+    if (inventoryItemCount(world.inventory.items, HELD_TORCH_ITEM_ID) > 0) return
+    if (!addInventoryItem(world.inventory.items, HELD_TORCH_ITEM_ID, 1, HELD_TORCH_ITEM_OPTIONS)) return
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
 }
 
 function torchToggleCard(dom: InventoryDom, world: GameWorld): HTMLElement {
@@ -518,6 +539,7 @@ function torchToggleCard(dom: InventoryDom, world: GameWorld): HTMLElement {
         active,
         title: active ? 'Put the hand torch away.' : 'Carry the hand torch.',
         onClick: () => {
+            ensureHeldTorchInventoryItem(world)
             world.playerSettings.abilities.torch = !world.playerSettings.abilities.torch
             syncPlayerHeldTorchVisibility(world)
             renderInventory(dom, world)

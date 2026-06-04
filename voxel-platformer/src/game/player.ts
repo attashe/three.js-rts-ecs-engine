@@ -317,9 +317,17 @@ function playerModelVisualKey(settings: Pick<PlayerSettings, 'model' | 'beard'>)
 
 function createHeldTorch(settings: PlayerSettings): Group {
     const torch = createPlayerTorch(settings.torch)
+    const enabled = settings.abilities.torch
     torch.position.set(0.35, 0.68, 0.18)
     torch.rotation.set(0.16, -0.04, -0.14)
     torch.scale.setScalar(0.94)
+    torch.visible = enabled
+    torch.traverse((obj) => {
+        if (obj instanceof PointLight) {
+            obj.visible = enabled
+            obj.castShadow = enabled && settings.torch.castsShadow
+        }
+    })
     return torch
 }
 

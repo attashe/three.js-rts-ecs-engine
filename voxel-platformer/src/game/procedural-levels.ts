@@ -3,6 +3,8 @@ import { BLOCK } from '../engine/voxel/palette'
 import type { Zone } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
 import { generatePlatformerLevel, playerSettingsWithHighJumpDisabled, type LevelMeta } from './level'
+import { GameAudio } from './audio'
+import { HELD_TORCH_ITEM_ID, HELD_TORCH_ITEM_OPTIONS } from './inventory'
 import {
     HIGH_JUMP_BOOTS_ITEM_ID,
     HIGH_JUMP_BOOTS_ITEM_OPTIONS,
@@ -10,7 +12,10 @@ import {
 } from './high-jump-boots'
 import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
 import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
+import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from './player-settings'
+import { INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS, SWORD_ITEM_ID } from './equipment-items'
 import type { CameraShot, Cinematic } from './cinematics/cinematic-types'
+import { compileSurfaceLevelOrThrow, requireResolvedAnchor, type VoxelCoord, type WorldSpec } from './worldgen'
 import {
     generateStructureAsset,
     placeStructureAsset,
@@ -28,6 +33,8 @@ import {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
+    FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
+    FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
@@ -41,6 +48,8 @@ export {
     DEMO_FROM_GARDEN_ARRIVAL_ID,
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
+    FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
+    FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
@@ -114,6 +123,12 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         file: `${COMBAT_ARENA_LEVEL_ID}.vplevel`,
         name: 'Combat Arena',
         generate: generateCombatArenaLevel,
+    },
+    {
+        id: FOREST_LIFT_VALLEY_LEVEL_ID,
+        file: `${FOREST_LIFT_VALLEY_LEVEL_ID}.vplevel`,
+        name: 'Forest Lift Valley',
+        generate: generateForestLiftValleyLevel,
     },
 ]
 
@@ -701,6 +716,710 @@ function combatArenaBootsScript(position: { x: number; y: number; z: number }): 
             `})`,
         ].join('\n'),
     }
+}
+
+const FOREST_LIFT_MATERIAL_ID = 'forest-lift-repair-materials'
+const FOREST_LIFT_MATERIAL_PICKUP_ID = 'forest-lift.materials'
+const FOREST_LIFT_SWORD_PICKUP_ID = 'forest-lift.sword'
+const FOREST_LIFT_PISTON_ID = 'piston.forest-lift'
+const FOREST_LIFT_BROKEN_PROP_ID = 'forest-lift:lift-broken'
+const FOREST_LIFT_MATERIAL_PROP_ID = 'forest-lift:repair-materials'
+const FOREST_LIFT_QUEST_STATE_FLAG = 'forestLift.quest.state'
+const FOREST_LIFT_REPAIRED_FLAG = 'forestLift.lift.repaired'
+const FOREST_LIFT_BOOTSTRAP_FLAG = 'forestLift.player.bootstrapped'
+const FOREST_LIFT_TORCH_REWARD_FLAG = 'forestLift.reward.torch'
+const FOREST_LIFT_BOTTOM_ZONE_ID = 'zone.forest-lift.bottom'
+const FOREST_LIFT_TOP_ZONE_ID = 'zone.forest-lift.top'
+const FOREST_LIFT_ROAD_SIGN_ZONE_ID = 'zone.forest-lift.road-sign'
+const FOREST_LIFT_NPC_ID = 'forest-lift:cliffwright'
+const FOREST_LIFT_ROAD_SIGN_PROP_ID = 'forest-lift:road-sign'
+
+export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
+    const compiled = compileSurfaceLevelOrThrow(forestLiftValleySpec(), chunks)
+    const spawn = requireResolvedAnchor(compiled.report, 'spawn')
+    const roadSign = requireResolvedAnchor(compiled.report, 'road_sign')
+    const house = requireResolvedAnchor(compiled.report, 'house_site')
+    const liftBase = requireResolvedAnchor(compiled.report, 'lift_base')
+    const liftTop = requireResolvedAnchor(compiled.report, 'lift_top')
+    const wagon = requireResolvedAnchor(compiled.report, 'wagon_site')
+    const driver = requireResolvedAnchor(compiled.report, 'driver_corpse')
+    const materials = requireResolvedAnchor(compiled.report, 'materials_pickup')
+    const sword = requireResolvedAnchor(compiled.report, 'sword_pickup')
+    const rabbitA = requireResolvedAnchor(compiled.report, 'rabbit_west_meadow')
+    const rabbitB = requireResolvedAnchor(compiled.report, 'rabbit_house_meadow')
+
+    prepareForestLiftDecks(chunks, liftBase, liftTop)
+
+    const baseY = Math.floor(liftBase.y)
+    const topFloorY = Math.floor(liftTop.y) - 1
+    const liftCell = { x: Math.floor(liftBase.x), z: Math.floor(liftBase.z) }
+    const zones: Zone[] = [
+        {
+            id: FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Forest road edge',
+            ...zoneBox({ x: spawn.x, z: spawn.z }, { x: 1.0, z: 1.0 }, spawn.y, spawn.y + 2.2),
+        },
+        {
+            id: FOREST_LIFT_ROAD_SIGN_ZONE_ID,
+            kind: 'interact',
+            label: 'Road Sign',
+            ...zoneBox({ x: roadSign.x, z: roadSign.z }, { x: 1.0, z: 1.0 }, roadSign.y, roadSign.y + 2.2),
+            interaction: {
+                prompt: 'Read Sign',
+                anchor: { x: roadSign.x, y: roadSign.y + 1.15, z: roadSign.z },
+                radius: 2.2,
+            },
+        },
+        {
+            id: FOREST_LIFT_BOTTOM_ZONE_ID,
+            kind: 'interact',
+            label: 'Broken Cliff Lift',
+            ...zoneBox({ x: liftBase.x, z: liftBase.z }, { x: 1.45, z: 1.45 }, baseY, baseY + 2.4),
+            interaction: {
+                prompt: 'Repair / Operate Lift',
+                anchor: { x: liftBase.x, y: baseY + 1.1, z: liftBase.z },
+                radius: 2.75,
+            },
+        },
+        {
+            id: FOREST_LIFT_TOP_ZONE_ID,
+            kind: 'interact',
+            label: 'Cliff Lift',
+            ...zoneBox({ x: liftTop.x, z: liftTop.z }, { x: 1.45, z: 1.45 }, topFloorY + 1, topFloorY + 3.4),
+            interaction: {
+                prompt: 'Operate Lift',
+                anchor: { x: liftTop.x, y: topFloorY + 1.25, z: liftTop.z },
+                radius: 2.75,
+            },
+        },
+    ]
+
+    const props: EditorProp[] = [
+        ...compiled.meta.props,
+        {
+            id: FOREST_LIFT_ROAD_SIGN_PROP_ID,
+            kind: 'road-sign',
+            position: { x: roadSign.x, y: roadSign.y, z: roadSign.z },
+            yaw: Math.PI * 0.24,
+            scale: 1.12,
+            gridAligned: false,
+        },
+        {
+            id: FOREST_LIFT_BROKEN_PROP_ID,
+            kind: 'lift-cabin-broken',
+            position: { x: liftBase.x, y: liftBase.y, z: liftBase.z },
+            yaw: -Math.PI * 0.08,
+            scale: 1,
+            gridAligned: false,
+        },
+        {
+            id: 'forest-lift:lever-bottom',
+            kind: 'lift-control-lever',
+            position: { x: liftBase.x - 2.15, y: liftBase.y, z: liftBase.z - 2.05 },
+            yaw: Math.PI * 0.18,
+            scale: 1.05,
+            gridAligned: false,
+        },
+        {
+            id: 'forest-lift:lever-top',
+            kind: 'lift-control-lever',
+            position: { x: liftTop.x - 1.85, y: liftTop.y, z: liftTop.z + 2.05 },
+            yaw: -Math.PI * 0.38,
+            scale: 1.05,
+            gridAligned: false,
+        },
+        {
+            id: 'forest-lift:broken-wagon',
+            kind: 'broken-wagon',
+            position: { x: wagon.x, y: wagon.y, z: wagon.z },
+            yaw: -Math.PI * 0.22,
+            scale: 1.25,
+            gridAligned: false,
+        },
+        {
+            id: 'forest-lift:fallen-driver',
+            kind: 'fallen-driver',
+            position: { x: driver.x, y: driver.y, z: driver.z },
+            yaw: Math.PI * 0.36,
+            scale: 1,
+            gridAligned: false,
+        },
+        {
+            id: FOREST_LIFT_MATERIAL_PROP_ID,
+            kind: 'repair-materials-crate',
+            position: { x: materials.x, y: materials.y, z: materials.z },
+            yaw: Math.PI * 0.1,
+            scale: 1.05,
+            gridAligned: false,
+        },
+    ]
+
+    const npcs: NpcConfig[] = [
+        forestLiftRabbit('forest-lift-rabbit-west', 'Valley Rabbit', rabbitA, 0.24, [
+            rabbitA,
+            { x: rabbitA.x + 3.2, y: rabbitA.y, z: rabbitA.z - 2.4 },
+            { x: rabbitA.x - 2.7, y: rabbitA.y, z: rabbitA.z - 1.1 },
+        ]),
+        forestLiftRabbit('forest-lift-rabbit-house', 'Meadow Rabbit', rabbitB, -0.34, [
+            rabbitB,
+            { x: rabbitB.x + 2.3, y: rabbitB.y, z: rabbitB.z + 2.6 },
+            { x: rabbitB.x - 2.9, y: rabbitB.y, z: rabbitB.z + 1.4 },
+        ]),
+        normalizeNpcConfig({
+            id: FOREST_LIFT_NPC_ID,
+            name: 'Brann Cliffwright',
+            model: 'keeper',
+            beard: 'full',
+            position: { x: liftBase.x - 2.2, y: liftBase.y, z: liftBase.z + 1.15 },
+            yaw: Math.PI * 0.46,
+            scale: 0.98,
+            gridAligned: false,
+            collisionEnabled: true,
+            colliderRadius: 0.34,
+            colliderHeight: 1.62,
+            interactionEnabled: true,
+            interactionRadius: 2.7,
+            interactionPrompt: 'Talk',
+            invulnerable: true,
+            unprovokable: true,
+            equipment: { handR: null, handL: 'book' },
+            voice: { preset: 'dwarf', seed: 'brann-cliffwright', volume: 0.58, rate: 0.94 },
+            scriptEnabled: true,
+            scriptSource: forestLiftValleyNpcScript(),
+        }),
+    ]
+
+    return defineLevel({
+        name: 'Forest Lift Valley',
+        size: compiled.meta.size,
+        spawn,
+        player: forestLiftStarterPlayerSettings(),
+        zones: [...compiled.meta.zones, ...zones],
+        props,
+        npcs,
+        pistons: [{
+            id: FOREST_LIFT_PISTON_ID,
+            from: { x: liftCell.x, y: baseY, z: liftCell.z },
+            to: { x: liftCell.x, y: topFloorY, z: liftCell.z },
+            block: BLOCK.plank,
+            delay: 9999,
+            motion: 'physical',
+            travelTime: 3.1,
+            characterPolicy: 'push',
+            moveSoundId: GameAudio.StoneImpact,
+            moveSoundVolume: 0.36,
+            visualKind: 'lift-cabin-repaired',
+            visualScale: 1,
+            visualOffset: { x: 0, y: 0.94, z: 0 },
+            deployed: false,
+        }],
+        scripts: [forestLiftValleyLevelScript({
+            materials: { ...materials },
+            sword: { ...sword },
+        })],
+        cinematics: [forestLiftIntroCinematic(spawn, liftBase, liftTop)],
+        environment: { soundId: 'music.amb.start', volume: 0.28 },
+        ambient: outdoorDay({
+            timeOfDay: 9.5,
+            skyTint: [0.92, 0.98, 1],
+            sunIntensityMul: 0.9,
+            cloudCoverage: 0.28,
+        }),
+    })
+}
+
+function forestLiftValleySpec(): WorldSpec {
+    return {
+        version: 1,
+        world: {
+            id: 'forest_lift_valley',
+            name: 'Forest Lift Valley',
+            type: 'surface',
+            seed: 'demo/forest-lift-valley-001',
+            size: [128, 48, 128],
+            defaultGroundY: 8,
+        },
+        terrain: {
+            base_height: 8,
+            noise: { amplitude: 3, scale: 26, octaves: 4 },
+            features: [
+                {
+                    id: 'east_highland_mass',
+                    type: 'mountain_peak',
+                    center: [118, 60],
+                    radius: 48,
+                    height: 12,
+                    profile: 'mesa',
+                    roughness: 0.12,
+                    material: 'stone',
+                },
+                {
+                    id: 'east_cliff_wall',
+                    type: 'cliff_band',
+                    from: [98, 2],
+                    to: [98, 126],
+                    height: 18,
+                    width: 7,
+                    face: 'west',
+                    material: 'stone',
+                },
+                {
+                    id: 'valley_road',
+                    type: 'road_spline',
+                    points: [[7, 118], [24, 108], [42, 94], [56, 78], [72, 62], [90, 48]],
+                    width: 2.2,
+                    shoulder: 3.4,
+                    material: 'path',
+                    edge_material: 'grass',
+                    profile_smoothing_iterations: 2,
+                },
+                {
+                    id: 'wagon_track',
+                    type: 'road_spline',
+                    points: [[53, 80], [45, 65], [35, 51]],
+                    width: 1.35,
+                    shoulder: 2.2,
+                    material: 'path',
+                    edge_material: 'grass',
+                    profile_smoothing_iterations: 2,
+                },
+            ],
+        },
+        anchors: [
+            {
+                id: 'spawn',
+                place_at_xz: [7, 118],
+                reserve: [6, 4, 6],
+                terrain_patch: { type: 'flatten_disc', radius: 4.6, blend: 2.5, material: 'path' },
+            },
+            {
+                id: 'road_sign',
+                place_at_xz: [14, 113],
+                reserve: [3, 3, 3],
+                terrain_patch: { type: 'flatten_disc', radius: 2, blend: 1.2, material: 'path' },
+            },
+            {
+                id: 'house_site',
+                place_at_xz: [56, 78],
+                reserve: [16, 5, 16],
+                terrain_patch: { type: 'flatten_disc', radius: 9, blend: 4, material: 'grass' },
+            },
+            {
+                id: 'lift_base',
+                place_at_xz: [92, 48],
+                reserve: [11, 8, 11],
+                terrain_patch: { type: 'flatten_disc', radius: 6.5, blend: 3, material: 'path' },
+            },
+            {
+                id: 'lift_top',
+                place_at_xz: [103, 48],
+                reserve: [10, 5, 10],
+                terrain_patch: { type: 'flatten_disc', radius: 5.5, blend: 2.5, material: 'stone' },
+            },
+            {
+                id: 'wagon_site',
+                place_at_xz: [35, 51],
+                reserve: [14, 4, 12],
+                terrain_patch: { type: 'flatten_disc', radius: 6.5, blend: 2.5, material: 'path' },
+            },
+            {
+                id: 'driver_corpse',
+                place_at_xz: [39, 51],
+                terrain_patch: { type: 'flatten_disc', radius: 2, blend: 1.2, material: 'path' },
+            },
+            {
+                id: 'materials_pickup',
+                place_at_xz: [31, 49],
+                terrain_patch: { type: 'flatten_disc', radius: 2, blend: 1.2, material: 'path' },
+            },
+            {
+                id: 'sword_pickup',
+                place_at_xz: [40, 53],
+                terrain_patch: { type: 'flatten_disc', radius: 2, blend: 1.2, material: 'path' },
+            },
+            {
+                id: 'rabbit_west_meadow',
+                place_at_xz: [24, 92],
+            },
+            {
+                id: 'rabbit_house_meadow',
+                place_at_xz: [62, 86],
+            },
+        ],
+        structures: [
+            {
+                id: 'lone_house',
+                asset: 'proc.house.hermit_cottage',
+                place_at: 'house_site',
+                auto_y: {
+                    strategy: 'surface_max',
+                    terraform: 'flatten_footprint',
+                    material: 'platform',
+                    max_terrain_delta: 5,
+                },
+                rotation: 180,
+                required: true,
+            },
+        ],
+        scatter: [
+            {
+                id: 'valley_pines',
+                asset: 'proc.tree.pine',
+                count: 120,
+                mask: {
+                    min_distance_to_road: 4,
+                    avoid_reserved: true,
+                    slope_lte: 3,
+                    elevation_lte: 27,
+                },
+                deterministic_grid: { cell: 7, jitter: 3 },
+            },
+        ],
+        validation: {
+            require_paths: [
+                { id: 'spawn_to_house', from: 'spawn', to: 'lone_house', actor: 'player_basic' },
+                { id: 'spawn_to_lift_base', from: 'spawn', to: 'lift_base', actor: 'player_basic' },
+                { id: 'spawn_to_wagon', from: 'spawn', to: 'wagon_site', actor: 'player_basic' },
+            ],
+        },
+    }
+}
+
+function forestLiftIntroCinematic(spawn: VoxelCoord, liftBase: VoxelCoord, liftTop: VoxelCoord): Cinematic {
+    const roadTarget = { x: spawn.x + 12, y: spawn.y + 1, z: spawn.z - 7 }
+    const liftTarget = { x: liftBase.x, y: liftBase.y + 2.1, z: liftBase.z }
+    const summitTarget = { x: liftTop.x + 9, y: liftTop.y + 8, z: liftTop.z - 4 }
+    const shot = (position: CameraShot['position'], target: CameraShot['target'], zoom: number): CameraShot => ({
+        position,
+        target,
+        zoom,
+    })
+
+    return {
+        id: 'forest-lift-arrival',
+        name: 'Forest road arrival',
+        playOnStart: true,
+        letterbox: true,
+        freezePlayer: true,
+        steps: [
+            {
+                id: 'cam-road',
+                type: 'camera',
+                wait: true,
+                duration: 1.3,
+                ease: 'easeOut',
+                shot: shot(
+                    { x: spawn.x - 3.5, y: spawn.y + 9.5, z: Math.min(126, spawn.z + 8) },
+                    roadTarget,
+                    0.88,
+                ),
+            },
+            {
+                id: 'text-arrival',
+                type: 'subtitle',
+                wait: false,
+                duration: 3.5,
+                text: 'The pilgrim arrives at the forest road.',
+            },
+            {
+                id: 'cam-valley',
+                type: 'camera',
+                wait: true,
+                duration: 2.1,
+                ease: 'easeInOut',
+                shot: shot(
+                    { x: spawn.x + 32, y: spawn.y + 15, z: spawn.z - 18 },
+                    { x: (spawn.x + liftBase.x) * 0.5, y: liftBase.y + 2, z: (spawn.z + liftBase.z) * 0.5 },
+                    0.66,
+                ),
+            },
+            {
+                id: 'text-purpose',
+                type: 'subtitle',
+                wait: false,
+                duration: 4.2,
+                text: 'He has come to find a way up the mountain and continue his pilgrimage.',
+            },
+            {
+                id: 'cam-cliff',
+                type: 'camera',
+                wait: true,
+                duration: 2.2,
+                ease: 'easeInOut',
+                shot: shot(
+                    { x: liftBase.x - 22, y: liftTop.y + 12, z: liftBase.z + 18 },
+                    liftTarget,
+                    0.70,
+                ),
+            },
+            {
+                id: 'text-summit',
+                type: 'subtitle',
+                wait: false,
+                duration: 3.4,
+                text: 'Somewhere above the cliff, the summit waits.',
+            },
+            {
+                id: 'cam-summit',
+                type: 'camera',
+                wait: true,
+                duration: 1.7,
+                ease: 'easeOut',
+                shot: shot(
+                    { x: liftTop.x - 16, y: liftTop.y + 16, z: liftTop.z - 12 },
+                    summitTarget,
+                    0.62,
+                ),
+            },
+            { id: 'hold', type: 'wait', wait: true, duration: 0.6 },
+        ],
+    }
+}
+
+function prepareForestLiftDecks(chunks: ChunkManager, base: VoxelCoord, top: VoxelCoord): void {
+    const liftX = Math.floor(base.x)
+    const liftZ = Math.floor(base.z)
+    const baseFloorY = Math.floor(base.y) - 1
+    const topFloorY = Math.floor(top.y) - 1
+    fillVoxels(chunks, liftX - 3, liftX + 3, baseFloorY, baseFloorY, liftZ - 3, liftZ + 3, BLOCK.plank)
+    fillVoxels(chunks, liftX - 2, liftX + 3, topFloorY, topFloorY, liftZ - 3, liftZ + 3, BLOCK.plank)
+    fillVoxels(chunks, liftX + 4, Math.floor(top.x) + 2, topFloorY, topFloorY, liftZ - 2, liftZ + 2, BLOCK.plank)
+    for (let y = baseFloorY + 1; y <= topFloorY + 3; y += 1) {
+        fillVoxels(chunks, liftX - 1, liftX + 1, y, y, liftZ - 1, liftZ + 1, BLOCK.air)
+    }
+    fillVoxels(chunks, liftX + 4, liftX + 4, baseFloorY, topFloorY, liftZ - 3, liftZ - 3, BLOCK.stone)
+    fillVoxels(chunks, liftX + 4, liftX + 4, baseFloorY, topFloorY, liftZ + 3, liftZ + 3, BLOCK.stone)
+}
+
+function fillVoxels(
+    chunks: ChunkManager,
+    x0: number,
+    x1: number,
+    y0: number,
+    y1: number,
+    z0: number,
+    z1: number,
+    block: number,
+): void {
+    for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z += 1) {
+        for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y += 1) {
+            for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x += 1) chunks.setVoxel(x, y, z, block)
+        }
+    }
+}
+
+function forestLiftRabbit(
+    id: string,
+    name: string,
+    position: VoxelCoord,
+    yaw: number,
+    waypoints: readonly VoxelCoord[],
+): NpcConfig {
+    return normalizeNpcConfig({
+        id,
+        name,
+        model: 'rabbit',
+        position,
+        yaw,
+        scale: 1.25,
+        gridAligned: false,
+        collisionEnabled: false,
+        colliderRadius: 0.22,
+        colliderHeight: 0.6,
+        interactionEnabled: false,
+        invulnerable: false,
+        unprovokable: true,
+        equipment: { handR: null, handL: null },
+        scriptSource: [
+            `on('level-start', () => {`,
+            `  npc.setPerceptionRadius(NPC_ID, 8)`,
+            `  npc.setFlee(NPC_ID, true)`,
+            `  npc.setWaypoints(NPC_ID, ${JSON.stringify(waypoints)})`,
+            `})`,
+        ].join('\n'),
+    })
+}
+
+function forestLiftStarterPlayerSettings() {
+    return applyPlayerSettingsPatch(copyPlayerSettings(DEFAULT_PLAYER_SETTINGS), {
+        abilities: {
+            movement: true,
+            jump: true,
+            interact: true,
+            bow: false,
+            highJump: false,
+            airPush: false,
+            torch: false,
+        },
+        inventory: { gold: 0, arrows: 0, items: {} },
+        equipment: {
+            head: null,
+            boots: null,
+            melee: { handR: null, handL: null },
+            ranged: { handR: null, handL: null },
+            magic: { handR: null, handL: null },
+        },
+    })
+}
+
+function forestLiftValleyLevelScript(positions: {
+    materials: { x: number; y: number; z: number }
+    sword: { x: number; y: number; z: number }
+}): ScriptEntry {
+    const materialItem = {
+        id: FOREST_LIFT_MATERIAL_ID,
+        name: 'Lift Repair Materials',
+        description: 'Rope, planks, brackets, and a replacement winch pin for the broken cliff lift.',
+        category: 'quest',
+        icon: 'tool',
+    }
+    const swordItem = {
+        id: SWORD_ITEM_ID,
+        ...INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS[SWORD_ITEM_ID],
+    }
+    return {
+        id: 'forest-lift-valley-quest',
+        name: 'forest-lift-valley-quest.js',
+        source: [
+            `const BOOTSTRAP_FLAG = ${JSON.stringify(FOREST_LIFT_BOOTSTRAP_FLAG)}`,
+            `const QUEST_STATE = ${JSON.stringify(FOREST_LIFT_QUEST_STATE_FLAG)}`,
+            `const REPAIRED_FLAG = ${JSON.stringify(FOREST_LIFT_REPAIRED_FLAG)}`,
+            `const TORCH_REWARD_FLAG = ${JSON.stringify(FOREST_LIFT_TORCH_REWARD_FLAG)}`,
+            `const LIFT_PISTON = ${JSON.stringify(FOREST_LIFT_PISTON_ID)}`,
+            `const BROKEN_PROP = ${JSON.stringify(FOREST_LIFT_BROKEN_PROP_ID)}`,
+            `const MATERIAL_PROP = ${JSON.stringify(FOREST_LIFT_MATERIAL_PROP_ID)}`,
+            `const BOTTOM_ZONE = ${JSON.stringify(FOREST_LIFT_BOTTOM_ZONE_ID)}`,
+            `const TOP_ZONE = ${JSON.stringify(FOREST_LIFT_TOP_ZONE_ID)}`,
+            `const ROAD_SIGN_ZONE = ${JSON.stringify(FOREST_LIFT_ROAD_SIGN_ZONE_ID)}`,
+            `const MATERIAL_ID = ${JSON.stringify(FOREST_LIFT_MATERIAL_ID)}`,
+            `const MATERIAL_PICKUP_ID = ${JSON.stringify(FOREST_LIFT_MATERIAL_PICKUP_ID)}`,
+            `const MATERIAL_POS = ${JSON.stringify(positions.materials)}`,
+            `const MATERIAL_ITEM = ${JSON.stringify(materialItem)}`,
+            `const SWORD_ID = ${JSON.stringify(SWORD_ITEM_ID)}`,
+            `const SWORD_PICKUP_ID = ${JSON.stringify(FOREST_LIFT_SWORD_PICKUP_ID)}`,
+            `const SWORD_POS = ${JSON.stringify(positions.sword)}`,
+            `const SWORD_ITEM = ${JSON.stringify(swordItem)}`,
+            `const TORCH_ID = ${JSON.stringify(HELD_TORCH_ITEM_ID)}`,
+            `const TORCH_ITEM = ${JSON.stringify(HELD_TORCH_ITEM_OPTIONS)}`,
+            ``,
+            `on('level-start', () => {`,
+            `  bootstrapStarterLoadout()`,
+            `  syncLiftState()`,
+            `  ensureQuestPickups()`,
+            `})`,
+            ``,
+            `on('pickup-taken', { pickupId: MATERIAL_PICKUP_ID }, () => {`,
+            `  if (!isRepaired()) flags.set(QUEST_STATE, 'ready')`,
+            `  props.setVisible(MATERIAL_PROP, false)`,
+            `  ui.say(BOTTOM_ZONE, 'These parts should repair the cliff lift.', { seconds: 3 })`,
+            `})`,
+            ``,
+            `on('pickup-taken', { pickupId: SWORD_PICKUP_ID }, () => {`,
+            `  ui.say(SWORD_PICKUP_ID, 'You found the driver\\'s sword. Equip it from Tools.', { seconds: 3 })`,
+            `})`,
+            ``,
+            `on('input', { action: 'interact', targetId: BOTTOM_ZONE }, () => handleLiftInteraction(BOTTOM_ZONE))`,
+            `on('input', { action: 'interact', targetId: TOP_ZONE }, () => handleLiftInteraction(TOP_ZONE))`,
+            `on('input', { action: 'interact', targetId: ROAD_SIGN_ZONE }, () => {`,
+            `  ui.say(ROAD_SIGN_ZONE, 'Keep the road, traveller. Beware the wolves.', { seconds: 4 })`,
+            `})`,
+            ``,
+            `function bootstrapStarterLoadout() {`,
+            `  if (flags.get(BOOTSTRAP_FLAG) === true) return`,
+            `  flags.set(BOOTSTRAP_FLAG, true)`,
+            `  player.setSettings({`,
+            `    abilities: { movement: true, jump: true, interact: true, bow: false, highJump: false, airPush: false, torch: false },`,
+            `    inventory: { gold: 0, arrows: 0, items: {} },`,
+            `    equipment: {`,
+            `      head: null,`,
+            `      boots: null,`,
+            `      melee: { handR: null, handL: null },`,
+            `      ranged: { handR: null, handL: null },`,
+            `      magic: { handR: null, handL: null },`,
+            `    },`,
+            `  })`,
+            `}`,
+            ``,
+            `function ensureQuestPickups() {`,
+            `  if (!isRepaired() && !player.inventory.has(MATERIAL_ID) && !pickups.exists(MATERIAL_PICKUP_ID)) {`,
+            `    pickups.spawn(MATERIAL_ID, MATERIAL_POS, { id: MATERIAL_PICKUP_ID, label: MATERIAL_ITEM.name, inventoryItem: MATERIAL_ITEM })`,
+            `  }`,
+            `  if (!player.inventory.has(SWORD_ID) && !pickups.exists(SWORD_PICKUP_ID)) {`,
+            `    pickups.spawn(SWORD_ID, SWORD_POS, { id: SWORD_PICKUP_ID, label: SWORD_ITEM.name, inventoryItem: SWORD_ITEM })`,
+            `  }`,
+            `}`,
+            ``,
+            `function handleLiftInteraction(targetId) {`,
+            `  if (!isRepaired()) {`,
+            `    if (!player.inventory.has(MATERIAL_ID)) {`,
+            `      const state = flags.get(QUEST_STATE)`,
+            `      if (state !== 'active') flags.set(QUEST_STATE, 'active')`,
+            `      ui.say(targetId, 'Find repair materials near the wrecked wagon first.', { seconds: 3 })`,
+            `      return`,
+            `    }`,
+            `    if (!player.removeInventoryItem(MATERIAL_ID, 1)) return`,
+            `    flags.set(QUEST_STATE, 'repaired')`,
+            `    flags.set(REPAIRED_FLAG, true)`,
+            `    syncLiftState()`,
+            `    audio.play('sfx.quest.chime')`,
+            `    ui.say(targetId, 'Lift repaired. You received Brann\\'s torch for night travel. Press E again to move it.', { seconds: 4 })`,
+            `    return`,
+            `  }`,
+            `  if (pistons.flip(LIFT_PISTON)) ui.say(targetId, 'Lift moving.', { seconds: 1.5 })`,
+            `  else ui.say(targetId, 'Lift is still moving.', { seconds: 1.5 })`,
+            `}`,
+            ``,
+            `function syncLiftState() {`,
+            `  const repaired = isRepaired()`,
+            `  props.setVisible(BROKEN_PROP, !repaired)`,
+            `  props.setVisible(MATERIAL_PROP, !repaired && !player.inventory.has(MATERIAL_ID))`,
+            `  pistons.setDeployed(LIFT_PISTON, repaired)`,
+            `  pistons.setEnabled(LIFT_PISTON, repaired)`,
+            `  if (repaired) grantTorchReward()`,
+            `}`,
+            ``,
+            `function grantTorchReward() {`,
+            `  if (flags.get(TORCH_REWARD_FLAG) === true && player.inventory.has(TORCH_ID)) return`,
+            `  flags.set(TORCH_REWARD_FLAG, true)`,
+            `  if (!player.inventory.has(TORCH_ID)) player.addInventoryItem(TORCH_ID, 1, TORCH_ITEM)`,
+            `  player.setSettings({ abilities: { torch: true } })`,
+            `}`,
+            ``,
+            `function isRepaired() {`,
+            `  return flags.get(REPAIRED_FLAG) === true`,
+            `}`,
+        ].join('\n'),
+    }
+}
+
+function forestLiftValleyNpcScript(): string {
+    return [
+        `const QUEST_STATE = ${JSON.stringify(FOREST_LIFT_QUEST_STATE_FLAG)}`,
+        `const REPAIRED_FLAG = ${JSON.stringify(FOREST_LIFT_REPAIRED_FLAG)}`,
+        `const MATERIAL_ID = ${JSON.stringify(FOREST_LIFT_MATERIAL_ID)}`,
+        ``,
+        `on('input', { action: 'interact', targetId: NPC_INTERACTION }, async () => {`,
+        `  if (flags.get(REPAIRED_FLAG) === true) {`,
+        `    await ui.dialogue({ npc: { name: NPC_NAME, avatar: 'keeper', voice: NPC_VOICE }, lines: [{ speaker: 'npc', text: 'The cabin runs true again. Keep that torch close; it will help when night travel gets dark under the pines.' }] })`,
+        `    return`,
+        `  }`,
+        `  if (player.inventory.has(MATERIAL_ID)) {`,
+        `    flags.set(QUEST_STATE, 'ready')`,
+        `    await ui.dialogue({ npc: { name: NPC_NAME, avatar: 'keeper', voice: NPC_VOICE }, lines: [{ speaker: 'npc', text: 'Those are the parts. Fit them to the lift frame and I will give you my spare torch. It will be useful for night travels.' }] })`,
+        `    return`,
+        `  }`,
+        `  const current = flags.get(QUEST_STATE)`,
+        `  if (current !== 'active') flags.set(QUEST_STATE, 'active')`,
+        `  await ui.dialogue({`,
+        `    npc: { name: NPC_NAME, avatar: 'keeper', voice: NPC_VOICE },`,
+        `    lines: [{`,
+        `      speaker: 'npc',`,
+        `      text: 'The cliff lift broke when the supply wagon went over. The driver carried spare rope, brackets, and a winch pin. Find the wreck and bring the parts back; I will reward you with a torch for safer night travels.',`,
+        `    }],`,
+        `  })`,
+        `})`,
+    ].join('\n')
 }
 
 /**

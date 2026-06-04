@@ -12,6 +12,7 @@ import {
     type PlayerEquipmentSettings,
 } from './anim/equipment-types'
 import { normalizeCharacterBeard, type CharacterBeardKind } from './character-appearance'
+import { INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS, SWORD_ITEM_ID } from './equipment-items'
 
 export const PLAYER_MODEL_KINDS = [
     'player',
@@ -133,7 +134,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
         highJump: true,
         airPush: true,
         interact: true,
-        torch: true,
+        torch: false,
     },
     inventory: {
         gold: 0,
@@ -145,6 +146,10 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
                 description: 'Restores one heart immediately.',
                 category: 'consumables',
                 icon: 'heal-potion',
+            },
+            [SWORD_ITEM_ID]: {
+                quantity: 1,
+                ...INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS[SWORD_ITEM_ID],
             },
         },
     },

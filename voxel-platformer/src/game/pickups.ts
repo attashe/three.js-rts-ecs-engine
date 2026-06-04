@@ -16,6 +16,7 @@ import {
     createFoodPickupProp,
     createHighJumpBootsProp,
     createQuestShard,
+    createSword,
     mergeGroupByMaterial,
 } from './assets'
 import type { InventoryCategoryId, InventoryIconId } from './inventory'
@@ -27,6 +28,7 @@ import {
     FOOD_MEAT_ITEM_ID,
     FOOD_PIE_ITEM_ID,
 } from './consumables'
+import { SWORD_ITEM_ID } from './equipment-items'
 
 export interface CoinPileOptions {
     /** World-space position; the pile's base sits at this Y. */
@@ -169,6 +171,13 @@ function spawnQuestItem(
 
 function createPickupVisual(kind: string): ReturnType<typeof createQuestShard> {
     if (isBootEquipmentItemId(kind)) return createHighJumpBootsProp()
+    if (kind === SWORD_ITEM_ID) {
+        const sword = createSword({ bladeLength: 0.92, bladeWidth: 0.14, hiltLength: 0.28 })
+        sword.name = 'SwordPickup'
+        sword.scale.setScalar(0.72)
+        sword.rotation.set(0, Math.PI * 0.18, Math.PI * 0.5)
+        return sword
+    }
     if (kind === DYNAMITE_ITEM_ID) return createDynamiteBundle()
     if (kind === FOOD_APPLE_ITEM_ID) return createFoodPickupProp('apple')
     if (kind === FOOD_FISH_ITEM_ID) return createFoodPickupProp('fish')

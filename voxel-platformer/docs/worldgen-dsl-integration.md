@@ -1,0 +1,556 @@
+# Worldgen DSL Native Integration
+
+This document reviews the standalone DSL playground in
+`import/voxel_world_dsl_playground/` and defines how to integrate its best ideas
+into the native procedural level pipeline. The goal is not to port
+`static/playground_core.js` line-for-line. The goal is a typed, deterministic
+world-generation extension that can build larger and more complex locations:
+landscape, underground spaces, structures, NPCs, quests, shops, pickups, travel
+points, and validation from one reviewable spec.
+
+The existing engine remains authoritative. Generated locations should compile
+into `ChunkManager` voxels plus `LevelMeta`, then export through the same
+`.vplevel` path as current procedural levels.
+
+## Goals
+
+- Let generated locations be larger and more structured than the current
+  hand-authored generator functions.
+- Reuse existing engine primitives: `terrain()`, `ChunkManager`,
+  procedural structures, prefabs, props, `LevelMeta`, NPC templates, zones, and
+  scripts.
+- Refine the playground DSL into an engine-facing spec format with typed
+  materials, anchors, reusable definitions, content binding, and validation.
+- Make generated locations editor-saveable and human-refinable after export.
+- Produce deterministic reports so authors and agents can review generated
+  anchors, placements, warnings, validation results, and hashes.
+
+Non-goals for the first implementation:
+
+- No runtime infinite generation.
+- No new quest runtime.
+- No separate voxel palette or marker-block gameplay layer.
+- No direct dependency on the playground's browser compiler.
+
+## Playground Review
+
+The playground is a compact deterministic compiler for static voxel worlds. It
+supports two useful families of generation:
+
+- Surface worlds: height noise, mountain peaks, cliff bands, flatten discs,
+  road splines, anchors, structures, scatter, and path validation.
+- Underground worlds: solid volume fill, strata, shafts, ellipsoid chambers,
+  rectangular rooms, mine networks, noise-tube connectors, canyons, guaranteed
+  paths, scatter, surface queries, and validation.
+
+### Strengths To Preserve
+
+- Deterministic seed model. The compiler uses stable hash/RNG helpers and
+  reports a world hash.
+- Clear semantic primitives. A spec can say "road", "shaft", "chamber",
+  "scatter pines", or "required path" instead of hand-writing voxel loops.
+- Useful reports. Placement lists, validation results, errors, and metrics make
+  generated output inspectable.
+- Anchor-based authoring. Named anchors and object access points are the right
+  abstraction for generated content.
+- Surface and underground separation. The distinction maps well to separate
+  native compiler modules.
+- Path validation. The idea is essential for generated quests and travel, even
+  though the native implementation should use engine pathfinding.
+- Reservation-aware scatter. Deterministic scatter plus footprint checks is the
+  right basis for forests, villages, props, encounters, and resource nodes.
+
+### Problems To Fix
+
+- Separate world model. The playground owns a `World` class and a monolithic
+  `Uint8Array` grid. Native generation must write to `ChunkManager`.
+- Separate semantic palette. The prototype has its own 26-block vocabulary.
+  Native generation must use engine `BLOCK` values and material traits.
+- Marker voxels for gameplay. Spawn, player, portal, shrine, and similar
+  gameplay concepts should compile to metadata, zones, props, structures, or
+  scripts, not special marker voxels.
+- Hard-coded asset branches. `pasteAsset` couples asset IDs to hand-written
+  block stamping. Native structures should route through `StructureSource`,
+  `generateStructureAsset`, `placeStructureAsset`, prefabs, props, and zones.
+- No interactivity layer. The playground has no NPCs, quests, shops, scripted
+  triggers, cinematics, weather, or travel metadata.
+- Mixed coordinate conventions. Surface coordinates, underground points,
+  anchors, objects, access points, and rooms need explicit native types.
+- Post-hoc validation only. The native compiler should validate before and
+  after compilation, and should use engine movement/pathing assumptions.
+- Monolithic compiler. Native code should be modular enough to test each
+  primitive without compiling a full location.
+- Limited composition. Large locations need reusable definitions and
+  parameterized place templates, not only one flat list of primitives.
+
+## Current Engine Integration Points
+
+The native compiler should build on the current procedural pipeline:
+
+- Voxel storage: `ChunkManager` and sparse 32-cell chunks.
+- Palette: `BLOCK` and palette traits in `src/engine/voxel/palette.ts`.
+- Terrain authoring: `terrain(chunks, { size, groundY })`,
+  `heightfield`, `fill`, `platform`, `stairs`, `path`, `pond`, masks, and
+  noise helpers under `src/game/level-builder/`.
+- Metadata: `defineLevel`, `outdoorDay`, `zoneBox`, and `interactZone`.
+- Structures: `generateStructureAsset`, `measureStructurePlacement`,
+  `placeStructureAsset`, `structurePropPlacements`, `prefabSource`, and
+  `proceduralSource`.
+- NPCs: `NpcConfig`, `normalizeNpcConfig`, NPC templates, and behavior script
+  generation.
+- Scripts: existing `ScriptEntry` source strings and the script API for flags,
+  dialogue, trade, NPC behavior, pickups, audio, travel, pistons, props, zones,
+  weather, and cinematics.
+- Validation: `findPath` from `src/engine/voxel/voxel-path.ts`.
+- Export: `createProceduralEditorLevel`, `editorMetaFromRuntimeLevel`, and
+  `serializeLevel`.
+
+The important architectural rule is simple: the worldgen compiler emits the
+same artifacts hand-written procedural levels already emit.
+
+## Refined WorldSpec
+
+The DSL should be a typed spec format expressed in engine terms. JSON should be
+supported for tool and agent authoring, while TypeScript definitions should be
+the source of truth.
+
+Illustrative shape:
+
+```ts
+export interface WorldSpec {
+    version: 1
+    world: {
+        id: string
+        name: string
+        type: 'surface' | 'underground' | 'hybrid'
+        seed: string
+        size: [number, number, number]
+        defaultGroundY?: number
+    }
+    defs?: Record<string, unknown>
+    materials?: Record<string, keyof typeof BLOCK>
+    terrain?: SurfaceSpec
+    volume?: VolumeSpec
+    carvers?: CarverSpec[]
+    connectors?: ConnectorSpec[]
+    paths?: PathSpec[]
+    anchors?: AnchorSpec[]
+    structures?: StructurePlacementSpec[]
+    scatter?: ScatterSpec[]
+    content?: ContentSpec
+    validation?: ValidationSpec
+}
+```
+
+Key refinements over the playground:
+
+- Materials map to engine block names or declared aliases.
+- Spawn, portals, shops, quest objects, NPCs, and triggers are metadata/content.
+- Every generated gameplay object has a stable ID.
+- Placement supports explicit coordinates and anchor-relative references.
+- Content binds to anchors, structures, rooms, paths, and access points by ID.
+- `defs` and `$ref` allow reusable village blocks, cave clusters, encounter
+  packs, shop rows, and quest templates.
+- Validation rules operate on resolved anchors and emitted metadata, not only
+  raw voxels.
+
+### Coordinate Policy
+
+Use explicit coordinate kinds instead of overloading arrays:
+
+- `xz`: horizontal terrain coordinate.
+- `xyz`: voxel/world coordinate.
+- `anchor`: named resolved location.
+- `surface_at_xz`: find standable surface at an XZ coordinate.
+- `room_center`: center of a carved room feature.
+- `object_access`: access point reported by a placed structure.
+- `path_point`: point sampled along a generated path.
+- `feature_surface`: floor, wall, or ceiling point in an underground feature.
+
+The compiler report must include resolved coordinates for every anchor and
+placed object so scripts and content are never forced to guess numbers.
+
+## Native Compiler Architecture
+
+Add a new package under `src/game/worldgen/`.
+
+Planned modules:
+
+- `spec-types.ts`: public spec, normalized spec, and report types.
+- `normalize-spec.ts`: defaulting, `$ref` expansion, ID checks, and reference
+  collection.
+- `material-map.ts`: material aliases to engine `BLOCK` values.
+- `rng.ts`: stable hash, seeded random, and world hash helpers.
+- `compile-surface.ts`: surface heightfields, roads, cliffs, peaks, terraces,
+  flattening, paths, and surface anchors.
+- `carve3d.ts`: reusable 3D carving primitives.
+- `compile-underground.ts`: volume fill, strata, rooms, shafts, tunnels,
+  canyons, mine networks, and underground surface classification.
+- `anchors.ts`: coordinate and access-point resolution.
+- `resolve-structures.ts`: asset registry, placement policies, footprint
+  reservation, and prop recovery.
+- `scatter.ts`: deterministic placement over masks, paths, features, and
+  reserved footprints.
+- `resolve-content.ts`: NPCs, shops, quests, zones, pickups, travel,
+  cinematics, sound, weather, and scripts.
+- `validate.ts`: required paths, required objects, missing references, and
+  emitted metadata checks.
+- `compile-world.ts`: orchestration API.
+
+Public API:
+
+```ts
+export interface WorldgenCompileResult {
+    chunks: ChunkManager
+    meta: LevelMeta
+    report: WorldgenReport
+}
+
+export function compileWorldSpec(
+    spec: WorldSpec,
+    opts?: WorldgenCompileOptions,
+): WorldgenCompileResult
+```
+
+The compiler should be deterministic for the same spec, seed, and engine
+version. When generation must skip a non-required placement, it should emit a
+warning, not silently degrade the result.
+
+## Primitive Mapping
+
+| Playground primitive | Native implementation |
+| --- | --- |
+| `terrain.base_height` plus noise | `terrain().heightfield(...)` with engine noise helpers |
+| `mountain_peak` | Masked height contribution with roughness, material paint, optional snowline material alias |
+| `flatten_disc` | New terrain flatten helper over a circle/ellipse mask with blend shoulder |
+| `cliff_band` | Height offset along a segment/path mask with face-side falloff |
+| `road_spline` | `terrain().path(...)` plus optional grade smoothing and shoulder material |
+| `volume.initial: solid` | Bulk fill of bounded volume through `ChunkManager.withBulkEdit` |
+| `strata` | Per-Y material bands during volume fill |
+| `vertical_shaft` | Cylinder/rough cylinder carve, optional stairs/ladder/rail/lift socket |
+| `chamber_ellipsoid` | Ellipsoid carve with roughness, floor flatten, surface classification |
+| `rect_room` / `dwarf_room` | Rectangular clear space with floor material, pillars, lights, and sockets |
+| `mine_tunnel_network` | Orthogonal corridor carves with rails, supports, lanterns, and room connections |
+| `noise_tube` | Spline or segment tube carve with noise offsets and walkable floor stamping |
+| `underground_canyon` | Wide spline carve, wall roughness, ledges, crossing sockets, cleanup pass |
+| `main_paths` | Guaranteed walkable route stamping, then path validation |
+| `anchors` | Resolved coordinate records, plus optional reservation and terrain patch |
+| `structures` | Engine structure assets or prefabs with footprint checks |
+| `scatter` | Deterministic placement over masks/features using asset measurement |
+| `validation.require_paths` | Engine `findPath` with actor movement settings |
+
+## Content Layer
+
+The playground has no interactivity. The native extension should add content as
+first-class spec data, then compile it into existing engine metadata.
+
+Supported content categories:
+
+- `npcs`: emit `NpcConfig`; optional template ID; optional behavior config;
+  optional custom dialogue, shop, or quest binding.
+- `zones`: emit trigger, interact, arrival, portal, kill, or custom zones.
+- `quests`: compile small state-machine scripts using flags, pickups, dialogue,
+  rewards, and stable IDs.
+- `shops`: compile trade-opening scripts using current `TradeResource` values.
+- `pickups`: emit coin piles or script-spawned pickup bootstrap code.
+- `props`: emit `EditorProp` placements.
+- `cinematics`: emit current cinematic metadata.
+- `environment`: emit ambient music and weather state.
+- `travel`: emit portal zones and arrival zones.
+
+The content compiler should not introduce a second quest engine. It should
+generate ordinary `ScriptEntry` source that uses the same patterns as existing
+example scripts: idempotent `level-start`, `flags`, `ui.dialogue`,
+`trade.open`, `pickups.spawn`, `zone`, `travel`, and `npc` calls.
+
+## Example Translations
+
+These are not final JSON files. They describe how the four playground examples
+should map to the refined spec.
+
+### Surface Valley
+
+Original: `static/surface_example.json`.
+
+Native version:
+
+- World: `surface`, `64 x 32 x 64`, seed `demo/world-001`.
+- Terrain: base grass heightfield with noise.
+- Features: `north_cliff` as `cliff_band`; `pilgrim_road` as `road_spline`.
+- Anchors: `spawn`, `portal_plaza`.
+- Structures: blue portal prefab bound to `portal_plaza`; hermit cottage as a
+  procedural house with footprint flattening.
+- Scatter: pine trees with road-distance and reservation masks.
+- Content: optional hermit NPC at cottage access point; portal zone emitted as
+  metadata.
+- Validation: player path from `spawn` to portal and cottage.
+
+### Mountain Village
+
+Original: `static/mountain_village_example.json`.
+
+Native version:
+
+- World: `surface`, `128 x 72 x 128`, seed
+  `demo/surface-mountain-village-001`.
+- Terrain: mountain peak, village terrace, upper meadow, spiral road.
+- Anchors: spawn, village square, upper viewpoint.
+- Structures: portal, shrine, cabins, lodge, all using engine structure assets.
+- Scatter: mountain pines filtered by road distance, slope, reservation, and
+  elevation.
+- Content: village NPCs and shops can bind to cabin/lodge access points.
+- Validation: required paths from spawn to village square, viewpoint, shrine,
+  and portal.
+
+### Dungeon
+
+Original: `static/dungeon_example.json`.
+
+Native version:
+
+- World: `underground`, `96 x 48 x 96`, seed `demo/dungeon-001`.
+- Volume: dark stone/dark limestone/rootbound dirt strata.
+- Carvers: entrance shaft, echo cavern, mushroom grove, deep canyon, crystal
+  vault.
+- Connectors: noise tubes between critical rooms.
+- Main path: guaranteed route through critical path.
+- Structures: broken bridge at canyon crossing, moon shrine, portal in vault.
+- Scatter: glow mushrooms, wall crystals, stalactites.
+- Content: optional hostile encounters or lore NPCs bound to room anchors.
+- Validation: required path from spawn to portal; optional path to shrine.
+
+### Mineshaft Village
+
+Original: `static/mineshaft_example.json`.
+
+Native version:
+
+- World: `underground`, `112 x 56 x 112`, seed
+  `demo/mineshaft-dwarf-village-001`.
+- Volume: solid strata.
+- Carvers: entrance lift, entry hub, open caves, dwarf hall, living rooms,
+  forge, storage, portal vault.
+- Connectors: mine tunnel network and noise tubes.
+- Details: rails, supports, lanterns, room floors, room props, forge details.
+- Structures: dwarf living, forge, storage, shrine, portal.
+- Content: trader, forge shop, storage quest, miners, guards, and portal
+  travel.
+- Validation: paths to living rooms, forge, storage, shrine, and portal.
+
+## Phased Roadmap
+
+### Phase 1 - Documentation And Example Translation
+
+Create this source-of-truth design doc, capture the critical review, refine the
+DSL, and translate the playground examples into engine-facing intent.
+
+Acceptance criteria:
+
+- A reader can understand the playground and the native plan without opening
+  the playground files first.
+- Every playground primitive has a native equivalent or a clear defer decision.
+- The refined DSL covers terrain, underground, structures, scatter, anchors,
+  content, and validation.
+- The roadmap is implementation-ready.
+
+### Phase 2 - Foundation Types And Reports
+
+Add `src/game/worldgen/` with spec/report types, normalization, material map,
+and deterministic RNG/hash helpers. This phase does not write voxels, emit
+`LevelMeta`, register procedural levels, or expose `compileWorldSpec` yet; that
+waits until the surface compiler can produce honest chunks and metadata.
+
+Acceptance criteria:
+
+- Unknown materials, duplicate IDs, and missing required top-level fields fail
+  clearly.
+- Known sections have the expected object/array shape, and ID-bearing entries
+  must declare stable IDs before later compilers see them.
+- Reports are deterministic and include status, warnings, errors, metrics,
+  empty anchor/placement/validation collections, and a `specHash`.
+- `$ref` composition is explicitly rejected as unsupported until the macro
+  design is implemented.
+- Tests cover normalization, material mapping, ID validation, report status,
+  and hash helpers.
+
+### Phase 3 - Surface MVP
+
+Compile the surface valley example natively.
+
+Acceptance criteria:
+
+- Surface compilation consumes `NormalizedWorldSpec` only. Raw user input must
+  pass through Phase 2 normalization first.
+- Introduce a small compile context that owns `ChunkManager`, material
+  resolution, bounds checks, report mutation, and deterministic keyed random
+  helpers. Feature code should not mutate reports ad hoc.
+- Add `compileSurfaceWorld(spec, opts)` returning `{ chunks, meta, report }`.
+  The report gains `worldHash` and `resolvedObjects` so generated chunks,
+  metadata, anchors, and structure access points can be compared
+  deterministically.
+- Phase 3 is a square-world MVP. It rejects rectangular X/Z worlds until
+  `LevelMeta.size` and the terrain frame support rectangular dimensions.
+- Heightfield, cliff band, road spline, flatten disc, mountain peak, anchors,
+  spawn, and required path validation work from the normalized spec.
+- Include a narrow surface-example structure/scatter bridge: portal gate,
+  hermit cottage, and compact pine scatter. The broad asset registry,
+  advanced overlap policy, and general scatter system remain Phase 4.
+- Portal structures emit inactive marker zones only. Real travel binding stays
+  in the content/pipeline phases.
+- Unsupported surface feature types fail as report errors rather than being
+  ignored.
+- The generated output exports through existing `.vplevel` serialization.
+- Tests assert deterministic hash, anchor resolution, scatter count, and path
+  validation.
+
+### Phase 4 - Structures And Scatter
+
+Generalize the asset registry and scatter placement for villages, forests,
+prop clusters, and structure groups.
+
+Acceptance criteria:
+
+- Structure/scatter placement consumes resolved anchors and compile-context
+  services from Phase 3 rather than re-reading raw placement coordinates.
+- Structure specs resolve to `prefabSource` or `proceduralSource`.
+- Placement uses `measureStructurePlacement` and `placeStructureAsset`.
+- Footprint reservation prevents overlap.
+- Prop recovery through `structurePropPlacements` is preserved.
+- Scatter reports requested, placed, skipped, and warning counts.
+
+### Phase 5 - Underground MVP
+
+Compile the dungeon and mineshaft examples natively.
+
+Acceptance criteria:
+
+- Underground compilation reuses the same report, material, bounds, and
+  deterministic RNG context introduced for surface compilation.
+- Volume fill, strata, shafts, chambers, rooms, tunnels, canyons, mine networks,
+  main path stamping, surface queries, and underground scatter work.
+- Required underground paths validate with `findPath`.
+- Reports include feature surfaces and room/object access anchors.
+
+### Phase 6 - Content Layer
+
+Compile interactive content into existing engine metadata.
+
+Acceptance criteria:
+
+- NPCs compile to `NpcConfig` with behavior scripts where requested.
+- Shops compile to `trade.open` scripts.
+- Quests compile to idempotent `ScriptEntry` state machines.
+- Portals, interact zones, pickups, props, cinematics, weather, and sound
+  metadata round-trip through export.
+- Tests run generated scripts with stub facades for at least one generated
+  quest and shop.
+
+### Phase 7 - Pipeline And Export
+
+Add authoring/export utilities and register one generated spec as a procedural
+level.
+
+Acceptance criteria:
+
+- `compileWorldSpec` can be called by a procedural level definition.
+- A CLI can compile a JSON spec, write a report, and export `.vplevel`.
+- Generated levels can be loaded in game and refined in the editor.
+- Existing procedural levels remain unchanged.
+
+### Phase 8 - Large-Location Readiness
+
+Keep v1 author-time compiled and resident, but design the spec/report so it can
+later target region generation.
+
+Acceptance criteria:
+
+- Specs avoid assumptions that prevent future region streaming.
+- Reports include chunk/region metrics.
+- Large-world risks from `docs/large-worlds-plan.md` are documented before any
+  runtime streaming work begins.
+
+## Detailed Phase 1 Work
+
+Phase 1 is intentionally documentation-only. It should turn the design from a
+conversation into a durable artifact.
+
+Tasks:
+
+1. Add this document at `docs/worldgen-dsl-integration.md`.
+2. Record the playground review with concrete strengths and weaknesses.
+3. Describe native engine integration points and make the "no parallel runtime"
+   rule explicit.
+4. Define the refined `WorldSpec` direction and coordinate policy.
+5. Map every playground primitive to a native implementation strategy.
+6. Describe the content layer and how it compiles to current metadata/scripts.
+7. Translate the four playground examples at behavior level.
+8. Write the phased roadmap with acceptance criteria.
+9. Document test strategy, risks, and assumptions.
+
+Phase 1 verification:
+
+- Confirm the doc exists and is readable.
+- Check that every current playground example is mentioned.
+- Check that every implementation phase has concrete acceptance criteria.
+- No build is required for Markdown-only work.
+
+## Test Strategy For Implementation Phases
+
+Future implementation should add tests incrementally:
+
+- Determinism: same spec and seed produce identical world hash, anchors,
+  placements, metadata IDs, and validation report.
+- Material mapping: known aliases resolve; unknown materials fail.
+- Surface: heightfield, mountain, cliff, road, flatten disc, and anchor
+  placement.
+- Structures: asset registry, placement measurement, stamping, prop recovery,
+  rotation, reservations, and skipped-placement warnings.
+- Scatter: deterministic distribution, spacing, mask filtering, and reports.
+- Underground: volume fill, strata, rooms, shafts, chambers, tunnels, canyons,
+  main path stamping, and feature surface queries.
+- Content: NPC templates, behavior scripts, shops, quests, pickups, zones,
+  portals, cinematics, weather, and export metadata.
+- Validation: `findPath` required paths, optional path warnings, missing
+  required references, and no silent failures.
+- Round trip: spec to chunks/meta to `.vplevel` to deserialize to runtime meta.
+
+## Risks
+
+- Scope creep. Terrain generation, structures, content, and quests are all
+  large enough to become separate systems. Keep the compiler modular and phase
+  acceptance small.
+- Save compatibility. Generated levels should use the existing export path
+  until a region format is actually implemented.
+- Coordinate bugs. Anchor reports and explicit coordinate kinds are required to
+  keep generated scripts reliable.
+- Path validation mismatch. Always prefer engine `findPath` over a new
+  playground-style BFS so validation matches runtime movement.
+- Palette drift. Use engine block names and aliases; do not introduce a second
+  material enum.
+- Performance. Large underground carves can touch hundreds of thousands of
+  voxels. Use `ChunkManager.withBulkEdit`, bounded loops, and metrics from the
+  first implementation.
+- Script generation quality. Generated quests must be idempotent and stable-ID
+  based, matching current script-engine patterns.
+
+## Open Questions
+
+- Whether `WorldSpec` should be authored primarily as JSON files, TypeScript
+  literals, or both.
+- How much composition support is needed in v1: simple `defs`/`$ref`, or a
+  richer macro language.
+- Which generated location should be the first registered in
+  `PROCEDURAL_LEVEL_DEFINITIONS`.
+- Whether underground vertical traversal should prefer stairs, ladders, rails,
+  lifts, or a per-feature option.
+- How much editor UI should exist for compiled world specs versus ordinary
+  post-export level editing.
+
+## Assumptions
+
+- The playground remains reference material only.
+- The native compiler is deterministic and author-time compiled.
+- The current engine metadata and script systems remain the integration target.
+- Generated gameplay content must round-trip through `.vplevel` export.
+- Large/infinite streaming is deferred until the existing large-world roadmap
+  is implemented.

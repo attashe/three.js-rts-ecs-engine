@@ -29,7 +29,8 @@ export interface PlayerShieldOptions {
  *    faces; deflects melee coming at the front (see `blockedByShield`).
  *  - **otherwise → passive left block.** While grounded the shield still rides
  *    the left arm, deflecting hits coming from the player's left flank.
- * Leaving the melee stance (or going airborne) lowers it entirely.
+ * Leaving the melee stance, unequipping the shield, or going airborne lowers
+ * it entirely.
  *
  * Runs just before the NPC brain so the guard state is current when NPCs decide
  * whether their hit lands this tick.
@@ -40,10 +41,11 @@ export function createPlayerShieldSystem(actions: ActionMap, opts: PlayerShieldO
         fixed: true,
         order: FixedOrder.npcBehaviour - 1,
         update(world, dt) {
-            const melee = (world as GameWorld).weaponStance === 'melee'
+            const gw = world as GameWorld
+            const melee = gw.weaponStance === 'melee'
+            const hasShield = meleeLoadoutHasShield(gw)
             const players = query(world, [PlayerControlled, Shield, Position, Rotation])
             const raising = actions.isHeld(raiseAction)
-            const gw = world as GameWorld
             for (let i = 0; i < players.length; i++) {
                 const eid = players[i]!
                 const debugId = shieldDebugId(eid)
@@ -52,6 +54,7 @@ export function createPlayerShieldSystem(actions: ActionMap, opts: PlayerShieldO
                 if (!raising) Shield.heldSeconds[eid] = 0
                 if (
                     !melee ||
+                    !hasShield ||
                     !grounded ||
                     hasComponent(world, eid, Stunned) ||
                     hasComponent(world, eid, ClimbingLadder) ||
@@ -96,4 +99,9 @@ export function createPlayerShieldSystem(actions: ActionMap, opts: PlayerShieldO
 
 function shieldDebugId(eid: number): string {
     return `player:${eid}:shield`
+}
+
+function meleeLoadoutHasShield(world: GameWorld): boolean {
+    const loadout = world.playerSettings.equipment.melee
+    return loadout.handL === 'shield' || loadout.handR === 'shield'
 }

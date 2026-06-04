@@ -32,9 +32,11 @@ export const PROP_KINDS = [
     'sundial',
     'haste-shrine',
     'portal-shrine',
+    'road-sign',
     'high-jump-boots',
     'lift-cabin-broken',
     'lift-cabin-repaired',
+    'lift-control-lever',
     'market-meat',
     'market-apples',
     'market-fish',
@@ -45,6 +47,9 @@ export const PROP_KINDS = [
     'boot-rack',
     'potion-shelf',
     'alchemy-cauldron',
+    'broken-wagon',
+    'fallen-driver',
+    'repair-materials-crate',
 ] as const
 
 export type EditorPropKind = (typeof PROP_KINDS)[number]
@@ -94,9 +99,11 @@ export const PROP_LABELS: Record<EditorPropKind, string> = {
     sundial: 'Sundial',
     'haste-shrine': 'Shrine of Haste',
     'portal-shrine': 'Portal Shrine',
+    'road-sign': 'Road Sign',
     'high-jump-boots': 'High Jump Boots',
     'lift-cabin-broken': 'Broken Lift Cabin',
     'lift-cabin-repaired': 'Repaired Lift Cabin',
+    'lift-control-lever': 'Lift Control Lever',
     'market-meat': 'Market Meat',
     'market-apples': 'Market Apples',
     'market-fish': 'Market Fish',
@@ -107,4 +114,7 @@ export const PROP_LABELS: Record<EditorPropKind, string> = {
     'boot-rack': 'Boot Rack',
     'potion-shelf': 'Potion Shelf',
     'alchemy-cauldron': 'Alchemy Cauldron',
+    'broken-wagon': 'Broken Wagon',
+    'fallen-driver': 'Fallen Driver',
+    'repair-materials-crate': 'Repair Materials Crate',
 }

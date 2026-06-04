@@ -9,6 +9,8 @@ import {
     addInventoryItem,
     copyInventoryItems,
     defaultInventoryIcon,
+    HELD_TORCH_ITEM_ID,
+    HELD_TORCH_ITEM_OPTIONS,
     inventoryItemCount,
     listInventoryItems,
     normalizeInventoryItems,
@@ -17,7 +19,7 @@ import {
 import { consumeHealPotion, consumeManaPotion, setBootsEquipped, setHeadEquipment, setHighJumpBootsEquipped, setMeleeHandEquipment } from '../src/game/inventory-system'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 import { HIGH_JUMP_BOOTS_ITEM_ID, HIGH_SPEED_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
-import { METAL_HELMET_ITEM_ID, SNIPER_HAT_ITEM_ID, SPEAR_ITEM_ID } from '../src/game/equipment-items'
+import { METAL_HELMET_ITEM_ID, SNIPER_HAT_ITEM_ID, SPEAR_ITEM_ID, SWORD_ITEM_ID } from '../src/game/equipment-items'
 import { MANA_POTION_ITEM_ID, MANA_POTION_RESTORE, PLAYER_DEFAULT_MAX_MANA } from '../src/game/mana'
 import {
     DYNAMITE_ITEM_ID,
@@ -64,7 +66,9 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.equal(addInventoryItem(items, HIGH_SPEED_BOOTS_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, SNIPER_HAT_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, METAL_HELMET_ITEM_ID, 1), true)
+    assert.equal(addInventoryItem(items, SWORD_ITEM_ID, 1), true)
     assert.equal(addInventoryItem(items, SPEAR_ITEM_ID, 1), true)
+    assert.equal(addInventoryItem(items, HELD_TORCH_ITEM_ID, 1, HELD_TORCH_ITEM_OPTIONS), true)
     assert.equal(defaultInventoryIcon('heal-potion'), 'heal-potion')
     assert.equal(defaultInventoryIcon(MANA_POTION_ITEM_ID), 'mana-potion')
     assert.equal(defaultInventoryIcon(FOOD_APPLE_ITEM_ID), 'food-apple')
@@ -76,7 +80,9 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
     assert.equal(defaultInventoryIcon(HIGH_SPEED_BOOTS_ITEM_ID), 'boots')
     assert.equal(defaultInventoryIcon(SNIPER_HAT_ITEM_ID), 'hat-sniper')
     assert.equal(defaultInventoryIcon(METAL_HELMET_ITEM_ID), 'metal-helmet')
+    assert.equal(defaultInventoryIcon(SWORD_ITEM_ID), 'sword')
     assert.equal(defaultInventoryIcon(SPEAR_ITEM_ID), 'spear')
+    assert.equal(defaultInventoryIcon(HELD_TORCH_ITEM_ID), 'torch')
     assert.deepEqual(listInventoryItems(items, 'consumables').map((item) => [item.id, item.quantity, item.icon]), [
         [DYNAMITE_ITEM_ID, 1, 'dynamite'],
         [FOOD_APPLE_ITEM_ID, 2, 'food-apple'],
@@ -93,8 +99,10 @@ test('inventory helpers normalize, stack, list, and remove durable items', () =>
         [METAL_HELMET_ITEM_ID, 1, 'metal-helmet'],
     ])
     assert.deepEqual(listInventoryItems(items, 'tools').map((item) => [item.id, item.quantity, item.icon]), [
+        [HELD_TORCH_ITEM_ID, 1, 'torch'],
         ['moon-key', 1, 'tool'],
         [SPEAR_ITEM_ID, 1, 'spear'],
+        [SWORD_ITEM_ID, 1, 'sword'],
     ])
 })
 
@@ -147,8 +155,12 @@ test('dynamite cannot be consumed directly from inventory', () => {
 
 test('player settings deep-copy durable inventory and tolerate old saves', () => {
     assert.equal(DEFAULT_PLAYER_SETTINGS.inventory.items['heal-potion']?.quantity, 2)
+    assert.equal(DEFAULT_PLAYER_SETTINGS.inventory.items[SWORD_ITEM_ID]?.quantity, 1)
+    assert.equal(DEFAULT_PLAYER_SETTINGS.abilities.torch, false)
+    assert.equal(DEFAULT_PLAYER_SETTINGS.inventory.items[HELD_TORCH_ITEM_ID], undefined)
     assert.equal(DEFAULT_PLAYER_SETTINGS.equipment.boots, null)
     assert.equal(normalizePlayerSettings().inventory.items['heal-potion']?.quantity, 2)
+    assert.equal(normalizePlayerSettings().inventory.items[SWORD_ITEM_ID]?.quantity, 1)
     const oldSave = normalizePlayerSettings({ inventory: { gold: 4, arrows: 2 } })
     assert.deepEqual(oldSave.inventory.items, {})
 
@@ -211,17 +223,20 @@ test('boots accessories share one equipment slot and require owned inventory', (
     assert.equal(setBootsEquipped(world, HIGH_SPEED_BOOTS_ITEM_ID, true), false)
 })
 
-test('purchased head gear and spear equip only when owned', () => {
+test('equipment weapons equip only when owned', () => {
     const world = createGameWorld()
     world.inventory.items = {}
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+    world.playerSettings.equipment.melee = { handR: null, handL: 'shield' }
 
     assert.equal(setHeadEquipment(world, METAL_HELMET_ITEM_ID), false)
+    assert.equal(setMeleeHandEquipment(world, SWORD_ITEM_ID), false)
     assert.equal(setMeleeHandEquipment(world, SPEAR_ITEM_ID), false)
 
     world.inventory.items = normalizeInventoryItems({
         [METAL_HELMET_ITEM_ID]: { quantity: 1 },
         [SNIPER_HAT_ITEM_ID]: { quantity: 1 },
+        [SWORD_ITEM_ID]: { quantity: 1 },
         [SPEAR_ITEM_ID]: { quantity: 1 },
     })
     world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
@@ -230,12 +245,14 @@ test('purchased head gear and spear equip only when owned', () => {
     assert.equal(world.playerSettings.equipment.head, METAL_HELMET_ITEM_ID)
     assert.equal(setHeadEquipment(world, SNIPER_HAT_ITEM_ID), true)
     assert.equal(world.playerSettings.equipment.head, SNIPER_HAT_ITEM_ID)
+    assert.equal(setMeleeHandEquipment(world, SWORD_ITEM_ID), true)
+    assert.equal(world.playerSettings.equipment.melee.handR, SWORD_ITEM_ID)
     assert.equal(setMeleeHandEquipment(world, SPEAR_ITEM_ID), true)
     assert.equal(world.playerSettings.equipment.melee.handR, SPEAR_ITEM_ID)
     assert.equal(world.playerSettings.equipment.melee.handL, 'shield')
 
     world.inventory.items = {}
-    assert.equal(setMeleeHandEquipment(world, 'sword'), true)
+    assert.equal(setMeleeHandEquipment(world, SWORD_ITEM_ID), false)
     assert.equal(setMeleeHandEquipment(world, SPEAR_ITEM_ID), false)
 })
 

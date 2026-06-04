@@ -2,9 +2,17 @@ import type { HandEquipmentKind, HeadEquipmentKind } from './anim/equipment-type
 import { EQUIPMENT_LABELS } from './anim/equipment-types'
 import type { InventoryItemOptions } from './inventory'
 
+export const SWORD_ITEM_ID = 'sword' satisfies HandEquipmentKind
 export const SPEAR_ITEM_ID = 'spear' satisfies HandEquipmentKind
 export const METAL_HELMET_ITEM_ID = 'metal-helmet' satisfies HeadEquipmentKind
 export const SNIPER_HAT_ITEM_ID = 'hat-sniper' satisfies HeadEquipmentKind
+
+export const INVENTORY_HAND_EQUIPMENT_ITEM_IDS = [
+    SWORD_ITEM_ID,
+    SPEAR_ITEM_ID,
+] as const satisfies readonly HandEquipmentKind[]
+
+export type InventoryHandEquipmentItemId = (typeof INVENTORY_HAND_EQUIPMENT_ITEM_IDS)[number]
 
 export const BUYABLE_HEAD_EQUIPMENT_ITEM_IDS = [
     'hat-arcane',
@@ -67,6 +75,16 @@ export const BUYABLE_EQUIPMENT_ITEM_OPTIONS: Record<BuyableEquipmentItemId, Inve
     },
 }
 
+export const INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS: Record<InventoryHandEquipmentItemId, InventoryItemOptions> = {
+    [SWORD_ITEM_ID]: {
+        name: EQUIPMENT_LABELS[SWORD_ITEM_ID],
+        description: 'A reliable short sword. Equip it from Tools.',
+        category: 'tools',
+        icon: 'sword',
+    },
+    [SPEAR_ITEM_ID]: BUYABLE_EQUIPMENT_ITEM_OPTIONS[SPEAR_ITEM_ID],
+}
+
 export function isBuyableHeadEquipmentItemId(value: unknown): value is BuyableHeadEquipmentItemId {
     return (BUYABLE_HEAD_EQUIPMENT_ITEM_IDS as readonly string[]).includes(String(value))
 }
@@ -77,4 +95,8 @@ export function isBuyableHandEquipmentItemId(value: unknown): value is BuyableHa
 
 export function isBuyableEquipmentItemId(value: unknown): value is BuyableEquipmentItemId {
     return isBuyableHeadEquipmentItemId(value) || isBuyableHandEquipmentItemId(value)
+}
+
+export function isInventoryHandEquipmentItemId(value: unknown): value is InventoryHandEquipmentItemId {
+    return (INVENTORY_HAND_EQUIPMENT_ITEM_IDS as readonly string[]).includes(String(value))
 }

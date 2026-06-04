@@ -6,6 +6,8 @@ import { BoxCollider, ClimbingLadder, Grounded, Health, Mana, MovingObject, Shie
 import { computeLocomotionParams } from '../src/engine/anim/core'
 import { ChunkManager } from '../src/engine/voxel/chunk-manager'
 import { BLOCK, DEFAULT_PALETTE } from '../src/engine/voxel/palette'
+import { startMeleeAttack } from '../src/engine/ecs/melee-combat'
+import { MELEE_ATTACK_DEFS } from '../src/engine/ecs/melee-types'
 import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-system'
 import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
 import { createPlayerControlSystem } from '../src/engine/ecs/systems/player-control-system'
@@ -47,11 +49,13 @@ import {
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, normalizePlayerSettings } from '../src/game/player-settings'
 import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 import { normalizeNpcConfig } from '../src/game/npcs/npc-types'
+import { NPC_TARGET_PLAYER } from '../src/game/npcs/npc-ai'
 import {
     createSniperHatTrajectorySystem,
     predictSniperArrowTrajectory,
     sniperTrajectoryPreviewEnabled,
 } from '../src/game/sniper-hat-trajectory-system'
+import { __resetDebugInfoCache, setDebugInfoEnabled } from '../src/engine/render/render-settings'
 
 function onePressAction(): ActionMap {
     let pressed = true
@@ -508,6 +512,21 @@ test('melee attack alternates thrust and wide swing animations', () => {
     assert.equal(controller.machine.currentStateId, 'attackWide')
 })
 
+test('empty melee loadout cannot start a player melee attack', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.melee = { handR: null, handL: null }
+    world.weaponStance = 'melee'
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    const system = createMeleeAttackSystem(onePressAction())
+
+    system.update(world, 1 / 60)
+
+    assert.equal(world.meleeAttacks.size, 0)
+    assert.ok(world.log.includes('No melee weapon equipped.'))
+})
+
 test('staff melee variants use the custom staff bonk animation', () => {
     for (const kind of STAFF_EQUIPMENT_KINDS) {
         const world = createGameWorld()
@@ -606,6 +625,63 @@ test('passive shield guard uses the left-side yaw offset', () => {
 
     assert.equal(Shield.raised[player], 1)
     assert.ok(Shield.blockYawOffset[player]! < 0, 'passive shield should cover the left side, not the right')
+})
+
+test('empty melee shield loadout suppresses shield guard and debug wedge', () => {
+    __resetDebugInfoCache()
+    setDebugInfoEnabled(true)
+    try {
+        const world = createGameWorld()
+        world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+        world.playerSettings.equipment.melee = { handR: null, handL: null }
+        world.weaponStance = 'melee'
+        const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+        addComponent(world, player, Grounded)
+        const action = heldAction(true)
+        const system = createPlayerShieldSystem(action.actions)
+
+        system.update(world, 1 / 60)
+
+        assert.equal(Shield.raised[player], 0)
+        assert.equal(Shield.perfect[player], 0)
+        assert.equal(
+            world.debugHitboxes.some((hitbox) => hitbox.id === `player:${player}:shield`),
+            false,
+            'debug shield wedge should not render without an equipped shield',
+        )
+    } finally {
+        setDebugInfoEnabled(false)
+        __resetDebugInfoCache()
+    }
+})
+
+test('empty melee shield loadout cannot block an incoming melee hit', () => {
+    const world = createGameWorld()
+    world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.equipment.melee = { handR: null, handL: null }
+    world.weaponStance = 'melee'
+    const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
+    addComponent(world, player, Grounded)
+    registerRuntimeNpcs(world, [
+        normalizeNpcConfig({ id: 'guard', model: 'keeper', position: { x: 0, y: 1, z: 1 } }),
+    ])
+    const guard = world.npcRuntimeById.get('guard')!
+    guard.yaw = Math.PI
+    const shield = createPlayerShieldSystem(heldAction(true).actions)
+    const combat = createMeleeCombatSystem()
+
+    shield.update(world, 1 / 60)
+    assert.equal(Shield.raised[player], 0)
+    assert.equal(startMeleeAttack(
+        world,
+        { kind: 'npc', id: 'guard' },
+        MELEE_ATTACK_DEFS['npc-slash'],
+        { targetId: NPC_TARGET_PLAYER },
+    ), true)
+
+    combat.update(world, MELEE_ATTACK_DEFS['npc-slash'].startupSeconds + 0.02)
+
+    assert.equal(Health.current[player], Health.max[player] - 1)
 })
 
 test('climbing ladder suppresses player shield guard', () => {
@@ -853,6 +929,7 @@ test('player torch system does not animate shared flame material opacity', () =>
 test('player torch system updates shadow camera range when distance changes', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.abilities.torch = true
     const eid = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
     const root = world.object3DByEid.get(eid)!
     const light = findPlayerTorchLight(root)
