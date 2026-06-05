@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     // still holds the level the user was just playtesting — restore that
     // session so they don't lose their work. Falls back to seeding a fresh
     // 12×12 grass pad when there's nothing to restore.
-    const restored = restoreSessionLevel(world, chunks, editorState)
+    const restored = await restoreSessionLevel(world, chunks, editorState)
     if (!restored) {
         for (let x = 0; x < 12; x++) {
             for (let z = 0; z < 12; z++) {
@@ -211,8 +211,8 @@ async function main(): Promise<void> {
     await engine.start()
 }
 
-function restoreSessionLevel(world: GameWorld, chunks: ChunkManager, editorState: EditorState): boolean {
-    const buffer = consumePlaytestLevel()
+async function restoreSessionLevel(world: GameWorld, chunks: ChunkManager, editorState: EditorState): Promise<boolean> {
+    const buffer = await consumePlaytestLevel()
     if (!buffer) return false
     try {
         loadLevelFromBuffer(buffer, world, chunks, editorState)

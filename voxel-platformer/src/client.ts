@@ -525,13 +525,11 @@ async function main(): Promise<void> {
         slots.torchBlocks.set(
             getTorchSystem() === 'experimental'
                 ? createTorchBlockRenderSystemV2(renderer.scene, chunks, {
-                    focus: () => renderer.iso.target,
                     audio,
                     audioReady,
                     soundId: GameAudio.TorchFire,
                 })
                 : createTorchBlockRenderSystem(renderer.scene, chunks, {
-                    focus: () => renderer.iso.target,
                     audio,
                     audioReady,
                     soundId: GameAudio.TorchFire,
@@ -951,7 +949,7 @@ async function loadInitialLocation(): Promise<LoadedLocation> {
     const params = new URLSearchParams(window.location.search)
     const requested = params.get('level')
     if (requested === 'playtest') {
-        const buffer = consumePlaytestLevel()
+        const buffer = await consumePlaytestLevel()
         if (buffer) {
             try {
                 return loadedEditorLocationFromBuffer('playtest', buffer)
