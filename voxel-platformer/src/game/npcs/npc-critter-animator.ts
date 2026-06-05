@@ -35,6 +35,7 @@ const DIE_SECONDS = 0.7
  */
 export function createCritterAnimator(root: Object3D): NpcAnimator {
     if (root.getObjectByName('SpiderBob')) return createSpiderAnimator(root)
+    if (root.getObjectByName('WolfBob')) return createWolfAnimator(root)
     return createRabbitAnimator(root)
 }
 
@@ -151,6 +152,75 @@ function createSpiderAnimator(root: Object3D): NpcAnimator {
             applySkitter()
         },
         deadSettled() { return dying && dieElapsed >= DIE_SECONDS + 0.35 },
+        dispose() { /* the render system disposes the root Object3D */ },
+    }
+}
+
+function createWolfAnimator(root: Object3D): NpcAnimator {
+    const bob = root.getObjectByName('WolfBob') ?? root
+    const head = root.getObjectByName('WolfHead')
+    const jaw = root.getObjectByName('WolfJaw')
+    const tail = root.getObjectByName('WolfTail')
+    const legs = ['FL', 'FR', 'BL', 'BR']
+        .map((suffix) => root.getObjectByName(`WolfLeg${suffix}`))
+        .filter((part): part is Object3D => !!part)
+
+    let phase = 0
+    let speed = 0
+    let targetSpeed = 0
+    let elapsed = 0
+    let attackSeconds = 0
+    let dying = false
+    let dieElapsed = 0
+
+    function applyTrot(): void {
+        const norm = Math.min(1.3, speed / HOP_REF_SPEED)
+        const attackT = attackSeconds > 0 ? 1 - attackSeconds / 0.34 : 1
+        const lunge = attackSeconds > 0 ? Math.sin(attackT * Math.PI) : 0
+        bob.position.y = 0.015 + Math.sin(phase * 2) * 0.012 * norm
+        bob.position.z = lunge * 0.11
+        bob.rotation.x = -0.04 + Math.sin(phase) * 0.045 * norm - lunge * 0.12
+        bob.rotation.z = Math.sin(phase * 0.5) * 0.025 * norm
+        if (head) {
+            head.rotation.x = -0.04 - lunge * 0.34 + Math.sin(elapsed * 2.4) * 0.035
+            head.position.z = 0.42 + lunge * 0.05
+        }
+        if (jaw) jaw.rotation.x = attackSeconds > 0 ? 0.22 + lunge * 0.34 : 0.04 + Math.sin(elapsed * 3.1) * 0.025
+        if (tail) {
+            tail.rotation.x = -0.55 + Math.sin(phase + Math.PI * 0.4) * 0.12 * norm
+            tail.rotation.y = Math.sin(elapsed * 2.1) * 0.12
+        }
+        for (let i = 0; i < legs.length; i += 1) {
+            const leg = legs[i]!
+            const diagonal = i === 0 || i === 3 ? 0 : Math.PI
+            leg.rotation.x = Math.sin(phase + diagonal) * 0.42 * norm - lunge * 0.14
+            leg.rotation.z = (leg.name.endsWith('L') ? -1 : 1) * Math.sin(phase + diagonal) * 0.045 * norm
+        }
+    }
+
+    return {
+        root,
+        setLocomotion(s) { targetSpeed = s },
+        triggerAttack() { attackSeconds = 0.34 },
+        triggerDie() { dying = true },
+        setShieldGuard() { /* no shield */ },
+        update(dt) {
+            if (dying) {
+                dieElapsed += dt
+                const t = Math.min(1, dieElapsed / DIE_SECONDS)
+                root.rotation.z = t * (Math.PI / 2)
+                root.rotation.x = -t * 0.18
+                bob.position.y = -t * 0.11
+                return
+            }
+            elapsed += dt
+            attackSeconds = Math.max(0, attackSeconds - dt)
+            speed += (targetSpeed - speed) * Math.min(1, dt * 10)
+            const norm = Math.min(1.3, speed / HOP_REF_SPEED)
+            phase += (1.8 + norm * 12) * dt
+            applyTrot()
+        },
+        deadSettled() { return dying && dieElapsed >= DIE_SECONDS + 0.45 },
         dispose() { /* the render system disposes the root Object3D */ },
     }
 }

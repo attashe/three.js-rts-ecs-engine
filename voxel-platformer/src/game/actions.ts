@@ -18,7 +18,6 @@ export const GameAction = {
     HighJump: 'spell.highJump',
     AirPush: 'spell.airPush',
     BowShot: 'weapon.bowShot',
-    Attack: 'weapon.attack',
     RaiseShield: 'weapon.shield',
     CastSpell: 'spell.cast',
     SwitchWeapon: 'weapon.switch',
@@ -27,7 +26,6 @@ export const GameAction = {
     Inventory: 'inventory.open',
     CameraRotateLeft: 'camera.rotateLeft',
     CameraRotateRight: 'camera.rotateRight',
-    CameraZoom: 'camera.zoom',
 } as const
 
 export type GameActionId = typeof GameAction[keyof typeof GameAction]
@@ -79,17 +77,19 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
     {
         id: GameAction.Jump,
         label: 'Jump',
-        bindings: [{ keys: ['Space'] }],
+        // `mods: []` = plain Space only, so Shift+Space (high jump) doesn't also
+        // fire an ordinary jump.
+        bindings: [{ keys: ['Space'], mods: [] }],
         bufferMs: 200,
         hint: { group: 'jump', label: 'Jump', keys: ['Space'], order: 40 },
     },
     {
         id: GameAction.HighJump,
         label: 'High jump',
-        bindings: [{ keys: ['KeyH'] }],
+        bindings: [{ keys: ['Space'], mods: ['Shift'] }],
         bufferMs: 160,
         cooldownMs: 900,
-        hint: { group: 'highJump', label: 'High jump', keys: ['H'], order: 45 },
+        hint: { group: 'highJump', label: 'High jump', keys: ['Shift+Space'], order: 45 },
     },
     {
         id: GameAction.AirPush,
@@ -100,39 +100,32 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
         hint: { group: 'airPush', label: 'Air push', keys: ['G'], order: 46 },
     },
     {
-        // Universal attack: melee swing, bow shot, or magic bolt depending on
-        // the active weapon stance. Kept under the legacy `weapon.bowShot` id and
-        // F binding so saved keymaps and the action tests stay valid.
+        // Universal attack on Left Mouse: melee swing, bow shot, or staff bonk
+        // depending on the active weapon stance. (Id kept as `weapon.bowShot`.)
         id: GameAction.BowShot,
         label: 'Attack',
-        bindings: [{ keys: ['KeyF'] }],
+        bindings: [{ keys: ['Mouse0'] }],
         bufferMs: 140,
         cooldownMs: 420,
-        hint: { group: 'attack', label: 'Attack', keys: ['F'], order: 50 },
+        hint: { group: 'attack', label: 'Attack', keys: ['LMB'], order: 50 },
     },
     {
-        // Legacy melee attack id, retained so saved keymaps and tests stay
-        // valid. The universal attack on F drives combat now; this is unused at
-        // runtime but kept bound to V.
-        id: GameAction.Attack,
-        label: 'Melee attack',
-        bindings: [{ keys: ['KeyV'] }],
-        bufferMs: 120,
-        cooldownMs: 420,
-    },
-    {
+        // Right Mouse is the contextual secondary: it raises the shield in the
+        // melee (sword+shield) stance. With a staff there's no shield, so the
+        // same button casts (see CastSpell). Consumers gate on equipment/stance,
+        // so binding both to RMB is unambiguous.
         id: GameAction.RaiseShield,
-        label: 'Raise shield',
-        bindings: [{ keys: ['KeyT'] }],
-        hint: { group: 'shield', label: 'Shield', keys: ['T'], order: 51 },
+        label: 'Block (shield)',
+        bindings: [{ keys: ['Mouse2'] }],
+        hint: { group: 'secondary', label: 'Block / Cast', keys: ['RMB'], order: 51 },
     },
     {
         id: GameAction.CastSpell,
-        label: 'Cast spell',
-        bindings: [{ keys: ['KeyC'] }],
+        label: 'Cast spell (staff)',
+        bindings: [{ keys: ['Mouse2'] }],
         bufferMs: 140,
         cooldownMs: 700,
-        hint: { group: 'cast', label: 'Cast', keys: ['C'], order: 52 },
+        hint: { group: 'secondary', label: 'Block / Cast', keys: ['RMB'], order: 51 },
     },
     {
         id: GameAction.SwitchWeapon,
@@ -144,10 +137,10 @@ export const GAME_ACTIONS: readonly ActionDefinition[] = [
     {
         id: GameAction.UseConsumable,
         label: 'Use consumable',
-        bindings: [{ keys: ['KeyZ'] }],
+        bindings: [{ keys: ['KeyF'] }],
         bufferMs: 160,
         cooldownMs: 320,
-        hint: { group: 'useConsumable', label: 'Use consumable', keys: ['Z'], order: 54 },
+        hint: { group: 'useConsumable', label: 'Use consumable', keys: ['F'], order: 54 },
     },
     {
         id: GameAction.Interact,

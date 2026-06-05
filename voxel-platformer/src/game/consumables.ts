@@ -93,7 +93,7 @@ const CONSUMABLE_DEF_DATA = {
     [DYNAMITE_ITEM_ID]: {
         id: DYNAMITE_ITEM_ID,
         name: 'Dynamite',
-        description: 'Select it, then press Z to throw a short-fuse explosive.',
+        description: 'Select it, then press the consumable hotkey to throw a short-fuse explosive.',
         icon: 'dynamite',
         useKind: 'throwable',
     },

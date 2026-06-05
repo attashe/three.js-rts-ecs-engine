@@ -53,6 +53,7 @@ export function defaultSoundForPreset(presetId: string): string | null {
         case 'rain':         return GameAudio.AmbRain
         case 'storm':        return GameAudio.AmbStorm
         case 'snow':         return GameAudio.AmbWind
+        case 'blizzard':     return GameAudio.AmbWind
         case 'fog':          return GameAudio.AmbWind
         case 'sandstorm':    return GameAudio.AmbWind
         case 'embers':       return GameAudio.AmbFire

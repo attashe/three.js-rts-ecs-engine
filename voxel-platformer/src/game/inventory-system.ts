@@ -43,6 +43,7 @@ import {
     isDirectConsumableItemId,
     selectConsumable,
 } from './consumables'
+import { actionKeyLabel } from './consumable-prompts'
 import {
     HELD_TORCH_ITEM_ID,
     HELD_TORCH_ITEM_OPTIONS,
@@ -68,6 +69,7 @@ interface InventoryDom {
     stats: HTMLDivElement
     closeButton: HTMLButtonElement
     keyHint: HTMLSpanElement
+    useConsumableKeys: readonly string[]
 }
 
 interface LoadoutOption {
@@ -147,7 +149,7 @@ export function createInventorySystem(input: Input, actions: ActionMap): System 
         dom.root.style.pointerEvents = open ? 'auto' : 'none'
         dom.root.setAttribute('aria-hidden', open ? 'false' : 'true')
         if (open) {
-            if (lastWorld) renderInventory(dom, lastWorld)
+            if (lastWorld) renderInventory(dom, lastWorld, actions.bindingDisplayKeysFor(GameAction.UseConsumable))
             setTimeout(() => dom?.closeButton.focus(), 0)
         }
     }
@@ -157,7 +159,7 @@ export function createInventorySystem(input: Input, actions: ActionMap): System 
         order: RenderOrder.debug + 8,
         init(world) {
             lastWorld = world
-            dom = buildInventoryDom(actions.bindingDisplayKeysFor(GameAction.Inventory))
+            dom = buildInventoryDom(actions.bindingDisplayKeysFor(GameAction.Inventory), actions.bindingDisplayKeysFor(GameAction.UseConsumable))
             dom.closeButton.addEventListener('click', () => setOpen(false))
             document.body.appendChild(dom.root)
             window.addEventListener('keydown', onKeyDown, { capture: true })
@@ -184,7 +186,7 @@ export function createInventorySystem(input: Input, actions: ActionMap): System 
     }
 }
 
-function buildInventoryDom(keys: readonly string[]): InventoryDom {
+function buildInventoryDom(keys: readonly string[], useConsumableKeys: readonly string[]): InventoryDom {
     const root = document.createElement('div')
     root.id = 'voxel-platformer-inventory'
     Object.assign(root.style, {
@@ -294,10 +296,11 @@ function buildInventoryDom(keys: readonly string[]): InventoryDom {
         if (ev.target === root) closeButton.click()
     })
 
-    return { root, panel, loadout, spell, categories, stats, closeButton, keyHint }
+    return { root, panel, loadout, spell, categories, stats, closeButton, keyHint, useConsumableKeys }
 }
 
-function renderInventory(dom: InventoryDom, world: GameWorld): void {
+function renderInventory(dom: InventoryDom, world: GameWorld, useConsumableKeys = dom.useConsumableKeys): void {
+    dom.useConsumableKeys = useConsumableKeys
     dom.loadout.replaceChildren(...loadoutSection(dom, world))
     dom.spell.replaceChildren(...spellSection(dom, world))
     const grouped = groupInventoryItems(world)
@@ -597,7 +600,7 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
             icon: item.icon,
             name: item.name,
             detail: active ? `Active · x${item.quantity}` : `x${item.quantity}`,
-            title: consumableTitle(item, direct),
+            title: consumableTitle(item, direct, dom.useConsumableKeys),
             active,
             disabled: item.quantity <= 0,
             onClick: () => {
@@ -637,11 +640,12 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
     })
 }
 
-function consumableTitle(item: InventorySnapshotItem, direct: boolean): string {
+function consumableTitle(item: InventorySnapshotItem, direct: boolean, useConsumableKeys: readonly string[]): string {
     const base = item.description ? `${item.name}\n${item.description}` : item.name
+    const useKey = actionKeyLabel(useConsumableKeys)
     return direct
-        ? `${base}\nClick to select for Z. Double-click to use now.`
-        : `${base}\nClick to select for Z.`
+        ? `${base}\nClick to select. Press ${useKey} to use. Double-click to use now.`
+        : `${base}\nClick to select. Press ${useKey} to throw.`
 }
 
 interface MenuCardOptions {

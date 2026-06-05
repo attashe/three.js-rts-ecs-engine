@@ -46,6 +46,12 @@ const expected = {
     'player-hurt.wav':     { bytes: 5777, sha256: '725ec7249fa3d3f84645dd481e66ba9863f029e21298fd004563e234acd5bdf1' },
     'npc-hurt.wav':        { bytes: 4895, sha256: '3ca8fd63bc357837ab0f5a8efc60b6cc3efadb32ede334402cb60431f00a21d5' },
 
+    // ── Creatures ─────────────────────────────────────────────────
+    'wolf-howl.wav':  { bytes: 30032, sha256: 'eaca795eaffbf485e4172a0b594ee8ef7ddc4666e04f668912023ed6172579be' },
+    'wolf-snarl.wav': { bytes: 8423,  sha256: '27627fe9b8b9cc03189cbe5622f8362f3f613b03a9b391e9fa99d0311c8a97ef' },
+    'wolf-hurt.wav':  { bytes: 6659,  sha256: '6cba542931221ebc97ca404840332c0d8b384b54a5ec08c90fa82289d845c7a9' },
+    'wolf-die.wav':   { bytes: 18125, sha256: '63750ceed107f7d972035a34c306aa33a9e4b3aec9bee3eaaeb085eda580c4d0' },
+
     // ── Spells (cast + impact per spell) ──────────────────────────
     'bolt-cast.wav': { bytes: 7541,  sha256: '5bb33b4b2ecf0363bbbfde19b4bd5c88c877906269d121bfcd0e1f34ddf0d226' },
     'bolt-hit.wav':  { bytes: 6659,  sha256: 'e0bdb27e953ba6072218b83da84dd535d9257459d905e163da32a4fe25e4734c' },
@@ -55,12 +61,14 @@ const expected = {
     'orb-zap.wav':   { bytes: 4895,  sha256: 'de68dc91099c5b21bc2c96322b106da5a070e34d8ff88560b01539023e5071f0' },
 
     // ── Player locomotion ─────────────────────────────────────────
-    // Surface-aware footsteps: 5 families × 2 variants. Volumes vary
+    // Surface-aware footsteps: 6 families × 2 variants. Volumes vary
     // per family (see GAME_AUDIO_MANIFEST).
     'footstep-grass-1.wav': { bytes: 2249, sha256: '058b42232ca56d8189374c8d932737a9cbda18d5339c655e9030b5fe1a37ddbf' },
     'footstep-grass-2.wav': { bytes: 2469, sha256: '24df097ff78d30207616d3466caa923fade12ec2efc3c6f5213de5a2f8aaf9d9' },
     'footstep-dirt-1.wav':  { bytes: 2249, sha256: 'ab0e098201b4b5c8aee29ba74cd8cd9c72856de9ae218bc445621fc11a21bf65' },
     'footstep-dirt-2.wav':  { bytes: 2469, sha256: '33d347a662fa04efd6b4c7395b65d10ac7b7bdbfb39fe87ccceddd8c09fe3595' },
+    'footstep-snow-1.wav':  { bytes: 2910, sha256: '2b080f4d3d57909e1d9137658a1ca9af0accec5f7e110fc4e2fb24c9bb7fa92d' },
+    'footstep-snow-2.wav':  { bytes: 3131, sha256: '7fc0a7b0041ee8889d90103a46e63156e9f890c1747a42a75ebdbf47a778dc54' },
     'footstep-stone-1.wav': { bytes: 2249, sha256: '12f809b2c8b927ed988f07b65fe5fb45dd32df0ad213cdfe1637e61bf3acbd7f' },
     'footstep-stone-2.wav': { bytes: 2249, sha256: '1c930f08720f7e88001346d498039a4f6bc447d5b8ddf43b4eb1ba64e57c2685' },
     'footstep-wood-1.wav':  { bytes: 2469, sha256: '97f840864521dfd18f905f96516879b94ebcf2175e47fc8da3e06748f0adac1d' },

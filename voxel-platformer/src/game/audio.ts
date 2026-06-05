@@ -69,6 +69,7 @@ export const GameAudio = {
     //   - stone  (palette: stone, brick, glow,  — clean click
     //             door, invisible border)
     //   - wood   (palette: wood, plank)         — hollow creak
+    //   - snow   (palette: snow)                — soft crystal crunch
     //   - water  (palette: water, partial-      — splash
     //             submerged)
     //
@@ -80,6 +81,8 @@ export const GameAudio = {
     FootstepGrass2: 'sfx.footstep.grass.2',
     FootstepDirt1:  'sfx.footstep.dirt.1',
     FootstepDirt2:  'sfx.footstep.dirt.2',
+    FootstepSnow1:  'sfx.footstep.snow.1',
+    FootstepSnow2:  'sfx.footstep.snow.2',
     FootstepStone1: 'sfx.footstep.stone.1',
     FootstepStone2: 'sfx.footstep.stone.2',
     FootstepWood1:  'sfx.footstep.wood.1',
@@ -150,6 +153,14 @@ export const GameAudio = {
     SpiderHurt: 'sfx.spider.hurt',
     SpiderDie: 'sfx.spider.die',
 
+    // ── Creatures: wolf ───────────────────────────────────────────────
+    // Spatial wolf voice — snarl on lunge, yelp on hurt, low death cry,
+    // and long howl for night ambience from live wolves.
+    WolfHowl: 'sfx.wolf.howl',
+    WolfSnarl: 'sfx.wolf.snarl',
+    WolfHurt: 'sfx.wolf.hurt',
+    WolfDie: 'sfx.wolf.die',
+
     // ── One-shot effects ─────────────────────────────────────────────
     Thunder: 'sfx.thunder',
     FireWhoosh: 'sfx.fire.whoosh',
@@ -208,6 +219,8 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.FootstepGrass2, url: path('footstep-grass-2.wav'), volume: 0.30, maxInstances: 4, priority: 1 },
         { id: GameAudio.FootstepDirt1,  url: path('footstep-dirt-1.wav'),  volume: 0.34, maxInstances: 4, priority: 1 },
         { id: GameAudio.FootstepDirt2,  url: path('footstep-dirt-2.wav'),  volume: 0.34, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepSnow1,  url: path('footstep-snow-1.wav'),  volume: 0.32, maxInstances: 4, priority: 1 },
+        { id: GameAudio.FootstepSnow2,  url: path('footstep-snow-2.wav'),  volume: 0.32, maxInstances: 4, priority: 1 },
         { id: GameAudio.FootstepStone1, url: path('footstep-stone-1.wav'), volume: 0.36, maxInstances: 4, priority: 1 },
         { id: GameAudio.FootstepStone2, url: path('footstep-stone-2.wav'), volume: 0.36, maxInstances: 4, priority: 1 },
         { id: GameAudio.FootstepWood1,  url: path('footstep-wood-1.wav'),  volume: 0.34, maxInstances: 4, priority: 1 },
@@ -245,6 +258,13 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.SpiderChitter, url: path('spider-chitter.wav'), volume: 0.44, maxInstances: 5, priority: 2 },
         { id: GameAudio.SpiderHurt,    url: path('spider-hurt.wav'),    volume: 0.46, maxInstances: 5, priority: 2 },
         { id: GameAudio.SpiderDie,     url: path('spider-die.wav'),     volume: 0.52, maxInstances: 4, priority: 3 },
+
+        // Creatures: wolf — combat barks from NPC render hooks, plus sparse
+        // night howls from the native wolf howl system.
+        { id: GameAudio.WolfHowl,  url: path('wolf-howl.wav'),  volume: 0.62, maxInstances: 2, priority: 2 },
+        { id: GameAudio.WolfSnarl, url: path('wolf-snarl.wav'), volume: 0.48, maxInstances: 5, priority: 2 },
+        { id: GameAudio.WolfHurt,  url: path('wolf-hurt.wav'),  volume: 0.48, maxInstances: 5, priority: 2 },
+        { id: GameAudio.WolfDie,   url: path('wolf-die.wav'),   volume: 0.54, maxInstances: 4, priority: 3 },
 
         // One-shot effects
         { id: GameAudio.Thunder,        url: path('thunder.wav'),         volume: 0.78, maxInstances: 2, priority: 5 },

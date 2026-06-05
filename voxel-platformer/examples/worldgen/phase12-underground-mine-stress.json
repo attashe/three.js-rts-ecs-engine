@@ -143,10 +143,10 @@
       "id": "portal_vault",
       "type": "chamber_ellipsoid",
       "center": [274, 18, 26],
-      "radius": [8, 5, 7],
+      "radius": [12, 6, 10],
       "floor_y": 17,
-      "roughness": 0.16,
-      "floor_flatten": { "radius_x": 5, "radius_z": 4 }
+      "roughness": 0.12,
+      "floor_flatten": { "radius_x": 8, "radius_z": 7 }
     },
     {
       "id": "old_rail_network",
@@ -284,7 +284,7 @@
     {
       "id": "blue_portal",
       "asset": "fixed.portal.blue_stone",
-      "place": { "mode": "room_center", "room": "portal_vault" },
+      "place": { "mode": "surface_at_xz", "x": 274, "z": 26, "kind": "floor", "y_range": [17, 19], "search_radius": 5, "require_air_above": 3 },
       "required": true
     }
   ],
@@ -301,6 +301,67 @@
     { "id": "station_stalactites", "asset": "proc.stalactite", "count": 8, "surface": "ceiling", "feature": "root_cavern", "min_distance": 4, "max_length": 5 }
   ],
   "content": {
+    "cinematics": [
+      {
+        "id": "mine-darkness-intro",
+        "name": "Through the Dark",
+        "playOnStart": true,
+        "letterbox": true,
+        "freezePlayer": true,
+        "steps": [
+          {
+            "id": "cam-start-close",
+            "type": "camera",
+            "wait": true,
+            "duration": 0,
+            "ease": "linear",
+            "shot": {
+              "position": { "x": 39.5, "y": 35.2, "z": 142.5 },
+              "target": { "x": 32.5, "y": 30.2, "z": 136.5 },
+              "zoom": 2.25
+            }
+          },
+          {
+            "id": "line-road",
+            "type": "subtitle",
+            "wait": false,
+            "duration": 3.2,
+            "text": "The road ends at the mouth of the old mine."
+          },
+          {
+            "id": "cam-start-orbit-a",
+            "type": "camera",
+            "wait": true,
+            "duration": 2.1,
+            "ease": "easeInOut",
+            "shot": {
+              "position": { "x": 36.2, "y": 34.8, "z": 130.8 },
+              "target": { "x": 32.5, "y": 30.2, "z": 136.5 },
+              "zoom": 2.3
+            }
+          },
+          {
+            "id": "line-darkness",
+            "type": "subtitle",
+            "wait": false,
+            "duration": 3.6,
+            "text": "To reach the mountain peak, you must pass through the darkness below."
+          },
+          {
+            "id": "cam-start-orbit-b",
+            "type": "camera",
+            "wait": true,
+            "duration": 2.1,
+            "ease": "easeOut",
+            "shot": {
+              "position": { "x": 27.4, "y": 35.1, "z": 131.8 },
+              "target": { "x": 32.5, "y": 30.2, "z": 136.5 },
+              "zoom": 2.2
+            }
+          }
+        ]
+      }
+    ],
     "props": [
       {
         "id": "station_warning_sign",
@@ -417,16 +478,6 @@
         "height": 2,
         "prompt": "Read Sign",
         "radius": 2.4
-      },
-      {
-        "id": "future_exit_zone",
-        "type": "interact",
-        "place_at": "blue_portal",
-        "offset": [0, 0, 1.2],
-        "half_xz": [1.25, 1.25],
-        "height": 2.4,
-        "prompt": "Inspect Exit",
-        "radius": 2.6
       }
     ],
     "chests": [
@@ -504,7 +555,7 @@
         "offset": [-1.7, 0, 2.2],
         "yaw": -0.45,
         "prompt": "Read Note",
-        "text": "A cracked note lies beside the exit arch: beyond this cave is another road out, but the old route is not ready for travel yet."
+        "text": "A cracked note lies beside the exit arch: the old miners marked this route as the summit road. Beyond it, the storm hides the Shrine of the Eagle God."
       }
     ],
     "npcs": [
@@ -557,16 +608,42 @@
     },
     "travel": [
       { "id": "arrival.phase12.start", "type": "arrival", "place_at": "spawn", "half_xz": [1, 1] },
-      { "id": "arrival.mine.from-forest", "type": "arrival", "place_at": "forest_entry_portal", "half_xz": [1, 1] }
+      { "id": "arrival.mine.from-forest", "type": "arrival", "place_at": "forest_entry_portal", "half_xz": [1, 1] },
+      {
+        "id": "zone.mine.forest-return",
+        "type": "portal",
+        "label": "Forest Cliff Return",
+        "place_at": "forest_entry_portal",
+        "offset": [0, 0, -1.35],
+        "half_xz": [1.05, 1.05],
+        "height": 2.8,
+        "targetLevelId": "demo-forest-lift-valley",
+        "targetArrivalId": "arrival.forest-lift.from-mine"
+      },
+      {
+        "id": "zone.mine.peak-exit",
+        "type": "portal",
+        "label": "Storm Peak Exit",
+        "place_at": "blue_portal",
+        "offset": [0, 0, 1.2],
+        "half_xz": [1.9, 1.9],
+        "height": 2.8,
+        "targetLevelId": "stormy-eagle-peak",
+        "targetArrivalId": "arrival.peak.from-mine"
+      },
+      {
+        "id": "arrival.mine.from-peak",
+        "type": "arrival",
+        "label": "Return from Storm Peak",
+        "place_at": "blue_portal",
+        "offset": [0, 0, -1.8],
+        "half_xz": [1, 1]
+      }
     ],
     "scripts": [
       {
         "id": "station-warning-script",
         "source": "on('input', { action: 'interact', targetId: 'station_warning_zone' }, () => { ui.say('station_warning_zone', 'Old rail authority notice: all remaining carts are rideable, but webbed side tunnels and canyon bridges remain dangerous.', { seconds: 4 }) })"
-      },
-      {
-        "id": "future-exit-script",
-        "source": "on('input', { action: 'interact', targetId: 'future_exit_zone' }, () => { ui.say('future_exit_zone', 'The far exit is marked, but the route beyond this cave will open in a later journey.', { seconds: 4 }) })"
       }
     ]
   },
@@ -581,7 +658,7 @@
       { "id": "phase12_spawn_to_bridge", "from": "spawn", "to": "broken_rail_bridge", "actor": "player_basic" },
       { "id": "phase12_spawn_to_portal", "from": "spawn", "to": "blue_portal", "actor": "player_basic" },
       { "id": "phase12_forest_entry_to_village", "from": "forest_entry_portal", "to": "meeting_decor", "actor": "player_basic" },
-      { "id": "phase12_forest_entry_to_future_exit", "from": "forest_entry_portal", "to": "blue_portal", "actor": "player_basic" },
+      { "id": "phase12_forest_entry_to_peak_exit", "from": "forest_entry_portal", "to": "blue_portal", "actor": "player_basic" },
       { "id": "phase12_spawn_to_main_cart", "from": "spawn", "to": "main_route_cart", "actor": "player_basic" },
       { "id": "phase12_spawn_to_bunk_cart", "from": "spawn", "to": "bunk_branch_cart", "actor": "player_basic" },
       { "id": "phase12_spawn_to_ore_cart", "from": "spawn", "to": "ore_branch_cart", "actor": "player_basic" }

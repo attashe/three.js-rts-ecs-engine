@@ -127,6 +127,20 @@ export const NPC_TEMPLATES: readonly NpcTemplate[] = [
         }),
     },
     {
+        id: 'hostile-wolf', label: 'Hostile Wolf', emoji: '🐺',
+        description: 'A fast forest predator that tracks the player and lunges in melee.',
+        build: () => ({
+            model: 'wolf',
+            name: 'Cliff Wolf',
+            scale: 1.15,
+            collisionEnabled: true,
+            colliderRadius: 0.36,
+            colliderHeight: 0.78,
+            interactionEnabled: false,
+            behaviour: behaviour({ mode: 'hunter', hostileToPlayer: true, perceptionRadius: 10.5, threatMemorySeconds: 7 }),
+        }),
+    },
+    {
         id: 'blank', label: 'Blank', emoji: '⬜',
         description: 'A plain NPC with no behaviour — start from scratch.',
         build: () => ({

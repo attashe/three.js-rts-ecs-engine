@@ -14,16 +14,15 @@ import {
  * produce byte-identical pixels and the audio-asset-style hash tests
  * stay stable.
  *
- * The atlas image is grayscale-encoded into all three RGB channels
- * (A=255). The chunk material only samples `.r`; encoding into RGB
- * just keeps the format compatible with three's defaults so no special
- * texture format setup is needed.
+ * Most atlas tiles are grayscale multipliers encoded into all three RGB
+ * channels. Gameplay-readable shop/storage tiles may author real RGB
+ * colors; the chunk material samples the full RGB value.
  *
- * Tile authoring guidance: keep the *mean* of every tile close to 1.0
- * so toggling textures off (multiplier collapses to 1.0) looks
- * identical to the textured pass. Small accents below the mean (down
- * to ~0.55) read as "subtle surface detail" without changing the
- * block's perceived hue.
+ * Tile authoring guidance: keep the *mean* of every tile bright enough
+ * that the block's authored hue still dominates. Terrain tiles should
+ * stay subtle, but gameplay-readable blocks (chests, ore, shelves) may
+ * use larger high-contrast shapes because the isometric camera collapses
+ * fine texture detail quickly.
  */
 
 export interface AtlasBuildResult {
@@ -71,6 +70,9 @@ const PAINTERS: Record<TileName, TilePainter> = {
     ore_crystal: paintOreCrystal,
 }
 
+const STRONG_LINE_LUM = 0.02
+const WOOD_LINE_LUM = 0.14
+
 export function buildVoxelAtlas(): AtlasBuildResult {
     const rgba = new Uint8Array(ATLAS_SIZE * ATLAS_SIZE * 4)
     // Default every pixel to 1.0 (white) so any unused slot reads as
@@ -99,10 +101,14 @@ function computeTileAverage(rgba: Uint8Array, originX: number, originY: number):
     for (let y = 0; y < TILE_SIZE; y++) {
         const row = (originY + y) * ATLAS_SIZE * 4
         for (let x = 0; x < TILE_SIZE; x++) {
-            sum += rgba[row + (originX + x) * 4]!
+            const idx = row + (originX + x) * 4
+            const r = rgba[idx]! / 255
+            const g = rgba[idx + 1]! / 255
+            const b = rgba[idx + 2]! / 255
+            sum += 0.2126 * r + 0.7152 * g + 0.0722 * b
         }
     }
-    return sum / (TILE_SIZE * TILE_SIZE) / 255
+    return sum / (TILE_SIZE * TILE_SIZE)
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -117,6 +123,14 @@ function setLum(rgba: Uint8Array, x: number, y: number, lum: number): void {
     rgba[idx] = v
     rgba[idx + 1] = v
     rgba[idx + 2] = v
+    rgba[idx + 3] = 255
+}
+
+function setRgb(rgba: Uint8Array, x: number, y: number, rgb: readonly [number, number, number]): void {
+    const idx = (y * ATLAS_SIZE + x) * 4
+    rgba[idx] = Math.max(0, Math.min(255, Math.round(rgb[0] * 255)))
+    rgba[idx + 1] = Math.max(0, Math.min(255, Math.round(rgb[1] * 255)))
+    rgba[idx + 2] = Math.max(0, Math.min(255, Math.round(rgb[2] * 255)))
     rgba[idx + 3] = 255
 }
 
@@ -149,6 +163,14 @@ function fillTile(rgba: Uint8Array, originX: number, originY: number, lum: numbe
     }
 }
 
+function fillTileRgb(rgba: Uint8Array, originX: number, originY: number, rgb: readonly [number, number, number]): void {
+    for (let y = 0; y < TILE_SIZE; y++) {
+        for (let x = 0; x < TILE_SIZE; x++) {
+            setRgb(rgba, originX + x, originY + y, rgb)
+        }
+    }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Tile painters — each writes a 32×32 region. Patterns are deliberately
 // subtle (mostly within [0.85, 1.0]) so the block's authored colour
@@ -159,26 +181,10 @@ function paintBlank(rgba: Uint8Array, originX: number, originY: number): void {
     fillTile(rgba, originX, originY, 1.0)
 }
 
-/** Grass — faint horizontal striations evoking blades pressed flat.
- *  Mostly 0.96–1.0 with one or two darker stripes per tile. */
+/** Grass — intentionally flat. The gameplay camera makes small grass
+ *  striations read as noise rather than useful detail. */
 function paintGrass(rgba: Uint8Array, originX: number, originY: number): void {
-    const rng = makeRng(1001)
     fillTile(rgba, originX, originY, 1.0)
-    for (let y = 0; y < TILE_SIZE; y++) {
-        // 1px stripes — pick a row brightness, then dither slightly.
-        const base = 0.94 + rng() * 0.05
-        for (let x = 0; x < TILE_SIZE; x++) {
-            const jitter = rng() * 0.04 - 0.02
-            setLum(rgba, originX + x, originY + y, base + jitter)
-        }
-    }
-    // Two darker accent stripes at random rows for blade hints.
-    for (let i = 0; i < 2; i++) {
-        const ay = Math.floor(rng() * TILE_SIZE)
-        for (let x = 0; x < TILE_SIZE; x++) {
-            mulLum(rgba, originX + x, originY + ay, 0.78)
-        }
-    }
 }
 
 /** Dirt — low-density speckles, looks "grainy". */
@@ -195,48 +201,27 @@ function paintDirt(rgba: Uint8Array, originX: number, originY: number): void {
     }
 }
 
-/** Stone — large soft cracks at low density. */
+/** Stone — intentionally flat. Ore and authored props can carry strong
+ *  markings; ordinary stone should stay quiet. */
 function paintStone(rgba: Uint8Array, originX: number, originY: number): void {
-    const rng = makeRng(3003)
-    fillTile(rgba, originX, originY, 0.96)
-    // 3-5 random short cracks.
-    const cracks = 4
-    for (let c = 0; c < cracks; c++) {
-        let x = Math.floor(rng() * TILE_SIZE)
-        let y = Math.floor(rng() * TILE_SIZE)
-        const length = 4 + Math.floor(rng() * 8)
-        const dir = rng() < 0.5 ? 0 : 1 // 0 = horizontal, 1 = vertical
-        const darkness = 0.62 + rng() * 0.18
-        for (let i = 0; i < length; i++) {
-            if (x >= 0 && x < TILE_SIZE && y >= 0 && y < TILE_SIZE) {
-                mulLum(rgba, originX + x, originY + y, darkness)
-            }
-            if (dir === 0) x += rng() < 0.85 ? 1 : 0
-            else y += rng() < 0.85 ? 1 : 0
-            // Small chance to drift perpendicular for a less mechanical look.
-            if (rng() < 0.18) {
-                if (dir === 0) y += rng() < 0.5 ? -1 : 1
-                else x += rng() < 0.5 ? -1 : 1
-            }
-        }
-    }
+    fillTile(rgba, originX, originY, 1.0)
 }
 
 /** Brick — horizontal joint lines every 8 px, vertical staggered joints. */
 function paintBrick(rgba: Uint8Array, originX: number, originY: number): void {
-    fillTile(rgba, originX, originY, 0.97)
+    fillTile(rgba, originX, originY, 0.99)
     const rowHeight = 8
     const brickWidth = 16
     for (let y = 0; y < TILE_SIZE; y++) {
         const rowIdx = Math.floor(y / rowHeight)
-        const onHorizJoint = y % rowHeight === 0
+        const rowY = y % rowHeight
+        const onHorizJoint = rowY < 2
         const offsetX = (rowIdx % 2) * (brickWidth / 2)
         for (let x = 0; x < TILE_SIZE; x++) {
             const localX = (x + offsetX) % brickWidth
-            const onVertJoint = localX === 0
-            if (onHorizJoint || onVertJoint) {
-                setLum(rgba, originX + x, originY + y, 0.66)
-            }
+            const onVertJoint = localX < 2
+            if (onHorizJoint || onVertJoint) setLum(rgba, originX + x, originY + y, STRONG_LINE_LUM)
+            else if (rowY === 2 || localX === 2) setLum(rgba, originX + x, originY + y, 0.78)
         }
     }
 }
@@ -244,16 +229,14 @@ function paintBrick(rgba: Uint8Array, originX: number, originY: number): void {
 /** Wood — vertical grain. A few full-height darker stripes plus per-pixel jitter. */
 function paintWood(rgba: Uint8Array, originX: number, originY: number): void {
     const rng = makeRng(4004)
-    // Base column brightness — varies smoothly across the tile.
     const cols: number[] = []
     for (let x = 0; x < TILE_SIZE; x++) {
-        cols.push(0.92 + Math.sin(x * 0.45) * 0.04 + rng() * 0.03)
+        cols.push(0.96 + Math.sin(x * 0.45) * 0.025 + rng() * 0.02)
     }
-    // Punch in 3 darker grain lines.
-    const grainLines = 3
-    for (let g = 0; g < grainLines; g++) {
-        const col = Math.floor(rng() * TILE_SIZE)
-        cols[col] = 0.72 + rng() * 0.06
+    const grainLines = [7 + Math.floor(rng() * 3), 21 + Math.floor(rng() * 3)]
+    for (const col of grainLines) {
+        cols[col] = WOOD_LINE_LUM
+        cols[Math.min(TILE_SIZE - 1, col + 1)] = WOOD_LINE_LUM
     }
     for (let y = 0; y < TILE_SIZE; y++) {
         for (let x = 0; x < TILE_SIZE; x++) {
@@ -263,73 +246,43 @@ function paintWood(rgba: Uint8Array, originX: number, originY: number): void {
     }
 }
 
-/** Closed chest — a banded wooden coffer: vertical plank slats, an iron
- *  rim, a lid seam across the upper third, and a centred lock plate with a
- *  keyhole. The strong silhouette reads as a chest at iso/32px sizes. */
+/** Closed chest — simplified to a few oversized landmarks: thick rim,
+ *  heavy bands, a hard lid seam, and one large central lock. */
 function paintChest(rgba: Uint8Array, originX: number, originY: number): void {
     const rng = makeRng(7301)
-    // Plank body: vertical planks with grooved seams + faint grain.
     for (let y = 0; y < TILE_SIZE; y++) {
         for (let x = 0; x < TILE_SIZE; x++) {
-            let lum = 0.93 + (rng() - 0.5) * 0.05
-            if (x % 8 === 0 || x % 8 === 7) lum *= 0.9 // plank seam grooves
+            let lum = 0.98 + (rng() - 0.5) * 0.035
+            if (x === 10 || x === 21) lum *= 0.86
             setLum(rgba, originX + x, originY + y, lum)
         }
     }
-    // Lid seam: the lid is the top ~10 rows, split from the body by a groove.
-    for (let x = 0; x < TILE_SIZE; x++) {
-        setLum(rgba, originX + x, originY + 10, 0.5)
-        setLum(rgba, originX + x, originY + 11, 0.62)
-    }
-    // Two horizontal iron straps with bright rivets — the classic chest banding.
-    for (const sy of [4, 22]) {
-        for (let x = 0; x < TILE_SIZE; x++) {
-            setLum(rgba, originX + x, originY + sy, 0.6)
-            setLum(rgba, originX + x, originY + sy + 1, 0.54)
-        }
-        for (const rx of [3, 15, 28]) {
-            setLum(rgba, originX + rx, originY + sy, 0.86)
-            setLum(rgba, originX + rx, originY + sy + 1, 0.8)
-        }
-    }
-    // Short iron corner brackets.
-    for (const [cx, cy, dx, dy] of [[1, 1, 1, 1], [30, 1, -1, 1], [1, 30, 1, -1], [30, 30, -1, -1]] as const) {
-        for (let k = 0; k < 5; k++) {
-            mulLum(rgba, originX + cx + dx * k, originY + cy, 0.66)
-            mulLum(rgba, originX + cx, originY + cy + dy * k, 0.66)
-        }
-    }
-    // Central lock plate where the lid meets the body, with a dark keyhole.
-    drawSoftRect(rgba, originX + 13, originY + 8, 6, 7, 0.87)
-    for (let y = 8; y <= 14; y++) {
-        mulLum(rgba, originX + 13, originY + y, 0.62)
-        mulLum(rgba, originX + 18, originY + y, 0.62)
-    }
-    setLum(rgba, originX + 15, originY + 11, 0.34)
-    setLum(rgba, originX + 16, originY + 11, 0.34)
-    setLum(rgba, originX + 15, originY + 12, 0.42)
-    setLum(rgba, originX + 16, originY + 12, 0.42)
+
+    drawTileBorder(rgba, originX, originY, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 2, originY + 6, TILE_SIZE - 4, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 2, originY + 22, TILE_SIZE - 4, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 2, originY + 12, TILE_SIZE - 4, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 7, originY + 2, 2, TILE_SIZE - 4, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 23, originY + 2, 2, TILE_SIZE - 4, STRONG_LINE_LUM)
+
+    drawSoftRect(rgba, originX + 11, originY + 9, 10, 12, 0.9)
+    drawRectFrame(rgba, originX + 10, originY + 8, 12, 14, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 14, originY + 13, 4, 5, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 15, originY + 18, 2, 3, STRONG_LINE_LUM)
+    for (const [rx, ry] of [[5, 5], [26, 5], [5, 23], [26, 23]] as const) drawSoftRect(rgba, originX + rx, originY + ry, 2, 2, 0.9)
 }
 
-/** Open chest — the lid is up (seam pushed to the top), revealing a dark
- *  interior cavity with a faint contents glint, keeping the iron rim. */
+/** Open chest — same bold silhouette, with a single readable black mouth
+ *  and bright lip instead of many small contents pixels. */
 function paintOpenChest(rgba: Uint8Array, originX: number, originY: number): void {
     paintChest(rgba, originX, originY)
-    // Carve a contained open interior over the lid/lock region. Kept moderate
-    // (not pitch black) so the tile still averages bright enough.
-    for (let y = 8; y <= 15; y++) {
-        for (let x = 7; x < TILE_SIZE - 7; x++) setLum(rgba, originX + x, originY + y, 0.66)
-    }
-    // Bright lifted lid above the opening + lip lines top and bottom.
-    for (let x = 7; x < TILE_SIZE - 7; x++) {
-        for (let y = 3; y <= 6; y++) setLum(rgba, originX + x, originY + y, 0.97)
-        setLum(rgba, originX + x, originY + 7, 0.82)
-        setLum(rgba, originX + x, originY + 16, 0.76)
-    }
-    // Faint glint of contents inside.
-    for (const [gx, gy] of [[11, 13], [18, 10], [21, 14], [14, 12]] as const) {
-        setLum(rgba, originX + gx, originY + gy, 0.9)
-    }
+    drawSoftRect(rgba, originX + 6, originY + 7, 20, 4, 0.98)
+    drawRectFrame(rgba, originX + 5, originY + 6, 22, 6, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 5, originY + 12, 22, 9, 0.08)
+    drawRectFrame(rgba, originX + 5, originY + 12, 22, 9, 2, STRONG_LINE_LUM)
+    for (let x = 6; x <= 25; x += 1) setLum(rgba, originX + x, originY + 20, 0.78)
+    drawSoftRect(rgba, originX + 13, originY + 14, 6, 3, 0.92)
+    setLum(rgba, originX + 18, originY + 13, 1.0)
 }
 
 /** Spider web — corner-anchored strands with sagging cross-threads and
@@ -382,111 +335,73 @@ function paintSpiderWeb(rgba: Uint8Array, originX: number, originY: number): voi
 
 /** Goods shelf — shelves with tiny jars and bundles drawn into the face. */
 function paintGoodsShelf(rgba: Uint8Array, originX: number, originY: number): void {
-    paintPlank(rgba, originX, originY)
-    for (const y of [8, 17, 26]) {
-        for (let x = 3; x < TILE_SIZE - 3; x += 1) setLum(rgba, originX + x, originY + y, 0.66)
-    }
-    for (const x of [5, 15, 25]) {
-        for (let y = 5; y < TILE_SIZE - 4; y += 1) if (y % 9 !== 8) setLum(rgba, originX + x, originY + y, 0.76)
-    }
-    drawSoftRect(rgba, originX + 8, originY + 11, 4, 5, 0.74)
-    drawSoftRect(rgba, originX + 18, originY + 11, 5, 5, 0.82)
-    drawSoftRect(rgba, originX + 9, originY + 20, 5, 4, 0.78)
-    drawSoftRect(rgba, originX + 20, originY + 20, 4, 4, 0.72)
+    fillTileRgb(rgba, originX, originY, [1.0, 0.72, 0.34])
+    drawShelfGrid(rgba, originX, originY)
+    drawRgbRect(rgba, originX + 7, originY + 9, 9, 7, [0.98, 0.04, 0.02])
+    drawRgbRect(rgba, originX + 20, originY + 9, 7, 7, [1.0, 0.78, 0.08])
+    drawRgbRect(rgba, originX + 7, originY + 21, 9, 6, [0.08, 0.74, 0.12])
+    drawRgbRect(rgba, originX + 21, originY + 20, 6, 8, [0.08, 0.34, 1.0])
 }
 
 /** Tool panel — a cheap wall block with silhouettes of picks and hammers. */
 function paintToolPanel(rgba: Uint8Array, originX: number, originY: number): void {
-    fillTile(rgba, originX, originY, 0.96)
-    for (const y of [5, 26]) for (let x = 3; x < TILE_SIZE - 3; x += 1) setLum(rgba, originX + x, originY + y, 0.70)
-    for (const x of [5, 26]) for (let y = 5; y <= 26; y += 1) setLum(rgba, originX + x, originY + y, 0.74)
-    drawHangingTool(rgba, originX + 10, originY + 8, 1)
-    drawHangingTool(rgba, originX + 19, originY + 8, -1)
-    for (let y = 11; y <= 23; y += 1) setLum(rgba, originX + 15, originY + y, 0.64)
-    for (let x = 12; x <= 18; x += 1) setLum(rgba, originX + x, originY + 11, 0.66)
+    fillTileRgb(rgba, originX, originY, [0.92, 0.68, 0.38])
+    drawRectFrame(rgba, originX + 4, originY + 4, 24, 24, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 9, originY + 9, 3, 16, STRONG_LINE_LUM)
+    drawRgbRect(rgba, originX + 6, originY + 9, 10, 4, [0.86, 0.88, 0.88])
+    drawSoftRect(rgba, originX + 20, originY + 8, 3, 17, STRONG_LINE_LUM)
+    drawRgbRect(rgba, originX + 17, originY + 9, 9, 4, [0.86, 0.88, 0.88])
+    drawRgbRect(rgba, originX + 18, originY + 21, 7, 4, [0.86, 0.88, 0.88])
 }
 
 /** Ore shelf — stacked bins and bright ore chunks for storage rooms. */
 function paintOreShelf(rgba: Uint8Array, originX: number, originY: number): void {
-    paintStone(rgba, originX, originY)
-    for (const y of [9, 18, 27]) {
-        for (let x = 3; x < TILE_SIZE - 3; x += 1) setLum(rgba, originX + x, originY + y, 0.67)
-    }
-    for (const x of [6, 16, 25]) {
-        for (let y = 6; y < TILE_SIZE - 4; y += 1) setLum(rgba, originX + x, originY + y, 0.73)
-    }
-    for (const [x, y, lum] of [
-        [10, 13, 0.58], [12, 14, 0.88], [21, 13, 0.62],
-        [9, 22, 0.72], [19, 22, 0.56], [23, 23, 0.90],
-    ] as const) {
-        drawSoftRect(rgba, originX + x, originY + y, 3, 3, lum)
-    }
+    fillTileRgb(rgba, originX, originY, [0.82, 0.76, 0.62])
+    drawShelfGrid(rgba, originX, originY)
+    drawOreBin(rgba, originX + 6, originY + 10, [0.82, 0.86, 0.88])
+    drawOreBin(rgba, originX + 18, originY + 10, [0.98, 0.44, 0.08])
+    drawOreBin(rgba, originX + 6, originY + 20, [0.08, 0.75, 1.0])
+    drawOreBin(rgba, originX + 18, originY + 20, [0.92, 0.92, 0.78])
 }
 
 /** Record shelf — ledgers, scrolls, and marker lines for meeting/office rooms. */
 function paintRecordShelf(rgba: Uint8Array, originX: number, originY: number): void {
-    fillTile(rgba, originX, originY, 0.98)
-    for (const y of [7, 16, 25]) {
-        for (let x = 4; x < TILE_SIZE - 4; x += 1) setLum(rgba, originX + x, originY + y, 0.68)
+    fillTileRgb(rgba, originX, originY, [1.0, 0.74, 0.40])
+    drawShelfGrid(rgba, originX, originY)
+    drawRgbRect(rgba, originX + 7, originY + 9, 8, 8, [0.82, 0.08, 0.08])
+    drawRgbRect(rgba, originX + 18, originY + 9, 8, 8, [0.08, 0.25, 0.90])
+    drawRgbRect(rgba, originX + 7, originY + 20, 8, 7, [0.12, 0.62, 0.18])
+    drawRgbRect(rgba, originX + 19, originY + 20, 7, 7, [0.92, 0.84, 0.58])
+    for (const [x, y, w, h] of [[7, 9, 8, 8], [18, 9, 8, 8], [7, 20, 8, 7], [19, 20, 7, 7]] as const) {
+        drawRectOutline(rgba, originX + x, originY + y, w, h, STRONG_LINE_LUM)
     }
-    for (let x = 7; x <= 13; x += 2) drawBookSpine(rgba, originX + x, originY + 9, 0.68 + (x % 4) * 0.04)
-    for (let x = 18; x <= 24; x += 3) drawScroll(rgba, originX + x, originY + 10)
-    for (let x = 8; x <= 24; x += 2) drawBookSpine(rgba, originX + x, originY + 18, 0.72)
 }
 
-/** Iron ore — stone shot through with angular metallic nuggets: a dark
- *  rim around a bright core so each speck reads as a hard chunk of ore. */
+/** Iron ore — neutral stone with large silver deposits, no black cracks. */
 function paintOreIron(rgba: Uint8Array, originX: number, originY: number): void {
-    paintStone(rgba, originX, originY)
-    scatterOre(rgba, originX, originY, 4801, 8, (x, y) => {
-        drawSoftRect(rgba, x - 1, y - 1, 3, 3, 0.72) // dark socket
-        setLum(rgba, x, y, 0.99)                      // metallic glint
-        setLum(rgba, x + 1, y, 0.9)
-        setLum(rgba, x, y + 1, 0.88)
-    })
+    paintOreStoneBack(rgba, originX, originY)
+    drawOreVeinRgb(rgba, originX + 5, originY + 9, 18, 1, [0.58, 0.64, 0.68])
+    drawOrePatchRgb(rgba, originX + 10, originY + 12, 6, [0.52, 0.58, 0.62], [0.80, 0.86, 0.88], [1.0, 1.0, 0.94])
+    drawOrePatchRgb(rgba, originX + 23, originY + 20, 6, [0.50, 0.56, 0.60], [0.78, 0.84, 0.86], [0.98, 1.0, 0.96])
+    drawOrePatchRgb(rgba, originX + 14, originY + 25, 4, [0.54, 0.60, 0.64], [0.78, 0.84, 0.86], [0.96, 0.98, 0.92])
 }
 
-/** Copper ore — rounder, veinier blobs than iron, with a soft highlight
- *  so the deposits read as smoother metal pockets. */
+/** Copper ore — neutral stone with broad orange mineral pockets. */
 function paintOreCopper(rgba: Uint8Array, originX: number, originY: number): void {
-    paintStone(rgba, originX, originY)
-    scatterOre(rgba, originX, originY, 4907, 7, (x, y) => {
-        drawSoftRect(rgba, x - 1, y - 1, 4, 3, 0.78) // blob body
-        setLum(rgba, x, y, 0.97)
-        setLum(rgba, x + 1, y, 1.0)                   // highlight
-        setLum(rgba, x + 2, y + 1, 0.86)
-    })
+    paintOreStoneBack(rgba, originX, originY)
+    drawOreVeinRgb(rgba, originX + 4, originY + 18, 21, -1, [0.78, 0.26, 0.05])
+    drawOrePatchRgb(rgba, originX + 9, originY + 12, 7, [0.62, 0.18, 0.04], [0.98, 0.44, 0.08], [1.0, 0.78, 0.18])
+    drawOrePatchRgb(rgba, originX + 22, originY + 22, 7, [0.64, 0.20, 0.04], [0.96, 0.40, 0.08], [1.0, 0.74, 0.16])
+    drawOrePatchRgb(rgba, originX + 20, originY + 8, 4, [0.72, 0.24, 0.05], [1.0, 0.50, 0.10], [1.0, 0.84, 0.26])
 }
 
-/** Crystal ore — faceted gems embedded in stone: bright diamond cores
- *  with shaded facet edges so they catch the eye (matches the block's
- *  emissive glow). */
+/** Crystal ore — neutral stone with cyan crystal clusters. */
 function paintOreCrystal(rgba: Uint8Array, originX: number, originY: number): void {
-    paintStone(rgba, originX, originY)
-    scatterOre(rgba, originX, originY, 5021, 6, (x, y) => {
-        setLum(rgba, x, y - 2, 0.7)
-        setLum(rgba, x - 1, y - 1, 0.82); setLum(rgba, x, y - 1, 1.0); setLum(rgba, x + 1, y - 1, 0.8)
-        setLum(rgba, x - 1, y, 0.9); setLum(rgba, x, y, 1.0); setLum(rgba, x + 1, y, 0.88)
-        setLum(rgba, x - 1, y + 1, 0.74); setLum(rgba, x, y + 1, 0.84); setLum(rgba, x + 1, y + 1, 0.72)
-        setLum(rgba, x, y + 2, 0.68)
-    })
-}
-
-/** Deterministic scatter of ore specks within the tile interior. */
-function scatterOre(
-    rgba: Uint8Array,
-    originX: number,
-    originY: number,
-    seed: number,
-    count: number,
-    draw: (x: number, y: number) => void,
-): void {
-    const rng = makeRng(seed)
-    for (let i = 0; i < count; i++) {
-        const x = originX + 4 + Math.floor(rng() * (TILE_SIZE - 8))
-        const y = originY + 4 + Math.floor(rng() * (TILE_SIZE - 8))
-        draw(x, y)
-    }
+    paintOreStoneBack(rgba, originX, originY)
+    drawOreVeinRgb(rgba, originX + 4, originY + 24, 19, -1, [0.06, 0.58, 0.82])
+    drawOrePatchRgb(rgba, originX + 11, originY + 13, 8, [0.04, 0.36, 0.78], [0.08, 0.78, 1.0], [0.70, 1.0, 1.0])
+    drawOrePatchRgb(rgba, originX + 23, originY + 23, 6, [0.04, 0.42, 0.82], [0.12, 0.82, 1.0], [0.74, 1.0, 1.0])
+    drawOrePatchRgb(rgba, originX + 22, originY + 9, 5, [0.05, 0.46, 0.84], [0.16, 0.86, 1.0], [0.80, 1.0, 1.0])
 }
 
 function drawSoftRect(rgba: Uint8Array, x0: number, y0: number, w: number, h: number, lum: number): void {
@@ -495,19 +410,131 @@ function drawSoftRect(rgba: Uint8Array, x0: number, y0: number, w: number, h: nu
     }
 }
 
+function drawRgbRect(rgba: Uint8Array, x0: number, y0: number, w: number, h: number, rgb: readonly [number, number, number]): void {
+    for (let y = y0; y < y0 + h; y += 1) {
+        for (let x = x0; x < x0 + w; x += 1) setRgb(rgba, x, y, rgb)
+    }
+}
+
+function drawShelfGrid(rgba: Uint8Array, originX: number, originY: number): void {
+    drawRectFrame(rgba, originX + 3, originY + 4, TILE_SIZE - 6, TILE_SIZE - 7, 2, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX + 4, originY + 17, TILE_SIZE - 8, 2, STRONG_LINE_LUM)
+}
+
+function drawOreBin(rgba: Uint8Array, x0: number, y0: number, rgb: readonly [number, number, number]): void {
+    drawRgbRect(rgba, x0, y0, 8, 7, rgb)
+    drawRectFrame(rgba, x0 - 1, y0 - 1, 10, 9, 2, STRONG_LINE_LUM)
+    drawRgbRect(rgba, x0 + 2, y0 + 1, 4, 2, [1, 1, 1])
+}
+
+function paintOreStoneBack(rgba: Uint8Array, originX: number, originY: number): void {
+    fillTileRgb(rgba, originX, originY, [0.88, 0.88, 0.90])
+    drawRgbRect(rgba, originX + 2, originY + 5, 5, 2, [0.78, 0.78, 0.80])
+    drawRgbRect(rgba, originX + 25, originY + 13, 4, 2, [0.80, 0.80, 0.82])
+    drawRgbRect(rgba, originX + 4, originY + 27, 6, 2, [0.76, 0.76, 0.78])
+}
+
+function drawOrePatchRgb(
+    rgba: Uint8Array,
+    cx: number,
+    cy: number,
+    radius: number,
+    edge: readonly [number, number, number],
+    core: readonly [number, number, number],
+    highlight: readonly [number, number, number],
+): void {
+    for (let dy = -radius; dy <= radius; dy += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+            const d = Math.abs(dx) + Math.abs(dy)
+            if (d > radius) continue
+            const x = cx + dx
+            const y = cy + dy
+            if (x < 0 || x >= ATLAS_SIZE || y < 0 || y >= ATLAS_SIZE) continue
+            if (d >= radius - 1) setRgb(rgba, x, y, edge)
+            else if (dy > 1 || dx < -radius / 2) setRgb(rgba, x, y, mixRgb(edge, core, 0.58))
+            else setRgb(rgba, x, y, core)
+        }
+    }
+    const hiY = cy - Math.floor(radius / 3)
+    for (let i = 0; i < Math.max(3, radius - 2); i += 1) {
+        setRgb(rgba, cx - 1 + i, hiY, highlight)
+        setRgb(rgba, cx + i, hiY + 1, mixRgb(core, highlight, 0.48))
+    }
+}
+
+function drawOreVeinRgb(
+    rgba: Uint8Array,
+    x0: number,
+    y0: number,
+    length: number,
+    slope: 1 | -1,
+    rgb: readonly [number, number, number],
+): void {
+    for (let i = 0; i < length; i += 1) {
+        const x = x0 + i
+        const y = y0 + Math.floor(i / 3) * slope
+        drawRgbRect(rgba, x, y, 2, 2, rgb)
+    }
+}
+
+function mixRgb(a: readonly [number, number, number], b: readonly [number, number, number], t: number): [number, number, number] {
+    return [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
+}
+
+function drawTileBorder(rgba: Uint8Array, originX: number, originY: number, width: number, lum: number): void {
+    for (let i = 0; i < width; i += 1) {
+        for (let x = i; x < TILE_SIZE - i; x += 1) {
+            setLum(rgba, originX + x, originY + i, lum)
+            setLum(rgba, originX + x, originY + TILE_SIZE - 1 - i, lum)
+        }
+        for (let y = i; y < TILE_SIZE - i; y += 1) {
+            setLum(rgba, originX + i, originY + y, lum)
+            setLum(rgba, originX + TILE_SIZE - 1 - i, originY + y, lum)
+        }
+    }
+}
+
+function drawRectOutline(rgba: Uint8Array, x0: number, y0: number, w: number, h: number, lum: number): void {
+    for (let x = x0; x < x0 + w; x += 1) {
+        setLum(rgba, x, y0, lum)
+        setLum(rgba, x, y0 + h - 1, lum)
+    }
+    for (let y = y0; y < y0 + h; y += 1) {
+        setLum(rgba, x0, y, lum)
+        setLum(rgba, x0 + w - 1, y, lum)
+    }
+}
+
+function drawRectFrame(rgba: Uint8Array, x0: number, y0: number, w: number, h: number, thickness: number, lum: number): void {
+    for (let i = 0; i < thickness; i += 1) {
+        for (let x = x0 + i; x < x0 + w - i; x += 1) {
+            setLum(rgba, x, y0 + i, lum)
+            setLum(rgba, x, y0 + h - 1 - i, lum)
+        }
+        for (let y = y0 + i; y < y0 + h - i; y += 1) {
+            setLum(rgba, x0 + i, y, lum)
+            setLum(rgba, x0 + w - 1 - i, y, lum)
+        }
+    }
+}
+
 function drawHangingTool(rgba: Uint8Array, x0: number, y0: number, dir: 1 | -1): void {
-    for (let y = 0; y < 15; y += 1) setLum(rgba, x0, y0 + y, 0.62)
-    for (let x = 0; x <= 5; x += 1) setLum(rgba, x0 + x * dir, y0 + 2 + Math.floor(x / 2), 0.58)
+    drawSoftRect(rgba, x0, y0, 2, 15, STRONG_LINE_LUM)
+    for (let x = 0; x <= 5; x += 1) drawSoftRect(rgba, x0 + x * dir, y0 + 2 + Math.floor(x / 2), 2, 2, STRONG_LINE_LUM)
 }
 
 function drawBookSpine(rgba: Uint8Array, x: number, y: number, lum: number): void {
-    for (let yy = y; yy <= y + 6; yy += 1) setLum(rgba, x, yy, lum)
+    drawSoftRect(rgba, x, y, 2, 7, lum)
+    drawRectOutline(rgba, x, y, 2, 7, STRONG_LINE_LUM)
 }
 
 function drawScroll(rgba: Uint8Array, x: number, y: number): void {
     drawSoftRect(rgba, x, y, 4, 6, 0.84)
-    setLum(rgba, x, y, 0.66)
-    setLum(rgba, x + 3, y + 5, 0.66)
+    drawRectOutline(rgba, x, y, 4, 6, STRONG_LINE_LUM)
 }
 
 /** Sand — fine high-density speckle. */
@@ -548,10 +575,7 @@ function paintLeaf(rgba: Uint8Array, originX: number, originY: number): void {
 /** Plank — wood texture with a single horizontal seam at y=16. */
 function paintPlank(rgba: Uint8Array, originX: number, originY: number): void {
     paintWood(rgba, originX, originY)
-    const seamY = TILE_SIZE / 2
-    for (let x = 0; x < TILE_SIZE; x++) {
-        setLum(rgba, originX + x, originY + seamY, 0.62)
-    }
+    drawSoftRect(rgba, originX, originY + TILE_SIZE / 2 - 1, TILE_SIZE, 3, STRONG_LINE_LUM)
 }
 
 /** Cloud — large soft puffs over a near-white base. Subtler than the rest. */
@@ -583,17 +607,17 @@ function paintCloud(rgba: Uint8Array, originX: number, originY: number): void {
 
 /** Roof tile — staggered rows with shallow shadow joints. */
 function paintRoof(rgba: Uint8Array, originX: number, originY: number): void {
-    fillTile(rgba, originX, originY, 0.97)
-    const tileH = 6
-    const tileW = 10
+    fillTile(rgba, originX, originY, 0.99)
+    const tileH = 10
+    const tileW = 16
     for (let y = 0; y < TILE_SIZE; y++) {
         const row = Math.floor(y / tileH)
         const rowY = y % tileH
         const offset = (row % 2) * Math.floor(tileW / 2)
         for (let x = 0; x < TILE_SIZE; x++) {
             const localX = (x + offset) % tileW
-            if (rowY === 0 || localX === 0) setLum(rgba, originX + x, originY + y, 0.70)
-            else if (rowY === 1) setLum(rgba, originX + x, originY + y, 0.86)
+            if (rowY < 2 || localX < 2) setLum(rgba, originX + x, originY + y, STRONG_LINE_LUM)
+            else if (rowY === 2 || localX === 2) setLum(rgba, originX + x, originY + y, 0.78)
         }
     }
 }
@@ -634,11 +658,11 @@ function paintGlass(rgba: Uint8Array, originX: number, originY: number): void {
         for (let x = 0; x < TILE_SIZE; x++) {
             if (Math.abs((x - y) - 4) <= 1 || Math.abs((x - y) - 16) <= 1) {
                 setLum(rgba, originX + x, originY + y, 1.0)
-            } else if (y > TILE_SIZE - 4 || x < 2) {
-                setLum(rgba, originX + x, originY + y, 0.84)
             }
         }
     }
+    drawSoftRect(rgba, originX, originY, 2, TILE_SIZE, STRONG_LINE_LUM)
+    drawSoftRect(rgba, originX, originY + TILE_SIZE - 3, TILE_SIZE, 3, STRONG_LINE_LUM)
 }
 
 /** Metal — broad bands and tiny rivet dots. */
@@ -649,9 +673,10 @@ function paintMetal(rgba: Uint8Array, originX: number, originY: number): void {
         const band = Math.sin(y * 0.52) * 0.04
         for (let x = 0; x < TILE_SIZE; x++) setLum(rgba, originX + x, originY + y, 0.93 + band)
     }
+    for (const y of [7, 15, 23]) drawSoftRect(rgba, originX, originY + y, TILE_SIZE, 2, STRONG_LINE_LUM)
     for (let i = 0; i < 8; i++) {
         const x = Math.floor(rng() * TILE_SIZE)
         const y = Math.floor(rng() * TILE_SIZE)
-        setLum(rgba, originX + x, originY + y, 0.66)
+        drawSoftRect(rgba, originX + Math.min(TILE_SIZE - 2, x), originY + Math.min(TILE_SIZE - 2, y), 2, 2, STRONG_LINE_LUM)
     }
 }

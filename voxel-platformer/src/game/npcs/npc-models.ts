@@ -37,6 +37,8 @@ export function createNpcModel(kind: NpcModelKind, opts: NpcModelOptions = {}): 
             return createRabbitNpcModel()
         case 'spider':
             return createSpiderNpcModel()
+        case 'wolf':
+            return createWolfNpcModel()
         case 'archer':
             return createArcherNpcModel(beard)
         case 'shield-warrior':
@@ -52,7 +54,7 @@ export function createNpcModel(kind: NpcModelKind, opts: NpcModelOptions = {}): 
  * drives them with a bespoke animator (see `npc-critter-animator`) instead of
  * an `AnimationController`. Quadrupeds and other non-humanoids opt out here.
  */
-const NPC_MODELS_WITHOUT_DEFAULT_RIG: ReadonlySet<NpcModelKind> = new Set<NpcModelKind>(['rabbit', 'spider'])
+const NPC_MODELS_WITHOUT_DEFAULT_RIG: ReadonlySet<NpcModelKind> = new Set<NpcModelKind>(['rabbit', 'spider', 'wolf'])
 
 export function npcModelUsesDefaultRig(kind: NpcModelKind): boolean {
     return !NPC_MODELS_WITHOUT_DEFAULT_RIG.has(kind)
@@ -144,6 +146,117 @@ function rabbitHindLeg(name: string, x: number): Group {
     thigh.position.set(0, -0.04, -0.04)
     pivot.add(thigh)
     return pivot
+}
+
+/**
+ * Lean cliff wolf: a low quadruped silhouette with clear ears, muzzle, tail,
+ * and four named leg pivots. The whole motion lives under `WolfBob`.
+ */
+function createWolfNpcModel(): Group {
+    const root = new Group()
+    root.name = 'NpcModel:wolf'
+
+    const fur = sharedMaterial(0x4d514b, 0.72, 0.08)
+    const darkFur = sharedMaterial(0x252926, 0.78, 0.1)
+    const chest = sharedMaterial(0xb6aa8f, 0.74, 0.04)
+    const eyeMat = sharedMaterial(0xf0c45a, 0.42, 0.18)
+    const noseMat = sharedMaterial(0x101214, 0.58, 0.16)
+
+    const bob = new Group()
+    bob.name = 'WolfBob'
+    root.add(bob)
+
+    const body = shadowed(new Mesh(sharedSphereGeometry(0.21, 10, 8), fur))
+    body.name = 'WolfBody'
+    body.position.set(0, 0.33, -0.03)
+    body.scale.set(0.9, 0.62, 1.55)
+    const ruff = shadowed(new Mesh(sharedSphereGeometry(0.16, 10, 8), darkFur))
+    ruff.name = 'WolfShoulderRuff'
+    ruff.position.set(0, 0.39, 0.17)
+    ruff.scale.set(0.95, 0.74, 0.86)
+    const belly = shadowed(new Mesh(sharedSphereGeometry(0.13, 10, 8), chest))
+    belly.name = 'WolfChest'
+    belly.position.set(0, 0.28, 0.18)
+    belly.scale.set(0.75, 0.62, 0.95)
+    bob.add(body, ruff, belly)
+
+    const head = new Group()
+    head.name = 'WolfHead'
+    head.position.set(0, 0.48, 0.42)
+    const skull = shadowed(new Mesh(sharedSphereGeometry(0.13, 10, 8), fur))
+    skull.name = 'WolfSkull'
+    skull.scale.set(0.95, 0.82, 1.02)
+    const muzzle = shadowed(new Mesh(sharedSphereGeometry(0.07, 8, 6), chest))
+    muzzle.name = 'WolfMuzzle'
+    muzzle.position.set(0, -0.035, 0.115)
+    muzzle.scale.set(0.9, 0.68, 1.2)
+    const jaw = shadowed(new Mesh(sharedBoxGeometry(0.13, 0.035, 0.075), darkFur))
+    jaw.name = 'WolfJaw'
+    jaw.position.set(0, -0.085, 0.1)
+    const nose = shadowed(new Mesh(sharedSphereGeometry(0.022, 6, 5), noseMat))
+    nose.name = 'WolfNose'
+    nose.position.set(0, -0.025, 0.19)
+    for (const x of [-0.055, 0.055]) {
+        const eye = shadowed(new Mesh(sharedSphereGeometry(0.018, 6, 5), eyeMat))
+        eye.name = x < 0 ? 'WolfEyeL' : 'WolfEyeR'
+        eye.position.set(x, 0.025, 0.085)
+        head.add(eye)
+    }
+    head.add(skull, muzzle, jaw, nose, wolfEar('WolfEarL', -0.065, fur, darkFur), wolfEar('WolfEarR', 0.065, fur, darkFur))
+    bob.add(head)
+
+    const tail = new Group()
+    tail.name = 'WolfTail'
+    tail.position.set(0, 0.39, -0.36)
+    tail.rotation.x = -0.55
+    const tailMesh = shadowed(new Mesh(sharedCylinderGeometry(0.035, 0.065, 0.34, 7), darkFur))
+    tailMesh.name = 'WolfTailFur'
+    tailMesh.position.set(0, 0, -0.14)
+    tailMesh.rotation.x = Math.PI / 2
+    tail.add(tailMesh)
+    bob.add(tail)
+
+    bob.add(
+        wolfLeg('WolfLegFL', -0.105, 0.2, fur),
+        wolfLeg('WolfLegFR', 0.105, 0.2, fur),
+        wolfLeg('WolfLegBL', -0.105, -0.22, darkFur),
+        wolfLeg('WolfLegBR', 0.105, -0.22, darkFur),
+    )
+
+    return root
+}
+
+function wolfEar(name: string, x: number, fur: MeshStandardMaterial, inner: MeshStandardMaterial): Group {
+    const ear = new Group()
+    ear.name = name
+    ear.position.set(x, 0.08, 0.015)
+    ear.rotation.z = x < 0 ? 0.25 : -0.25
+    const outer = shadowed(new Mesh(sharedCylinderGeometry(0.012, 0.044, 0.12, 3), fur))
+    outer.name = `${name}Outer`
+    outer.position.set(0, 0.035, 0)
+    outer.rotation.x = -0.1
+    const innerPatch = shadowed(new Mesh(sharedBoxGeometry(0.025, 0.062, 0.009), inner))
+    innerPatch.name = `${name}Inner`
+    innerPatch.position.set(0, 0.034, 0.012)
+    ear.add(outer, innerPatch)
+    return ear
+}
+
+function wolfLeg(name: string, x: number, z: number, mat: MeshStandardMaterial): Group {
+    const leg = new Group()
+    leg.name = name
+    leg.position.set(x, 0.26, z)
+    const upper = shadowed(new Mesh(sharedBoxGeometry(0.048, 0.17, 0.055), mat))
+    upper.name = `${name}Upper`
+    upper.position.set(0, -0.055, 0)
+    const lower = shadowed(new Mesh(sharedBoxGeometry(0.04, 0.17, 0.044), mat))
+    lower.name = `${name}Lower`
+    lower.position.set(0, -0.18, 0.01)
+    const paw = shadowed(new Mesh(sharedBoxGeometry(0.062, 0.035, 0.095), mat))
+    paw.name = `${name}Paw`
+    paw.position.set(0, -0.275, 0.035)
+    leg.add(upper, lower, paw)
+    return leg
 }
 
 /**

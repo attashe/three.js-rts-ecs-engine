@@ -8,7 +8,7 @@ import { BLOCK } from '../engine/voxel/palette'
 import { GameAudio } from './audio'
 
 /** Footstep surface family the player is currently walking on. */
-export type FootstepSurface = 'grass' | 'dirt' | 'stone' | 'wood' | 'water'
+export type FootstepSurface = 'grass' | 'dirt' | 'snow' | 'stone' | 'wood' | 'water'
 
 interface PlayerState {
     /** True last frame — used to detect the false→true transition that
@@ -55,6 +55,7 @@ export interface PlayerLocomotionAudioOptions {
 const FOOTSTEP_POOLS: Record<FootstepSurface, readonly string[]> = {
     grass: [GameAudio.FootstepGrass1, GameAudio.FootstepGrass2],
     dirt:  [GameAudio.FootstepDirt1,  GameAudio.FootstepDirt2],
+    snow:  [GameAudio.FootstepSnow1,  GameAudio.FootstepSnow2],
     stone: [GameAudio.FootstepStone1, GameAudio.FootstepStone2],
     wood:  [GameAudio.FootstepWood1,  GameAudio.FootstepWood2],
     water: [GameAudio.FootstepWater1, GameAudio.FootstepWater2],
@@ -73,6 +74,7 @@ export function surfaceForBlock(block: number): FootstepSurface {
         case BLOCK.leaf:  return 'grass'
         case BLOCK.dirt:  return 'dirt'
         case BLOCK.sand:  return 'dirt'
+        case BLOCK.snow:  return 'snow'
         case BLOCK.stone: return 'stone'
         case BLOCK.brick: return 'stone'
         case BLOCK.glow:  return 'stone'

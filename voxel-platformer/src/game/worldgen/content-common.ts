@@ -17,7 +17,7 @@ export interface WorldgenContentResolveOptions {
     contentIndex?: ContentResolutionIndex
 }
 
-export type ContentResolutionKind = 'props' | 'zones' | 'npcs' | 'pickups' | 'travel' | 'rail_carts' | 'chests'
+export type ContentResolutionKind = 'props' | 'zones' | 'npcs' | 'pickups' | 'travel' | 'rail_carts' | 'chests' | 'readables'
 
 export interface ContentResolutionEntry {
     id: string
@@ -56,7 +56,7 @@ export function contentDiagnostic(ctx: WorldgenCompileContext, required: boolean
 
 export function createContentResolutionIndex(content: ContentSpec): ContentResolutionIndex {
     const entries = new Map<string, ContentResolutionEntry>()
-    for (const kind of ['props', 'zones', 'npcs', 'pickups', 'travel', 'rail_carts', 'chests'] as const) {
+    for (const kind of ['props', 'zones', 'npcs', 'pickups', 'travel', 'rail_carts', 'chests', 'readables'] as const) {
         const list = content[kind]
         if (!Array.isArray(list)) continue
         for (let i = 0; i < list.length; i += 1) {

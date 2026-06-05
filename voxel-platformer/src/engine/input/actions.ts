@@ -8,8 +8,23 @@ export interface ActionInputSource {
     consumeBufferedKeyPressed(code: string, bufferMs: number): boolean
 }
 
+export type ModifierKey = 'Shift' | 'Ctrl' | 'Alt' | 'Meta'
+
+const MODIFIER_CODES: Readonly<Record<ModifierKey, readonly string[]>> = {
+    Shift: ['ShiftLeft', 'ShiftRight'],
+    Ctrl: ['ControlLeft', 'ControlRight'],
+    Alt: ['AltLeft', 'AltRight'],
+    Meta: ['MetaLeft', 'MetaRight'],
+}
+const ALL_MODIFIERS: readonly ModifierKey[] = ['Shift', 'Ctrl', 'Alt', 'Meta']
+
 export interface ActionBinding {
     readonly keys: readonly string[]
+    /** When present, the binding only matches if the *exact* modifier set is
+     *  held. `[]` means "no modifiers" (so plain Space won't fire when Shift is
+     *  held); `['Shift']` is a chord. When omitted the binding is
+     *  modifier-agnostic (the historical behaviour). */
+    readonly mods?: readonly ModifierKey[]
     readonly displayKeys?: readonly string[]
 }
 
@@ -89,10 +104,41 @@ export class ActionMap {
         return actionBindingDisplayKeys(this.get(id))
     }
 
+    /** Replace an action's bindings on the live (shared) instance, so every
+     *  system holding this ActionMap sees the new keys without re-wiring. */
+    rebind(id: ActionId, bindings: readonly ActionBinding[]): void {
+        const definition = this.get(id)
+        this.definitions.set(id, cloneActionDefinition({
+            ...definition,
+            bindings: normalizeActionBindings(bindings) ?? [],
+        }))
+    }
+
+    /** Apply a map of `actionId -> keys` overrides in place (single-binding,
+     *  modifier-agnostic — used by the rebind UI / persisted keymaps). */
+    applyKeyOverrides(overrides: ActionKeyOverrideMap): void {
+        const bindingMap = keyOverridesToActionBindings(overrides)
+        for (const id of Object.keys(bindingMap)) {
+            const bindings = bindingMap[id]
+            if (!bindings || !this.definitions.has(id)) continue
+            this.rebind(id, bindings)
+        }
+    }
+
+    private modifiersSatisfied(binding: ActionBinding): boolean {
+        if (!binding.mods) return true
+        for (const mod of ALL_MODIFIERS) {
+            const required = binding.mods.includes(mod)
+            const held = MODIFIER_CODES[mod].some((code) => this.input.isKeyDown(code))
+            if (required !== held) return false
+        }
+        return true
+    }
+
     isHeld(id: ActionId): boolean {
         const definition = this.get(id)
         return (definition.bindings ?? []).some((binding) =>
-            binding.keys.some((key) => this.input.isKeyDown(key)),
+            this.modifiersSatisfied(binding) && binding.keys.some((key) => this.input.isKeyDown(key)),
         )
     }
 
@@ -104,7 +150,7 @@ export class ActionMap {
         const definition = this.get(id)
         const bufferMs = definition.bufferMs ?? DEFAULT_BUFFER_MS
         return (definition.bindings ?? []).some((binding) =>
-            binding.keys.some((key) => this.input.hasBufferedKeyPressed(key, bufferMs)),
+            this.modifiersSatisfied(binding) && binding.keys.some((key) => this.input.hasBufferedKeyPressed(key, bufferMs)),
         )
     }
 
@@ -115,6 +161,7 @@ export class ActionMap {
         if (now < this.cooldownReadyAt(definition, subject)) return null
 
         for (const binding of definition.bindings ?? []) {
+            if (!this.modifiersSatisfied(binding)) continue
             for (const key of binding.keys) {
                 if (!this.input.hasBufferedKeyPressed(key, bufferMs)) continue
                 if (!this.input.consumeBufferedKeyPressed(key, bufferMs)) continue
@@ -197,11 +244,13 @@ export function keyOverridesToActionBindings(overrides: ActionKeyOverrideMap = {
 export function actionBindingDisplayKeys(definition: ActionDefinition): string[] {
     const keys: string[] = []
     for (const binding of definition.bindings ?? []) {
+        const prefix = binding.mods && binding.mods.length > 0 ? `${binding.mods.join('+')}+` : ''
         const displayKeys = binding.displayKeys && binding.displayKeys.length > 0
             ? binding.displayKeys
             : binding.keys.map(formatKeyCodeForDisplay)
         for (const key of displayKeys) {
-            if (!keys.includes(key)) keys.push(key)
+            const label = `${prefix}${key}`
+            if (!keys.includes(label)) keys.push(label)
         }
     }
     return keys
@@ -211,6 +260,9 @@ export function formatKeyCodeForDisplay(code: string): string {
     if (/^Key[A-Z]$/.test(code)) return code.slice(3)
     if (/^Digit[0-9]$/.test(code)) return code.slice(5)
     if (/^Numpad[0-9]$/.test(code)) return `Num ${code.slice(6)}`
+    if (code === 'Mouse0') return 'LMB'
+    if (code === 'Mouse1') return 'MMB'
+    if (code === 'Mouse2') return 'RMB'
     return KEY_CODE_LABELS[code] ?? code
 }
 
@@ -229,6 +281,7 @@ function cloneActionBindings(bindings: readonly ActionBinding[] | undefined): Ac
     if (!bindings) return undefined
     return bindings.map((binding) => ({
         keys: [...binding.keys],
+        mods: binding.mods ? [...binding.mods] : undefined,
         displayKeys: binding.displayKeys ? [...binding.displayKeys] : undefined,
     }))
 }
@@ -239,7 +292,13 @@ function normalizeActionBindings(bindings: readonly ActionBinding[]): ActionBind
         const keys = uniqueNonEmpty(binding.keys)
         if (keys.length === 0) continue
         const displayKeys = binding.displayKeys ? uniqueNonEmpty(binding.displayKeys) : undefined
-        normalized.push(displayKeys && displayKeys.length > 0 ? { keys, displayKeys } : { keys })
+        const mods = binding.mods ? [...binding.mods] : undefined
+        const next: ActionBinding = { keys }
+        normalized.push({
+            ...next,
+            ...(mods ? { mods } : {}),
+            ...(displayKeys && displayKeys.length > 0 ? { displayKeys } : {}),
+        })
     }
     return normalized.length > 0 ? normalized : undefined
 }

@@ -80,6 +80,7 @@ import { createPlayerLocomotionAudioSystem } from './game/player-audio'
 import { createEnvironmentFxSystem, createVisualFxZoneSystem } from './game/weather'
 import { createPropRenderSystem } from './game/props/prop-system'
 import { createNpcRenderSystem } from './game/npcs/npc-render-system'
+import { createWolfHowlSystem } from './game/npcs/wolf-howl-system'
 import { createNpcBehaviourSystem } from './engine/ecs/systems/npc-behaviour-system'
 import { createPlayerShieldSystem } from './game/player-shield-system'
 import { createPlayerStunBlinkSystem } from './game/player-stun-blink-system'
@@ -459,19 +460,31 @@ async function main(): Promise<void> {
         slots.propRender.set(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }))
         slots.npcRender.set(createNpcRenderSystem(renderer.scene, {
             getNpcs: () => meta.npcs,
-            onHurt: (p, model) => audio.playSpatial(model === 'spider' ? GameAudio.SpiderHurt : GameAudio.NpcHurt, p, {
-                deferUntilUnlocked: true,
-                rate: 0.9 + Math.random() * 0.2,
-                refDistance: 4,
-                maxDistance: 30,
-                rolloffModel: 'linear',
-                panningModel: 'equalpower',
-                priority: 2,
-            }),
-            // Spider death screech (other models settle silently for now).
+            onHurt: (p, model) => {
+                const id = model === 'spider'
+                    ? GameAudio.SpiderHurt
+                    : model === 'wolf'
+                        ? GameAudio.WolfHurt
+                        : GameAudio.NpcHurt
+                audio.playSpatial(id, p, {
+                    deferUntilUnlocked: true,
+                    rate: 0.9 + Math.random() * 0.2,
+                    refDistance: 4,
+                    maxDistance: 30,
+                    rolloffModel: 'linear',
+                    panningModel: 'equalpower',
+                    priority: 2,
+                })
+            },
+            // Creature death voices (other models settle silently for now).
             onDie: (p, model) => {
-                if (model !== 'spider') return
-                audio.playSpatial(GameAudio.SpiderDie, p, {
+                const id = model === 'spider'
+                    ? GameAudio.SpiderDie
+                    : model === 'wolf'
+                        ? GameAudio.WolfDie
+                        : null
+                if (!id) return
+                audio.playSpatial(id, p, {
                     deferUntilUnlocked: true,
                     rate: 0.94 + Math.random() * 0.12,
                     refDistance: 5,
@@ -481,11 +494,16 @@ async function main(): Promise<void> {
                     priority: 3,
                 })
             },
-            // Spatial attack cues: a spider chitters as it lunges; the archer's
-            // `shoot` clip plays a bow-release.
+            // Spatial attack cues: creatures vocalize as they lunge; the
+            // archer's `shoot` clip plays a bow-release.
             onAttack: (clip, p, model) => {
-                if (model === 'spider') {
-                    audio.playSpatial(GameAudio.SpiderChitter, p, {
+                const creatureCue = model === 'spider'
+                    ? GameAudio.SpiderChitter
+                    : model === 'wolf'
+                        ? GameAudio.WolfSnarl
+                        : null
+                if (creatureCue) {
+                    audio.playSpatial(creatureCue, p, {
                         deferUntilUnlocked: true,
                         rate: 0.92 + Math.random() * 0.16,
                         refDistance: 5,
@@ -627,6 +645,20 @@ async function main(): Promise<void> {
         .addSystem(slots.visualFxZones.system, 'visualFxZones')
         .addSystem(slots.propRender.system, 'propRender')
         .addSystem(slots.npcRender.system, 'npcRender')
+        .addSystem(createWolfHowlSystem({
+            getHour: () => activeWeatherSystem?.ambient.state.timeOfDay ?? 12,
+            onHowl: (p) => {
+                audio.playSpatial(GameAudio.WolfHowl, p, {
+                    deferUntilUnlocked: true,
+                    rate: 0.94 + Math.random() * 0.1,
+                    refDistance: 12,
+                    maxDistance: 70,
+                    rolloffModel: 'linear',
+                    panningModel: 'equalpower',
+                    priority: 2,
+                })
+            },
+        }), 'wolfHowls')
         .addSystem(createStuckArrowSystem(), 'stuckArrows')
         .addSystem(createSpellEffectSystem({
             onWaveHit: (p) => playSpatialSfx(GameAudio.SpellNovaHit, p.x, p.y, p.z, 2),
@@ -808,7 +840,7 @@ async function main(): Promise<void> {
         }), 'debugOverlay')
         .addSystem(createHealthHudSystem(), 'healthHud')
         .addSystem(createManaHudSystem(), 'manaHud')
-        .addSystem(createConsumableHudSystem(), 'consumableHud')
+        .addSystem(createConsumableHudSystem(actions), 'consumableHud')
         .addSystem(createInventorySystem(engine.input, actions), 'inventory')
         .addSystem(createGameMenuSystem(engine.input, actions, audio, {
             renderElement: renderer.webgpu.domElement,

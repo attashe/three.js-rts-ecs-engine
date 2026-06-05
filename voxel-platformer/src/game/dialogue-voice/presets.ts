@@ -159,7 +159,7 @@ export function defaultDialogueVoiceForNpcModel(model: string): NormalizedDialog
         ? 'troll'
         : model === 'player'
             ? 'player'
-            : model === 'rabbit' || model === 'spider'
+            : model === 'rabbit' || model === 'spider' || model === 'wolf'
                 ? 'tiny'
                 : 'dwarf'
     const presetConfig = DIALOGUE_VOICE_PRESET_CONFIGS[presetId]

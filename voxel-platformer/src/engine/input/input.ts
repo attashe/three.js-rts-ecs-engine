@@ -16,6 +16,13 @@ export interface ClickEvent {
 const CLICK_DRAG_THRESHOLD_PX = 6
 const CLICK_TIME_THRESHOLD_MS = 350
 
+/** Pseudo key-code for a mouse button so it can be bound like a key
+ *  (0=left → "Mouse0", 2=right → "Mouse2"). The action layer reads these
+ *  through the same isKeyDown / buffered-press machinery as keyboard codes. */
+export function mouseButtonCode(button: number): string {
+    return `Mouse${button}`
+}
+
 export class Input {
     private readonly target: HTMLElement
     private keys: Set<string> = new Set()
@@ -67,9 +74,18 @@ export class Input {
     private onPointerDown = (e: PointerEvent) => {
         if (!this.enabled) return
         this.downAt = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button }
+        // Mirror mouse buttons into the key maps so they bind like keys
+        // (held + buffered-press) via mouseButtonCode().
+        const code = mouseButtonCode(e.button)
+        if (!this.keys.has(code)) {
+            this.pressed.add(code)
+            this.pressedAt.set(code, performance.now())
+        }
+        this.keys.add(code)
     }
     private onPointerUp = (e: PointerEvent) => {
         if (!this.enabled) return
+        this.keys.delete(mouseButtonCode(e.button))
         const d = this.downAt
         this.downAt = null
         if (!d || d.button !== e.button) return

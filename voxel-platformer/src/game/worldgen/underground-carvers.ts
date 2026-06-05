@@ -368,6 +368,9 @@ function stampWalkablePath(ctx: WorldgenCompileContext, state: UndergroundState,
     const carveRadius = ctx.number(pathSpec.carve_radius, Math.max(3, width + 1), `${path}.carve_radius`, { min: 1 })
     const floorBlock = ctx.material(pathSpec.floor_block ?? pathSpec.material, 'stone', `${path}.floor_block`)
     const f = ensureFeature(state, pathSpec.id)
+    const floorCells = new Map<string, Vec3Tuple>()
+    const railsToRestore = new Map<string, Vec3Tuple>()
+
     for (let i = 0; i < waypoints.length - 1; i += 1) {
         const a = waypoints[i]!
         const b = waypoints[i + 1]!
@@ -377,25 +380,36 @@ function stampWalkablePath(ctx: WorldgenCompileContext, state: UndergroundState,
             const x = lerp(a[0], b[0], t)
             const y = lerp(a[1], b[1], t)
             const z = lerp(a[2], b[2], t)
-            const railsToRestore = railCellsWithinSphere(ctx, x, y + carveRadius * 0.45, z, carveRadius)
+            for (const rail of railCellsWithinSphere(ctx, x, y + carveRadius * 0.45, z, carveRadius)) {
+                railsToRestore.set(coordTupleKey(rail), rail)
+            }
             carveSphere(ctx, f, x, y + carveRadius * 0.45, z, carveRadius)
-            for (const [rx, ry, rz] of railsToRestore) setSolid(ctx, rx, ry, rz, BLOCK.rail)
             for (let dz = -width; dz <= width; dz += 1) {
                 for (let dx = -width; dx <= width; dx += 1) {
                     if (Math.hypot(dx, dz) > width) continue
                     const wx = Math.round(x + dx)
                     const wy = Math.round(y)
                     const wz = Math.round(z + dz)
-                    const hadRail = ctx.chunks.getVoxel(wx, wy, wz) === BLOCK.rail
-                    stampFloorCell(ctx, f, wx, wy, wz, floorBlock)
-                    if (hadRail) setSolid(ctx, wx, wy, wz, BLOCK.rail)
+                    floorCells.set(coordKey(wx, wy, wz), [wx, wy, wz])
                 }
             }
         }
     }
+
+    for (const [wx, wy, wz] of floorCells.values()) stampFloorCell(ctx, f, wx, wy, wz, floorBlock)
+    for (const [rx, ry, rz] of railsToRestore.values()) setSolid(ctx, rx, ry, rz, BLOCK.rail)
+
     f.meta.type = 'guaranteed_path'
     f.meta.center = waypoints[Math.floor(waypoints.length / 2)]!
     ctx.report.placements.push({ id: pathSpec.id, kind: 'guaranteed_path', width, carveRadius, waypoints })
+}
+
+function coordKey(x: number, y: number, z: number): string {
+    return `${x},${y},${z}`
+}
+
+function coordTupleKey([x, y, z]: Vec3Tuple): string {
+    return coordKey(x, y, z)
 }
 
 function railCellsWithinSphere(ctx: WorldgenCompileContext, cx: number, cy: number, cz: number, radius: number): Vec3Tuple[] {

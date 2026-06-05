@@ -1,9 +1,12 @@
 import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { System } from '../engine/ecs/systems/system'
+import type { ActionMap } from '../engine/input/actions'
+import { GameAction } from './actions'
 import { CONSUMABLE_DEFS, ensureSelectedConsumable } from './consumables'
+import { consumableUseLabel } from './consumable-prompts'
 import { inventoryItemCount } from './inventory'
 
-export function createConsumableHudSystem(): System {
+export function createConsumableHudSystem(actions: Pick<ActionMap, 'bindingDisplayKeysFor'>): System {
     let root: HTMLDivElement | null = null
     let lastKey = ''
 
@@ -47,12 +50,13 @@ export function createConsumableHudSystem(): System {
                 lastKey = ''
                 return
             }
-            const key = `${itemId}:${count}`
+            const label = consumableUseLabel(actions.bindingDisplayKeysFor(GameAction.UseConsumable), CONSUMABLE_DEFS[itemId].name)
+            const key = `${itemId}:${count}:${label}`
             if (key === lastKey) return
             lastKey = key
             const def = CONSUMABLE_DEFS[itemId]
             root.style.display = 'flex'
-            root.innerHTML = `<span style="${badgeStyle(def.icon)}"></span><span>Z</span><span>${escapeHtml(def.name)}</span><span style="color:rgba(238,246,242,0.62)">x${count}</span>`
+            root.innerHTML = `<span style="${badgeStyle(def.icon)}"></span><span>${escapeHtml(label)}</span><span style="color:rgba(238,246,242,0.62)">x${count}</span>`
         },
         dispose() {
             root?.remove()

@@ -231,6 +231,7 @@ test('default palette covers block constants and appends mine ore and dungeon bl
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.toolPanel]?.name, 'tool panel')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreShelf]?.name, 'ore shelf')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.recordShelf]?.name, 'record shelf')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.snow]?.name, 'snow')
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.oreIron), true)
     assert.equal(isPathSurface(DEFAULT_PALETTE, BLOCK.oreCopper), true)
     assert.ok(voxelLightSpec(DEFAULT_PALETTE, BLOCK.oreCrystal), 'crystal ore should provide a subtle cave readability light')
@@ -240,6 +241,9 @@ test('default palette covers block constants and appends mine ore and dungeon bl
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.toolPanel), true)
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.oreShelf), true)
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.recordShelf), true)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.snow), true)
+    assert.equal(isPathSurface(DEFAULT_PALETTE, BLOCK.snow), true)
+    assert.equal(isRenderableVoxel(DEFAULT_PALETTE, BLOCK.snow), true)
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.spiderWeb), false)
     assert.equal(isPathSurface(DEFAULT_PALETTE, BLOCK.spiderWeb), false)
     assert.equal(isRenderableVoxel(DEFAULT_PALETTE, BLOCK.spiderWeb), true)
@@ -258,6 +262,7 @@ test('default palette covers block constants and appends mine ore and dungeon bl
     assert.equal(migrated.palette.entries[BLOCK.toolPanel]?.name, 'tool panel')
     assert.equal(migrated.palette.entries[BLOCK.oreShelf]?.name, 'ore shelf')
     assert.equal(migrated.palette.entries[BLOCK.recordShelf]?.name, 'record shelf')
+    assert.equal(migrated.palette.entries[BLOCK.snow]?.name, 'snow')
 
     const customTail = clonePalette(DEFAULT_PALETTE)
     customTail.entries.length = BLOCK.oreIron
@@ -266,6 +271,7 @@ test('default palette covers block constants and appends mine ore and dungeon bl
     assert.equal(custom.palette.entries[BLOCK.oreIron]?.name, 'custom ore slot')
     assert.ok(custom.palette.entries.findIndex((entry) => entry.name === 'iron ore') > BLOCK.oreIron)
     assert.ok(custom.palette.entries.findIndex((entry) => entry.name === 'record shelf') > BLOCK.oreIron)
+    assert.ok(custom.palette.entries.findIndex((entry) => entry.name === 'snow') > BLOCK.oreIron)
 })
 
 test('no-walk block is an invisible collidable border outside debug rendering', () => {

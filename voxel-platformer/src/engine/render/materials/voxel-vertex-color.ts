@@ -7,6 +7,7 @@ import {
     texture as tslTexture,
     uniform,
     vec2,
+    vec3,
     vertexColor,
 } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
@@ -50,9 +51,8 @@ export interface VoxelVertexColorOpts {
     atlas?: Texture | null
     /** Initial toggle state for the texture pass. Default `true`. */
     texturesEnabled?: boolean
-    /** Lower bound of the tile-luminance tint range when textures are
-     *  on. Default 0.80 — a fully-dark tile texel darkens the block
-     *  to 80% of its vertex colour.
+    /** Lower bound of the tile tint range when textures are on. Default
+     *  0.0 — a black atlas texel renders as a genuinely black mark.
      *
      *  IMPORTANT: keep `tintHigh` at 1.0. The `blank` tile is uniform
      *  1.0 and is the fallback used by every palette entry without
@@ -102,12 +102,12 @@ const DEFAULT_MASK_SIZE = 256
  *
  *  1. **Per-vertex colour** — the palette entry's authored RGB, the
  *     same value the old flat-only material rendered.
- *  2. **Atlas surface tile** — a 32×32 grayscale tile from the
- *     procedural voxel atlas, sampled per-fragment using the
- *     `voxelUV` and `voxelTileIndex` mesh attributes. The tile value
- *     drives a tight tint range (default ±10%) multiplied into the
- *     base colour, so the block keeps its hue and the texture only
- *     adds small surface detail.
+ *  2. **Atlas surface tile** — a 32×32 RGB tile from the procedural
+ *     voxel atlas, sampled per-fragment using the `voxelUV` and
+ *     `voxelTileIndex` mesh attributes. Most tiles are grayscale
+ *     multipliers so the block keeps its authored hue; specialty
+ *     storage/shop tiles can use real RGB pixels and a white palette
+ *     base to draw directly readable shelf contents.
  *
  * The atlas pass is gated by a uniform so the host can flip it on/off
  * at runtime. Off-state multiplier is exactly 1.0, which makes the
@@ -121,7 +121,7 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     const darken = opts.coveredCellDarken ?? 0.65
     const aboveOpacity = opts.aboveCutOpacity ?? 0.30
     const maskSize = opts.maskSize ?? DEFAULT_MASK_SIZE
-    const tintLow = opts.tintLow ?? 0.80
+    const tintLow = opts.tintLow ?? 0.0
     const tintHigh = opts.tintHigh ?? 1.0
 
     const cutActiveUniform = uniform(0)
@@ -174,9 +174,9 @@ export function createVoxelVertexColor(opts: VoxelVertexColorOpts = {}): VoxelMa
     // When no atlas is supplied we fall back to a flat 1.0 sample —
     // the shader path is identical, just yields 1.0 everywhere so the
     // tint range collapses to a no-op.
-    const atlasSample = opts.atlas ? tslTexture(opts.atlas, atlasUV).r : float(1.0)
-    const texturedFactor = mix(float(tintLow), float(tintHigh), atlasSample)
-    const tileFactor = mix(float(1.0), texturedFactor, useTexturesUniform)
+    const atlasSample = opts.atlas ? tslTexture(opts.atlas, atlasUV).rgb : vec3(1.0)
+    const texturedFactor = atlasSample.mul(float(tintHigh - tintLow)).add(float(tintLow))
+    const tileFactor = mix(vec3(1.0), texturedFactor, useTexturesUniform)
 
     // ── Cut-plane fade + cover mask (unchanged behaviour) ────────────
     const y = positionWorld.y

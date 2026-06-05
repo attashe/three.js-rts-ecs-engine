@@ -80,6 +80,7 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'sundial':   return buildSundial()
         case 'haste-shrine': return buildHasteShrine()
         case 'portal-shrine': return buildPortalShrine()
+        case 'eagle-shrine': return buildEagleShrine()
         case 'road-sign': return buildRoadSign()
         case 'high-jump-boots': return buildHighJumpBoots()
         case 'lift-cabin-broken': return buildLiftCabin('broken')
@@ -872,6 +873,49 @@ function buildPortalShrine(): BufferGeometry {
         paintVertexColor(rune, 0.78, 0.52, 1.0)
         parts.push(rune)
     }
+
+    return mergeAndCleanup(parts)
+}
+
+function buildEagleShrine(): BufferGeometry {
+    const stone = [0.58, 0.63, 0.66] as const
+    const darkStone = [0.25, 0.30, 0.34] as const
+    const snow = [0.88, 0.96, 1.00] as const
+    const gold = [0.95, 0.72, 0.24] as const
+    const glow = [0.38, 0.72, 1.00] as const
+
+    const parts: BufferGeometry[] = [
+        cylPart(0.46, 0.56, 0.16, [0, 0.08, 0], darkStone, 12),
+        cylPart(0.36, 0.42, 0.10, [0, 0.21, 0], snow, 12),
+        boxPart([0.36, 0.74, 0.32], [0, 0.63, 0], stone),
+        boxPart([0.46, 0.08, 0.38], [0, 1.04, 0], darkStone),
+        boxPart([0.34, 0.05, 0.30], [0, 1.11, 0], snow),
+        spherePart(0.16, [0, 1.30, -0.04], gold, [1.0, 0.82, 0.92]),
+    ]
+
+    const beak = new ConeGeometry(0.085, 0.18, 4)
+    beak.rotateX(Math.PI * 0.5)
+    beak.rotateY(Math.PI * 0.25)
+    beak.translate(0, 1.28, -0.22)
+    paintVertexColor(beak, 0.98, 0.78, 0.26)
+    parts.push(beak)
+
+    for (const side of [-1, 1] as const) {
+        parts.push(
+            boxPart([0.12, 0.72, 0.08], [side * 0.42, 0.74, 0.03], stone, [0, 0, side * -0.42]),
+            boxPart([0.10, 0.56, 0.07], [side * 0.62, 0.66, 0.02], stone, [0, 0, side * -0.62]),
+            boxPart([0.08, 0.38, 0.06], [side * 0.78, 0.58, 0.01], stone, [0, 0, side * -0.78]),
+            boxPart([0.09, 0.34, 0.045], [side * 0.42, 0.84, -0.08], gold, [0.12, 0, side * -0.42]),
+            boxPart([0.08, 0.26, 0.04], [side * 0.61, 0.73, -0.09], gold, [0.12, 0, side * -0.58]),
+        )
+    }
+
+    parts.push(
+        boxPart([0.06, 0.18, 0.035], [-0.13, 0.67, -0.18], glow, [0, 0, -0.55]),
+        boxPart([0.06, 0.18, 0.035], [0.13, 0.67, -0.18], glow, [0, 0, 0.55]),
+        boxPart([0.07, 0.24, 0.04], [0, 0.82, -0.18], glow),
+        cylPart(0.20, 0.20, 0.025, [0, 1.17, 0], glow, 14),
+    )
 
     return mergeAndCleanup(parts)
 }

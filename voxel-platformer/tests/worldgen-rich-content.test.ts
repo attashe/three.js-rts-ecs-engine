@@ -116,6 +116,15 @@ const RICH_CONTENT_SPEC: WorldSpec = {
             { id: 'arrival_start', type: 'arrival', place_at: 'spawn', half_xz: [1, 1] },
             { id: 'portal_exit', type: 'portal', place_at_xz: [24, 24], targetLevelId: 'next-level', targetArrivalId: 'arrival.start' },
         ],
+        readables: [
+            {
+                id: 'field_guide',
+                kind: 'book-2',
+                place_at_xz: [14, 12],
+                text: 'Field guide: generated places are safest when every story object has a stable id.',
+                prompt: 'Read Guide',
+            },
+        ],
     },
 }
 
@@ -134,6 +143,9 @@ test('worldgen Phase 7 rich content compiles into metadata and generated scripts
     assert.equal(result.meta.weatherZones[0]?.id, 'mist_zone')
     assert.equal(result.meta.zones.some((zone) => zone.id === 'arrival_start' && zone.kind === 'arrival'), true)
     assert.equal(result.meta.zones.some((zone) => zone.id === 'portal_exit' && zone.portal?.targetLevelId === 'next-level'), true)
+    assert.equal(result.meta.props.some((prop) => prop.id === 'field_guide:prop' && prop.kind === 'book-2'), true)
+    assert.equal(result.meta.zones.some((zone) => zone.id === 'field_guide:zone' && zone.kind === 'interact'), true)
+    assert.equal(result.meta.scripts.some((script) => script.id === 'worldgen:readable:field_guide'), true)
 
     const questNpc = result.meta.npcs.find((npc) => npc.id === 'quest_giver')
     const shopNpc = result.meta.npcs.find((npc) => npc.id === 'shopkeeper')
@@ -142,6 +154,7 @@ test('worldgen Phase 7 rich content compiles into metadata and generated scripts
     assert.ok(result.report.placements.some((placement) => placement.kind === 'content_quest' && placement.id === 'recover_relic'))
     assert.ok(result.report.placements.some((placement) => placement.kind === 'content_shop' && placement.id === 'quartermaster_shop'))
     assert.ok(result.report.placements.some((placement) => placement.kind === 'content_pickup' && placement.id === 'field_potion'))
+    assert.ok(result.report.placements.some((placement) => placement.kind === 'content_readable' && placement.id === 'field_guide'))
 })
 
 test('generated rich content scripts run through the script engine', async () => {
@@ -164,6 +177,10 @@ test('generated rich content scripts run through the script engine', async () =>
     harness.interact('zone_shop')
     await harness.tick(0.1)
     assert.equal(harness.tradeRequests[1]?.id, 'zone_supply_shop')
+
+    harness.interact('field_guide:zone')
+    await harness.tick(0.1)
+    assert.equal(harness.popupMessages[0]?.message, 'Field guide: generated places are safest when every story object has a stable id.')
 
     harness.interact(npcInteractionZoneId({ id: 'quest_giver' }))
     await harness.tick(0.1)
@@ -323,6 +340,38 @@ test('worldgen rail-cart content fails closed for invalid required carts', () =>
     assert.equal(badFacing.meta.railCarts.length, 0)
 })
 
+test('worldgen readable content fails closed for missing ids, text, and readable prop kind', () => {
+    const missingId = compileWorldSpec({
+        version: 1,
+        world: { id: 'bad_readable_content', name: 'Bad Readable Content', type: 'surface', seed: 'bad-readable-content', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            readables: [{ kind: 'book', place_at_xz: [8, 8], text: 'No stable id.' }],
+        },
+    })
+    assert.equal(missingId.report.status, 'failed')
+    assert.ok(missingId.report.errors.some((error) => error.path === '$.content.readables[0].id'))
+
+    const invalidContent = compileWorldSpec({
+        version: 1,
+        world: { id: 'bad_readable_fields', name: 'Bad Readable Fields', type: 'surface', seed: 'bad-readable-fields', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            readables: [
+                { id: 'empty_text_book', kind: 'book', place_at_xz: [9, 8], text: '' },
+                { id: 'wrong_kind_book', kind: 'road-sign', place_at_xz: [10, 8], text: 'Signs are not readable books.' },
+            ],
+        },
+    })
+    assert.equal(invalidContent.report.status, 'failed')
+    assert.ok(invalidContent.report.errors.some((error) => error.path === '$.content.readables[0].text'))
+    assert.ok(invalidContent.report.errors.some((error) => error.path === '$.content.readables[1].kind'))
+    assert.equal(invalidContent.report.placements.some((placement) => placement.kind === 'content_readable'), false)
+    assert.equal(invalidContent.meta.scripts.some((script) => script.id.startsWith('worldgen:readable:')), false)
+})
+
 test('content placement cycles fail closed', () => {
     const result = compileWorldSpec({
         version: 1,
@@ -368,6 +417,7 @@ test('generated quest and shop scripts escape adversarial author strings', async
                 dialogue: { start: tricky, complete: tricky, done: tricky },
                 speaker: { name: tricky, avatar: 'keeper' },
             }],
+            readables: [{ id: 'odd_readable', kind: 'book', place_at_xz: [10, 8], text: tricky }],
         },
     })
     assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
@@ -385,6 +435,10 @@ test('generated quest and shop scripts escape adversarial author strings', async
     harness.interact(npcInteractionZoneId({ id: 'quest_npc_odd' }))
     await harness.tick(0.1)
     assert.equal(harness.dialogueRequests.length, 1)
+
+    harness.interact('odd_readable:zone')
+    await harness.tick(0.1)
+    assert.equal(harness.popupMessages[0]?.message, tricky)
 })
 
 test('optional rich content warnings do not emit broken generated scripts', () => {
@@ -580,6 +634,7 @@ interface Harness {
     pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[]
     tradeRequests: TradeRequest[]
     dialogueRequests: unknown[]
+    popupMessages: { targetId: string; message: string; seconds?: number }[]
     audioPlays: string[]
     readonly gold: number
     interact(targetId: string): void
@@ -595,6 +650,7 @@ function makeHarness(scripts: readonly ScriptEntry[]): Harness {
     const pickupSpawns: { kind: string; pos: VoxelCoord; opts?: PickupSpawnOptions }[] = []
     const tradeRequests: TradeRequest[] = []
     const dialogueRequests: unknown[] = []
+    const popupMessages: { targetId: string; message: string; seconds?: number }[] = []
     const audioPlays: string[] = []
     const livePickupIds = new Set<string>()
     const items: Record<string, { quantity: number }> = {}
@@ -673,7 +729,9 @@ function makeHarness(scripts: readonly ScriptEntry[]): Harness {
     const sys = createScriptEngineSystem({
         audio, chunks, player, pickups, pistons, zone, log, trade,
         ui: {
-            say() {},
+            say(targetId, message, opts) {
+                popupMessages.push({ targetId, message, seconds: opts?.seconds })
+            },
             async dialogue(request) {
                 dialogueRequests.push(request)
                 return {}
@@ -691,6 +749,7 @@ function makeHarness(scripts: readonly ScriptEntry[]): Harness {
         pickupSpawns,
         tradeRequests,
         dialogueRequests,
+        popupMessages,
         audioPlays,
         get gold() { return gold },
         interact(targetId) {

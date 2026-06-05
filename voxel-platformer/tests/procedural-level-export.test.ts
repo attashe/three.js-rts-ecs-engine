@@ -14,17 +14,27 @@ import {
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
     FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
+    FOREST_LIFT_FROM_MINE_ARRIVAL_ID,
+    FOREST_LIFT_MINE_PORTAL_ZONE_ID,
     FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
+    MINE_FOREST_RETURN_PORTAL_ZONE_ID,
+    MINE_FROM_PEAK_ARRIVAL_ID,
+    MINE_FROM_FOREST_ARRIVAL_ID,
+    MINE_PEAK_PORTAL_ZONE_ID,
+    PEAK_FROM_MINE_ARRIVAL_ID,
+    PEAK_RETURN_PORTAL_ZONE_ID,
     PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
     PROCEDURAL_LEVEL_DEFINITIONS,
     PROCEDURAL_LEVEL_SCRIPT_FILES,
+    STORMY_EAGLE_PEAK_LEVEL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
     type ProceduralScriptSources,
 } from '../src/game/procedural-levels'
 import { HELD_TORCH_ITEM_ID } from '../src/game/inventory'
 import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
+import { GameAudio } from '../src/game/audio'
 
 const FAKE_SCRIPT_SOURCES: ProceduralScriptSources = Object.fromEntries(
     PROCEDURAL_LEVEL_SCRIPT_FILES.map((file) => [file.sourcePath, `// ${file.id}\n`]),
@@ -42,10 +52,27 @@ function zoneCenterCell(zone: Zone): { x: number; y: number; z: number } {
     }
 }
 
+function zoneCenterPoint(zone: Zone): { x: number; y: number; z: number } {
+    return {
+        x: (zone.min.x + zone.max.x) / 2,
+        y: zone.min.y,
+        z: (zone.min.z + zone.max.z) / 2,
+    }
+}
+
 function pointInZone(zone: Zone, point: { x: number; y: number; z: number }): boolean {
     return point.x >= zone.min.x && point.x < zone.max.x &&
         point.y >= zone.min.y && point.y < zone.max.y &&
         point.z >= zone.min.z && point.z < zone.max.z
+}
+
+function xzDistanceToWeatherZoneAabb(
+    zone: { position: { x: number; z: number }; size: { x: number; z: number } },
+    point: { x: number; z: number },
+): number {
+    const dx = Math.max(Math.abs(point.x - zone.position.x) - zone.size.x * 0.5, 0)
+    const dz = Math.max(Math.abs(point.z - zone.position.z) - zone.size.z * 0.5, 0)
+    return Math.hypot(dx, dz)
 }
 
 function hasSurfacePath(
@@ -54,6 +81,18 @@ function hasSurfacePath(
     goal: { x: number; y: number; z: number },
 ): boolean {
     return findPath(chunks, start, goal, { maxNodes: 16_000, maxStepUp: 1, maxDrop: 3 }) !== null
+}
+
+function countBlock(chunks: ChunkManager, block: number, size: number, maxY: number): number {
+    let count = 0
+    for (let z = 0; z < size; z += 1) {
+        for (let x = 0; x < size; x += 1) {
+            for (let y = 0; y <= maxY; y += 1) {
+                if (chunks.getVoxel(x, y, z) === block) count += 1
+            }
+        }
+    }
+    return count
 }
 
 test('procedural levels export to editor-saveable .vplevel buffers', () => {
@@ -85,6 +124,26 @@ test('Phase 12 underground mine stress is visible in procedural level exports', 
     assert.equal(level.runtimeMeta.chests.length, 3)
     assert.equal(restored.metadata.chests?.length, 3)
     assert.equal(level.runtimeMeta.npcs.filter((npc) => npc.model === 'spider').length, 5)
+    assert.ok(level.runtimeMeta.zones.some((zone) => zone.id === MINE_FROM_FOREST_ARRIVAL_ID && zone.kind === 'arrival'))
+    const forestReturn = level.runtimeMeta.zones.find((zone) => zone.id === MINE_FOREST_RETURN_PORTAL_ZONE_ID)
+    const forestArrival = level.runtimeMeta.zones.find((zone) => zone.id === MINE_FROM_FOREST_ARRIVAL_ID)
+    assert.ok(forestReturn && forestReturn.kind === 'portal', 'mine start portal should return to the forest cliff')
+    assert.equal(forestReturn!.portal?.targetLevelId, FOREST_LIFT_VALLEY_LEVEL_ID)
+    assert.equal(forestReturn!.portal?.targetArrivalId, FOREST_LIFT_FROM_MINE_ARRIVAL_ID)
+    assert.equal(pointInZone(forestReturn!, zoneCenterPoint(forestArrival!)), false, 'mine arrival should not immediately bounce back through the return portal')
+    const peakExit = level.runtimeMeta.zones.find((zone) => zone.id === MINE_PEAK_PORTAL_ZONE_ID)
+    assert.ok(peakExit && peakExit.kind === 'portal')
+    assert.equal(peakExit!.portal?.targetLevelId, STORMY_EAGLE_PEAK_LEVEL_ID)
+    assert.equal(peakExit!.portal?.targetArrivalId, PEAK_FROM_MINE_ARRIVAL_ID)
+    assert.ok(peakExit!.max.x - peakExit!.min.x >= 3.75, 'mine peak-exit portal should export a broad trigger')
+    assert.ok(peakExit!.max.z - peakExit!.min.z >= 3.75, 'mine peak-exit portal should export a deep trigger')
+    assert.ok(level.runtimeMeta.zones.some((zone) => zone.id === MINE_FROM_PEAK_ARRIVAL_ID && zone.kind === 'arrival'))
+    assert.ok(level.runtimeMeta.props.some((prop) => prop.id === 'station_master_log:prop' && prop.kind === 'book'))
+    assert.ok(level.runtimeMeta.props.some((prop) => prop.id === 'sealed_exit_note:prop' && prop.kind === 'book'))
+    assert.ok(level.runtimeMeta.scripts.some((script) => script.id === 'worldgen:readable:station_master_log'))
+    assert.ok(level.runtimeMeta.cinematics?.some((cinematic) => cinematic.id === 'mine-darkness-intro' && cinematic.playOnStart === true))
+    assert.ok(restored.metadata.cinematics?.some((cinematic) => cinematic.id === 'mine-darkness-intro' && cinematic.playOnStart === true))
+    assert.equal(level.runtimeMeta.scripts.some((script) => script.id === 'future-exit-script'), false)
     assert.equal(level.runtimeMeta.player.abilities.highJump, false)
     assert.equal(level.runtimeMeta.player.abilities.torch, true)
     assert.equal(level.runtimeMeta.player.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
@@ -92,6 +151,68 @@ test('Phase 12 underground mine stress is visible in procedural level exports', 
     assert.equal(level.runtimeMeta.player.inventory.items[HELD_TORCH_ITEM_ID]?.quantity, 1)
     assert.equal(restored.metadata.player?.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
     assert.equal(restored.metadata.player?.abilities.torch, true)
+})
+
+test('Stormy Eagle Peak exports a small final summit with shrine and mine return', () => {
+    const definition = PROCEDURAL_LEVEL_DEFINITIONS.find((level) => level.id === STORMY_EAGLE_PEAK_LEVEL_ID)
+    assert.ok(definition)
+    assert.equal(definition.file, `${STORMY_EAGLE_PEAK_LEVEL_ID}.vplevel`)
+
+    const peak = createProceduralEditorLevel(STORMY_EAGLE_PEAK_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const meta = peak.runtimeMeta
+    const restored = deserializeLevel<EditorLevelMeta>(peak.buffer)
+    const arrival = meta.zones.find((zone) => zone.id === PEAK_FROM_MINE_ARRIVAL_ID)
+    const shrine = meta.zones.find((zone) => zone.id === 'zone.peak.eagle-shrine')
+    const returnPortal = meta.zones.find((zone) => zone.id === PEAK_RETURN_PORTAL_ZONE_ID)
+
+    assert.equal(meta.name, 'Stormy Eagle Peak')
+    assert.equal(restored.metadata.name, 'Stormy Eagle Peak')
+    assert.equal(meta.size, 64)
+    assert.ok(arrival && arrival.kind === 'arrival', 'peak should expose the mine arrival')
+    assert.ok(shrine && shrine.kind === 'interact', 'peak should expose an interactable Eagle shrine')
+    assert.equal(shrine!.interaction?.prompt, 'Pray')
+    assert.ok(returnPortal && returnPortal.kind === 'portal', 'peak should include a hidden return portal')
+    assert.equal(returnPortal!.portal?.targetLevelId, PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID)
+    assert.equal(returnPortal!.portal?.targetArrivalId, MINE_FROM_PEAK_ARRIVAL_ID)
+
+    assert.ok(meta.props.some((prop) => prop.kind === 'eagle-shrine'), 'summit should place the Eagle shrine prop')
+    assert.ok(meta.scripts.some((script) => script.id === 'stormy-eagle-peak-shrine-script' && /cinematic\.play/.test(script.source)))
+    assert.ok(meta.cinematics?.some((cinematic) => cinematic.id === 'stormy-eagle-peak-shrine' && cinematic.playOnStart === false))
+    const shrineProp = meta.props.find((prop) => prop.kind === 'eagle-shrine')
+    assert.equal(meta.environment?.soundId, GameAudio.ThemeCathedral)
+    assert.equal(meta.ambientWeather?.state.snowOn, true)
+    assert.equal(meta.ambientWeather?.state.timeOfDay, 8.0)
+    assert.equal(meta.ambientWeather?.state.fogDensityMul, 0.72)
+    assert.ok((meta.ambientWeather?.state.windGusts ?? 0) > 0.5)
+    assert.ok(meta.soundSources.some((source) => source.soundId === GameAudio.AmbWind && source.volume >= 0.4))
+    assert.ok(meta.weatherZones.some((zone) => zone.presetId === 'blizzard' && zone.soundId === GameAudio.AmbWind && zone.soundVolume >= 0.5))
+    const sideFogZones = meta.weatherZones.filter((zone) => zone.presetId === 'fog' && zone.id.startsWith('fx.stormy-eagle-peak.side-haze-'))
+    const roadCenterlineSamples = [
+        { x: 6.5, z: 52.5 },
+        { x: 11.5, z: 49.5 },
+        { x: 16.5, z: 46.5 },
+        { x: 22.0, z: 41.5 },
+        { x: 27.5, z: 36.5 },
+        { x: 33.5, z: 31.0 },
+        { x: 39.5, z: 25.5 },
+        { x: 45.5, z: 19.5 },
+        { x: 51.5, z: 13.5 },
+    ]
+    assert.equal(sideFogZones.length, 6, 'peak should guide the road with side haze while leaving the road itself clear')
+    assert.ok(sideFogZones.every((zone) => xzDistanceToWeatherZoneAabb(zone, shrine!.interaction!.anchor!) > 7.5), 'side haze should leave the shrine clearly visible')
+    for (const zone of sideFogZones) {
+        for (const sample of roadCenterlineSamples) {
+            assert.ok(
+                xzDistanceToWeatherZoneAabb(zone, sample) > 2.75,
+                `side haze ${zone.id} should not cover road sample (${sample.x}, ${sample.z})`,
+            )
+        }
+    }
+    assert.ok(shrineProp && Math.abs(shrineProp.position.y - (shrine!.min.y + 1)) < 0.001, 'shrine prop should sit one block above the interaction surface')
+    assert.ok(countBlock(peak.chunks, BLOCK.snow, 64, 26) > 400, 'peak should visibly use snow voxels')
+
+    assert.ok(hasSurfacePath(peak.chunks, zoneCenterCell(arrival!), zoneCenterCell(shrine!)), 'road should connect mine arrival to the shrine')
+    assert.ok(hasSurfacePath(peak.chunks, zoneCenterCell(shrine!), zoneCenterCell(returnPortal!)), 'hidden return should be reachable from the shrine plateau')
 })
 
 test('procedural demo export preserves scripts and travel metadata', () => {
@@ -232,10 +353,13 @@ test('forest lift valley generates an unarmed quest scenario with an unreachable
     const liftControlLevers = meta.props.filter((prop) => prop.kind === 'lift-control-lever')
     const bottomZone = meta.zones.find((zone) => zone.id === 'zone.forest-lift.bottom')
     const topZone = meta.zones.find((zone) => zone.id === 'zone.forest-lift.top')
+    const minePortal = meta.zones.find((zone) => zone.id === FOREST_LIFT_MINE_PORTAL_ZONE_ID)
+    const mineReturnArrival = meta.zones.find((zone) => zone.id === FOREST_LIFT_FROM_MINE_ARRIVAL_ID)
     const signZone = meta.zones.find((zone) => zone.id === 'zone.forest-lift.road-sign')
     const arrival = meta.zones.find((zone) => zone.id === FOREST_LIFT_FROM_EDGE_ARRIVAL_ID)
     const cliffwright = meta.npcs.find((npc) => npc.id === 'forest-lift-cliffwright')
     const rabbits = meta.npcs.filter((npc) => npc.model === 'rabbit')
+    const wolves = meta.npcs.filter((npc) => npc.model === 'wolf')
     const piston = meta.pistons.find((candidate) => candidate.id === 'piston.forest-lift')
     const script = meta.scripts.find((entry) => entry.id === 'forest-lift-valley-quest')
     const intro = meta.cinematics?.find((cinematic) => cinematic.id === 'forest-lift-arrival')
@@ -260,6 +384,12 @@ test('forest lift valley generates an unarmed quest scenario with an unreachable
     assert.equal(signZone!.interaction?.prompt, 'Read Sign')
     assert.ok(bottomZone && bottomZone.kind === 'interact', 'bottom lift station should be interactable')
     assert.ok(topZone && topZone.kind === 'interact', 'top lift station should be interactable')
+    assert.ok(minePortal && minePortal.kind === 'portal', 'top cliff should include a mine entry portal')
+    assert.equal(minePortal!.portal?.targetLevelId, PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID)
+    assert.equal(minePortal!.portal?.targetArrivalId, MINE_FROM_FOREST_ARRIVAL_ID)
+    assert.ok(mineReturnArrival && mineReturnArrival.kind === 'arrival', 'top cliff should include a return arrival from the mine')
+    assert.equal(mineReturnArrival!.min.y, minePortal!.min.y + 1, 'forest return arrival should spawn at standing height above the cliff deck')
+    assert.equal(pointInZone(minePortal!, zoneCenterPoint(mineReturnArrival!)), false, 'forest return arrival should not immediately re-enter the mine portal')
     assert.ok(propKinds.has('road-sign'), 'starting road should include a visible warning sign')
     assert.ok(propKinds.has('lift-cabin-broken'), 'broken lift cabin should be visible before repair')
     assert.ok(propKinds.has('broken-wagon'), 'quest site should include a destroyed wagon')
@@ -293,6 +423,15 @@ test('forest lift valley generates an unarmed quest scenario with an unreachable
     )
     assert.ok(rabbits.every((rabbit) => rabbit.collisionEnabled === false), 'ambient rabbits should not block the player')
     assert.ok(rabbits.every((rabbit) => /npc\.setFlee\(NPC_ID, true\)/.test(rabbit.scriptSource)))
+    assert.equal(wolves.length, 3, 'forest valley should include a small wolf pack')
+    assert.deepEqual(
+        wolves.map((wolf) => wolf.id).sort(),
+        ['forest-lift-wolf-cliff-den', 'forest-lift-wolf-pine-road', 'forest-lift-wolf-wagon-ridge'],
+    )
+    assert.ok(wolves.every((wolf) => wolf.collisionEnabled === true), 'wolves should be colliding combatants')
+    assert.ok(wolves.every((wolf) => wolf.interactionEnabled === false), 'wolves should not show talk prompts')
+    assert.ok(wolves.every((wolf) => /npc\.setHostile\(NPC_ID, 'player', true\)/.test(wolf.scriptSource)))
+    assert.ok(wolves.every((wolf) => Math.hypot(wolf.position.x - meta.spawn.x, wolf.position.z - meta.spawn.z) > 45), 'wolves should not ambush the unarmed start')
 
     assert.ok(piston, 'repaired lift should be authored as a script-controlled piston')
     assert.equal(piston!.motion, 'physical')
@@ -303,6 +442,18 @@ test('forest lift valley generates an unarmed quest scenario with an unreachable
         pointInZone(topZone!, { x: piston!.to.x + 0.5, y: topZone!.min.y, z: piston!.to.z + 0.5 }),
         'upper lift activation zone should be reachable while standing in the raised cabin',
     )
+    assert.ok(
+        Math.hypot(zoneCenterCell(minePortal!).x - zoneCenterCell(topZone!).x, zoneCenterCell(minePortal!).z - zoneCenterCell(topZone!).z) < 25,
+        'mine entry should be near the upper lift deck',
+    )
+    let webGateBlocks = 0
+    const portalCell = zoneCenterCell(minePortal!)
+    for (let y = Math.floor(minePortal!.min.y) + 1; y <= Math.floor(minePortal!.min.y) + 2; y += 1) {
+        for (let z = portalCell.z - 1; z <= portalCell.z + 1; z += 1) {
+            if (valley.chunks.getVoxel(portalCell.x - 3, y, z) === BLOCK.spiderWeb) webGateBlocks += 1
+        }
+    }
+    assert.equal(webGateBlocks, 6, 'mine entry should be blocked by a sword-cleared spider-web sheet')
 
     assert.ok(script, 'forest valley should include the repair quest script')
     assert.match(script!.source, /pickups\.spawn\(MATERIAL_ID, MATERIAL_POS/)

@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ZONE_PRESETS, applyZonePreset } from '../src/engine/fx/presets/zone-presets'
 import { WEATHER_PRESETS } from '../src/engine/fx/presets/weather-presets'
+import { GameAudio } from '../src/game/audio'
+import { defaultSoundForPreset } from '../src/game/weather-config'
 
 test('every zone preset round-trips through applyZonePreset with no missing fields', () => {
     for (const key of Object.keys(ZONE_PRESETS)) {
@@ -29,6 +31,14 @@ test('applyZonePreset honors overrides without mutating the preset object', () =
 
 test('applyZonePreset throws on unknown id', () => {
     assert.throws(() => applyZonePreset('not-a-preset' as keyof typeof ZONE_PRESETS), /Unknown zone preset/)
+})
+
+test('blizzard zone preset uses heavy snow and wind ambience', () => {
+    const blizzard = applyZonePreset('blizzard')
+    assert.equal(blizzard.type, 'snow')
+    assert.ok(blizzard.count > applyZonePreset('snow').count)
+    assert.ok(Math.abs(blizzard.windX) > Math.abs(applyZonePreset('snow').windX))
+    assert.equal(defaultSoundForPreset('blizzard'), GameAudio.AmbWind)
 })
 
 test('weather presets exist for every label the demo expected', () => {

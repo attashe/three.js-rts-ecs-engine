@@ -180,7 +180,7 @@ writeWav('orb-zap.wav', mix(0.22, [
 ]))
 
 // ── Character footsteps (per surface) ────────────────────────────────
-// Five surface families × 2 variants each. The locomotion system
+// Six surface families × 2 variants each. The locomotion system
 // detects the voxel under the player's feet and picks the matching
 // pool. Two variants gives just enough rotation that the rhythm
 // doesn't read as a metronome; rate jitter at play time adds the
@@ -193,6 +193,7 @@ writeWav('orb-zap.wav', mix(0.22, [
 //   - stone: high pluck + sharp wide-band noise (clean click)
 //   - wood : pluck around 180 Hz + octave-low resonance (hollow creak)
 //   - water: bubble + filtered noise burst (splashy, no thud)
+//   - snow : dry compressed crunch, bright but soft-edged
 
 // Grass — soft, slightly mossy. Lower noise cutoff so it reads as
 // "swish" not "click".
@@ -216,6 +217,22 @@ writeWav('footstep-dirt-2.wav', mix(0.11, [
     pluck(0.00, 0.07, 65, 0.32),
     noiseBurst(0.00, 0.06, 0.22, 6141),
     filteredNoise(0.01, 0.09, 0.07, 480, 6151),
+]))
+
+// Snow — compacted powder crunch. A very short noisy bite over a
+// subdued low body gives the "compressed crystals" read without
+// becoming a stone click.
+writeWav('footstep-snow-1.wav', mix(0.13, [
+    filteredNoise(0.00, 0.11, 0.22, 1900, 6281),
+    noiseBurst(0.00, 0.035, 0.20, 6291),
+    crackle(0.00, 0.09, 0.18, 0.16, 6301),
+    pluck(0.00, 0.08, 72, 0.14),
+]))
+writeWav('footstep-snow-2.wav', mix(0.14, [
+    filteredNoise(0.00, 0.12, 0.20, 1600, 6311),
+    noiseBurst(0.00, 0.04, 0.18, 6321),
+    crackle(0.01, 0.10, 0.20, 0.15, 6331),
+    pluck(0.00, 0.09, 86, 0.12),
 ]))
 
 // Stone — clean click. High pluck fundamental, sharp wide-band noise.
@@ -523,6 +540,36 @@ writeWav('spider-die.wav', mix(0.74, [
     noiseBurst(0.62, 0.64, 0.08, 6309),
     pluck(0.30, 0.46, 90, 0.18),                         // soft body thud
     rumble(0.30, 0.70, 80, 0.06, 6311),
+]))
+
+// ── Creatures: wolf ──────────────────────────────────────────────────
+// Forest wolf voice. The combat cues are short and dry; the night howl is
+// longer, breathier, and carries farther through spatial playback.
+writeWav('wolf-howl.wav', mix(1.36, [
+    sineChirp(0.05, 0.48, 330, 520, 0.22),                // rising call
+    sineChirp(0.28, 1.12, 520, 310, 0.30),                // falling sustained body
+    sineChirp(0.36, 1.16, 740, 430, 0.11),                // throat overtone
+    filteredNoise(0.12, 1.24, 0.08, 950, 6401),           // breath in the howl
+    rumble(0.18, 1.30, 115, 0.08, 6403),                  // chest resonance
+]))
+writeWav('wolf-snarl.wav', mix(0.38, [
+    filteredNoise(0.00, 0.34, 0.24, 720, 6411),           // rough throat
+    sineChirp(0.02, 0.24, 310, 135, 0.20),                // low growl fall
+    noiseBurst(0.03, 0.08, 0.22, 6413),                   // teeth snap
+    noiseBurst(0.18, 0.22, 0.18, 6415),
+    rumble(0.00, 0.34, 82, 0.09, 6417),
+]))
+writeWav('wolf-hurt.wav', mix(0.30, [
+    sineChirp(0.00, 0.14, 520, 780, 0.24),                // sharp yelp
+    sineChirp(0.10, 0.28, 680, 260, 0.20),                // pained fall
+    filteredNoise(0.00, 0.16, 0.09, 1500, 6421),
+    noiseBurst(0.00, 0.035, 0.18, 6423),
+]))
+writeWav('wolf-die.wav', mix(0.82, [
+    sineChirp(0.00, 0.46, 420, 150, 0.28),                // final low cry
+    filteredNoise(0.00, 0.48, 0.10, 900, 6431),
+    pluck(0.32, 0.54, 72, 0.20),                          // body hit
+    rumble(0.28, 0.78, 64, 0.10, 6433),
 ]))
 
 

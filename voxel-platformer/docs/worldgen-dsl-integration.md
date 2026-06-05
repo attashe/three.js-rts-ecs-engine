@@ -286,6 +286,22 @@ Current MVP content categories:
 - `rail_carts`: emit existing `RailCartConfig` metadata from rail-cell or shared
   spatial placement. Generated carts validate that the target voxel is a rail
   block so bad carts fail at compile time instead of being skipped at runtime.
+- `readables`: emit a `book` / `book-2` prop, an interact zone, and a generated
+  `ui.say(...)` script from one spatial entry. Use it for environmental story
+  notes and simple authored text that should not require a bespoke quest script.
+
+Readable entries use the same spatial placement contract as props:
+
+```json
+{
+  "id": "foreman_journal",
+  "kind": "book",
+  "place_at": "office_decor",
+  "offset": [1.5, 0, 1.8],
+  "prompt": "Read Journal",
+  "text": "Foreman's journal: the last rail cart left before dawn."
+}
+```
 
 The content compiler should not introduce a second quest engine. It should
 generate ordinary `ScriptEntry` source that uses the same patterns as existing
@@ -618,6 +634,8 @@ Acceptance criteria:
   flags, stable pickup ids, and durable inventory metadata.
 - Cinematics, level environment, sound sources, sound zones, weather zones, and
   travel zones compile into existing metadata arrays.
+- Readables compile into prop + interact-zone metadata and generated popup
+  scripts for book-style environmental narrative.
 - Content reference validation detects missing NPC/zone/prop ids before
   scripts are emitted.
 - Tests run generated scripts with stub facades for at least one generated

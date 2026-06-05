@@ -130,18 +130,19 @@ test('game actions expose the platformer command hint set in order', () => {
         { keys: ['Mouse'], label: 'Aim' },
         { keys: ['Q', 'R'], label: 'Rotate camera' },
         { keys: ['Space'], label: 'Jump' },
-        { keys: ['H'], label: 'High jump' },
+        { keys: ['Shift+Space'], label: 'High jump' },
         { keys: ['G'], label: 'Air push' },
-        { keys: ['F'], label: 'Attack' },
-        { keys: ['T'], label: 'Shield' },
-        { keys: ['C'], label: 'Cast' },
+        { keys: ['LMB'], label: 'Attack' },
+        { keys: ['RMB'], label: 'Block / Cast' },
         { keys: ['X'], label: 'Switch weapon' },
-        { keys: ['Z'], label: 'Use consumable' },
+        { keys: ['F'], label: 'Use consumable' },
         { keys: ['E'], label: 'Interaction' },
         { keys: ['Tab'], label: 'Inventory' },
     ])
-    assert.equal(actions.get(GameAction.BowShot).bindings?.[0]?.keys[0], 'KeyF')
-    assert.equal(actions.get(GameAction.UseConsumable).bindings?.[0]?.keys[0], 'KeyZ')
+    assert.equal(actions.get(GameAction.BowShot).bindings?.[0]?.keys[0], 'Mouse0')
+    assert.equal(actions.get(GameAction.RaiseShield).bindings?.[0]?.keys[0], 'Mouse2')
+    assert.equal(actions.get(GameAction.CastSpell).bindings?.[0]?.keys[0], 'Mouse2')
+    assert.equal(actions.get(GameAction.UseConsumable).bindings?.[0]?.keys[0], 'KeyF')
     assert.equal(actions.get(GameAction.Interact).bindings?.[0]?.keys[0], 'KeyE')
     assert.equal(actions.get(GameAction.Inventory).bindings?.[0]?.keys[0], 'Tab')
 })
@@ -172,7 +173,7 @@ test('game action definitions accept keyboard overrides while preserving default
     input.pressedAt.set('KeyB', now)
     const intent = actions.consumePressed(GameAction.BowShot)
     assert.equal(intent?.key, 'KeyB')
-    assert.equal(GAME_ACTIONS.find((definition) => definition.id === GameAction.BowShot)?.bindings?.[0]?.keys[0], 'KeyF')
+    assert.equal(GAME_ACTIONS.find((definition) => definition.id === GameAction.BowShot)?.bindings?.[0]?.keys[0], 'Mouse0')
 })
 
 test('key codes have compact display labels for settings UI', () => {
@@ -180,4 +181,51 @@ test('key codes have compact display labels for settings UI', () => {
     assert.equal(formatKeyCodeForDisplay('Digit3'), '3')
     assert.equal(formatKeyCodeForDisplay('ArrowLeft'), 'Left')
     assert.equal(formatKeyCodeForDisplay('Space'), 'Space')
+    assert.equal(formatKeyCodeForDisplay('Mouse0'), 'LMB')
+    assert.equal(formatKeyCodeForDisplay('Mouse2'), 'RMB')
+})
+
+test('chord bindings: Shift+Space high-jumps without also firing a plain jump', () => {
+    let now = 1000
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(GAME_ACTIONS, input, { now: () => now })
+
+    input.held.add('ShiftLeft')
+    input.pressedAt.set('Space', now)
+    assert.equal(actions.consumePressed(GameAction.Jump), null, 'plain jump must not fire while Shift is held')
+    assert.equal(actions.consumePressed(GameAction.HighJump)?.actionId, GameAction.HighJump)
+})
+
+test('chord bindings: plain Space jumps and does not high-jump', () => {
+    let now = 1000
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(GAME_ACTIONS, input, { now: () => now })
+
+    input.pressedAt.set('Space', now)
+    assert.equal(actions.consumePressed(GameAction.HighJump), null, 'high jump requires Shift')
+    assert.equal(actions.consumePressed(GameAction.Jump)?.actionId, GameAction.Jump)
+})
+
+test('mouse-button bindings drive attack and the contextual secondary', () => {
+    let now = 1000
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(GAME_ACTIONS, input, { now: () => now })
+
+    input.pressedAt.set('Mouse0', now)
+    assert.equal(actions.consumePressed(GameAction.BowShot)?.key, 'Mouse0')
+
+    input.held.add('Mouse2')
+    assert.equal(actions.isHeld(GameAction.RaiseShield), true, 'RMB held → block (shield) action')
+})
+
+test('ActionMap.rebind swaps a binding on the live instance', () => {
+    let now = 1000
+    const input = new FakeInput(() => now)
+    const actions = new ActionMap(GAME_ACTIONS, input, { now: () => now })
+
+    actions.rebind(GameAction.UseConsumable, [{ keys: ['KeyQ'] }])
+    input.pressedAt.set('KeyF', now)
+    assert.equal(actions.consumePressed(GameAction.UseConsumable), null, 'old F binding is gone after rebind')
+    input.pressedAt.set('KeyQ', now)
+    assert.equal(actions.consumePressed(GameAction.UseConsumable)?.key, 'KeyQ')
 })

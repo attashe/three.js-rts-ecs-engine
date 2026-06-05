@@ -14,6 +14,7 @@ import {
     TROLL_DEFAULT_HP,
     TROLL_OUTFIT_KINDS,
     TROLL_OUTFIT_LABELS,
+    WOLF_DEFAULT_HP,
     defaultNpcBeard,
     defaultNpcEquipment,
     defaultNpcVariant,
@@ -43,12 +44,13 @@ function npc(id: string): NpcConfig {
 }
 
 test('NPC model registry exposes humanoid, troll, and creature models', () => {
-    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll', 'rabbit', 'spider', 'archer', 'shield-warrior', 'shield-spearman'])
+    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll', 'rabbit', 'spider', 'wolf', 'archer', 'shield-warrior', 'shield-spearman'])
     assert.deepEqual([...TROLL_OUTFIT_KINDS], ['wise', 'guardian', 'king', 'princess', 'trader', 'child'])
     assert.equal(NPC_MODEL_LABELS.keeper, 'Dwarf')
     assert.equal(NPC_MODEL_LABELS['keeper-arlen'], 'Keeper Arlen')
     assert.equal(NPC_MODEL_LABELS.rabbit, 'Rabbit')
     assert.equal(NPC_MODEL_LABELS.spider, 'Spider')
+    assert.equal(NPC_MODEL_LABELS.wolf, 'Wolf')
     assert.equal(NPC_MODEL_LABELS.archer, 'Archer')
     assert.equal(NPC_MODEL_LABELS['shield-warrior'], 'Shield Warrior')
     assert.equal(NPC_MODEL_LABELS['shield-spearman'], 'Shield Spearman')
@@ -79,6 +81,8 @@ test('NPC model registry exposes humanoid, troll, and creature models', () => {
     assert.equal(findByName(guardian, 'LargeTrollLeftLens'), null, 'Guardian troll has no Wise Troll glasses')
     assert.equal(findByName(guardian, 'Cloak'), null, 'Guardian troll has no cloak')
     assert.ok(findByName(createNpcModel('spider'), 'SpiderAbdomen'), 'spider has a distinct low creature body')
+    assert.ok(findByName(createNpcModel('wolf'), 'WolfBody'), 'wolf has a distinct quadruped body')
+    assert.ok(findByName(createNpcModel('wolf'), 'WolfHead'), 'wolf has a named head for its lunge animation')
 
     const markers: Record<TrollOutfitKind, string> = {
         wise: 'LargeTrollLeftLens',
@@ -177,10 +181,20 @@ test('NPC appearance and equipment normalize from model defaults and custom choi
     assert.equal(spider.beard, 'none')
     assert.deepEqual(spider.equipment, { handR: null, handL: null })
 
+    const wolf = normalizeNpcConfig({
+        id: 'wolf',
+        model: 'wolf',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(wolf.beard, 'none')
+    assert.deepEqual(wolf.equipment, { handR: null, handL: null })
+    assert.equal(npcAttackClip(wolf), 'attack')
+
     assert.equal(npcDefaultHp(dwarf), NPC_DEFAULT_HP)
     assert.equal(npcDefaultHp(troll), TROLL_DEFAULT_HP)
     assert.equal(npcDefaultHp(guardian), TROLL_DEFAULT_HP)
     assert.equal(npcDefaultHp(spider), SPIDER_DEFAULT_HP)
+    assert.equal(npcDefaultHp(wolf), WOLF_DEFAULT_HP)
 
     const spearman = normalizeNpcConfig({
         id: 'spearman',

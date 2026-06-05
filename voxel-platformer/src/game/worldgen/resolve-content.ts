@@ -17,6 +17,7 @@ import { WorldgenCompileContext } from './compile-context'
 import type { ContentEntrySpec, VoxelCoord } from './spec-types'
 import type { WorldgenLevelDraft } from './level-draft'
 import {
+    appendGeneratedScript,
     appendAuthoredScript,
     contentDiagnostic,
     contentEntryRequired,
@@ -53,6 +54,7 @@ export function resolveContent(ctx: WorldgenCompileContext, draft: WorldgenLevel
     if (!content) return
     const resolveOpts = { ...opts, contentIndex: createContentResolutionIndex(content) }
     resolveContentProps(ctx, draft, content.props ?? [], resolveOpts)
+    resolveContentReadables(ctx, draft, content.readables ?? [], resolveOpts)
     resolveContentZones(ctx, draft, content.zones ?? [], resolveOpts)
     resolveContentNpcs(ctx, draft, content.npcs ?? [], resolveOpts)
     resolveContentMetadata(ctx, draft, content, resolveOpts)
@@ -62,6 +64,87 @@ export function resolveContent(ctx: WorldgenCompileContext, draft: WorldgenLevel
     resolveContentShops(ctx, draft, content.shops ?? [])
     resolveContentQuests(ctx, draft, content.quests ?? [], resolveOpts)
     resolveContentScripts(ctx, draft, content.scripts ?? [])
+}
+
+function resolveContentReadables(
+    ctx: WorldgenCompileContext,
+    draft: WorldgenLevelDraft,
+    readables: readonly ContentEntrySpec[],
+    opts: WorldgenContentResolveOptions,
+): void {
+    for (let i = 0; i < readables.length; i += 1) {
+        const spec = readables[i]!
+        const path = `$.content.readables[${i}]`
+        const required = contentEntryRequired(spec)
+        const id = contentId(ctx, spec, path, required)
+        if (!id) continue
+        const position = resolveContentPosition(ctx, spec, path, required, opts)
+        if (!position) continue
+        const propKind = readReadablePropKind(ctx, spec.kind ?? spec.propKind ?? spec.prop_kind ?? 'book', `${path}.kind`, required)
+        if (!propKind) continue
+        const text = readString(spec.text ?? spec.message, '')
+        if (!text) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path}.text must be a non-empty string.`,
+                path: `${path}.text`,
+                details: { id, value: spec.text ?? spec.message },
+            })
+            continue
+        }
+        const zoneId = readString(spec.zoneId ?? spec.zone_id, `${id}:zone`)
+        const propId = readString(spec.propId ?? spec.prop_id, `${id}:prop`)
+        const scriptId = `worldgen:readable:${id}`
+        const prompt = readString(spec.prompt, 'Read')
+        const seconds = positiveNumber(spec.seconds, 5)
+        const half = readOptionalVec2(ctx, spec.half_xz ?? spec.half, `${path}.half_xz`) ?? [1, 1]
+        const height = positiveNumber(spec.height, 2.2)
+        const anchorDy = finiteNumber(spec.anchor_dy, 0.85)
+        if (draft.props.some((prop) => prop.id === propId) || draft.zones.some((zone) => zone.id === zoneId)) {
+            contentDiagnostic(ctx, required, {
+                code: 'duplicate_id',
+                message: `${path} generates duplicate prop or zone ids.`,
+                path,
+                details: { id, propId, zoneId },
+            })
+            continue
+        }
+        const scriptEntry: ScriptEntry = {
+            id: scriptId,
+            name: `${id}.readable.js`,
+            source: [
+                `on('input', { action: 'interact', targetId: ${JSON.stringify(zoneId)} }, () => {`,
+                `  ui.say(${JSON.stringify(zoneId)}, ${JSON.stringify(text)}, { seconds: ${JSON.stringify(seconds)} })`,
+                `})`,
+            ].join('\n'),
+        }
+        if (!appendGeneratedScript(ctx, draft, scriptEntry, `${path}.id`, required)) continue
+
+        draft.props.push({
+            id: propId,
+            kind: propKind,
+            position,
+            yaw: finiteNumber(spec.yaw, 0),
+            scale: positiveNumber(spec.scale, 0.82),
+            gridAligned: typeof spec.gridAligned === 'boolean' ? spec.gridAligned : false,
+        })
+        draft.zones.push({
+            id: zoneId,
+            kind: 'interact',
+            label: typeof spec.label === 'string' ? spec.label : undefined,
+            min: { x: position.x - half[0], y: position.y, z: position.z - half[1] },
+            max: { x: position.x + half[0], y: position.y + height, z: position.z + half[1] },
+            interaction: {
+                prompt,
+                radius: positiveNumber(spec.radius, 2.2),
+                anchor: { x: position.x, y: position.y + anchorDy, z: position.z },
+            },
+        })
+        ctx.resolveObject(id, position)
+        ctx.resolveObject(propId, position)
+        ctx.resolveObject(zoneId, position)
+        ctx.report.placements.push({ id, kind: 'content_readable', zoneId, propId, x: position.x, y: position.y, z: position.z })
+    }
 }
 
 function resolveContentChests(
@@ -571,5 +654,19 @@ function readPropKind(ctx: WorldgenCompileContext, value: unknown, path: string,
         path,
         details: { value },
     })
+    return null
+}
+
+function readReadablePropKind(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): 'book' | 'book-2' | null {
+    const kind = readPropKind(ctx, value, path, required)
+    if (kind === 'book' || kind === 'book-2') return kind
+    if (kind) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} must be "book" or "book-2" for readable content.`,
+            path,
+            details: { value },
+        })
+    }
     return null
 }

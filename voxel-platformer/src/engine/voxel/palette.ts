@@ -154,6 +154,7 @@ export const BLOCK = {
     toolPanel: 55,
     oreShelf: 56,
     recordShelf: 57,
+    snow: 58,
 } as const
 
 /**
@@ -379,11 +380,11 @@ export const DEFAULT_PALETTE: Palette = {
             opacity: 0,
             renderAs: 'ladder',
         },
-        { name: 'iron ore', color: [0.35, 0.37, 0.38], solid: true, textureKey: 'ore_iron' },
-        { name: 'copper ore', color: [0.45, 0.29, 0.20], solid: true, textureKey: 'ore_copper' },
+        { name: 'iron ore', color: [0.68, 0.68, 0.70], solid: true, textureKey: 'ore_iron' },
+        { name: 'copper ore', color: [0.68, 0.68, 0.70], solid: true, textureKey: 'ore_copper' },
         {
             name: 'crystal ore',
-            color: [0.22, 0.62, 0.78],
+            color: [0.68, 0.70, 0.72],
             solid: true,
             textureKey: 'ore_crystal',
             emissive: [0.12, 0.48, 0.72],
@@ -392,24 +393,25 @@ export const DEFAULT_PALETTE: Palette = {
             lightIntensity: 1.5,
             lightDistance: 6,
         },
-        { name: 'chest', color: [0.54, 0.32, 0.16], solid: true, textureKey: 'chest' },
-        { name: 'open chest', color: [0.50, 0.29, 0.13], solid: true, textureKey: 'chest_open' },
+        { name: 'chest', color: [0.66, 0.38, 0.16], solid: true, textureKey: 'chest' },
+        { name: 'open chest', color: [0.62, 0.34, 0.13], solid: true, textureKey: 'chest_open' },
         {
             name: 'spider web',
-            color: [0.86, 0.90, 0.94],
+            color: [0.94, 0.97, 1.00],
             solid: false,
             collidable: false,
             occludesFaces: false,
             raycastTarget: true,
             pathSurface: false,
-            opacity: 0.38,
+            opacity: 0.22,
             movement: { speedMultiplier: 0.18 },
             textureKey: 'spider_web',
         },
-        { name: 'goods shelf', color: [0.58, 0.38, 0.20], solid: true, textureKey: 'shelf_goods' },
-        { name: 'tool panel', color: [0.40, 0.33, 0.27], solid: true, textureKey: 'tool_panel' },
-        { name: 'ore shelf', color: [0.34, 0.36, 0.38], solid: true, textureKey: 'ore_shelf' },
-        { name: 'record shelf', color: [0.54, 0.44, 0.30], solid: true, textureKey: 'record_shelf' },
+        { name: 'goods shelf', color: [1.0, 1.0, 1.0], solid: true, textureKey: 'shelf_goods' },
+        { name: 'tool panel', color: [1.0, 1.0, 1.0], solid: true, textureKey: 'tool_panel' },
+        { name: 'ore shelf', color: [1.0, 1.0, 1.0], solid: true, textureKey: 'ore_shelf' },
+        { name: 'record shelf', color: [1.0, 1.0, 1.0], solid: true, textureKey: 'record_shelf' },
+        { name: 'snow', color: [1.00, 1.00, 1.00], solid: true },
     ],
 }
 
@@ -694,6 +696,7 @@ const DEFAULT_PALETTE_APPEND_RULES: readonly DefaultPaletteAppendRule[] = [
     { index: BLOCK.toolPanel, by: 'name' },
     { index: BLOCK.oreShelf, by: 'name' },
     { index: BLOCK.recordShelf, by: 'name' },
+    { index: BLOCK.snow, by: 'name' },
 ]
 
 function appendMissingDefaultBlocks(palette: Palette): void {

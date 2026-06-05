@@ -39,7 +39,7 @@ function spawnPlayer(world: GameWorld, hp = 1): number {
     return eid
 }
 
-test('Z uses the selected direct consumable', () => {
+test('use-consumable hotkey uses the selected direct consumable', () => {
     const world = createGameWorld()
     const player = spawnPlayer(world, 1)
     world.selectedConsumable = HEAL_POTION_ITEM_ID
@@ -54,7 +54,7 @@ test('Z uses the selected direct consumable', () => {
     assert.equal(world.inventory.items[HEAL_POTION_ITEM_ID], undefined)
 })
 
-test('Z throws selected dynamite and consumes one stack item', () => {
+test('use-consumable hotkey throws selected dynamite and consumes one stack item', () => {
     const world = createGameWorld()
     spawnPlayer(world)
     world.selectedConsumable = DYNAMITE_ITEM_ID
@@ -70,7 +70,7 @@ test('Z throws selected dynamite and consumes one stack item', () => {
     assert.equal(dynamites.length, 1)
 })
 
-test('Z does not throw dynamite while climbing', () => {
+test('use-consumable hotkey does not throw dynamite while climbing', () => {
     const world = createGameWorld()
     const player = spawnPlayer(world)
     addComponents(world, player, [ClimbingLadder])

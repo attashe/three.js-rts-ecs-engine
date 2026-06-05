@@ -192,6 +192,8 @@ test('Phase 12 underground mine stress worldspec compiles report-only and is reg
     assert.ok(report.placements.some((placement) => placement.kind === 'content_rail_cart' && placement.id === 'ore_branch_cart' && placement.enabled === true))
     assert.ok(report.placements.some((placement) => placement.kind === 'content_chest' && placement.id === 'forge_supply_chest'))
     assert.ok(report.placements.some((placement) => placement.kind === 'content_chest' && placement.id === 'glitter_cave_risk_chest'))
+    assert.ok(report.placements.some((placement) => placement.kind === 'content_readable' && placement.id === 'station_master_log'))
+    assert.ok(report.placements.some((placement) => placement.kind === 'content_readable' && placement.id === 'sealed_exit_note'))
     assert.ok(report.placements.some((placement) => placement.kind === 'content_npc' && placement.id === 'mine-spider-root' && placement.model === 'spider'))
     assert.ok(report.placements.some((placement) => placement.kind === 'scatter_summary' && placement.id === 'root_cavern_webs'))
     assert.ok(report.placements.some((placement) => placement.kind === 'underground_decor' && placement.id === 'forge_decor'))

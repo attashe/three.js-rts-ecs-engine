@@ -167,6 +167,7 @@ export interface ContentSpec {
     travel?: ContentEntrySpec[]
     rail_carts?: ContentEntrySpec[]
     chests?: ContentEntrySpec[]
+    readables?: ContentEntrySpec[]
     [key: string]: unknown
 }
 

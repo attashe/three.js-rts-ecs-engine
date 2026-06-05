@@ -2,11 +2,38 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { serializeLevel } from '../src/engine/voxel/level-serializer'
-import { BLOCK } from '../src/engine/voxel/palette'
+import type { ChunkManager } from '../src/engine/voxel/chunk-manager'
+import { BLOCK, isCollidable, isPathSurface } from '../src/engine/voxel/palette'
+import type { CameraStep } from '../src/game/cinematics/cinematic-types'
 import { compileWorldSpec } from '../src/game/worldgen'
 import type { WorldSpec } from '../src/game/worldgen'
+import {
+    FOREST_LIFT_FROM_MINE_ARRIVAL_ID,
+    FOREST_LIFT_VALLEY_LEVEL_ID,
+    MINE_FROM_PEAK_ARRIVAL_ID,
+    MINE_FOREST_RETURN_PORTAL_ZONE_ID,
+    MINE_PEAK_PORTAL_ZONE_ID,
+    PEAK_FROM_MINE_ARRIVAL_ID,
+    STORMY_EAGLE_PEAK_LEVEL_ID,
+} from '../src/game/procedural-level-ids'
 
 const PHASE12_UNDERGROUND_STRESS_SPEC = JSON.parse(readFileSync('examples/worldgen/phase12-underground-mine-stress.json', 'utf8')) as WorldSpec
+
+function isStandableCell(chunks: ChunkManager, x: number, y: number, z: number): boolean {
+    return isPathSurface(chunks.palette, chunks.getVoxel(x, y - 1, z)) &&
+        !isCollidable(chunks.palette, chunks.getVoxel(x, y, z)) &&
+        !isCollidable(chunks.palette, chunks.getVoxel(x, y + 1, z))
+}
+
+function countStandableCells(chunks: ChunkManager, x0: number, x1: number, y: number, z0: number, z1: number): number {
+    let count = 0
+    for (let z = z0; z <= z1; z += 1) {
+        for (let x = x0; x <= x1; x += 1) {
+            if (isStandableCell(chunks, x, y, z)) count += 1
+        }
+    }
+    return count
+}
 
 const DUNGEON_SPEC: WorldSpec = {
     version: 1,
@@ -167,6 +194,20 @@ test('underground mineshaft-style spec compiles rooms, mine tunnels, and require
     assert.equal(result.report.metrics.pathCount, 1)
 })
 
+function zoneCenter(zone: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }): { x: number; y: number; z: number } {
+    return {
+        x: (zone.min.x + zone.max.x) / 2,
+        y: zone.min.y,
+        z: (zone.min.z + zone.max.z) / 2,
+    }
+}
+
+function pointInZone(zone: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }, point: { x: number; y: number; z: number }): boolean {
+    return point.x >= zone.min.x && point.x < zone.max.x &&
+        point.y >= zone.min.y && point.y < zone.max.y &&
+        point.z >= zone.min.z && point.z < zone.max.z
+}
+
 test('Phase 12 underground mine stress spec validates rails, rooms, caves, and region metrics', () => {
     const result = compileWorldSpec(PHASE12_UNDERGROUND_STRESS_SPEC)
 
@@ -192,9 +233,42 @@ test('Phase 12 underground mine stress spec validates rails, rooms, caves, and r
     for (const id of ['entrance_shaft', 'root_cavern', 'west_ore_excavation', 'miner_village_hall', 'old_rail_network', 'canyon_rail_cut']) {
         assert.ok(result.report.placements.some((placement) => placement.id === id && placement.kind === 'carver'), `${id} carver should report placement`)
     }
-    for (const id of ['station_decor', 'bunk_decor', 'meeting_decor', 'office_decor', 'shop_decor', 'forge_decor', 'ore_storage_decor', 'blue_portal', 'broken_rail_bridge']) {
+    for (const id of ['station_decor', 'forest_entry_portal', 'bunk_decor', 'meeting_decor', 'office_decor', 'shop_decor', 'forge_decor', 'ore_storage_decor', 'blue_portal', 'broken_rail_bridge']) {
         assert.ok(result.report.resolvedObjects[id], `${id} should resolve`)
     }
+    const forestArrival = result.meta.zones.find((zone) => zone.id === 'arrival.mine.from-forest')
+    assert.ok(forestArrival && forestArrival.kind === 'arrival', 'forest-link arrival should be authored near the station entry')
+    const forestReturn = result.meta.zones.find((zone) => zone.id === MINE_FOREST_RETURN_PORTAL_ZONE_ID)
+    assert.ok(forestReturn && forestReturn.kind === 'portal', 'station entry portal should return to the forest cliff')
+    assert.equal(forestReturn!.portal?.targetLevelId, FOREST_LIFT_VALLEY_LEVEL_ID)
+    assert.equal(forestReturn!.portal?.targetArrivalId, FOREST_LIFT_FROM_MINE_ARRIVAL_ID)
+    assert.equal(pointInZone(forestReturn!, zoneCenter(forestArrival!)), false, 'arrival from forest should not immediately trigger the return portal')
+    const peakExit = result.meta.zones.find((zone) => zone.id === MINE_PEAK_PORTAL_ZONE_ID)
+    assert.ok(peakExit && peakExit.kind === 'portal', 'deep vault should expose a storm-peak exit portal')
+    assert.equal(peakExit!.portal?.targetLevelId, STORMY_EAGLE_PEAK_LEVEL_ID)
+    assert.equal(peakExit!.portal?.targetArrivalId, PEAK_FROM_MINE_ARRIVAL_ID)
+    const peakPortalPlacement = result.report.placements.find((placement) => placement.id === 'blue_portal' && placement.kind === 'underground_structure')
+    assert.equal(peakPortalPlacement?.y, 17, 'storm-peak exit portal should stand on the portal vault floor instead of a lower ledge')
+    assert.ok(peakExit!.min.y >= 17, 'storm-peak exit trigger should stay aligned with the raised portal floor')
+    assert.ok(peakExit!.max.x - peakExit!.min.x >= 3.75, 'storm-peak exit trigger should be wide enough to read as an exit')
+    assert.ok(peakExit!.max.z - peakExit!.min.z >= 3.75, 'storm-peak exit trigger should be deep enough to read as an exit')
+    const portalVault = result.report.placements.find((placement) => placement.id === 'portal_vault' && placement.kind === 'carver')
+    assert.deepEqual(portalVault?.radius, [12, 6, 10], 'portal vault should be a larger visible exit chamber')
+    assert.ok(countStandableCells(result.chunks, 268, 280, 17, 21, 31) >= 80, 'portal vault should have a broad walkable floor around the exit')
+    assert.ok(result.meta.zones.some((zone) => zone.id === MINE_FROM_PEAK_ARRIVAL_ID && zone.kind === 'arrival'), 'deep vault should expose a return arrival from the peak')
+    const intro = result.meta.cinematics?.find((cinematic) => cinematic.id === 'mine-darkness-intro')
+    assert.ok(intro, 'mine should include a close start cinematic')
+    assert.equal(intro!.playOnStart, true)
+    assert.equal(intro!.freezePlayer, true)
+    assert.ok(intro!.steps.some((step) => step.type === 'subtitle' && /darkness/i.test(step.text)), 'intro should frame the cave darkness goal')
+    const cameraSteps = intro!.steps.filter((step): step is CameraStep => step.type === 'camera')
+    assert.ok(cameraSteps.length >= 3, 'intro should rotate through multiple close camera shots')
+    for (const step of cameraSteps) {
+        assert.ok(step.shot.zoom >= 2.1, 'intro camera should stay close instead of showing the whole mine')
+        assert.ok(Math.hypot(step.shot.position.x - result.meta.spawn.x, step.shot.position.z - result.meta.spawn.z) <= 10, 'intro camera should orbit close to the player')
+    }
+    assert.equal(result.meta.scripts.some((script) => script.id === 'future-exit-script'), false)
+    assert.ok(result.meta.scripts.some((script) => script.id === 'worldgen:readable:village_council_record'))
     assert.equal(result.meta.railCarts.length, 3)
     assert.equal(result.meta.railCarts.filter((cart) => cart.enabled).map((cart) => cart.id).join(','), 'main_route_cart,bunk_branch_cart,ore_branch_cart')
     assert.equal(result.meta.chests.length, 3)
@@ -214,10 +288,20 @@ test('Phase 12 underground mine stress spec validates rails, rooms, caves, and r
     assert.equal(result.chunks.getVoxel(44, 28, 136), BLOCK.rail)
     assert.equal(result.chunks.getVoxel(104, 24, 112), BLOCK.rail)
     assert.equal(result.chunks.getVoxel(164, 22, 86), BLOCK.rail)
+    for (let x = 176; x <= 220; x += 1) {
+        if (result.chunks.getVoxel(x, 20, 58) !== BLOCK.rail) continue
+        assert.notEqual(result.chunks.getVoxel(x, 19, 57), BLOCK.air, `rail side floor at ${x},19,57 should not be a row hole`)
+        assert.notEqual(result.chunks.getVoxel(x, 19, 59), BLOCK.air, `rail side floor at ${x},19,59 should not be a row hole`)
+    }
     const propKinds = new Set(result.meta.props.map((prop) => prop.kind))
     for (const kind of ['ore-pile', 'ore-crate', 'mine-tool-rack', 'broken-rail-cart', 'support-debris', 'notice-board', 'vent-fan', 'abandoned-lamp-cluster'] as const) {
         assert.ok(propKinds.has(kind), `${kind} prop should be present`)
     }
+    assert.ok(result.meta.props.some((prop) => prop.id === 'station_master_log:prop' && prop.kind === 'book'))
+    assert.ok(result.meta.props.some((prop) => prop.id === 'village_council_record:prop' && prop.kind === 'book-2'))
+    assert.ok(result.meta.props.some((prop) => prop.id === 'sealed_exit_note:prop' && prop.kind === 'book'))
+    assert.ok(result.report.placements.some((placement) => placement.id === 'station_master_log' && placement.kind === 'content_readable'))
+    assert.ok(result.report.placements.some((placement) => placement.id === 'sealed_exit_note' && placement.kind === 'content_readable'))
     assert.ok(result.report.placements.some((placement) => placement.id === 'root_mushrooms' && placement.kind === 'scatter_summary'))
     assert.ok(result.report.placements.some((placement) => placement.id === 'west_ore_wall' && placement.kind === 'scatter_summary'))
     assert.ok(result.report.placements.some((placement) => placement.id === 'root_cavern_webs' && placement.kind === 'scatter_summary'))

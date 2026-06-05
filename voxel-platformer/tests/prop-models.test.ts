@@ -76,6 +76,19 @@ test('lift cabin variants are registered, distinct, and sized for a player lift'
     )
 })
 
+test('eagle shrine is registered as a readable final-location prop', () => {
+    assert.ok(PROP_KINDS.includes('eagle-shrine'))
+    assert.equal(PROP_LABELS['eagle-shrine'], 'Shrine of the Eagle God')
+
+    const shrine = getPropModel('eagle-shrine').geometry
+    shrine.computeBoundingBox()
+    assert.ok(shrine.boundingBox)
+    assert.ok(shrine.boundingBox!.min.y >= -0.001, 'eagle shrine sits on its placement base')
+    assert.ok(shrine.boundingBox!.max.y > 1.25, 'eagle shrine should stand tall enough to anchor the summit')
+    assert.ok(shrine.boundingBox!.max.x - shrine.boundingBox!.min.x > 1.25, 'wing span should read from the isometric camera')
+    assert.ok(shrine.getAttribute('position')!.count < 1024, 'eagle shrine should stay cheap as a decorative prop')
+})
+
 test('shop display props are registered as compact decorative assets', () => {
     const shopKinds = [
         'market-meat',

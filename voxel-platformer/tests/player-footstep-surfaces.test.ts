@@ -11,6 +11,7 @@ test('surfaceForBlock maps each palette block to a footstep family', () => {
     // Dirt family — heavy thud.
     assert.equal(surfaceForBlock(BLOCK.dirt), 'dirt')
     assert.equal(surfaceForBlock(BLOCK.sand), 'dirt')
+    assert.equal(surfaceForBlock(BLOCK.snow), 'snow')
 
     // Stone family — clean click. Brick / glow / invisible borders all
     // sound the same so a brick wall and a path of stone walk alike.

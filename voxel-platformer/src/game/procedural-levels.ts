@@ -11,7 +11,7 @@ import {
     HIGH_JUMP_BOOTS_NAME,
 } from './high-jump-boots'
 import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
-import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
+import { defineLevel, interactZone, outdoorDay, terrain, zoneBox } from './level-builder'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from './player-settings'
 import { INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS, SWORD_ITEM_ID } from './equipment-items'
 import type { CameraShot, Cinematic } from './cinematics/cinematic-types'
@@ -36,9 +36,18 @@ import {
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
     FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
+    FOREST_LIFT_FROM_MINE_ARRIVAL_ID,
+    FOREST_LIFT_MINE_PORTAL_ZONE_ID,
     FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
+    MINE_FOREST_RETURN_PORTAL_ZONE_ID,
+    MINE_FROM_PEAK_ARRIVAL_ID,
+    MINE_PEAK_PORTAL_ZONE_ID,
+    MINE_FROM_FOREST_ARRIVAL_ID,
+    PEAK_FROM_MINE_ARRIVAL_ID,
+    PEAK_RETURN_PORTAL_ZONE_ID,
     PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
+    STORMY_EAGLE_PEAK_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
@@ -53,9 +62,18 @@ export {
     DEMO_FROM_TOWN_ARRIVAL_ID,
     DEMO_LEVEL_ID,
     FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
+    FOREST_LIFT_FROM_MINE_ARRIVAL_ID,
+    FOREST_LIFT_MINE_PORTAL_ZONE_ID,
     FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
+    MINE_FOREST_RETURN_PORTAL_ZONE_ID,
+    MINE_FROM_PEAK_ARRIVAL_ID,
+    MINE_PEAK_PORTAL_ZONE_ID,
+    MINE_FROM_FOREST_ARRIVAL_ID,
+    PEAK_FROM_MINE_ARRIVAL_ID,
+    PEAK_RETURN_PORTAL_ZONE_ID,
     PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
+    STORMY_EAGLE_PEAK_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
@@ -148,6 +166,12 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         name: 'Abandoned Mine Shafts',
         generate: generatePhase12UndergroundMineStressLevel,
     },
+    {
+        id: STORMY_EAGLE_PEAK_LEVEL_ID,
+        file: `${STORMY_EAGLE_PEAK_LEVEL_ID}.vplevel`,
+        name: 'Stormy Eagle Peak',
+        generate: generateStormyEaglePeakLevel,
+    },
 ]
 
 export const PROCEDURAL_LEVEL_IDS = PROCEDURAL_LEVEL_DEFINITIONS.map((level) => level.id)
@@ -213,6 +237,415 @@ function phase12UndergroundStarterPlayerSettings(base: LevelMeta['player']): Lev
             boots: HIGH_JUMP_BOOTS_ITEM_ID,
         },
     })
+}
+
+const STORM_PEAK_SIZE = 64
+const STORM_PEAK_GROUND_Y = 7
+const STORM_PEAK_ROAD_START_Y = 8
+const STORM_PEAK_ROAD_GAIN = 5
+const STORM_PEAK_CLEAR_Y = 26
+const STORM_PEAK_ROAD_POINTS = [
+    { x: 6.5, z: 52.5 },
+    { x: 16.5, z: 46.5 },
+    { x: 27.5, z: 36.5 },
+    { x: 39.5, z: 25.5 },
+    { x: 51.5, z: 13.5 },
+] as const
+
+export function generateStormyEaglePeakLevel(chunks: ChunkManager): LevelMeta {
+    const size = STORM_PEAK_SIZE
+    const groundY = STORM_PEAK_GROUND_Y
+    const t = terrain(chunks, { size, groundY })
+
+    t.heightfield({
+        heightAt: stormPeakTerrainHeight,
+        top: stormPeakSurfaceBlock,
+        soil: BLOCK.stone2,
+        base: BLOCK.darkStone,
+        minY: 0,
+    })
+
+    paintStormPeakRoad(chunks)
+    buildStormPeakCaveMouth(chunks)
+    buildStormPeakShrineStage(chunks)
+    buildStormPeakReturnAlcove(chunks)
+    buildStormPeakBorders(chunks)
+
+    const arrival = stormPeakStand(6.5, 52.5)
+    const shrine = stormPeakStand(51.5, 13.5)
+    const shrineProp = { ...shrine, y: shrine.y + 1 }
+    const returnPortal = stormPeakStand(56.5, 18.5)
+    const shrineZoneId = 'zone.peak.eagle-shrine'
+
+    const zones: Zone[] = [
+        {
+            id: PEAK_FROM_MINE_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Arrival from Mine',
+            ...zoneBox({ x: arrival.x, z: arrival.z }, { x: 1, z: 1 }, arrival.y, arrival.y + 2.6),
+        },
+        interactZone({
+            id: shrineZoneId,
+            label: 'Shrine of the Eagle God',
+            center: { x: shrine.x, z: shrine.z },
+            half: { x: 1.45, z: 1.45 },
+            yLo: shrine.y,
+            yHi: shrine.y + 2.8,
+            prompt: 'Pray',
+            radius: 2.8,
+            anchorDy: 1.35,
+        }),
+        {
+            id: PEAK_RETURN_PORTAL_ZONE_ID,
+            kind: 'portal',
+            label: 'Hidden Cave Descent',
+            ...zoneBox({ x: returnPortal.x, z: returnPortal.z }, { x: 1.05, z: 1.05 }, returnPortal.y, returnPortal.y + 2.6),
+            portal: {
+                targetLevelId: PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
+                targetArrivalId: MINE_FROM_PEAK_ARRIVAL_ID,
+            },
+        },
+    ]
+
+    return defineLevel({
+        name: 'Stormy Eagle Peak',
+        size,
+        spawn: arrival,
+        zones,
+        props: [
+            {
+                id: 'stormy-eagle-peak:eagle-shrine',
+                kind: 'eagle-shrine',
+                position: shrineProp,
+                yaw: Math.PI,
+                scale: 1.35,
+                gridAligned: false,
+            },
+            {
+                id: 'stormy-eagle-peak:summit-book',
+                kind: 'book-2',
+                position: stormPeakStand(48.4, 16.2),
+                yaw: -Math.PI * 0.18,
+                scale: 0.82,
+                gridAligned: false,
+            },
+        ],
+        scripts: [stormPeakShrineScript(shrineZoneId)],
+        cinematics: [stormPeakShrineCinematic(arrival, shrine)],
+        environment: { soundId: GameAudio.ThemeCathedral, volume: 0.22 },
+        ambient: outdoorDay({
+            timeOfDay: 8.0,
+            cycleEnabled: false,
+            skyTint: [0.78, 0.86, 1.00],
+            sunIntensityMul: 0.42,
+            fogDensityMul: 0.72,
+            cloudCoverage: 0.96,
+            snowOn: true,
+            snowCount: 4200,
+            snowSpeed: 2.7,
+            snowSway: 2.1,
+            rainOn: false,
+            lightningOn: false,
+            windX: 3.2,
+            windZ: -1.1,
+            windGusts: 0.75,
+        }),
+        soundSources: [
+            { id: 'stormy-eagle-peak:ridge-wind', soundId: GameAudio.AmbWind, position: { x: 47, y: 18, z: 18 }, radius: 52, volume: 0.44, loop: true, autoplay: true },
+        ],
+        weatherZones: [
+            {
+                id: 'fx.stormy-eagle-peak.blizzard',
+                label: 'Summit Blizzard',
+                presetId: 'blizzard',
+                position: { x: 32, y: groundY + 11, z: 32 },
+                size: { x: 64, y: 18, z: 64 },
+                enabled: true,
+                addSound: true,
+                soundId: GameAudio.AmbWind,
+                soundVolume: 0.50,
+            },
+            {
+                id: 'fx.stormy-eagle-peak.side-haze-lower-left',
+                label: 'Lower Road Side Haze Left',
+                presetId: 'fog',
+                position: { x: 15, y: stormPeakRoadY(0.16) + 2.2, z: 56 },
+                size: { x: 7, y: 3, z: 5 },
+                enabled: true,
+                addSound: false,
+                soundVolume: 0,
+            },
+            {
+                id: 'fx.stormy-eagle-peak.side-haze-lower-right',
+                label: 'Lower Road Side Haze Right',
+                presetId: 'fog',
+                position: { x: 8, y: stormPeakRoadY(0.26) + 2.2, z: 43 },
+                size: { x: 5, y: 3, z: 6 },
+                enabled: true,
+                addSound: false,
+                soundVolume: 0,
+            },
+            {
+                id: 'fx.stormy-eagle-peak.side-haze-mid-left',
+                label: 'Middle Road Side Haze Left',
+                presetId: 'fog',
+                position: { x: 34, y: stormPeakRoadY(0.46) + 2.2, z: 42 },
+                size: { x: 7, y: 3, z: 6 },
+                enabled: true,
+                addSound: false,
+                soundVolume: 0,
+            },
+            {
+                id: 'fx.stormy-eagle-peak.side-haze-mid-right',
+                label: 'Middle Road Side Haze Right',
+                presetId: 'fog',
+                position: { x: 27, y: stormPeakRoadY(0.55) + 2.2, z: 27 },
+                size: { x: 6, y: 3, z: 5 },
+                enabled: true,
+                addSound: false,
+                soundVolume: 0,
+            },
+            {
+                id: 'fx.stormy-eagle-peak.side-haze-upper-left',
+                label: 'Upper Road Side Haze Left',
+                presetId: 'fog',
+                position: { x: 48, y: stormPeakRoadY(0.74) + 2.2, z: 28 },
+                size: { x: 6, y: 3, z: 5 },
+                enabled: true,
+                addSound: false,
+                soundVolume: 0,
+            },
+            {
+                id: 'fx.stormy-eagle-peak.side-haze-upper-right',
+                label: 'Upper Road Side Haze Right',
+                presetId: 'fog',
+                position: { x: 40, y: stormPeakRoadY(0.83) + 2.2, z: 14 },
+                size: { x: 6, y: 3, z: 5 },
+                enabled: true,
+                addSound: false,
+                soundVolume: 0,
+            },
+        ],
+    })
+}
+
+function stormPeakTerrainHeight(x: number, z: number): number {
+    const northRise = (STORM_PEAK_SIZE - z) * 0.052
+    const eastRidge = Math.max(0, x - 38) * 0.085
+    const shrineRidge = Math.max(0, 15 - Math.hypot(x - 51, z - 14)) * 0.055
+    const cliffShoulder = x < 7 || z > 56 ? 1.1 : 0
+    const rough = ((x * 17 + z * 23) % 11 === 0 ? 1 : 0) + ((x * 7 + z * 5) % 19 === 0 ? 1 : 0)
+    return STORM_PEAK_GROUND_Y + Math.floor(northRise + eastRidge + shrineRidge + cliffShoulder + rough)
+}
+
+function stormPeakSurfaceBlock(x: number, z: number): number {
+    const ridge = z < 8 || x > 55 || x < 4 || z > 58
+    if (ridge) return BLOCK.darkStone
+    return (x * 11 + z * 13) % 9 === 0 ? BLOCK.stone2 : BLOCK.snow
+}
+
+function paintStormPeakRoad(chunks: ChunkManager): void {
+    for (let z = 0; z < STORM_PEAK_SIZE; z += 1) {
+        for (let x = 0; x < STORM_PEAK_SIZE; x += 1) {
+            const road = stormPeakRoadInfo(x + 0.5, z + 0.5)
+            if (road.distance > 2.35) continue
+            const y = stormPeakRoadY(road.progress)
+            const block = road.distance < 1.12 ? BLOCK.stone2 : BLOCK.snow
+            setStormPeakColumn(chunks, x, z, y, block)
+            if (road.distance > 1.72 && ((x * 3 + z * 5) % 5 === 0)) {
+                chunks.setVoxel(x, y + 1, z, BLOCK.snow)
+            }
+        }
+    }
+}
+
+function buildStormPeakCaveMouth(chunks: ChunkManager): void {
+    const y = stormPeakRoadY(0)
+    for (let z = 49; z <= 58; z += 1) {
+        for (let x = 2; x <= 11; x += 1) {
+            const dist = Math.hypot(x - 6.5, z - 54.5)
+            if (dist <= 4.9) setStormPeakColumn(chunks, x, z, y, dist < 2.8 ? BLOCK.stone2 : BLOCK.snow)
+        }
+    }
+    fillVoxels(chunks, 2, 10, y + 1, y + 5, 58, 60, BLOCK.darkStone)
+    fillVoxels(chunks, 4, 8, y + 1, y + 3, 57, 60, BLOCK.air)
+    fillVoxels(chunks, 3, 3, y + 1, y + 4, 56, 58, BLOCK.darkStone)
+    fillVoxels(chunks, 9, 9, y + 1, y + 4, 56, 58, BLOCK.darkStone)
+    fillVoxels(chunks, 4, 8, y + 4, y + 4, 56, 58, BLOCK.darkStone)
+    fillVoxels(chunks, 5, 7, y + 5, y + 5, 57, 58, BLOCK.snow)
+}
+
+function buildStormPeakShrineStage(chunks: ChunkManager): void {
+    const center = STORM_PEAK_ROAD_POINTS[STORM_PEAK_ROAD_POINTS.length - 1]!
+    const y = stormPeakRoadY(1)
+    for (let z = 8; z <= 19; z += 1) {
+        for (let x = 45; x <= 58; x += 1) {
+            const dist = Math.hypot(x + 0.5 - center.x, z + 0.5 - center.z)
+            if (dist > 6.7) continue
+            setStormPeakColumn(chunks, x, z, y, dist < 2.9 ? BLOCK.stone2 : BLOCK.snow)
+        }
+    }
+    for (const [x, z] of [[45, 11], [46, 18], [57, 10], [58, 17]] as const) {
+        fillVoxels(chunks, x, x, y + 1, y + 2, z, z, BLOCK.darkStone)
+        chunks.setVoxel(x, y + 3, z, BLOCK.snow)
+    }
+    for (const [x, z] of [[49, 10], [54, 10], [47, 15], [56, 15]] as const) {
+        chunks.setVoxel(x, y + 1, z, BLOCK.glow)
+    }
+}
+
+function buildStormPeakReturnAlcove(chunks: ChunkManager): void {
+    const y = stormPeakRoadY(0.92)
+    for (let z = 16; z <= 21; z += 1) {
+        for (let x = 53; x <= 60; x += 1) {
+            setStormPeakColumn(chunks, x, z, y, Math.abs(x - 56) <= 1 && z <= 19 ? BLOCK.stone2 : BLOCK.snow)
+        }
+    }
+    fillVoxels(chunks, 58, 60, y + 1, y + 4, 17, 20, BLOCK.darkStone)
+    fillVoxels(chunks, 56, 59, y + 1, y + 3, 18, 19, BLOCK.air)
+    fillVoxels(chunks, 55, 55, y + 1, y + 3, 17, 20, BLOCK.darkStone)
+    chunks.setVoxel(56, y + 1, 18, BLOCK.glow)
+    chunks.setVoxel(57, y + 1, 19, BLOCK.glow)
+}
+
+function buildStormPeakBorders(chunks: ChunkManager): void {
+    for (let i = 0; i < STORM_PEAK_SIZE; i += 1) {
+        fillVoxels(chunks, 0, 0, STORM_PEAK_GROUND_Y + 1, STORM_PEAK_CLEAR_Y, i, i, BLOCK.noWalk)
+        fillVoxels(chunks, STORM_PEAK_SIZE - 1, STORM_PEAK_SIZE - 1, STORM_PEAK_GROUND_Y + 1, STORM_PEAK_CLEAR_Y, i, i, BLOCK.noWalk)
+        fillVoxels(chunks, i, i, STORM_PEAK_GROUND_Y + 1, STORM_PEAK_CLEAR_Y, 0, 0, BLOCK.noWalk)
+        fillVoxels(chunks, i, i, STORM_PEAK_GROUND_Y + 1, STORM_PEAK_CLEAR_Y, STORM_PEAK_SIZE - 1, STORM_PEAK_SIZE - 1, BLOCK.noWalk)
+    }
+}
+
+function stormPeakStand(x: number, z: number): VoxelCoord {
+    const road = stormPeakRoadInfo(x, z)
+    const progress = road.distance <= 6 ? road.progress : 0
+    return { x, y: stormPeakRoadY(progress) + 1, z }
+}
+
+function setStormPeakColumn(chunks: ChunkManager, x: number, z: number, surfaceY: number, top: number): void {
+    for (let y = 0; y < surfaceY - 1; y += 1) chunks.setVoxel(x, y, z, y < surfaceY - 4 ? BLOCK.darkStone : BLOCK.stone)
+    chunks.setVoxel(x, surfaceY - 1, z, BLOCK.stone2)
+    chunks.setVoxel(x, surfaceY, z, top)
+    for (let y = surfaceY + 1; y <= STORM_PEAK_CLEAR_Y; y += 1) chunks.setVoxel(x, y, z, BLOCK.air)
+}
+
+function stormPeakRoadY(progress: number): number {
+    return STORM_PEAK_ROAD_START_Y + Math.floor(Math.max(0, Math.min(1, progress)) * STORM_PEAK_ROAD_GAIN)
+}
+
+function stormPeakRoadInfo(x: number, z: number): { distance: number; progress: number } {
+    const total = stormPeakRoadLength()
+    let covered = 0
+    let bestDistance = Number.POSITIVE_INFINITY
+    let bestProgress = 0
+    for (let i = 0; i < STORM_PEAK_ROAD_POINTS.length - 1; i += 1) {
+        const a = STORM_PEAK_ROAD_POINTS[i]!
+        const b = STORM_PEAK_ROAD_POINTS[i + 1]!
+        const dx = b.x - a.x
+        const dz = b.z - a.z
+        const len2 = dx * dx + dz * dz
+        const len = Math.sqrt(len2)
+        const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2)) : 0
+        const px = a.x + dx * t
+        const pz = a.z + dz * t
+        const distance = Math.hypot(x - px, z - pz)
+        if (distance < bestDistance) {
+            bestDistance = distance
+            bestProgress = total > 0 ? (covered + len * t) / total : 0
+        }
+        covered += len
+    }
+    return { distance: bestDistance, progress: bestProgress }
+}
+
+function stormPeakRoadLength(): number {
+    let total = 0
+    for (let i = 0; i < STORM_PEAK_ROAD_POINTS.length - 1; i += 1) {
+        const a = STORM_PEAK_ROAD_POINTS[i]!
+        const b = STORM_PEAK_ROAD_POINTS[i + 1]!
+        total += Math.hypot(b.x - a.x, b.z - a.z)
+    }
+    return total
+}
+
+function stormPeakShrineScript(shrineZoneId: string): ScriptEntry {
+    const flagId = 'stormy-eagle-peak.shrine-prayed'
+    const cinematicId = 'stormy-eagle-peak-shrine'
+    return {
+        id: 'stormy-eagle-peak-shrine-script',
+        name: 'stormy-eagle-peak-shrine.js',
+        source: [
+            `const SHRINE_ZONE = ${JSON.stringify(shrineZoneId)}`,
+            `const SHRINE_FLAG = ${JSON.stringify(flagId)}`,
+            `const CINEMATIC_ID = ${JSON.stringify(cinematicId)}`,
+            ``,
+            `on('input', { action: 'interact', targetId: SHRINE_ZONE }, async () => {`,
+            `  if (flags.get(SHRINE_FLAG) === true) {`,
+            `    ui.say(SHRINE_ZONE, 'The Eagle God\\'s shrine is silent now, but the wind feels less cruel.', { seconds: 4 })`,
+            `    return`,
+            `  }`,
+            `  flags.set(SHRINE_FLAG, true)`,
+            `  audio.play(${JSON.stringify(GameAudio.QuestFanfare)})`,
+            `  await cinematic.play(CINEMATIC_ID)`,
+            `  ui.say(SHRINE_ZONE, 'Your pilgrimage reaches the summit.', { seconds: 4 })`,
+            `})`,
+        ].join('\n'),
+    }
+}
+
+function stormPeakShrineCinematic(arrival: VoxelCoord, shrine: VoxelCoord): Cinematic {
+    return {
+        id: 'stormy-eagle-peak-shrine',
+        name: 'Shrine of the Eagle God',
+        playOnStart: false,
+        letterbox: true,
+        freezePlayer: true,
+        steps: [
+            { id: 'fade-in', type: 'fade', wait: true, duration: 0.35, to: 'black' },
+            { id: 'music', type: 'sound', wait: false, soundId: GameAudio.PianoDrift, volume: 0.34, fade: 1.2 },
+            {
+                id: 'cam-road',
+                type: 'camera',
+                wait: true,
+                duration: 1.4,
+                ease: 'easeOut',
+                shot: {
+                    position: { x: arrival.x + 18, y: arrival.y + 18, z: arrival.z + 10 },
+                    target: { x: (arrival.x + shrine.x) * 0.5, y: shrine.y, z: (arrival.z + shrine.z) * 0.5 },
+                    zoom: 0.62,
+                },
+            },
+            { id: 'fade-clear', type: 'fade', wait: false, duration: 0.65, to: 'clear' },
+            { id: 'subtitle-road', type: 'subtitle', wait: false, duration: 3.2, text: 'The storm road ends above the clouds.' },
+            {
+                id: 'cam-shrine',
+                type: 'camera',
+                wait: true,
+                duration: 2.4,
+                ease: 'easeInOut',
+                shot: {
+                    position: { x: shrine.x - 12, y: shrine.y + 12, z: shrine.z + 14 },
+                    target: { x: shrine.x, y: shrine.y + 1.2, z: shrine.z },
+                    zoom: 0.74,
+                },
+            },
+            { id: 'subtitle-shrine', type: 'subtitle', wait: false, duration: 3.8, text: "At the Eagle God's shrine, the pilgrim bows." },
+            {
+                id: 'cam-sky',
+                type: 'camera',
+                wait: true,
+                duration: 2.0,
+                ease: 'easeOut',
+                shot: {
+                    position: { x: shrine.x + 8, y: shrine.y + 18, z: shrine.z - 10 },
+                    target: { x: shrine.x, y: shrine.y + 2.8, z: shrine.z },
+                    zoom: 0.56,
+                },
+            },
+            { id: 'subtitle-final', type: 'subtitle', wait: true, duration: 4.2, text: 'The mountain answers with wind, snow, and silence.' },
+        ],
+    }
 }
 
 /**
@@ -800,6 +1233,7 @@ export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
     const rabbitB = requireResolvedAnchor(compiled.report, 'rabbit_house_meadow')
 
     prepareForestLiftDecks(chunks, liftBase, liftTop)
+    const minePortalZones = prepareForestLiftMineEntry(chunks, liftTop)
 
     const baseY = Math.floor(liftBase.y)
     const topFloorY = Math.floor(liftTop.y) - 1
@@ -824,7 +1258,7 @@ export function generateForestLiftValleyLevel(chunks: ChunkManager): LevelMeta {
         size: compiled.meta.size,
         spawn,
         player: forestLiftStarterPlayerSettings(),
-        zones: compiled.meta.zones,
+        zones: [...compiled.meta.zones, ...minePortalZones],
         props: compiled.meta.props,
         npcs,
         pistons: [{
@@ -1111,6 +1545,27 @@ function forestLiftValleySpec(): unknown {
             ],
             npcs: [
                 {
+                    id: 'forest-lift-wolf-wagon-ridge',
+                    template: 'hostile-wolf',
+                    name: 'Wagon Ridge Wolf',
+                    place_at_xz: [48, 58],
+                    yaw: -Math.PI * 0.16,
+                },
+                {
+                    id: 'forest-lift-wolf-pine-road',
+                    template: 'hostile-wolf',
+                    name: 'Pine Road Wolf',
+                    place_at_xz: [70, 58],
+                    yaw: Math.PI * 0.62,
+                },
+                {
+                    id: 'forest-lift-wolf-cliff-den',
+                    template: 'hostile-wolf',
+                    name: 'Cliff Den Wolf',
+                    place_at_xz: [86, 38],
+                    yaw: Math.PI * 0.86,
+                },
+                {
                     id: FOREST_LIFT_NPC_ID,
                     name: 'Brann Cliffwright',
                     model: 'keeper',
@@ -1249,6 +1704,47 @@ function prepareForestLiftDecks(chunks: ChunkManager, base: VoxelCoord, top: Vox
     }
     fillVoxels(chunks, liftX + 4, liftX + 4, baseFloorY, topFloorY, liftZ - 3, liftZ - 3, BLOCK.stone)
     fillVoxels(chunks, liftX + 4, liftX + 4, baseFloorY, topFloorY, liftZ + 3, liftZ + 3, BLOCK.stone)
+}
+
+function prepareForestLiftMineEntry(chunks: ChunkManager, top: VoxelCoord): Zone[] {
+    const floorY = Math.floor(top.y) - 1
+    const z = Math.floor(top.z)
+    const deckExitX = Math.floor(top.x) + 3
+    const backWallX = deckExitX + 10
+    const webX = deckExitX + 4
+    const portalCenter = { x: deckExitX + 7.5, y: floorY, z: z + 0.5 }
+    const returnCenter = { x: deckExitX + 1.5, y: floorY + 1, z: z + 0.5 }
+
+    fillVoxels(chunks, deckExitX, backWallX, floorY, floorY, z - 2, z + 2, BLOCK.stone)
+    fillVoxels(chunks, deckExitX, backWallX - 1, floorY + 1, floorY + 5, z - 2, z + 2, BLOCK.air)
+    fillVoxels(chunks, deckExitX + 2, backWallX, floorY + 1, floorY + 4, z - 3, z - 3, BLOCK.stone)
+    fillVoxels(chunks, deckExitX + 2, backWallX, floorY + 1, floorY + 4, z + 3, z + 3, BLOCK.stone)
+    fillVoxels(chunks, backWallX, backWallX, floorY + 1, floorY + 4, z - 2, z + 2, BLOCK.darkStone)
+    fillVoxels(chunks, deckExitX + 2, deckExitX + 2, floorY + 1, floorY + 3, z - 2, z - 2, BLOCK.darkStone)
+    fillVoxels(chunks, deckExitX + 2, deckExitX + 2, floorY + 1, floorY + 3, z + 2, z + 2, BLOCK.darkStone)
+    fillVoxels(chunks, deckExitX + 2, deckExitX + 2, floorY + 4, floorY + 4, z - 2, z + 2, BLOCK.darkStone)
+    fillVoxels(chunks, webX, webX, floorY + 1, floorY + 2, z - 1, z + 1, BLOCK.spiderWeb)
+
+    return [
+        {
+            id: FOREST_LIFT_MINE_PORTAL_ZONE_ID,
+            kind: 'portal',
+            label: 'Mine Entrance',
+            min: { x: portalCenter.x - 1.25, y: portalCenter.y, z: portalCenter.z - 1.25 },
+            max: { x: portalCenter.x + 1.25, y: portalCenter.y + 2.6, z: portalCenter.z + 1.25 },
+            portal: {
+                targetLevelId: PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
+                targetArrivalId: MINE_FROM_FOREST_ARRIVAL_ID,
+            },
+        },
+        {
+            id: FOREST_LIFT_FROM_MINE_ARRIVAL_ID,
+            kind: 'arrival',
+            label: 'Return from Mine',
+            min: { x: returnCenter.x - 0.9, y: returnCenter.y, z: returnCenter.z - 0.9 },
+            max: { x: returnCenter.x + 0.9, y: returnCenter.y + 2.4, z: returnCenter.z + 0.9 },
+        },
+    ]
 }
 
 function fillVoxels(
@@ -1842,7 +2338,7 @@ export function generateLargeTownLevel(chunks: ChunkManager): LevelMeta {
                 {
                     id: 'dynamite',
                     name: 'Dynamite',
-                    description: 'A short-fuse explosive. Select it in inventory and press Z to throw.',
+                    description: 'A short-fuse explosive. Select it in inventory and press the consumable hotkey to throw.',
                     resource: 'dynamite',
                     unitSize: 1,
                     buyPrice: 12,
