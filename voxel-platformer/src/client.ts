@@ -647,7 +647,7 @@ async function main(): Promise<void> {
     titleScreen = createTitleScreen({
         onPlay: () => { void startLevel(FOREST_LIFT_VALLEY_LEVEL_ID) },
         onLevelSelect: () => { titleScreen.hide(); levelSelect.show() },
-        onSettings: () => menuController.openSettings(),
+        onSettings: () => { titleScreen.hide(); menuController.openSettings() },
         onHelp: () => { titleScreen.hide(); helpScreen.show() },
     })
     levelSelect = createLevelSelect({
@@ -703,6 +703,9 @@ async function main(): Promise<void> {
         exitHref: './editor.html',
         onMainMenu: returnToTitle,
         onHelp: () => { menuController.setOpen(false); helpScreen.show() },
+        // Closing the menu while no level is active means we came from the
+        // title's Settings — return to the title instead of an empty screen.
+        onClose: () => { if (!active) titleScreen.show() },
     })
 
     // A `?level=<id>` deep-link jumps straight into a level (and playtest from

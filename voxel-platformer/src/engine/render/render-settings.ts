@@ -26,7 +26,7 @@ const PLAYER_TORCH_SHADOW_KEY = 'vp:render:player-torch-shadow'
 const DEFAULT_PLAYER_TORCH_SHADOW = true
 
 const DEBUG_INFO_KEY = 'vp:render:debug-info'
-const DEFAULT_DEBUG_INFO = true
+const DEFAULT_DEBUG_INFO = false
 
 type Listener = (enabled: boolean) => void
 

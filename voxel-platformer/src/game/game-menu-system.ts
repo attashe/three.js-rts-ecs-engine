@@ -25,6 +25,9 @@ export interface GameMenuSystemOptions {
     onMainMenu?: () => void
     /** Open the help screen from the pause menu. */
     onHelp?: () => void
+    /** Fired whenever the menu closes — lets the host re-show the title screen
+     *  when the menu was opened from it (e.g. title → Settings → Return). */
+    onClose?: () => void
 }
 
 /** Pause-menu controller: the engine system + handles so the title screen can
@@ -81,6 +84,8 @@ export function createGameMenuSystem(
         if (open) {
             showMenu()
             setTimeout(() => returnButton?.focus(), 0)
+        } else {
+            opts.onClose?.()
         }
     }
 
@@ -183,7 +188,9 @@ function buildMenu(opts: BuildMenuOptions): {
     debugInfoInput: HTMLInputElement
     controlsDispose: () => void
 } {
-    const root = createOverlayRoot(1800)
+    // Above the title/level-select overlays (1900) so the pause menu is always
+    // interactive, even when opened from the title's Settings button.
+    const root = createOverlayRoot(2000)
     root.id = 'voxel-platformer-menu'
     const shell = createShell()
     root.appendChild(shell)
