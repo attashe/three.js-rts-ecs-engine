@@ -233,6 +233,13 @@
       "required": true
     },
     {
+      "id": "forest_entry_portal",
+      "asset": "fixed.portal.blue_stone",
+      "place_at_xz": [24, 132],
+      "auto_surface": { "kind": "floor", "y_range": [26, 31], "search_radius": 5, "require_air_above": 3 },
+      "required": true
+    },
+    {
       "id": "bunk_decor",
       "asset": "fixed.room.dwarf_bunks",
       "place": { "mode": "room_center", "room": "worker_bunks" },
@@ -410,6 +417,16 @@
         "height": 2,
         "prompt": "Read Sign",
         "radius": 2.4
+      },
+      {
+        "id": "future_exit_zone",
+        "type": "interact",
+        "place_at": "blue_portal",
+        "offset": [0, 0, 1.2],
+        "half_xz": [1.25, 1.25],
+        "height": 2.4,
+        "prompt": "Inspect Exit",
+        "radius": 2.6
       }
     ],
     "chests": [
@@ -441,6 +458,53 @@
           { "id": "dynamite", "quantity": 1 },
           { "id": "gold", "quantity": 28 }
         ]
+      }
+    ],
+    "readables": [
+      {
+        "id": "station_master_log",
+        "kind": "book",
+        "place_at": "station_decor",
+        "offset": [-2.8, 0, 1.8],
+        "yaw": -0.35,
+        "prompt": "Read Log",
+        "text": "Station master's log: traffic from the cliff road stopped after the web nests appeared. Survivors were ordered to follow the rail east toward the village hall."
+      },
+      {
+        "id": "village_council_record",
+        "kind": "book-2",
+        "place_at": "meeting_decor",
+        "offset": [1.6, 0, -2.2],
+        "yaw": 0.18,
+        "prompt": "Read Record",
+        "text": "Council record: the lower rooms voted to abandon the village after the deep shaft cracked and the spiders poured through the ore tunnels."
+      },
+      {
+        "id": "foreman_journal",
+        "kind": "book",
+        "place_at": "office_decor",
+        "offset": [1.9, 0, 1.7],
+        "yaw": -0.22,
+        "prompt": "Read Journal",
+        "text": "Foreman's journal: carts still run if the rails are clear. We left supplies in locked chests for any dwarf who finds the courage to return."
+      },
+      {
+        "id": "forge_ledger",
+        "kind": "book-2",
+        "place_at": "forge_decor",
+        "offset": [-2.4, 0, 2.1],
+        "yaw": 0.3,
+        "prompt": "Read Ledger",
+        "text": "Forge ledger: orders for picks and rail braces ended overnight. The last smith wrote that the village fell quiet before the final bell."
+      },
+      {
+        "id": "sealed_exit_note",
+        "kind": "book",
+        "place_at": "blue_portal",
+        "offset": [-1.7, 0, 2.2],
+        "yaw": -0.45,
+        "prompt": "Read Note",
+        "text": "A cracked note lies beside the exit arch: beyond this cave is another road out, but the old route is not ready for travel yet."
       }
     ],
     "npcs": [
@@ -479,7 +543,7 @@
     "environment": {
       "soundId": "music.amb.mine",
       "volume": 0.22,
-      "ambientWeather": { "presetId": "clear", "state": { "timeOfDay": 23 } },
+      "ambientWeather": { "presetId": "cave", "state": { "timeOfDay": 23 } },
       "soundSources": [
         { "id": "shaft_wind", "soundId": "sfx.amb.wind", "place_at": "spawn", "radius": 18, "volume": 0.18 },
         { "id": "deep_drip", "soundId": "amb.water", "position": [260.5, 17, 42.5], "radius": 16, "volume": 0.2 }
@@ -492,12 +556,17 @@
       ]
     },
     "travel": [
-      { "id": "arrival.phase12.start", "type": "arrival", "place_at": "spawn", "half_xz": [1, 1] }
+      { "id": "arrival.phase12.start", "type": "arrival", "place_at": "spawn", "half_xz": [1, 1] },
+      { "id": "arrival.mine.from-forest", "type": "arrival", "place_at": "forest_entry_portal", "half_xz": [1, 1] }
     ],
     "scripts": [
       {
         "id": "station-warning-script",
         "source": "on('input', { action: 'interact', targetId: 'station_warning_zone' }, () => { ui.say('station_warning_zone', 'Old rail authority notice: all remaining carts are rideable, but webbed side tunnels and canyon bridges remain dangerous.', { seconds: 4 }) })"
+      },
+      {
+        "id": "future-exit-script",
+        "source": "on('input', { action: 'interact', targetId: 'future_exit_zone' }, () => { ui.say('future_exit_zone', 'The far exit is marked, but the route beyond this cave will open in a later journey.', { seconds: 4 }) })"
       }
     ]
   },
@@ -511,6 +580,8 @@
       { "id": "phase12_spawn_to_ore_storage", "from": "spawn", "to": "ore_storage_decor", "actor": "player_basic" },
       { "id": "phase12_spawn_to_bridge", "from": "spawn", "to": "broken_rail_bridge", "actor": "player_basic" },
       { "id": "phase12_spawn_to_portal", "from": "spawn", "to": "blue_portal", "actor": "player_basic" },
+      { "id": "phase12_forest_entry_to_village", "from": "forest_entry_portal", "to": "meeting_decor", "actor": "player_basic" },
+      { "id": "phase12_forest_entry_to_future_exit", "from": "forest_entry_portal", "to": "blue_portal", "actor": "player_basic" },
       { "id": "phase12_spawn_to_main_cart", "from": "spawn", "to": "main_route_cart", "actor": "player_basic" },
       { "id": "phase12_spawn_to_bunk_cart", "from": "spawn", "to": "bunk_branch_cart", "actor": "player_basic" },
       { "id": "phase12_spawn_to_ore_cart", "from": "spawn", "to": "ore_branch_cart", "actor": "player_basic" }

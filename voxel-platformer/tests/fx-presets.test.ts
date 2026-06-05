@@ -36,3 +36,10 @@ test('weather presets exist for every label the demo expected', () => {
         assert.ok(WEATHER_PRESETS[expected], `missing weather preset: ${expected}`)
     }
 })
+
+test('cave weather preset is a sunless indoor bed', () => {
+    const cave = WEATHER_PRESETS.cave
+    assert.ok(cave, 'missing cave weather preset')
+    assert.equal(cave!.apply.mode, 'indoor', 'cave must use indoor mode (no sky/sun)')
+    assert.equal(cave!.apply.sunIntensity, 0, 'cave must not cast a sun')
+})

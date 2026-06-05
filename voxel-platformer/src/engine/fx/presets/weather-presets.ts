@@ -23,4 +23,11 @@ export const WEATHER_PRESETS: Record<string, AmbientWeatherPreset> = {
     dawn: { id: 'dawn', label: 'Dawn', icon: '◐',
         apply: { skyTop: '#3a4a6e', skyBottom: '#f0a878', fogColor: '#f0a878', fogDensity: 0.014, sunIntensity: 0.9, ambientIntensity: 0.55, cloudCoverage: 0.2, timeOfDay: 6.5, rainOn: false, snowOn: false, lightningOn: false, windX: 0.4, windZ: 0.2 },
     },
+    // Underground bed: indoor mode hides the sky dome + directional sun, so the
+    // scene is lit by a dim cool ambient plus the torch pool, emissive ores,
+    // and baked vertex AO — instead of looking daylit. Fog is left off here; a
+    // dedicated cave-fog pass owns depth haze separately.
+    cave: { id: 'cave', label: 'Cave', icon: '🕳',
+        apply: { mode: 'indoor', ambientColor: '#3a4655', ambientIntensity: 0.62, fogColor: '#0d1117', fogDensity: 0.0, sunIntensity: 0, cloudCoverage: 0, rainOn: false, snowOn: false, lightningOn: false, windX: 0, windZ: 0 },
+    },
 }

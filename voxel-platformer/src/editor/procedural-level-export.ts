@@ -9,6 +9,7 @@ import {
     copyStoneSpawner,
     type EditorLevelMeta,
 } from './editor-state'
+import { WEATHER_PRESETS } from '../engine/fx/presets/weather-presets'
 import {
     generateProceduralLevel,
     getProceduralLevelDefinition,
@@ -155,8 +156,13 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
         ambientWeather: meta.ambientWeather ? {
             enabled: true,
             presetId: meta.ambientWeather.presetId ?? 'clear',
+            // Resolve the named preset into the baked snapshot: defaults →
+            // preset.apply → the level's explicit state. Without the preset
+            // layer a worldgen level's `presetId` (e.g. `cave`) is silently
+            // ignored, leaving every level on the default outdoor lighting.
             state: {
                 ...DEFAULT_AMBIENT_WEATHER,
+                ...(meta.ambientWeather.presetId ? WEATHER_PRESETS[meta.ambientWeather.presetId]?.apply ?? {} : {}),
                 ...meta.ambientWeather.state,
                 skyTint: cloneSkyTint(meta.ambientWeather.state.skyTint),
             },
