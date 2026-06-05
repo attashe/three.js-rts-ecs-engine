@@ -268,38 +268,47 @@ function paintWood(rgba: Uint8Array, originX: number, originY: number): void {
  *  keyhole. The strong silhouette reads as a chest at iso/32px sizes. */
 function paintChest(rgba: Uint8Array, originX: number, originY: number): void {
     const rng = makeRng(7301)
-    // Warm plank body with faint vertical slat grain.
+    // Plank body: vertical planks with grooved seams + faint grain.
     for (let y = 0; y < TILE_SIZE; y++) {
         for (let x = 0; x < TILE_SIZE; x++) {
-            let lum = 0.95 + (rng() - 0.5) * 0.05
-            if (x % 8 === 0 || x % 8 === 7) lum *= 0.95
+            let lum = 0.93 + (rng() - 0.5) * 0.05
+            if (x % 8 === 0 || x % 8 === 7) lum *= 0.9 // plank seam grooves
             setLum(rgba, originX + x, originY + y, lum)
         }
     }
-    // Iron rim around the edges (two-pixel band on each side).
-    for (let i = 0; i < TILE_SIZE; i++) {
-        for (const e of [1, 2, TILE_SIZE - 2, TILE_SIZE - 3]) {
-            mulLum(rgba, originX + i, originY + e, 0.74)
-            mulLum(rgba, originX + e, originY + i, 0.74)
+    // Lid seam: the lid is the top ~10 rows, split from the body by a groove.
+    for (let x = 0; x < TILE_SIZE; x++) {
+        setLum(rgba, originX + x, originY + 10, 0.5)
+        setLum(rgba, originX + x, originY + 11, 0.62)
+    }
+    // Two horizontal iron straps with bright rivets — the classic chest banding.
+    for (const sy of [4, 22]) {
+        for (let x = 0; x < TILE_SIZE; x++) {
+            setLum(rgba, originX + x, originY + sy, 0.6)
+            setLum(rgba, originX + x, originY + sy + 1, 0.54)
+        }
+        for (const rx of [3, 15, 28]) {
+            setLum(rgba, originX + rx, originY + sy, 0.86)
+            setLum(rgba, originX + rx, originY + sy + 1, 0.8)
         }
     }
-    // Lid seam across the upper third — the lid/body division.
-    for (let x = 0; x < TILE_SIZE; x++) {
-        setLum(rgba, originX + x, originY + 11, 0.5)
-        setLum(rgba, originX + x, originY + 12, 0.56)
+    // Short iron corner brackets.
+    for (const [cx, cy, dx, dy] of [[1, 1, 1, 1], [30, 1, -1, 1], [1, 30, 1, -1], [30, 30, -1, -1]] as const) {
+        for (let k = 0; k < 5; k++) {
+            mulLum(rgba, originX + cx + dx * k, originY + cy, 0.66)
+            mulLum(rgba, originX + cx, originY + cy + dy * k, 0.66)
+        }
     }
-    // Centred lock plate straddling the seam, with a dark keyhole.
-    for (let y = 8; y <= 16; y++) {
-        for (let x = 13; x <= 18; x++) setLum(rgba, originX + x, originY + y, 0.84)
+    // Central lock plate where the lid meets the body, with a dark keyhole.
+    drawSoftRect(rgba, originX + 13, originY + 8, 6, 7, 0.87)
+    for (let y = 8; y <= 14; y++) {
+        mulLum(rgba, originX + 13, originY + y, 0.62)
+        mulLum(rgba, originX + 18, originY + y, 0.62)
     }
-    for (let y = 8; y <= 16; y++) {
-        mulLum(rgba, originX + 13, originY + y, 0.6)
-        mulLum(rgba, originX + 18, originY + y, 0.6)
-    }
-    setLum(rgba, originX + 15, originY + 12, 0.36)
-    setLum(rgba, originX + 16, originY + 12, 0.36)
-    setLum(rgba, originX + 15, originY + 13, 0.42)
-    setLum(rgba, originX + 16, originY + 13, 0.42)
+    setLum(rgba, originX + 15, originY + 11, 0.34)
+    setLum(rgba, originX + 16, originY + 11, 0.34)
+    setLum(rgba, originX + 15, originY + 12, 0.42)
+    setLum(rgba, originX + 16, originY + 12, 0.42)
 }
 
 /** Open chest — the lid is up (seam pushed to the top), revealing a dark
@@ -323,23 +332,51 @@ function paintOpenChest(rgba: Uint8Array, originX: number, originY: number): voi
     }
 }
 
-/** Spider web — pale transparent strands over a flat bright base. */
+/** Spider web — corner-anchored strands with sagging cross-threads and
+ *  denser knots. The asymmetry reads as tangled webbing instead of the
+ *  old target-like radial pattern. */
 function paintSpiderWeb(rgba: Uint8Array, originX: number, originY: number): void {
+    const rng = makeRng(8053)
     fillTile(rgba, originX, originY, 1.0)
-    const cx = TILE_SIZE / 2
-    const cy = TILE_SIZE / 2
-    for (let y = 0; y < TILE_SIZE; y++) {
-        for (let x = 0; x < TILE_SIZE; x++) {
-            const dx = x - cx
-            const dy = y - cy
-            const dist = Math.hypot(dx, dy)
-            const angle = Math.atan2(dy, dx)
-            const radial = Math.abs(Math.sin(angle * 4)) < 0.12
-            const ring = Math.abs((dist % 6) - 0.5) < 0.45
-            if ((radial && dist > 2) || (ring && dist > 4 && dist < 20)) {
-                setLum(rgba, originX + x, originY + y, 0.72)
-            }
+
+    // A neglected cobweb strung corner-to-corner: a sagging hammock along the
+    // top-left → bottom-right diagonal, anchor fans clustered in those two
+    // corners, and a few drooping capture threads bridging them. Asymmetric on
+    // purpose (a tangled web, not a tidy radial target), but covering both
+    // sides of the face. Threads are thin dark lines on the pale web block.
+    const STRAND = 0.6
+    // Draw a strand from (x0,y0) to (x1,y1), bowed downward by `sag` at mid-span.
+    const strand = (x0: number, y0: number, x1: number, y1: number, sag: number): void => {
+        const steps = Math.max(8, Math.round(Math.hypot(x1 - x0, y1 - y0) * 1.7))
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps
+            const bow = Math.sin(t * Math.PI) * sag
+            const x = Math.round(x0 + (x1 - x0) * t)
+            const y = Math.round(y0 + (y1 - y0) * t + bow)
+            if (x >= 0 && x < TILE_SIZE && y >= 0 && y < TILE_SIZE) setLum(rgba, originX + x, originY + y, STRAND)
         }
+    }
+
+    // Suspension hammock (TL ↔ BR) — several near-parallel strands, each with a
+    // different downward droop, so the descending diagonal dominates.
+    strand(0, 0, 31, 31, 2)
+    strand(0, 3, 29, 31, 5)
+    strand(3, 0, 31, 29, 1)
+    strand(0, 6, 26, 31, 8)
+    strand(0, 1, 31, 27, 4)
+    // Anchor fans clustered in the TL and BR corners.
+    for (const [tx, ty] of [[13, 1], [1, 13], [17, 5], [5, 17], [22, 2]] as const) strand(0, 0, tx, ty, 1)
+    for (const [tx, ty] of [[18, 30], [30, 18], [14, 26], [26, 14], [9, 29]] as const) strand(31, 31, tx, ty, 1)
+    // Drooping capture threads bridging the hammock, biased to the diagonal.
+    strand(4, 9, 15, 7, 3)
+    strand(10, 17, 23, 15, 4)
+    strand(17, 23, 28, 21, 3)
+
+    // Sparse dew/dust glints away from the strands.
+    for (let i = 0; i < 8; i++) {
+        const x = Math.floor(rng() * TILE_SIZE)
+        const y = Math.floor(rng() * TILE_SIZE)
+        if (getLum(rgba, originX + x, originY + y) > 0.9) setLum(rgba, originX + x, originY + y, 0.9)
     }
 }
 
