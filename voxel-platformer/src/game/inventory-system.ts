@@ -1,0 +1,1102 @@
+import { query } from 'bitecs'
+import { Mana, PlayerControlled } from '../engine/ecs/components'
+import type { GameWorld, WeaponStance } from '../engine/ecs/world'
+import { RenderOrder } from '../engine/ecs/systems/orders'
+import type { System } from '../engine/ecs/systems/system'
+import type { ActionMap } from '../engine/input/actions'
+import type { Input } from '../engine/input/input'
+import { PLAYER_ABILITY_KEYS, PLAYER_ABILITY_LABELS } from './player-settings'
+import {
+    HIGH_JUMP_BOOTS_ITEM_ID,
+    HIGH_JUMP_BOOTS_NAME,
+    BOOT_EQUIPMENT_ITEM_OPTIONS,
+    isBootEquipmentItemId,
+    playerCanHighJump,
+} from './high-jump-boots'
+import { effectivePlayerArrowSpeed, effectivePlayerMoveSpeed } from './equipment-effects'
+import type { BootEquipmentKind } from './anim/equipment-types'
+import { GameAction } from './actions'
+import { setWeaponStance } from './weapon-stance-system'
+import { syncPlayerHeldTorchVisibility, syncPlayerVisuals } from './player'
+import {
+    EQUIPMENT_LABELS,
+    HEAD_EQUIPMENT_KINDS,
+    describeHandLoadout,
+    type HandEquipmentKind,
+    type HeadEquipmentKind,
+} from './anim/equipment-types'
+import {
+    METAL_HELMET_ITEM_ID,
+    SPEAR_ITEM_ID,
+    SWORD_ITEM_ID,
+    isBuyableHandEquipmentItemId,
+    isBuyableHeadEquipmentItemId,
+    isInventoryHandEquipmentItemId,
+} from './equipment-items'
+import { SPELLS } from './spells'
+import { AIR_PUSH_MANA_COST, HIGH_JUMP_MANA_COST, MANA_PER_ORB, MANA_POTION_ITEM_ID } from './mana'
+import {
+    HEAL_POTION_ITEM_ID,
+    consumeDirectConsumable,
+    consumableSnapshotItem,
+    isConsumableItemId,
+    isDirectConsumableItemId,
+    selectConsumable,
+} from './consumables'
+import { actionKeyLabel } from './consumable-prompts'
+import {
+    HELD_TORCH_ITEM_ID,
+    HELD_TORCH_ITEM_OPTIONS,
+    INVENTORY_CATEGORIES,
+    INVENTORY_CATEGORY_LABELS,
+    addInventoryItem,
+    copyInventoryItems,
+    inventoryItemCount,
+    listInventoryItems,
+    type InventoryCategoryId,
+    type InventoryIconId,
+    type InventorySnapshotItem,
+} from './inventory'
+
+export { consumeHealPotion, consumeManaPotion } from './consumables'
+
+interface InventoryDom {
+    root: HTMLDivElement
+    panel: HTMLDivElement
+    loadout: HTMLDivElement
+    spell: HTMLDivElement
+    categories: HTMLDivElement
+    stats: HTMLDivElement
+    closeButton: HTMLButtonElement
+    keyHint: HTMLSpanElement
+    useConsumableKeys: readonly string[]
+}
+
+interface LoadoutOption {
+    stance: WeaponStance
+    label: string
+    hint: string
+}
+
+const LOADOUT_OPTIONS: readonly LoadoutOption[] = [
+    { stance: 'melee', label: 'Melee', hint: 'Sword & shield — F swings, T blocks.' },
+    { stance: 'ranged', label: 'Ranged', hint: 'Bow — F looses an arrow.' },
+    { stance: 'magic', label: 'Magician', hint: 'Staff — F bonks, C casts the selected spell.' },
+]
+
+export function setHighJumpBootsEquipped(world: GameWorld, equipped: boolean): boolean {
+    return setBootsEquipped(world, HIGH_JUMP_BOOTS_ITEM_ID, equipped)
+}
+
+export function setBootsEquipped(world: GameWorld, boots: BootEquipmentKind, equipped: boolean): boolean {
+    if (equipped && inventoryItemCount(world.inventory.items, boots) <= 0) return false
+    if (!equipped && world.playerSettings.equipment.boots !== boots) return false
+    const next = equipped ? boots : null
+    if (world.playerSettings.equipment.boots === next) return false
+    world.playerSettings.equipment.boots = next
+    syncPlayerVisuals(world)
+    return true
+}
+
+export function setHeadEquipment(world: GameWorld, kind: HeadEquipmentKind): boolean {
+    if (!playerCanEquipHead(world, kind)) return false
+    if (world.playerSettings.equipment.head === kind) return false
+    world.playerSettings.equipment.head = kind
+    syncPlayerVisuals(world)
+    return true
+}
+
+export function setMeleeHandEquipment(world: GameWorld, kind: HandEquipmentKind): boolean {
+    if (!playerCanEquipMeleeHand(world, kind)) return false
+    if (world.playerSettings.equipment.melee.handR === kind) return false
+    world.playerSettings.equipment.melee = {
+        ...world.playerSettings.equipment.melee,
+        handR: kind,
+    }
+    syncPlayerVisuals(world)
+    return true
+}
+
+export function createInventorySystem(input: Input, actions: ActionMap): System {
+    let dom: InventoryDom | null = null
+    let open = false
+    let lastWorld: GameWorld | null = null
+
+    const onKeyDown = (ev: KeyboardEvent) => {
+        if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.repeat) return
+        if (open && (ev.code === 'Escape' || isInventoryKey(ev.code, actions))) {
+            ev.preventDefault()
+            ev.stopPropagation()
+            ev.stopImmediatePropagation()
+            setOpen(false)
+            return
+        }
+        if (!open && isInventoryKey(ev.code, actions) && !hasBlockingOverlay()) {
+            ev.preventDefault()
+            ev.stopPropagation()
+            ev.stopImmediatePropagation()
+            setOpen(true)
+        }
+    }
+
+    function setOpen(next: boolean): void {
+        if (open === next) return
+        open = next
+        input.setEnabled(!open)
+        input.clear()
+        if (!dom) return
+        dom.root.style.display = open ? 'grid' : 'none'
+        dom.root.style.pointerEvents = open ? 'auto' : 'none'
+        dom.root.setAttribute('aria-hidden', open ? 'false' : 'true')
+        if (open) {
+            if (lastWorld) renderInventory(dom, lastWorld, actions.bindingDisplayKeysFor(GameAction.UseConsumable))
+            setTimeout(() => dom?.closeButton.focus(), 0)
+        }
+    }
+
+    return {
+        name: 'inventory',
+        order: RenderOrder.debug + 8,
+        init(world) {
+            lastWorld = world
+            dom = buildInventoryDom(actions.bindingDisplayKeysFor(GameAction.Inventory), actions.bindingDisplayKeysFor(GameAction.UseConsumable))
+            dom.closeButton.addEventListener('click', () => setOpen(false))
+            document.body.appendChild(dom.root)
+            window.addEventListener('keydown', onKeyDown, { capture: true })
+            setOpen(false)
+        },
+        update(world) {
+            lastWorld = world
+            if (!open || !dom) return
+            // Don't re-render here: the game is paused while the menu is open,
+            // so the contents are static, and rebuilding the DOM every frame
+            // would destroy the loadout/spell buttons between mousedown and
+            // mouseup — clicks would never land. Rendering happens on open and
+            // after each selection instead.
+            input.clear()
+        },
+        dispose() {
+            window.removeEventListener('keydown', onKeyDown, true)
+            input.setEnabled(true)
+            dom?.root.remove()
+            dom = null
+            lastWorld = null
+            open = false
+        },
+    }
+}
+
+function buildInventoryDom(keys: readonly string[], useConsumableKeys: readonly string[]): InventoryDom {
+    const root = document.createElement('div')
+    root.id = 'voxel-platformer-inventory'
+    Object.assign(root.style, {
+        position: 'fixed',
+        inset: '0',
+        zIndex: '1600',
+        display: 'none',
+        placeItems: 'center',
+        padding: '18px',
+        background: 'rgba(5, 8, 10, 0.45)',
+        color: '#eef6f2',
+        font: '14px ui-sans-serif, system-ui, sans-serif',
+        pointerEvents: 'none',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const panel = document.createElement('div')
+    Object.assign(panel.style, {
+        width: 'min(980px, calc(100vw - 28px))',
+        maxHeight: 'min(680px, calc(100vh - 28px))',
+        overflow: 'auto',
+        display: 'grid',
+        gridTemplateRows: 'auto auto auto minmax(0, 1fr)',
+        gap: '14px',
+        padding: '18px',
+        borderRadius: '8px',
+        border: '1px solid rgba(238, 246, 242, 0.18)',
+        background: 'rgba(11, 16, 17, 0.96)',
+        boxShadow: '0 26px 86px rgba(0, 0, 0, 0.52)',
+    } satisfies Partial<CSSStyleDeclaration>)
+    root.appendChild(panel)
+
+    const header = document.createElement('div')
+    Object.assign(header.style, {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    panel.appendChild(header)
+
+    const title = document.createElement('div')
+    title.textContent = 'Inventory'
+    Object.assign(title.style, {
+        flex: '1',
+        font: '700 22px ui-serif, Georgia, serif',
+        color: '#f4f0dc',
+    } satisfies Partial<CSSStyleDeclaration>)
+    header.appendChild(title)
+
+    const keyHint = document.createElement('span')
+    keyHint.textContent = keys.length > 0 ? keys.join(' / ') : 'Tab'
+    Object.assign(keyHint.style, {
+        color: 'rgba(238, 246, 242, 0.62)',
+        font: '700 11px ui-sans-serif, system-ui, sans-serif',
+        textTransform: 'uppercase',
+    } satisfies Partial<CSSStyleDeclaration>)
+    header.appendChild(keyHint)
+
+    const closeButton = document.createElement('button')
+    closeButton.type = 'button'
+    closeButton.textContent = 'Close'
+    Object.assign(closeButton.style, buttonStyle())
+    header.appendChild(closeButton)
+
+    const loadout = document.createElement('div')
+    Object.assign(loadout.style, {
+        display: 'grid',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    panel.appendChild(loadout)
+
+    const spell = document.createElement('div')
+    Object.assign(spell.style, {
+        display: 'grid',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    panel.appendChild(spell)
+
+    const body = document.createElement('div')
+    Object.assign(body.style, {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+        gap: '18px',
+        minHeight: '0',
+    } satisfies Partial<CSSStyleDeclaration>)
+    panel.appendChild(body)
+
+    const categories = document.createElement('div')
+    Object.assign(categories.style, {
+        display: 'grid',
+        gap: '14px',
+        alignContent: 'start',
+    } satisfies Partial<CSSStyleDeclaration>)
+    body.appendChild(categories)
+
+    const stats = document.createElement('div')
+    Object.assign(stats.style, {
+        alignSelf: 'start',
+        border: '1px solid rgba(238, 246, 242, 0.14)',
+        background: 'rgba(238, 246, 242, 0.055)',
+        borderRadius: '8px',
+        padding: '14px',
+        minWidth: '0',
+    } satisfies Partial<CSSStyleDeclaration>)
+    body.appendChild(stats)
+
+    root.addEventListener('pointerdown', (ev) => {
+        if (ev.target === root) closeButton.click()
+    })
+
+    return { root, panel, loadout, spell, categories, stats, closeButton, keyHint, useConsumableKeys }
+}
+
+function renderInventory(dom: InventoryDom, world: GameWorld, useConsumableKeys = dom.useConsumableKeys): void {
+    dom.useConsumableKeys = useConsumableKeys
+    dom.loadout.replaceChildren(...loadoutSection(dom, world))
+    dom.spell.replaceChildren(...spellSection(dom, world))
+    const grouped = groupInventoryItems(world)
+    dom.categories.replaceChildren(...INVENTORY_CATEGORIES.map((category) =>
+        categorySection(category, categoryCards(category, grouped.get(category) ?? [], dom, world)),
+    ))
+    dom.stats.replaceChildren(...statsSection(world))
+}
+
+function loadoutSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    const title = document.createElement('div')
+    title.textContent = 'Loadout'
+    Object.assign(title.style, {
+        color: 'rgba(244, 240, 220, 0.84)',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+        textTransform: 'uppercase',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const row = document.createElement('div')
+    Object.assign(row.style, {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    for (const option of LOADOUT_OPTIONS) {
+        row.appendChild(loadoutButton(dom, world, option))
+    }
+    return [title, row]
+}
+
+function loadoutButton(dom: InventoryDom, world: GameWorld, option: LoadoutOption): HTMLElement {
+    const active = world.weaponStance === option.stance
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.title = option.hint
+    Object.assign(button.style, {
+        display: 'grid',
+        gap: '3px',
+        minWidth: '150px',
+        padding: '9px 12px',
+        textAlign: 'left',
+        borderRadius: '6px',
+        border: active ? '1px solid #9bdca9' : '1px solid rgba(238, 246, 242, 0.18)',
+        background: active ? 'rgba(155, 220, 169, 0.16)' : 'rgba(238, 246, 242, 0.06)',
+        color: '#eef6f2',
+        cursor: 'pointer',
+        font: '700 13px ui-sans-serif, system-ui, sans-serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const label = document.createElement('div')
+    label.textContent = active ? `${option.label} ✓` : option.label
+    button.appendChild(label)
+
+    const sub = document.createElement('div')
+    sub.textContent = describeHandLoadout(world.playerSettings.equipment[option.stance])
+    Object.assign(sub.style, {
+        color: 'rgba(238, 246, 242, 0.58)',
+        font: '600 11px ui-sans-serif, system-ui, sans-serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+    button.appendChild(sub)
+
+    button.addEventListener('click', () => {
+        const players = query(world, [PlayerControlled])
+        if (players.length === 0) return
+        setWeaponStance(world, players[0]!, option.stance)
+        renderInventory(dom, world)
+    })
+    return button
+}
+
+function spellSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    const title = document.createElement('div')
+    title.textContent = 'Spell (cast with C)'
+    Object.assign(title.style, {
+        color: 'rgba(244, 240, 220, 0.84)',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+        textTransform: 'uppercase',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const row = document.createElement('div')
+    Object.assign(row.style, {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    for (const spell of SPELLS) {
+        const active = world.selectedSpell === spell.id
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.title = spell.hint
+        Object.assign(button.style, {
+            display: 'grid',
+            gap: '3px',
+            minWidth: '150px',
+            padding: '9px 12px',
+            textAlign: 'left',
+            borderRadius: '6px',
+            border: active ? '1px solid #7fb8ff' : '1px solid rgba(238, 246, 242, 0.18)',
+            background: active ? 'rgba(127, 184, 255, 0.16)' : 'rgba(238, 246, 242, 0.06)',
+            color: '#eef6f2',
+            cursor: 'pointer',
+            font: '700 13px ui-sans-serif, system-ui, sans-serif',
+        } satisfies Partial<CSSStyleDeclaration>)
+
+        const label = document.createElement('div')
+        label.textContent = active ? `${spell.label} ✓` : spell.label
+        button.appendChild(label)
+
+        const sub = document.createElement('div')
+        sub.textContent = `${spell.hint} Cost: ${manaCostLabel(spell.manaCost)}.`
+        Object.assign(sub.style, {
+            color: 'rgba(238, 246, 242, 0.58)',
+            font: '600 11px ui-sans-serif, system-ui, sans-serif',
+        } satisfies Partial<CSSStyleDeclaration>)
+        button.appendChild(sub)
+
+        button.addEventListener('click', () => {
+            world.selectedSpell = spell.id
+            renderInventory(dom, world)
+        })
+        row.appendChild(button)
+    }
+    return [title, row]
+}
+
+function groupInventoryItems(world: GameWorld): Map<InventoryCategoryId, InventorySnapshotItem[]> {
+    const grouped = new Map<InventoryCategoryId, InventorySnapshotItem[]>()
+    for (const category of INVENTORY_CATEGORIES) grouped.set(category, [])
+    grouped.get('resources')!.push(
+        {
+            id: 'gold',
+            quantity: world.inventory.gold,
+            name: 'Gold',
+            category: 'resources',
+            icon: 'gold',
+        },
+        {
+            id: 'arrows',
+            quantity: world.inventory.arrows,
+            name: 'Arrows',
+            category: 'resources',
+            icon: 'arrows',
+        },
+    )
+    for (const item of listInventoryItems(world.inventory.items)) {
+        if (item.id === HEAL_POTION_ITEM_ID || item.id === MANA_POTION_ITEM_ID) continue
+        if (item.id === HELD_TORCH_ITEM_ID) continue
+        if (isBuyableHeadEquipmentItemId(item.id) || isBuyableHandEquipmentItemId(item.id) || isInventoryHandEquipmentItemId(item.id)) continue
+        grouped.get(item.category)?.push(item)
+    }
+    grouped.get('consumables')!.unshift(consumableSnapshotItem(world, MANA_POTION_ITEM_ID))
+    grouped.get('consumables')!.unshift(consumableSnapshotItem(world, HEAL_POTION_ITEM_ID))
+    return grouped
+}
+
+function categoryCards(
+    category: InventoryCategoryId,
+    items: readonly InventorySnapshotItem[],
+    dom: InventoryDom,
+    world: GameWorld,
+): HTMLElement[] {
+    const cards = items.map((item) => itemCard(item, dom, world))
+    if (category === 'accessories') cards.unshift(...hatSelectorCards(dom, world))
+    if (category === 'tools') cards.unshift(...meleeWeaponSelectorCards(dom, world), ...torchToggleCards(dom, world))
+    return cards
+}
+
+function hatSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    return HEAD_EQUIPMENT_KINDS
+        .filter((kind) => playerCanEquipHead(world, kind))
+        .map((kind) => {
+        const active = world.playerSettings.equipment.head === kind
+        return menuCard({
+            icon: kind,
+            name: EQUIPMENT_LABELS[kind],
+            detail: active ? 'Equipped' : 'Select',
+            active,
+            title: `Equip ${EQUIPMENT_LABELS[kind]}`,
+            onClick: () => {
+                if (setHeadEquipment(world, kind)) renderInventory(dom, world)
+            },
+        })
+    })
+}
+
+function meleeWeaponSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    const kinds = [SWORD_ITEM_ID, SPEAR_ITEM_ID] as const satisfies readonly HandEquipmentKind[]
+    return kinds
+        .filter((kind) => playerCanEquipMeleeHand(world, kind))
+        .map((kind) => {
+            const active = world.playerSettings.equipment.melee.handR === kind
+            return menuCard({
+                icon: kind,
+                name: EQUIPMENT_LABELS[kind],
+                detail: active ? 'Equipped' : 'Select',
+                active,
+                title: `Equip ${EQUIPMENT_LABELS[kind]} in the melee loadout.`,
+                onClick: () => {
+                    if (setMeleeHandEquipment(world, kind)) renderInventory(dom, world)
+                },
+            })
+        })
+}
+
+function playerCanEquipHead(world: GameWorld, kind: HeadEquipmentKind): boolean {
+    return kind === 'hat'
+        || world.playerSettings.equipment.head === kind
+        || inventoryItemCount(world.inventory.items, kind) > 0
+}
+
+function playerCanEquipMeleeHand(world: GameWorld, kind: HandEquipmentKind): boolean {
+    return world.playerSettings.equipment.melee.handR === kind
+        || inventoryItemCount(world.inventory.items, kind) > 0
+}
+
+function torchToggleCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
+    if (!playerHasHeldTorch(world)) return []
+    return [torchToggleCard(dom, world)]
+}
+
+function playerHasHeldTorch(world: GameWorld): boolean {
+    return world.playerSettings.abilities.torch || inventoryItemCount(world.inventory.items, HELD_TORCH_ITEM_ID) > 0
+}
+
+function ensureHeldTorchInventoryItem(world: GameWorld): void {
+    if (inventoryItemCount(world.inventory.items, HELD_TORCH_ITEM_ID) > 0) return
+    if (!addInventoryItem(world.inventory.items, HELD_TORCH_ITEM_ID, 1, HELD_TORCH_ITEM_OPTIONS)) return
+    world.playerSettings.inventory.items = copyInventoryItems(world.inventory.items)
+}
+
+function torchToggleCard(dom: InventoryDom, world: GameWorld): HTMLElement {
+    const active = world.playerSettings.abilities.torch
+    return menuCard({
+        icon: 'torch',
+        name: 'Torch',
+        detail: active ? 'On' : 'Off',
+        active,
+        title: active ? 'Put the hand torch away.' : 'Carry the hand torch.',
+        onClick: () => {
+            ensureHeldTorchInventoryItem(world)
+            world.playerSettings.abilities.torch = !world.playerSettings.abilities.torch
+            syncPlayerHeldTorchVisibility(world)
+            renderInventory(dom, world)
+        },
+    })
+}
+
+function categorySection(category: InventoryCategoryId, cards: readonly HTMLElement[]): HTMLElement {
+    const section = document.createElement('section')
+    Object.assign(section.style, {
+        display: 'grid',
+        gap: '8px',
+        minWidth: '0',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const title = document.createElement('div')
+    title.textContent = INVENTORY_CATEGORY_LABELS[category]
+    Object.assign(title.style, {
+        color: 'rgba(244, 240, 220, 0.84)',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+        textTransform: 'uppercase',
+    } satisfies Partial<CSSStyleDeclaration>)
+    section.appendChild(title)
+
+    const row = document.createElement('div')
+    Object.assign(row.style, {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+        minWidth: '0',
+    } satisfies Partial<CSSStyleDeclaration>)
+    section.appendChild(row)
+
+    if (cards.length === 0) {
+        const empty = document.createElement('div')
+        empty.textContent = 'Empty'
+        Object.assign(empty.style, {
+            color: 'rgba(238, 246, 242, 0.42)',
+            font: '13px ui-sans-serif, system-ui, sans-serif',
+            padding: '10px 0',
+        } satisfies Partial<CSSStyleDeclaration>)
+        row.appendChild(empty)
+        return section
+    }
+
+    for (const card of cards) row.appendChild(card)
+    return section
+}
+
+function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWorld): HTMLElement {
+    if (isConsumableItemId(item.id)) {
+        const active = world.selectedConsumable === item.id
+        const direct = isDirectConsumableItemId(item.id)
+        return menuCard({
+            icon: item.icon,
+            name: item.name,
+            detail: active ? `Active · x${item.quantity}` : `x${item.quantity}`,
+            title: consumableTitle(item, direct, dom.useConsumableKeys),
+            active,
+            disabled: item.quantity <= 0,
+            onClick: () => {
+                if (selectConsumable(world, item.id)) renderInventory(dom, world)
+            },
+            onDoubleClick: () => {
+                selectConsumable(world, item.id)
+                if (direct) {
+                    consumeDirectConsumable(world, item.id)
+                }
+                renderInventory(dom, world)
+            },
+        })
+    }
+    if (isBootEquipmentItemId(item.id)) {
+        const bootId = item.id
+        const active = world.playerSettings.equipment.boots === bootId
+        const bootInfo = BOOT_EQUIPMENT_ITEM_OPTIONS[bootId]
+        return menuCard({
+            icon: item.icon,
+            name: item.name || bootInfo.name || HIGH_JUMP_BOOTS_NAME,
+            detail: active ? 'Equipped' : 'Select',
+            title: item.description ? `${item.name}\n${item.description}` : `Equip ${bootInfo.name || item.name}.`,
+            active,
+            disabled: item.quantity <= 0,
+            onClick: () => {
+                if (setBootsEquipped(world, bootId, !active)) renderInventory(dom, world)
+            },
+        })
+    }
+    return menuCard({
+        icon: item.icon,
+        name: item.name,
+        detail: `x${item.quantity}`,
+        title: item.description ? `${item.name}\n${item.description}` : item.name,
+        disabled: item.quantity <= 0,
+    })
+}
+
+function consumableTitle(item: InventorySnapshotItem, direct: boolean, useConsumableKeys: readonly string[]): string {
+    const base = item.description ? `${item.name}\n${item.description}` : item.name
+    const useKey = actionKeyLabel(useConsumableKeys)
+    return direct
+        ? `${base}\nClick to select. Press ${useKey} to use. Double-click to use now.`
+        : `${base}\nClick to select. Press ${useKey} to throw.`
+}
+
+interface MenuCardOptions {
+    icon: InventoryIconId
+    name: string
+    detail: string
+    title?: string
+    active?: boolean
+    disabled?: boolean
+    onClick?: () => void
+    onDoubleClick?: () => void
+}
+
+function menuCard(opts: MenuCardOptions): HTMLElement {
+    const interactive = opts.onClick !== undefined || opts.onDoubleClick !== undefined
+    const card = interactive ? document.createElement('button') : document.createElement('div')
+    if (interactive && opts.disabled) {
+        ;(card as HTMLButtonElement).disabled = true
+    }
+    if (opts.onClick) {
+        ;(card as HTMLButtonElement).type = 'button'
+        let clickTimer: number | null = null
+        card.addEventListener('click', () => {
+            if (!opts.onDoubleClick) {
+                opts.onClick?.()
+                return
+            }
+            if (clickTimer !== null) window.clearTimeout(clickTimer)
+            clickTimer = window.setTimeout(() => {
+                clickTimer = null
+                opts.onClick?.()
+            }, 180)
+        })
+        if (opts.onDoubleClick) {
+            card.addEventListener('dblclick', (ev) => {
+                ev.preventDefault()
+                if (clickTimer !== null) {
+                    window.clearTimeout(clickTimer)
+                    clickTimer = null
+                }
+                opts.onDoubleClick?.()
+            })
+        }
+    } else if (interactive) {
+        ;(card as HTMLButtonElement).type = 'button'
+        if (opts.onDoubleClick) {
+            card.addEventListener('dblclick', (ev) => {
+                ev.preventDefault()
+                opts.onDoubleClick?.()
+            })
+        }
+    }
+    Object.assign(card.style, {
+        width: '138px',
+        minHeight: '58px',
+        display: 'grid',
+        gridTemplateColumns: '34px minmax(0, 1fr)',
+        gap: '9px',
+        alignItems: 'center',
+        padding: '9px',
+        border: opts.active ? '1px solid #e7b563' : '1px solid rgba(238, 246, 242, 0.13)',
+        background: opts.active ? 'rgba(231, 181, 99, 0.15)' : 'rgba(238, 246, 242, 0.065)',
+        borderRadius: '6px',
+        boxSizing: 'border-box',
+        color: '#eef6f2',
+        cursor: interactive ? 'pointer' : 'default',
+        opacity: opts.disabled ? '0.55' : '1',
+        textAlign: 'left',
+        font: 'inherit',
+    } satisfies Partial<CSSStyleDeclaration>)
+    card.title = opts.title ?? opts.name
+
+    card.appendChild(itemIcon(opts.icon))
+
+    const text = document.createElement('div')
+    Object.assign(text.style, {
+        minWidth: '0',
+        display: 'grid',
+        gap: '2px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    card.appendChild(text)
+
+    const name = document.createElement('div')
+    name.textContent = opts.name
+    Object.assign(name.style, {
+        color: '#eef6f2',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        font: '700 13px ui-sans-serif, system-ui, sans-serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+    text.appendChild(name)
+
+    const qty = document.createElement('div')
+    qty.textContent = opts.detail
+    Object.assign(qty.style, {
+        color: opts.active ? '#e7b563' : 'rgba(238, 246, 242, 0.58)',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+    text.appendChild(qty)
+
+    return card
+}
+
+function statsSection(world: GameWorld): HTMLElement[] {
+    const nodes: HTMLElement[] = []
+    const title = document.createElement('div')
+    title.textContent = 'Player'
+    Object.assign(title.style, {
+        marginBottom: '12px',
+        color: '#f4f0dc',
+        font: '700 18px ui-serif, Georgia, serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+    nodes.push(title)
+
+    const stats = [
+        ['Move speed', effectivePlayerMoveSpeed(world.playerSettings).toFixed(1)],
+        ['Jump', world.playerSettings.jumpVelocity.toFixed(1)],
+        ['High jump', world.playerSettings.highJumpVelocity.toFixed(1)],
+        ['High jump cost', manaCostLabel(HIGH_JUMP_MANA_COST)],
+        ['Air Push cost', manaCostLabel(AIR_PUSH_MANA_COST)],
+        ['Mana', playerManaLabel(world)],
+        ['Arrow speed', effectivePlayerArrowSpeed(world.playerSettings).toFixed(1)],
+        ['Torch range', world.playerSettings.torch.distance.toFixed(1)],
+    ] as const
+    for (const [label, value] of stats) nodes.push(statRow(label, value))
+
+    const abilityTitle = document.createElement('div')
+    abilityTitle.textContent = 'Abilities'
+    Object.assign(abilityTitle.style, {
+        margin: '14px 0 8px',
+        color: 'rgba(244, 240, 220, 0.78)',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+        textTransform: 'uppercase',
+    } satisfies Partial<CSSStyleDeclaration>)
+    nodes.push(abilityTitle)
+
+    for (const key of PLAYER_ABILITY_KEYS) {
+        const enabled = key === 'highJump'
+            ? playerCanHighJump(world.playerSettings)
+            : world.playerSettings.abilities[key]
+        nodes.push(statRow(PLAYER_ABILITY_LABELS[key], enabled ? 'On' : 'Off', enabled))
+    }
+    return nodes
+}
+
+function playerManaLabel(world: GameWorld): string {
+    const players = query(world, [PlayerControlled, Mana])
+    if (players.length === 0) return '0 / 0'
+    const player = players[0]!
+    return `${Math.max(0, Math.round(Mana.current[player]!))} / ${Math.max(0, Math.round(Mana.max[player]!))}`
+}
+
+function manaCostLabel(cost: number): string {
+    const units = Math.max(0, Math.floor(cost))
+    if (units === MANA_PER_ORB) return '1 orb'
+    if (units % MANA_PER_ORB === 0) return `${units / MANA_PER_ORB} orbs`
+    return `${units}/${MANA_PER_ORB} orb`
+}
+
+function statRow(label: string, value: string, positive?: boolean): HTMLElement {
+    const row = document.createElement('div')
+    Object.assign(row.style, {
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: '12px',
+        padding: '6px 0',
+        borderTop: '1px solid rgba(238, 246, 242, 0.075)',
+        color: 'rgba(238, 246, 242, 0.72)',
+        font: '13px ui-sans-serif, system-ui, sans-serif',
+    } satisfies Partial<CSSStyleDeclaration>)
+    const left = document.createElement('span')
+    left.textContent = label
+    const right = document.createElement('span')
+    right.textContent = value
+    Object.assign(right.style, {
+        color: positive === undefined ? '#eef6f2' : positive ? '#9bdca9' : '#e2a18f',
+        fontWeight: '700',
+    } satisfies Partial<CSSStyleDeclaration>)
+    row.append(left, right)
+    return row
+}
+
+function itemIcon(icon: InventoryIconId): HTMLElement {
+    const root = document.createElement('div')
+    Object.assign(root.style, {
+        width: '34px',
+        height: '34px',
+        borderRadius: '6px',
+        display: 'grid',
+        placeItems: 'center',
+        background: iconBackground(icon),
+        border: '1px solid rgba(255, 255, 255, 0.16)',
+        boxShadow: 'inset 0 0 16px rgba(255,255,255,0.08)',
+    } satisfies Partial<CSSStyleDeclaration>)
+
+    const glyph = document.createElement('div')
+    Object.assign(glyph.style, glyphStyle(icon))
+    root.appendChild(glyph)
+    return root
+}
+
+function iconBackground(icon: InventoryIconId): string {
+    switch (icon) {
+        case 'gold': return 'linear-gradient(145deg, #6c5220, #d7ae45)'
+        case 'arrows': return 'linear-gradient(145deg, #39444d, #7aa3aa)'
+        case 'quest-shard': return 'linear-gradient(145deg, #2f4d5f, #77d0c9)'
+        case 'heal-potion': return 'linear-gradient(145deg, #472333, #c95772)'
+        case 'mana-potion': return 'linear-gradient(145deg, #17355f, #45b8ff)'
+        case 'food-apple': return 'linear-gradient(145deg, #3f4f2a, #b85a4e)'
+        case 'food-fish': return 'linear-gradient(145deg, #284254, #78bfd0)'
+        case 'food-meat': return 'linear-gradient(145deg, #5a2f26, #c76b4e)'
+        case 'food-pie': return 'linear-gradient(145deg, #5d3826, #c08544)'
+        case 'food': return 'linear-gradient(145deg, #38502e, #9bbd5c)'
+        case 'pie': return 'linear-gradient(145deg, #5d3826, #c08544)'
+        case 'dynamite': return 'linear-gradient(145deg, #4a1f25, #e04b3f)'
+        case 'torch': return 'linear-gradient(145deg, #4a2b18, #d28b37)'
+        case 'boots': return 'linear-gradient(145deg, #192a3a, #65d7ff)'
+        case 'hat': return 'linear-gradient(145deg, #20372f, #7ac7a2)'
+        case 'hat-arcane': return 'linear-gradient(145deg, #18234f, #5f7dff)'
+        case 'hat-ranger': return 'linear-gradient(145deg, #203d24, #9fd179)'
+        case 'hat-guard': return 'linear-gradient(145deg, #3f4b52, #b7c3ca)'
+        case 'hat-sniper': return 'linear-gradient(145deg, #17212a, #80d8ff)'
+        case 'hat-sun': return 'linear-gradient(145deg, #6d4215, #ffd166)'
+        case 'metal-helmet': return 'linear-gradient(145deg, #3f4b52, #d8e2ea)'
+        case 'sword': return 'linear-gradient(145deg, #39444d, #d8e2ea)'
+        case 'spear': return 'linear-gradient(145deg, #4a2b18, #d8e2ea)'
+        case 'consumable': return 'linear-gradient(145deg, #3e4b2e, #9bbd5c)'
+        case 'accessory': return 'linear-gradient(145deg, #4b3656, #b181bd)'
+        case 'tool': return 'linear-gradient(145deg, #4d4439, #c0a26f)'
+        default: return 'linear-gradient(145deg, #33424a, #8ea0a6)'
+    }
+}
+
+function glyphStyle(icon: InventoryIconId): Partial<CSSStyleDeclaration> {
+    if (icon === 'arrows') {
+        return {
+            width: '20px',
+            height: '3px',
+            background: '#eef6f2',
+            transform: 'rotate(-34deg)',
+            boxShadow: '9px 0 0 -1px #c9a85d',
+        }
+    }
+    if (icon === 'quest-shard') {
+        return {
+            width: '15px',
+            height: '19px',
+            background: '#dbfff7',
+            clipPath: 'polygon(50% 0, 100% 38%, 68% 100%, 18% 80%, 0 28%)',
+            boxShadow: '0 0 10px rgba(219,255,247,0.65)',
+        }
+    }
+    if (icon === 'gold') {
+        return {
+            width: '18px',
+            height: '18px',
+            borderRadius: '50%',
+            background: '#ffe28a',
+            boxShadow: 'inset -3px -3px 0 rgba(126, 82, 21, 0.38)',
+        }
+    }
+    if (icon === 'heal-potion') {
+        return {
+            width: '16px',
+            height: '22px',
+            borderRadius: '5px 5px 7px 7px',
+            background: 'linear-gradient(180deg, #ffd7de 0 22%, #e34c64 23% 100%)',
+            boxShadow: '0 -6px 0 -2px #d9edf0, inset -3px -4px 0 rgba(85, 10, 22, 0.25)',
+        }
+    }
+    if (icon === 'mana-potion') {
+        return {
+            width: '16px',
+            height: '22px',
+            borderRadius: '5px 5px 7px 7px',
+            background: 'linear-gradient(180deg, #d7f1ff 0 22%, #45b8ff 23% 100%)',
+            boxShadow: '0 -6px 0 -2px #d9edf0, inset -3px -4px 0 rgba(10, 41, 85, 0.3), 0 0 10px rgba(69, 184, 255, 0.45)',
+        }
+    }
+    if (icon === 'food-apple' || icon === 'food') {
+        return {
+            width: '19px',
+            height: '19px',
+            borderRadius: '50%',
+            background: '#d94b43',
+            boxShadow: '0 -7px 0 -4px #5f7f3b, inset -4px -4px 0 rgba(85, 31, 18, 0.24)',
+        }
+    }
+    if (icon === 'food-fish') {
+        return {
+            width: '24px',
+            height: '15px',
+            background: 'linear-gradient(90deg, #d7f1ff, #72bdd2)',
+            clipPath: 'polygon(0 50%, 22% 16%, 76% 18%, 100% 50%, 76% 82%, 22% 84%)',
+            boxShadow: 'inset -5px -3px 0 rgba(26, 64, 84, 0.24)',
+        }
+    }
+    if (icon === 'food-meat') {
+        return {
+            width: '24px',
+            height: '16px',
+            borderRadius: '60% 40% 48% 58%',
+            background: 'linear-gradient(135deg, #e08a60, #9f332f)',
+            boxShadow: '10px 2px 0 -4px #f2d2aa, 13px 2px 0 -5px #f2d2aa, inset -4px -3px 0 rgba(67, 22, 16, 0.28)',
+            transform: 'rotate(-14deg)',
+        }
+    }
+    if (icon === 'food-pie' || icon === 'pie') {
+        return {
+            width: '22px',
+            height: '12px',
+            borderRadius: '50% 50% 6px 6px',
+            background: 'linear-gradient(180deg, #e0a85d, #8b4c2b)',
+            boxShadow: 'inset 0 4px 0 #6f3426',
+        }
+    }
+    if (icon === 'dynamite') {
+        return {
+            width: '23px',
+            height: '14px',
+            borderRadius: '4px',
+            background: 'repeating-linear-gradient(90deg, #e04b3f 0 6px, #9d2830 6px 8px)',
+            boxShadow: '0 -8px 0 -5px #ffd166, inset -3px -3px 0 rgba(49, 10, 14, 0.26)',
+        }
+    }
+    if (icon === 'torch') {
+        return {
+            width: '6px',
+            height: '24px',
+            borderRadius: '4px',
+            background: '#4a2715',
+            transform: 'rotate(18deg)',
+            boxShadow: '0 -10px 0 4px #ffb05f, 0 -14px 0 1px #fff0a8',
+        }
+    }
+    if (icon === 'boots') {
+        return {
+            width: '23px',
+            height: '18px',
+            borderRadius: '3px 3px 7px 7px',
+            background: '#eef6f2',
+            clipPath: 'polygon(4% 0, 42% 0, 44% 48%, 62% 48%, 64% 0, 96% 0, 96% 58%, 76% 58%, 76% 100%, 52% 100%, 52% 62%, 48% 62%, 48% 100%, 24% 100%, 24% 58%, 4% 58%)',
+            boxShadow: '0 0 9px rgba(101, 215, 255, 0.55)',
+        }
+    }
+    if (icon === 'hat') {
+        return hatGlyph('#243d36', '0 -7px 0 -2px #315a4d')
+    }
+    if (icon === 'hat-arcane') {
+        return {
+            width: '22px',
+            height: '25px',
+            clipPath: 'polygon(50% 0, 78% 72%, 100% 74%, 100% 88%, 0 88%, 0 74%, 24% 72%)',
+            background: 'linear-gradient(180deg, #5f7dff, #253a7a)',
+            boxShadow: 'inset 0 -5px 0 #18234f',
+        }
+    }
+    if (icon === 'hat-ranger') {
+        return hatGlyph('#315a2f', '9px -7px 0 -5px #d7b35a')
+    }
+    if (icon === 'hat-guard') {
+        return hatGlyph('#9aa7ad', '0 -8px 0 -4px #b6342d')
+    }
+    if (icon === 'hat-sniper') {
+        return {
+            width: '24px',
+            height: '18px',
+            borderRadius: '7px 7px 4px 4px',
+            background: '#27313a',
+            boxShadow: '8px -2px 0 -4px #80d8ff, 8px -2px 0 -2px #c89b45, inset 0 -5px 0 #151b21',
+        }
+    }
+    if (icon === 'hat-sun') {
+        return {
+            width: '24px',
+            height: '20px',
+            clipPath: 'polygon(0 100%, 0 48%, 18% 70%, 32% 18%, 50% 64%, 68% 18%, 82% 70%, 100% 48%, 100% 100%)',
+            background: '#ffd166',
+            boxShadow: 'inset 0 -5px 0 #d9a62a',
+        }
+    }
+    if (icon === METAL_HELMET_ITEM_ID) {
+        return {
+            width: '23px',
+            height: '21px',
+            background: 'linear-gradient(180deg, #e0e8ed, #78858d)',
+            clipPath: 'polygon(12% 42%, 24% 12%, 50% 0, 76% 12%, 88% 42%, 84% 100%, 62% 78%, 50% 100%, 38% 78%, 16% 100%)',
+            boxShadow: 'inset 0 -4px 0 rgba(43, 55, 63, 0.45)',
+        }
+    }
+    if (icon === 'sword') {
+        return {
+            width: '4px',
+            height: '25px',
+            background: '#eef6f2',
+            transform: 'rotate(42deg)',
+            boxShadow: '0 8px 0 2px #c9a85d, 0 12px 0 4px #5a3a22',
+        }
+    }
+    if (icon === SPEAR_ITEM_ID) {
+        return {
+            width: '24px',
+            height: '4px',
+            background: '#b98650',
+            transform: 'rotate(-34deg)',
+            boxShadow: '10px 0 0 -1px #eef6f2, 13px 0 0 -2px #6f7d85',
+        }
+    }
+    return {
+        width: '18px',
+        height: '18px',
+        borderRadius: icon === 'tool' ? '2px' : '50%',
+        background: '#eef6f2',
+        opacity: '0.9',
+    }
+}
+
+function hatGlyph(color: string, boxShadow: string): Partial<CSSStyleDeclaration> {
+    return {
+        width: '24px',
+        height: '10px',
+        borderRadius: '8px 8px 4px 4px',
+        background: color,
+        boxShadow,
+    }
+}
+
+function buttonStyle(): Partial<CSSStyleDeclaration> {
+    return {
+        padding: '7px 11px',
+        borderRadius: '6px',
+        border: '1px solid rgba(238, 246, 242, 0.18)',
+        background: 'rgba(238, 246, 242, 0.08)',
+        color: '#eef6f2',
+        font: '700 12px ui-sans-serif, system-ui, sans-serif',
+        cursor: 'pointer',
+    }
+}
+
+function isInventoryKey(code: string, actions: ActionMap): boolean {
+    return actions.bindingsFor(GameAction.Inventory).some((binding) => binding.keys.includes(code))
+}
+
+function hasBlockingOverlay(): boolean {
+    return [
+        'voxel-platformer-menu',
+        'voxel-platformer-dialogue',
+        'voxel-platformer-trade',
+    ].some((id) => {
+        const el = document.getElementById(id)
+        return !!el && el.getAttribute('aria-hidden') !== 'true' && el.style.display !== 'none'
+    })
+}

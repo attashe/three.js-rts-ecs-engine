@@ -1,0 +1,4 @@
+interface:
+  display_name: "Voxel Procedural Levels"
+  short_description: "Author code-generated voxel-platformer levels"
+  default_prompt: "Create or update a procedural voxel-platformer location using the level builder and exporter pipeline."

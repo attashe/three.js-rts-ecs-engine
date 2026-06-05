@@ -1,0 +1,77 @@
+{
+  // Curated test-compilation config. `npm test` emits CommonJS into
+  // `.tmp/test-build` and runs it under `node --test`. Most `src/**`
+  // files cannot be compiled here because they pull in `three/webgpu`
+  // / `three/tsl` (need bundler-style moduleResolution) or assume DOM
+  // globals.
+  //
+  // Adding a new test file: if its imports stay inside this list (or
+  // are reachable from it), it just works. If `npm test` fails with
+  // `Cannot find module 'three/webgpu' / 'three/tsl'`, the new test
+  // is reaching a file that isn't safe to compile under node-resolve;
+  // extract the logic into a leaner module (see
+  // `src/game/script-level-facade.ts` for the pattern) or, if a real
+  // src/** file is needed, add it explicitly to the include list below.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "noEmit": false,
+    "outDir": ".tmp/test-build",
+    "rootDir": ".",
+    "types": ["node"],
+    "sourceMap": true
+  },
+  "include": [
+    "src/engine/voxel/chunk.ts",
+    "src/engine/voxel/chunk-manager.ts",
+    "src/engine/voxel/level-serializer.ts",
+    "src/engine/voxel/palette.ts",
+    "src/engine/voxel/voxel-collide.ts",
+    "src/engine/input/actions.ts",
+    "src/engine/audio/types.ts",
+    "src/engine/audio/web-audio-backend.ts",
+    "src/engine/audio/audio-engine.ts",
+    "src/engine/audio/index.ts",
+    "src/sound-demo/local-assets.ts",
+    "src/sound-demo/waveform.ts",
+    "src/engine/ecs/components.ts",
+    "src/engine/ecs/collider-bounds.ts",
+    "src/engine/ecs/obstacle-registry.ts",
+    "src/engine/ecs/world.ts",
+    "src/engine/ecs/zones.ts",
+    "src/editor/brush.ts",
+    "src/editor/history.ts",
+    "src/editor/palette-edit.ts",
+    "src/editor/piston-direction.ts",
+    "src/engine/fx/core/sim-utils.ts",
+    "src/engine/fx/core/particle-field.ts",
+    "src/engine/fx/core/particle-ops.ts",
+    "src/engine/fx/core/types.ts",
+    "src/engine/fx/materials/material-tint.ts",
+    "src/engine/fx/presets/zone-presets.ts",
+    "src/engine/fx/presets/weather-presets.ts",
+    "src/engine/fx/lights/light-budget.ts",
+    "src/game/weather-config.ts",
+    "src/engine/anim/core/state-graph.ts",
+    "src/engine/anim/core/conditions.ts",
+    "src/engine/anim/core/state-machine.ts",
+    "src/engine/anim/core/signals.ts",
+    "src/engine/anim/core/convention.ts",
+    "src/engine/anim/core/graph-serialization.ts",
+    "src/engine/anim/core/index.ts",
+    "src/game/anim/graph-defaults.ts",
+    "src/game/worldgen/spec-types.ts",
+    "src/game/worldgen/rng.ts",
+    "src/game/worldgen/material-map.ts",
+    "src/game/worldgen/report.ts",
+    "src/game/worldgen/normalize-spec.ts",
+    "src/game/worldgen/compile-context.ts",
+    "src/game/worldgen/compile-surface.ts",
+    "src/game/worldgen/index.ts",
+    "scripts/compile-world-spec.ts",
+    "scripts/export-procedural-levels.ts",
+    "tests/**/*.ts"
+  ]
+}

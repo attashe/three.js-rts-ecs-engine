@@ -1,0 +1,4 @@
+interface:
+  display_name: "Voxel Audio Design"
+  short_description: "Synthesize and wire voxel-platformer sound effects and music"
+  default_prompt: "Create or edit a procedurally-synthesized sound effect or music track for the voxel-platformer engine and wire it to gameplay."

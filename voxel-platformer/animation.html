@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voxel Platformer - Animation</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --panel-bg: rgba(13, 18, 22, 0.86);
+            --panel-border: rgba(144, 176, 160, 0.22);
+            --text: #e7f0e8;
+            --text-dim: rgba(231, 240, 232, 0.66);
+            --accent: #8ed18d;
+            --accent-dim: rgba(142, 209, 141, 0.20);
+            --row-bg: rgba(42, 55, 48, 0.56);
+            --row-bg-hover: rgba(64, 84, 72, 0.68);
+        }
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #101518; color: var(--text);
+            font: 13px/1.4 "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+        #panel { position: fixed; top: 16px; left: 16px; width: 300px; max-height: calc(100vh - 32px);
+            overflow: auto; z-index: 10; padding: 14px 16px; background: var(--panel-bg);
+            border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.34);
+            backdrop-filter: blur(8px); }
+        h1 { font-size: 15px; margin: 0 0 4px; }
+        .sub { color: var(--text-dim); margin: 0 0 12px; font-size: 12px; }
+        .section { border-top: 1px solid var(--panel-border); padding-top: 10px; margin-top: 12px; }
+        .section > .title { color: var(--accent); font-weight: 600; font-size: 11px; text-transform: uppercase;
+            letter-spacing: 0.06em; margin-bottom: 8px; }
+        label.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+        label.row > span { color: var(--text-dim); }
+        .control-stack { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+        .control-stack label.row { margin: 0; }
+        input[type=range] { width: 150px; }
+        select, button { font: inherit; color: var(--text); background: var(--row-bg); border: 1px solid var(--panel-border);
+            border-radius: 6px; padding: 5px 8px; cursor: pointer; }
+        select { width: 100%; }
+        button:hover { background: var(--row-bg-hover); }
+        .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+        .btns button.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+        .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+        .tabs button { flex: 1; }
+        .tabs button.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+        .readout { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+        #error { position: fixed; bottom: 16px; left: 16px; right: 16px; color: #ff9b9b; white-space: pre-wrap; z-index: 20; }
+    </style>
+</head>
+<body>
+    <div id="panel">
+        <h1>Animation Preview</h1>
+        <p class="sub">State machine + clips for the character rig.</p>
+
+        <div class="section">
+            <div class="title">Model</div>
+            <select id="profile"></select>
+            <div class="control-stack" id="appearance"></div>
+            <div class="control-stack" id="slots"></div>
+        </div>
+
+        <div class="section">
+            <div class="title">Mode</div>
+            <div class="tabs">
+                <button id="mode-drive" class="active">Drive</button>
+                <button id="mode-clips">Clips</button>
+            </div>
+
+            <div id="drive">
+                <label class="row"><span>speed</span><input id="speed" type="range" min="0" max="6" step="0.05" value="0"></label>
+                <label class="row"><span>vy</span><input id="vy" type="range" min="-9" max="9" step="0.1" value="0"></label>
+                <label class="row"><span>grounded</span><input id="grounded" type="checkbox" checked></label>
+                <label class="row"><span>blocked</span><input id="blocked" type="checkbox"></label>
+                <div style="opacity:0.6; font-size:11px; margin-top:2px">Uncheck “grounded” to use vy (jump / fall).</div>
+            </div>
+
+            <div id="clips" style="display:none">
+                <div class="btns" id="clip-btns"></div>
+                <label class="row"><span>scrub</span><input id="scrub" type="range" min="0" max="1" step="0.001" value="0"></label>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="title">State</div>
+            <div>active: <span class="readout" id="state">—</span></div>
+            <div>blend: <span class="readout" id="blend">—</span></div>
+        </div>
+    </div>
+    <div id="error"></div>
+    <script type="module" src="/src/animation.ts"></script>
+</body>
+</html>

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voxel Platformer - Procedural Structures</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --panel-bg: rgba(13, 18, 22, 0.84);
+            --panel-border: rgba(144, 176, 160, 0.22);
+            --text: #e7f0e8;
+            --text-dim: rgba(231, 240, 232, 0.68);
+            --accent: #8ed18d;
+            --accent-dim: rgba(142, 209, 141, 0.18);
+            --row-bg: rgba(42, 55, 48, 0.56);
+            --row-bg-hover: rgba(64, 84, 72, 0.68);
+        }
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #101518;
+            color: var(--text);
+            font: 13px/1.35 "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        }
+        #panel {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            width: 338px;
+            max-height: calc(100vh - 32px);
+            overflow: auto;
+            z-index: 10;
+            padding: 14px 16px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.34);
+            backdrop-filter: blur(8px);
+        }
+        h1 {
+            margin: 0 0 4px;
+            color: var(--accent);
+            font-size: 14px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .hint {
+            margin: 0 0 12px;
+            color: var(--text-dim);
+            font-size: 11px;
+        }
+        section {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(144, 176, 160, 0.14);
+        }
+        h2 {
+            margin: 0 0 8px;
+            color: rgba(231, 240, 232, 0.86);
+            font-size: 11px;
+            font-weight: 650;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .field {
+            display: grid;
+            grid-template-columns: 96px 1fr 46px;
+            gap: 8px;
+            align-items: center;
+            margin: 6px 0;
+        }
+        label {
+            color: var(--text-dim);
+            font-size: 11px;
+        }
+        .value {
+            color: var(--text-dim);
+            font: 11px "SF Mono", ui-monospace, monospace;
+            text-align: right;
+        }
+        select, input[type=number], input[type=range] {
+            min-width: 0;
+            color: inherit;
+            background: rgba(19, 28, 25, 0.76);
+            border: 1px solid var(--panel-border);
+            border-radius: 5px;
+            font: inherit;
+        }
+        select, input[type=number] {
+            padding: 5px 7px;
+        }
+        input[type=range] {
+            accent-color: var(--accent);
+        }
+        input[type=checkbox] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+        }
+        .check-field {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin: 8px 0;
+        }
+        .row {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 7px 10px;
+            color: inherit;
+            background: var(--row-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            cursor: pointer;
+            font: inherit;
+        }
+        button:hover {
+            background: var(--row-bg-hover);
+        }
+        .hidden {
+            display: none;
+        }
+        #stats {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 10;
+            min-width: 230px;
+            padding: 10px 12px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            color: var(--text-dim);
+            font: 11px "SF Mono", ui-monospace, monospace;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+        }
+        #stats b {
+            color: var(--text);
+            font-weight: 500;
+        }
+        #error {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 16px;
+            transform: translateX(-50%);
+            z-index: 20;
+            max-width: 620px;
+            padding: 10px 12px;
+            background: rgba(64, 14, 18, 0.95);
+            border: 1px solid rgba(255, 100, 116, 0.55);
+            border-radius: 8px;
+            color: #ffe8eb;
+            white-space: pre-wrap;
+            font: 12px "SF Mono", ui-monospace, monospace;
+        }
+        #help {
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            z-index: 10;
+            padding: 7px 10px;
+            color: var(--text-dim);
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            font-size: 11px;
+        }
+        kbd {
+            padding: 1px 5px;
+            color: var(--text);
+            background: rgba(42, 55, 48, 0.75);
+            border-radius: 3px;
+            font: 10px "SF Mono", ui-monospace, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="panel">
+        <h1>Procedural Structures</h1>
+        <p class="hint">Generate predictable voxel houses, civic buildings, trees, towers, and walls with deterministic seeds. Rendered through the project chunk renderer.</p>
+
+        <section>
+            <h2>Generator</h2>
+            <div class="field">
+                <label for="kind">Type</label>
+                <select id="kind">
+                    <option value="tree">Tree</option>
+                    <option value="house">House</option>
+                    <option value="market">Market</option>
+                    <option value="stable">Stable</option>
+                    <option value="church">Church</option>
+                    <option value="temple">Temple</option>
+                    <option value="tower">Tower</option>
+                    <option value="wall">Wall</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="seed">Seed</label>
+                <input id="seed" type="number" value="1337" step="1" />
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="variants">Variants</label>
+                <input id="variants" type="range" min="1" max="8" step="1" value="3" />
+                <span id="variantsVal" class="value"></span>
+            </div>
+            <div class="field">
+                <label for="spacing">Spacing</label>
+                <input id="spacing" type="range" min="14" max="64" step="1" value="34" />
+                <span id="spacingVal" class="value"></span>
+            </div>
+            <div class="field">
+                <label for="detail">Detail</label>
+                <input id="detail" type="range" min="0" max="1" step="0.05" value="0.72" />
+                <span id="detailVal" class="value"></span>
+            </div>
+            <div class="field">
+                <label for="variation">Variation</label>
+                <input id="variation" type="range" min="0" max="1" step="0.05" value="0.42" />
+                <span id="variationVal" class="value"></span>
+            </div>
+            <label class="check-field" for="cleanLoose"><span>Clean loose voxels</span><input id="cleanLoose" type="checkbox" checked /></label>
+            <div class="row">
+                <button id="regen">Regenerate</button>
+                <button id="randomSeed">Random Seed</button>
+            </div>
+        </section>
+
+        <section id="treeSection">
+            <h2>Tree</h2>
+            <div class="field">
+                <label for="treeStyle">Species</label>
+                <select id="treeStyle">
+                    <option value="mixed">Mixed</option>
+                    <option value="oak">Oak</option>
+                    <option value="pine">Pine</option>
+                    <option value="birch">Birch</option>
+                    <option value="willow">Willow</option>
+                    <option value="dead">Dead</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="treeSeason">Season</label>
+                <select id="treeSeason">
+                    <option value="summer">Summer</option>
+                    <option value="autumn">Autumn</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field"><label for="trunkHeight">Trunk H</label><input id="trunkHeight" type="range" min="6" max="36" step="1" value="16" /><span id="trunkHeightVal" class="value"></span></div>
+            <div class="field"><label for="trunkRadius">Trunk R</label><input id="trunkRadius" type="range" min="1" max="6" step="1" value="2" /><span id="trunkRadiusVal" class="value"></span></div>
+            <div class="field"><label for="crownRadius">Crown R</label><input id="crownRadius" type="range" min="3" max="18" step="1" value="8" /><span id="crownRadiusVal" class="value"></span></div>
+            <div class="field"><label for="branchDensity">Branches</label><input id="branchDensity" type="range" min="0" max="1" step="0.05" value="0.62" /><span id="branchDensityVal" class="value"></span></div>
+            <div class="field"><label for="leafNoise">Leaf Noise</label><input id="leafNoise" type="range" min="0" max="1" step="0.05" value="0.30" /><span id="leafNoiseVal" class="value"></span></div>
+            <div class="field"><label for="fruitChance">Fruit</label><input id="fruitChance" type="range" min="0" max="0.35" step="0.01" value="0.04" /><span id="fruitChanceVal" class="value"></span></div>
+        </section>
+
+        <section id="houseSection">
+            <h2>House</h2>
+            <div class="field">
+                <label for="houseScale">Scale</label>
+                <select id="houseScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="houseStyle">Style</label>
+                <select id="houseStyle">
+                    <option value="mixed">Mixed</option>
+                    <option value="cottage">Cottage</option>
+                    <option value="timber">Timber</option>
+                    <option value="stone">Stone</option>
+                    <option value="workshop">Workshop</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field"><label for="houseWidth">Width</label><input id="houseWidth" type="range" min="6" max="38" step="1" value="20" /><span id="houseWidthVal" class="value"></span></div>
+            <div class="field"><label for="houseDepth">Depth</label><input id="houseDepth" type="range" min="6" max="34" step="1" value="16" /><span id="houseDepthVal" class="value"></span></div>
+            <div class="field"><label for="floors">Floors</label><input id="floors" type="range" min="1" max="3" step="1" value="1" /><span id="floorsVal" class="value"></span></div>
+            <div class="field"><label for="floorHeight">Floor H</label><input id="floorHeight" type="range" min="3" max="9" step="1" value="6" /><span id="floorHeightVal" class="value"></span></div>
+            <div class="field">
+                <label for="roofStyle">Roof</label>
+                <select id="roofStyle">
+                    <option value="mixed">Mixed</option>
+                    <option value="gable">Gable</option>
+                    <option value="hip">Hip</option>
+                    <option value="flat">Flat</option>
+                    <option value="shed">Shed</option>
+                </select>
+                <span></span>
+            </div>
+            <label class="check-field" for="sideWing"><span>Side wing</span><input id="sideWing" type="checkbox" checked /></label>
+            <label class="check-field" for="porch"><span>Porch and garden</span><input id="porch" type="checkbox" checked /></label>
+            <label class="check-field" for="chimney"><span>Chimney smoke</span><input id="chimney" type="checkbox" checked /></label>
+        </section>
+
+        <section id="landmarkSection" class="hidden">
+            <h2>Building</h2>
+            <div id="landmarkScaleField" class="field">
+                <label for="landmarkScale">Scale</label>
+                <select id="landmarkScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
+            <p class="hint">Market, stable, and church can be troll-town or small-folk scale. Temple is always a large troll-town civic structure.</p>
+        </section>
+
+        <section id="towerSection">
+            <h2>Tower</h2>
+            <div class="field">
+                <label for="towerScale">Scale</label>
+                <select id="towerScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="towerStyle">Style</label>
+                <select id="towerStyle">
+                    <option value="mixed">Mixed</option>
+                    <option value="round">Round</option>
+                    <option value="square">Square</option>
+                    <option value="lighthouse">Lighthouse</option>
+                    <option value="ruined">Ruined</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field"><label for="towerRadius">Radius</label><input id="towerRadius" type="range" min="4" max="18" step="1" value="10" /><span id="towerRadiusVal" class="value"></span></div>
+            <div class="field"><label for="towerHeight">Height</label><input id="towerHeight" type="range" min="12" max="72" step="1" value="36" /><span id="towerHeightVal" class="value"></span></div>
+            <div class="field"><label for="wallThickness">Wall</label><input id="wallThickness" type="range" min="1" max="5" step="1" value="2" /><span id="wallThicknessVal" class="value"></span></div>
+            <div class="field"><label for="taper">Taper</label><input id="taper" type="range" min="0" max="0.35" step="0.01" value="0.10" /><span id="taperVal" class="value"></span></div>
+            <div class="field"><label for="windowEvery">Windows</label><input id="windowEvery" type="range" min="4" max="18" step="1" value="8" /><span id="windowEveryVal" class="value"></span></div>
+            <div class="field"><label for="ruinAmount">Ruin</label><input id="ruinAmount" type="range" min="0" max="0.65" step="0.01" value="0.06" /><span id="ruinAmountVal" class="value"></span></div>
+            <label class="check-field" for="spire"><span>Spire</span><input id="spire" type="checkbox" checked /></label>
+        </section>
+
+        <section id="wallSection" class="hidden">
+            <h2>Wall</h2>
+            <div class="field">
+                <label for="wallScale">Scale</label>
+                <select id="wallScale">
+                    <option value="troll">Troll town</option>
+                    <option value="folk">Small folk</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="wallStyle">Style</label>
+                <select id="wallStyle">
+                    <option value="curtain">Curtain</option>
+                    <option value="stone">Stone</option>
+                    <option value="timber">Timber</option>
+                    <option value="ruined">Ruined</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field"><label for="wallLength">Length</label><input id="wallLength" type="range" min="6" max="120" step="1" value="30" /><span id="wallLengthVal" class="value"></span></div>
+            <div class="field"><label for="castleWallHeight">Height</label><input id="castleWallHeight" type="range" min="3" max="32" step="1" value="8" /><span id="castleWallHeightVal" class="value"></span></div>
+            <div class="field"><label for="castleWallThickness">Thick</label><input id="castleWallThickness" type="range" min="1" max="8" step="1" value="3" /><span id="castleWallThicknessVal" class="value"></span></div>
+            <div class="field"><label for="wallFoundation">Foundation</label><input id="wallFoundation" type="range" min="0" max="8" step="1" value="2" /><span id="wallFoundationVal" class="value"></span></div>
+            <div class="field">
+                <label for="wallGate">Gate</label>
+                <select id="wallGate">
+                    <option value="none">None</option>
+                    <option value="center">Center</option>
+                    <option value="auto">Auto</option>
+                </select>
+                <span></span>
+            </div>
+            <div class="field">
+                <label for="wallTerrainMode">Terrain</label>
+                <select id="wallTerrainMode">
+                    <option value="flat">Flat</option>
+                    <option value="stepped">Stepped</option>
+                </select>
+                <span></span>
+            </div>
+            <label class="check-field" for="wallBattlements"><span>Battlements</span><input id="wallBattlements" type="checkbox" checked /></label>
+            <label class="check-field" for="wallWalkway"><span>Walkway</span><input id="wallWalkway" type="checkbox" checked /></label>
+            <div class="field"><label for="wallRuinAmount">Ruin</label><input id="wallRuinAmount" type="range" min="0" max="0.85" step="0.01" value="0" /><span id="wallRuinAmountVal" class="value"></span></div>
+        </section>
+
+        <section>
+            <h2>Display</h2>
+            <label class="check-field" for="showTerrain"><span>Terrain plate</span><input id="showTerrain" type="checkbox" checked /></label>
+            <div class="field"><label for="terrainSize">Terrain</label><input id="terrainSize" type="range" min="28" max="160" step="2" value="92" /><span id="terrainSizeVal" class="value"></span></div>
+            <div class="field"><label for="terrainNoise">Ground noise</label><input id="terrainNoise" type="range" min="0" max="1" step="0.01" value="0.14" /><span id="terrainNoiseVal" class="value"></span></div>
+            <label class="check-field" for="showGrid"><span>Grid</span><input id="showGrid" type="checkbox" checked /></label>
+        </section>
+    </div>
+
+    <div id="stats">Preparing...</div>
+    <div id="error"></div>
+    <div id="help"><kbd>Drag</kbd> orbit · <kbd>Right drag</kbd> pan · <kbd>Scroll</kbd> zoom</div>
+
+    <script type="module" src="/src/procedural-structures-demo.ts"></script>
+</body>
+</html>

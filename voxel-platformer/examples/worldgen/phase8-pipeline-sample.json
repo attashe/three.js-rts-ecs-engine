@@ -1,0 +1,267 @@
+{
+  "version": 1,
+  "world": {
+    "id": "worldgen-pipeline-sample",
+    "name": "Worldgen Pipeline Sample",
+    "type": "surface",
+    "seed": "phase8/pipeline-sample/v1",
+    "size": [64, 32, 64],
+    "defaultGroundY": 7
+  },
+  "terrain": {
+    "base_height": 7,
+    "noise": { "amplitude": 1.4, "scale": 22, "octaves": 3 },
+    "features": [
+      {
+        "id": "main_road",
+        "type": "road_spline",
+        "points": [[6, 54], [18, 44], [30, 33], [45, 23], [56, 12]],
+        "width": 2.1,
+        "shoulder": 3.4,
+        "material": "path",
+        "edge_material": "grass",
+        "profile_smoothing_iterations": 2
+      },
+      {
+        "id": "west_ridge",
+        "type": "mountain_peak",
+        "center": [8, 20],
+        "radius": 18,
+        "height": 6,
+        "profile": "mesa",
+        "roughness": 0.1,
+        "material": "stone"
+      }
+    ]
+  },
+  "anchors": [
+    {
+      "id": "spawn",
+      "place_at_xz": [6, 54],
+      "reserve": [5, 4, 5],
+      "terrain_patch": { "type": "flatten_disc", "radius": 4, "blend": 2, "material": "path" }
+    },
+    {
+      "id": "cottage_site",
+      "place_at_xz": [30, 33],
+      "reserve": [13, 5, 13],
+      "terrain_patch": { "type": "flatten_disc", "radius": 7, "blend": 3, "material": "grass" }
+    },
+    {
+      "id": "guide_post",
+      "place_at_xz": [34, 30],
+      "terrain_patch": { "type": "flatten_disc", "radius": 2, "blend": 1, "material": "path" }
+    },
+    {
+      "id": "market_post",
+      "place_at_xz": [43, 23],
+      "terrain_patch": { "type": "flatten_disc", "radius": 3, "blend": 1.5, "material": "path" }
+    },
+    {
+      "id": "relic_cache",
+      "place_at_xz": [54, 13],
+      "terrain_patch": { "type": "flatten_disc", "radius": 2, "blend": 1, "material": "path" }
+    },
+    {
+      "id": "exit_gate",
+      "place_at_xz": [57, 10],
+      "terrain_patch": { "type": "flatten_disc", "radius": 3, "blend": 1.5, "material": "path" }
+    },
+    {
+      "id": "wind_marker",
+      "place_at_xz": [22, 18]
+    }
+  ],
+  "structures": [
+    {
+      "id": "sample_cottage",
+      "asset": "proc.house.hermit_cottage",
+      "place_at": "cottage_site",
+      "auto_y": {
+        "strategy": "surface_max",
+        "terraform": "flatten_footprint",
+        "material": "platform",
+        "max_terrain_delta": 4
+      },
+      "rotation": 180,
+      "required": true
+    }
+  ],
+  "scatter": [
+    {
+      "id": "sample_pines",
+      "asset": "proc.tree.pine",
+      "count": 24,
+      "mask": {
+        "min_distance_to_road": 4,
+        "avoid_reserved": true,
+        "slope_lte": 3
+      },
+      "deterministic_grid": { "cell": 7, "jitter": 2 }
+    }
+  ],
+  "content": {
+    "props": [
+      {
+        "id": "sample-road-sign",
+        "kind": "road-sign",
+        "place_at": "spawn",
+        "offset": [2.3, 0, -1.4],
+        "yaw": 0.6,
+        "scale": 1
+      },
+      {
+        "id": "sample-relic-crate",
+        "kind": "repair-materials-crate",
+        "place_at": "relic_cache",
+        "yaw": 0.2,
+        "scale": 0.9
+      },
+      {
+        "id": "sample-market-table",
+        "kind": "table",
+        "place_at": "market_post",
+        "offset": [1.2, 0, 0],
+        "yaw": 0.1,
+        "scale": 1
+      }
+    ],
+    "zones": [
+      {
+        "id": "sample-road-sign-zone",
+        "type": "interact",
+        "place_at": "sample-road-sign",
+        "half_xz": [1, 1],
+        "height": 2.2,
+        "prompt": "Read Sign",
+        "radius": 2.2
+      }
+    ],
+    "npcs": [
+      {
+        "id": "sample-guide",
+        "model": "keeper",
+        "name": "Nara the Wayfinder",
+        "place_at": "guide_post",
+        "interactionEnabled": true,
+        "interactionPrompt": "Talk",
+        "scriptSource": ""
+      },
+      {
+        "id": "sample-trader",
+        "template": "trader",
+        "name": "Tovin Supplies",
+        "place_at": "market_post",
+        "offset": [-1.4, 0, 0.4]
+      }
+    ],
+    "pickups": [
+      {
+        "id": "sample-field-potion",
+        "kind": "heal-potion",
+        "place_at_xz": [18, 44],
+        "inventoryItem": {
+          "id": "heal-potion",
+          "name": "Healing Potion",
+          "category": "consumables",
+          "icon": "heal-potion"
+        },
+        "label": "Roadside Healing Potion"
+      }
+    ],
+    "shops": [
+      {
+        "id": "sample-trader-shop",
+        "target": "sample-trader",
+        "title": "Trail Supplies",
+        "items": [
+          { "id": "apple", "name": "Apple", "resource": "food-apple", "buyPrice": 2, "sellPrice": 1, "stock": 8 },
+          { "id": "mana", "name": "Mana Potion", "resource": "mana-potion", "buyPrice": 9, "sellPrice": 4, "stock": 2 }
+        ]
+      }
+    ],
+    "quests": [
+      {
+        "id": "sample-recover-cache",
+        "type": "collect_return",
+        "target": "sample-guide",
+        "title": "Recover the Road Cache",
+        "pickups": [
+          {
+            "id": "sample-lost-cache",
+            "kind": "sample-cache",
+            "place_at": "relic_cache",
+            "offset": [0.8, 0, -0.5],
+            "label": "Marked Cache",
+            "inventoryItem": {
+              "id": "sample-cache",
+              "name": "Marked Cache",
+              "category": "quest",
+              "icon": "quest-shard"
+            }
+          }
+        ],
+        "reward": {
+          "gold": 12,
+          "items": [
+            { "id": "food-pie", "quantity": 1, "options": { "name": "Road Pie", "category": "consumables", "icon": "food-pie" } }
+          ]
+        },
+        "dialogue": {
+          "start": "The road cache was left near the old ridge. Bring it back and I will pay you.",
+          "active": "Follow the road toward the ridge. The cache is near a small crate.",
+          "complete": "That is the cache. Take coin and a warm pie for the road.",
+          "done": "The road is safer when supplies are not left behind."
+        }
+      }
+    ],
+    "cinematics": [
+      {
+        "id": "sample-intro",
+        "name": "Pipeline Sample Arrival",
+        "playOnStart": true,
+        "letterbox": true,
+        "freezePlayer": false,
+        "steps": [
+          { "id": "line-1", "type": "subtitle", "wait": true, "duration": 2.5, "text": "A generated road winds toward a lonely cottage." },
+          { "id": "line-2", "type": "subtitle", "wait": true, "duration": 2.5, "text": "This small slice is compiled from a JSON WorldSpec." }
+        ]
+      }
+    ],
+    "environment": {
+      "soundId": "music.amb.start",
+      "volume": 0.24,
+      "ambientWeather": { "presetId": "clear", "state": { "timeOfDay": 10 } },
+      "soundSources": [
+        { "id": "sample-wind-source", "soundId": "sfx.amb.wind", "place_at": "wind_marker", "radius": 14, "volume": 0.22 }
+      ],
+      "weatherZones": [
+        { "id": "sample-leaf-zone", "label": "Falling Leaves", "presetId": "leaves", "place_at_xz": [24, 28], "offset_y": 4.8, "size": [18, 9, 18] }
+      ]
+    },
+    "travel": [
+      { "id": "arrival.sample.start", "type": "arrival", "place_at": "spawn", "half_xz": [1, 1] },
+      {
+        "id": "portal.sample.exit",
+        "type": "portal",
+        "place_at": "exit_gate",
+        "half_xz": [1.2, 1.2],
+        "targetLevelId": "demo",
+        "targetArrivalId": "arrival.from-garden"
+      }
+    ],
+    "scripts": [
+      {
+        "id": "sample-road-sign-script",
+        "source": "on('input', { action: 'interact', targetId: 'sample-road-sign-zone' }, () => { ui.say('sample-road-sign-zone', 'Keep to the generated road. The compiler report knows every anchor.', { seconds: 3 }) })"
+      }
+    ]
+  },
+  "validation": {
+    "require_paths": [
+      { "id": "spawn-to-guide", "from": "spawn", "to": "sample-guide" },
+      { "id": "spawn-to-cache", "from": "spawn", "to": "relic_cache" },
+      { "id": "spawn-to-exit", "from": "spawn", "to": "exit_gate" }
+    ]
+  }
+}

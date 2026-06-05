@@ -1,0 +1,27 @@
+export { AudioEngine } from './audio-engine'
+export { WebAudioBackend } from './web-audio-backend'
+export type {
+    AudioAsset,
+    AudioAssetCounts,
+    AudioAnalyser,
+    AudioBackend,
+    AudioBufferLike,
+    AudioBusId,
+    AudioEngineOptions,
+    AudioListenerView,
+    AudioManifest,
+    AudioMusicPlayer,
+    AudioSnapshot,
+    AudioVoice,
+    BufferPlaybackParams,
+    MusicOptions,
+    PanningModel,
+    PcmSound,
+    RolloffModel,
+    SoundHandle,
+    SoundOptions,
+    Spatial3DParams,
+    SpatialPlaybackParams,
+    SpatialSoundOptions,
+    Vec3Like,
+} from './types'

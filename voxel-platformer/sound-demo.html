@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voxel Platformer — Sound Demo</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #080b0f;
+            --panel: rgba(14, 18, 25, 0.92);
+            --panel-2: rgba(24, 32, 43, 0.82);
+            --border: rgba(139, 174, 210, 0.2);
+            --text: #d9f7ff;
+            --dim: rgba(217, 247, 255, 0.66);
+            --accent: #6ad0ff;
+            --warn: #ffb45e;
+            --bad: #ff6255;
+            --good: #8ff0aa;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+            font: 13px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        body { overflow: hidden; }
+        #app {
+            height: 100vh; display: grid; grid-template-columns: 300px 1fr 260px; gap: 10px; padding: 10px;
+            background:
+                linear-gradient(90deg, rgba(106, 208, 255, 0.05), transparent 34%),
+                radial-gradient(circle at 80% 20%, rgba(143, 240, 170, 0.05), transparent 30%),
+                var(--bg);
+        }
+        .panel {
+            min-width: 0; min-height: 0; overflow: auto; background: var(--panel);
+            border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+        }
+        h1 { margin: 0 0 6px; color: var(--accent); font-size: 14px; letter-spacing: 0.05em; text-transform: uppercase; }
+        h2 { margin: 14px 0 6px; color: rgba(217, 247, 255, 0.82); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+        p { margin: 0 0 6px; color: var(--dim); line-height: 1.4; }
+        button, select, input {
+            border: 1px solid var(--border); border-radius: 6px; background: rgba(33, 44, 58, 0.8); color: var(--text);
+            font: inherit; min-width: 0;
+        }
+        button { padding: 6px 9px; cursor: pointer; }
+        button:hover:not(:disabled) { background: rgba(52, 72, 94, 0.86); }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.active { border-color: rgba(106, 208, 255, 0.65); background: rgba(106, 208, 255, 0.18); }
+        button.danger { border-color: rgba(255, 98, 85, 0.5); background: rgba(255, 98, 85, 0.16); }
+        button.primary { border-color: rgba(106, 208, 255, 0.65); background: rgba(106, 208, 255, 0.22); }
+        button.tiny { padding: 2px 6px; font-size: 11px; }
+        input, select { padding: 4px 6px; }
+        input[type=range] { width: 100%; padding: 0; }
+        input[type=color] { width: 28px; height: 22px; padding: 0; cursor: pointer; }
+        .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .field { display: grid; grid-template-columns: 76px 1fr 52px; align-items: center; gap: 6px; margin: 6px 0; }
+        .field label { color: var(--dim); font-size: 11px; }
+        .field .value { text-align: right; color: var(--dim); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+        #viewport {
+            position: relative; border-radius: 8px; overflow: hidden;
+            background: #050709; border: 1px solid var(--border);
+        }
+        #viewport > canvas { display: block; width: 100%; height: 100%; }
+        #viewport > .hud {
+            position: absolute; top: 10px; left: 12px; padding: 8px 12px;
+            background: rgba(8, 12, 18, 0.7); border: 1px solid var(--border); border-radius: 7px;
+            pointer-events: none; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
+        }
+        #viewport .hud b { color: var(--text); }
+        #viewport > .footer {
+            position: absolute; bottom: 10px; left: 12px; right: 12px;
+            display: flex; justify-content: space-between; align-items: flex-end; gap: 12px;
+            pointer-events: none;
+        }
+        #viewport > .footer > * { pointer-events: auto; }
+        .kbd-help {
+            background: rgba(8, 12, 18, 0.78); border: 1px solid var(--border); border-radius: 7px;
+            padding: 6px 10px; font-size: 11px; color: var(--dim);
+        }
+        .kbd-help kbd { background: rgba(40, 56, 72, 0.8); border-radius: 3px;
+            padding: 1px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
+        .viewport-tools {
+            display: flex; gap: 6px; align-items: center;
+            background: rgba(8, 12, 18, 0.78); border: 1px solid var(--border); border-radius: 7px;
+            padding: 6px 8px;
+        }
+
+        /* Asset list */
+        #assetList { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+        .asset {
+            display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+            background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+            cursor: pointer; font-size: 12px;
+        }
+        .asset:hover { border-color: rgba(106, 208, 255, 0.42); }
+        .asset.active { border-color: rgba(106, 208, 255, 0.72); background: rgba(106, 208, 255, 0.14); }
+        .asset .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+        .asset .tag { font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
+            border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; }
+        .asset-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+
+        /* Background deck */
+        #backgroundList { display: flex; flex-direction: column; gap: 5px; margin: 6px 0; }
+        .bg-row {
+            display: grid; grid-template-columns: 20px 1fr 60px 56px; gap: 6px; align-items: center;
+            padding: 5px 7px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px;
+            font-size: 11px;
+        }
+        .bg-row.playing { border-color: rgba(143, 240, 170, 0.55); background: rgba(143, 240, 170, 0.08); }
+        .bg-row .bg-play { padding: 2px 6px; font-size: 12px; min-width: 0; }
+        .bg-row .bg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .bg-row .bg-tag { font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); margin-left: 4px; }
+        .bg-row input[type=range] { width: 100%; padding: 0; }
+        .bg-row input[type=number] { width: 100%; padding: 2px 4px; font-size: 11px; }
+        .bg-row .bg-sub {
+            grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 80px; gap: 6px; align-items: center;
+        }
+        .bg-row .bg-sub-label { font-size: 10px; color: var(--dim); }
+
+        /* Emitter list / inspector */
+        #emitterList { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+        .emitter-row {
+            display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+            background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px;
+            cursor: pointer; font-size: 11px;
+        }
+        .emitter-row.active { border-color: rgba(106, 208, 255, 0.72); background: rgba(106, 208, 255, 0.14); }
+        .emitter-row .swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+        .emitter-row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .emitter-row button { padding: 1px 5px; font-size: 10px; }
+
+        /* Diagnostic strip */
+        .stat { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px solid rgba(139, 174, 210, 0.08); font-size: 11px; }
+        .stat b { color: var(--text); font-weight: 500; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .meter { margin: 6px 0; }
+        .meter-head { display: flex; justify-content: space-between; color: var(--dim); font-size: 10px; margin-bottom: 3px; }
+        .meter-track { position: relative; height: 8px; background: rgba(0,0,0,0.32); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+        .meter-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--good), var(--warn)); transition: width 0.05s linear; }
+        .meter.clip .meter-fill { background: var(--bad); }
+        #log { min-height: 80px; max-height: 160px; overflow: auto; padding: 6px 8px; background: rgba(0,0,0,0.24);
+            border: 1px solid var(--border); border-radius: 6px;
+            font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); }
+        #log div { padding: 1px 0; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Left: assets, emitter list, audio context controls -->
+        <aside class="panel">
+            <h1>Sound Demo</h1>
+            <p>Place emitters in the scene and drive the listener with <kbd>WASD</kbd>+<kbd>QE</kbd>. Click an emitter to inspect / move / tune its falloff.</p>
+
+            <h2>Audio Context</h2>
+            <div class="row">
+                <button id="unlockBtn" class="primary">Unlock Audio</button>
+                <button id="muteBtn">Mute</button>
+                <span id="unlockStatus" class="asset" style="cursor: default; padding: 2px 8px; font-size: 10px;">locked</span>
+            </div>
+
+            <h2>Assets</h2>
+            <div id="assetTabs" class="asset-tabs"></div>
+            <div id="assetList"></div>
+
+            <h2>Local Files</h2>
+            <div class="grid2">
+                <select id="localKind">
+                    <option value="sounds">SFX</option>
+                    <option value="music">Music</option>
+                </select>
+                <input id="fileInput" type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" multiple />
+            </div>
+
+            <h2>Active Emitters</h2>
+            <div id="emitterList"></div>
+            <button id="clearEmitters" class="danger" style="width: 100%; margin-top: 6px;">Clear all emitters</button>
+        </aside>
+
+        <!-- Middle: the 3D viewport -->
+        <section id="viewport">
+            <canvas id="viewportCanvas"></canvas>
+            <div class="hud">
+                <div>Listener <b id="hudPos">0.0, 1.6, 0.0</b></div>
+                <div>Facing <b id="hudFwd">0°</b></div>
+                <div>Active voices <b id="hudVoices">0</b></div>
+            </div>
+            <div class="footer">
+                <div class="kbd-help">
+                    <kbd>WASD</kbd> move ·
+                    <kbd>Q</kbd>/<kbd>E</kbd> down/up ·
+                    <kbd>← →</kbd> turn ·
+                    <kbd>F</kbd> fire selected at listener ·
+                    drag empty space to orbit
+                </div>
+                <div class="viewport-tools">
+                    <button id="placeBtn" class="active">Place mode</button>
+                    <button id="fireBtn">Fire (F)</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right: inspector + music + diagnostics -->
+        <aside class="panel">
+            <h2>Selected Emitter</h2>
+            <div id="inspector">
+                <p id="noSelection" style="color: var(--dim); font-size: 11px;">No emitter selected. Click an emitter or place one with the selected asset.</p>
+                <div id="inspectorBody" style="display: none;">
+                    <div class="stat"><span>Asset</span><b id="inspAsset">-</b></div>
+                    <div class="row"><input id="inspColor" type="color" value="#6ad0ff" /><label style="font-size: 11px;"><input id="inspLoop" type="checkbox" checked /> Loop</label></div>
+                    <div class="field"><label for="inspRefDist">Ref dist</label><input id="inspRefDist" type="range" min="0.5" max="20" step="0.1" value="2" /><span id="inspRefDistV" class="value">2.0</span></div>
+                    <div class="field"><label for="inspMaxDist">Max dist</label><input id="inspMaxDist" type="range" min="2" max="60" step="0.5" value="30" /><span id="inspMaxDistV" class="value">30</span></div>
+                    <div class="field"><label for="inspRolloff">Rolloff</label><input id="inspRolloff" type="range" min="0" max="4" step="0.05" value="1" /><span id="inspRolloffV" class="value">1.00</span></div>
+                    <div class="field"><label for="inspDelay">Delay</label><input id="inspDelay" type="range" min="0" max="3" step="0.05" value="0" /><span id="inspDelayV" class="value">0.00s</span></div>
+                    <div class="row"><label style="font-size: 11px;">Panner</label>
+                        <button id="inspPanHRTF" class="active tiny">HRTF</button>
+                        <button id="inspPanEqual" class="tiny">Equal</button>
+                    </div>
+                    <div class="row" style="margin-top: 8px;">
+                        <button id="inspPlay" class="primary">Play once</button>
+                        <button id="inspRemove" class="danger">Remove</button>
+                    </div>
+                </div>
+            </div>
+
+            <h2>Background Samples</h2>
+            <p style="font-size: 11px; color: var(--dim);">Layer multiple ambient beds + music in stereo to audition how the spatial emitters above sit in the mix. Delay lets you stagger entries.</p>
+            <div id="backgroundList"></div>
+            <button id="stopAllBg" class="danger" style="width: 100%; margin-top: 4px;">Stop all backgrounds</button>
+
+            <h2>Mixer</h2>
+            <div id="busControls"></div>
+
+            <h2>Meters</h2>
+            <div id="meters"></div>
+
+            <h2>Diagnostics</h2>
+            <div class="stat"><span>Active voices</span><b id="activeVoices">0</b></div>
+            <div class="stat"><span>Pending sounds</span><b id="pendingSounds">0</b></div>
+            <div class="stat"><span>Current music</span><b id="currentMusic">-</b></div>
+
+            <h2>Log</h2>
+            <div id="log"></div>
+        </aside>
+    </div>
+    <script type="module" src="/src/sound-demo.ts"></script>
+</body>
+</html>

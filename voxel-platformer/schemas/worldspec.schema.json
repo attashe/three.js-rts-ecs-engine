@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voxel-platformer.local/schemas/worldspec.schema.json",
+  "title": "Voxel Platformer WorldSpec",
+  "description": "Authoring schema for deterministic worldgen specs. The TypeScript compiler diagnostics remain authoritative.",
+  "type": "object",
+  "required": ["version", "world"],
+  "properties": {
+    "version": { "const": 1 },
+    "world": {
+      "type": "object",
+      "required": ["id", "name", "type", "seed", "size"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["surface", "underground", "hybrid"] },
+        "seed": { "type": "string", "minLength": 1 },
+        "size": { "$ref": "#/$defs/vec3" },
+        "defaultGroundY": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "materials": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "defs": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "terrain": {
+      "type": "object",
+      "properties": {
+        "base_height": { "type": "number" },
+        "noise": { "type": "object", "additionalProperties": true },
+        "border_walls": { "type": "boolean" },
+        "features": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/idObject" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "volume": {
+      "type": "object",
+      "properties": {
+        "initial": { "type": "string" },
+        "default_material": { "type": "string" },
+        "strata": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["y", "material"],
+            "properties": {
+              "y": {
+                "anyOf": [
+                  { "type": "string" },
+                  { "$ref": "#/$defs/vec2" },
+                  { "type": "number" }
+                ]
+              },
+              "material": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "y_range": {
+          "anyOf": [
+            { "type": "string" },
+            { "$ref": "#/$defs/vec2" },
+            { "type": "number" }
+          ]
+        },
+        "cutaway": {
+          "anyOf": [
+            { "const": false },
+            { "type": "string" },
+            {
+              "type": "object",
+              "properties": {
+                "mode": { "type": "string" },
+                "clearance": { "type": "number", "minimum": 2 },
+                "horizontal_margin": { "type": "number", "minimum": 0 },
+                "shell_margin": { "type": "number", "minimum": 0 },
+                "rim_height": { "type": "number", "minimum": 0 },
+                "rim_material": { "type": "string" },
+                "features": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        "prune": {
+          "anyOf": [
+            { "const": false },
+            { "type": "string" },
+            {
+              "type": "object",
+              "properties": {
+                "mode": { "type": "string" },
+                "horizontal_margin": { "type": "number", "minimum": 1 },
+                "vertical_margin": { "type": "number", "minimum": 1 },
+                "materials": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 }
+                },
+                "features": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "carvers": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "connectors": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "paths": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "main_paths": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "anchors": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "structures": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "scatter": { "type": "array", "items": { "$ref": "#/$defs/idObject" } },
+    "content": {
+      "type": "object",
+      "properties": {
+        "props": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "zones": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "npcs": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "pickups": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "shops": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "quests": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "scripts": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "cinematics": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "travel": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "rail_carts": { "type": "array", "items": { "$ref": "#/$defs/railCartEntry" } },
+        "chests": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
+        "environment": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "require_paths": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/idObject" },
+              {
+                "type": "object",
+                "required": ["from", "to"],
+                "properties": {
+                  "from": { "type": "string", "minLength": 1 },
+                  "to": { "type": "string", "minLength": 1 },
+                  "actor": { "type": "string" },
+                  "optional": { "type": "boolean" }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "vec2": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number" }
+    },
+    "vec3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" }
+    },
+    "idObject": {
+      "type": "object",
+      "anyOf": [
+        { "required": ["id"] },
+        { "required": ["$ref"] }
+      ],
+      "properties": {
+        "$ref": { "type": "string", "pattern": "^#/defs/" },
+        "id": { "type": "string", "minLength": 1 },
+        "place_at": { "type": "string" },
+        "place_at_xz": { "$ref": "#/$defs/vec2" },
+        "position": { "$ref": "#/$defs/voxelCoord" },
+        "offset": { "$ref": "#/$defs/vec3" },
+        "offset_xz": { "$ref": "#/$defs/vec2" },
+        "offset_y": { "type": "number" },
+        "dy": { "type": "number" },
+        "required": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "contentEntry": {
+      "allOf": [
+        { "$ref": "#/$defs/idObject" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string" },
+            "kind": { "type": "string" },
+            "target": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "railCartEntry": {
+      "allOf": [
+        { "$ref": "#/$defs/contentEntry" },
+        {
+          "type": "object",
+          "properties": {
+            "railCell": { "$ref": "#/$defs/voxelCoord" },
+            "rail_cell": { "$ref": "#/$defs/voxelCoord" },
+            "front": { "enum": ["north", "east", "south", "west"] },
+            "facing": { "enum": ["north", "east", "south", "west"] },
+            "speed": { "type": "number", "exclusiveMinimum": 0 },
+            "interactionRadius": { "type": "number", "exclusiveMinimum": 0 },
+            "interaction_radius": { "type": "number", "exclusiveMinimum": 0 },
+            "enabled": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "voxelCoord": {
+      "anyOf": [
+        { "$ref": "#/$defs/vec3" },
+        {
+          "type": "object",
+          "required": ["x", "y", "z"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

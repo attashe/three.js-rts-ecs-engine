@@ -1,0 +1,84 @@
+import type { ChunkManager } from '../../engine/voxel/chunk-manager'
+import type { GameWorld } from '../../engine/ecs/world'
+import type { EditorState } from '../editor-state'
+import type { CommandStack } from '../history'
+import { injectCss } from './common'
+import { createTabBar } from './tabs'
+import { buildEditTab } from './edit-tab'
+import { buildLevelTab } from './level-tab'
+import { buildHelpTab } from './help-tab'
+import { buildPlayerTab } from './player-tab'
+import { buildSoundTab } from './sound-tab'
+import { buildWeatherTab } from './weather-tab'
+import { buildPropsTab } from './props-tab'
+import { buildTerrainTab } from './terrain-tab'
+import { buildNpcTab } from './npc-tab'
+import { buildLogicTab } from './logic-tab'
+import { buildStonesTab } from './stones-tab'
+import { buildStructuresTab } from './structures-tab'
+import { buildRailTab } from './rail-tab'
+import { buildCinematicsTab } from './cinematics-tab'
+import type { CinematicPreviewController } from '../cinematic-preview'
+
+export interface MountEditorPanelOptions {
+    world: GameWorld
+    chunks: ChunkManager
+    editorState: EditorState
+    /** Undo / redo stack — `New` / `Load` invalidate it. */
+    history: CommandStack
+    /** Drives the in-editor cinematic preview (camera + overlay). Provided by
+     *  the editor bootstrap, which owns the renderer/camera. */
+    cinematicPreview?: CinematicPreviewController
+}
+
+/**
+ * Editor panel — a top-right dock with three tabs:
+ *  - **Edit** — camera + working-plane controls, palette, mode toolbar,
+ *    and a contextual settings panel for the active placement mode. This
+ *    is the only tab that swaps its body in response to state changes.
+ *  - **Sound** — spatial sound sources and local sound zones.
+ *  - **Visual FX** — local particle/light effect zones.
+ *  - **Level** — name + save / load / playtest.
+ *  - **Help** — keyboard / mouse cheatsheet.
+ *
+ * Camera/plane controls live with the editing surface (not behind a
+ * separate tab) because the user changes the working plane Y constantly
+ * while editing.
+ *
+ * Each tab is lazily built on first activation, so the panel stays cheap
+ * even as features grow. The active tab's `refresh` runs on a 250 ms
+ * interval to pick up state changes driven from outside the panel
+ * (Z/X shortcuts mutate `workingPlaneY`, V toggles `viewMode`,
+ * etc.).
+ */
+export function mountEditorPanel(opts: MountEditorPanelOptions): { dispose: () => void } {
+    injectCss()
+
+    const bar = createTabBar([
+        { id: 'edit', label: 'Edit', build: () => buildEditTab(opts) },
+        { id: 'player', label: 'Player', build: () => buildPlayerTab(opts) },
+        { id: 'sound', label: 'Sound', build: () => buildSoundTab(opts) },
+        { id: 'weather', label: 'Visual FX', build: () => buildWeatherTab(opts) },
+        { id: 'terrain', label: 'Terrain', build: () => buildTerrainTab(opts) },
+        { id: 'rails', label: 'Rails', build: () => buildRailTab(opts) },
+        { id: 'props', label: 'Props', build: () => buildPropsTab(opts) },
+        { id: 'structures', label: 'Structures', build: () => buildStructuresTab(opts) },
+        { id: 'stones', label: 'Stones', build: () => buildStonesTab(opts) },
+        { id: 'npcs', label: 'NPCs', build: () => buildNpcTab(opts) },
+        { id: 'logic', label: 'Logic', build: () => buildLogicTab(opts) },
+        { id: 'cinematics', label: 'Cinematics', build: () => buildCinematicsTab(opts) },
+        { id: 'level', label: 'Level', build: () => buildLevelTab(opts) },
+        { id: 'help', label: 'Help', build: () => buildHelpTab() },
+    ], 'edit')
+
+    document.body.appendChild(bar.element)
+
+    const interval = window.setInterval(() => bar.refreshActive(), 250)
+
+    return {
+        dispose() {
+            window.clearInterval(interval)
+            bar.element.remove()
+        },
+    }
+}
