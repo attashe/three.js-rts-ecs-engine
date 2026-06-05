@@ -22,7 +22,17 @@ const MARKER_ASSETS = new Set(['marker.spawn', 'marker.player'])
 const PORTAL_ASSET = 'fixed.portal.blue_stone'
 const BRIDGE_ASSET = 'fixed.bridge.broken_stone'
 const SHRINE_ASSET = 'fixed.shrine.moonstone'
-const DWARF_ROOM_ASSETS = new Set(['fixed.room.dwarf_living', 'fixed.room.dwarf_forge', 'fixed.room.dwarf_storage'])
+const DWARF_ROOM_ASSETS = new Set([
+    'fixed.room.dwarf_living',
+    'fixed.room.dwarf_bunks',
+    'fixed.room.dwarf_meeting',
+    'fixed.room.dwarf_shop',
+    'fixed.room.dwarf_forge',
+    'fixed.room.dwarf_storage',
+    'fixed.room.mine_office',
+    'fixed.room.ore_storage',
+    'fixed.room.rail_station',
+])
 
 export function placeUndergroundStructures(ctx: WorldgenCompileContext, state: UndergroundState, draft: WorldgenLevelDraft): void {
     const structures = ctx.spec.structures ?? []
@@ -187,9 +197,62 @@ function stampShrineDecor(ctx: WorldgenCompileContext, point: { x: number; y: nu
 }
 
 function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y: number; z: number }, assetId: string): void {
-    const block = assetId.includes('forge') ? BLOCK.metal : assetId.includes('storage') ? BLOCK.plank : BLOCK.wood
-    for (let dx = -1; dx <= 1; dx += 1) setSolid(ctx, point.x + dx, point.y, point.z, block)
-    if (assetId.includes('forge')) setSolid(ctx, point.x, point.y + 1, point.z, BLOCK.fire)
+    if (assetId.includes('forge')) {
+        for (let dx = -1; dx <= 1; dx += 1) setSolid(ctx, point.x + dx, point.y, point.z, BLOCK.metal)
+        setSolid(ctx, point.x, point.y + 1, point.z, BLOCK.fire)
+        setSolid(ctx, point.x - 2, point.y, point.z + 1, BLOCK.oreIron)
+        setSolid(ctx, point.x + 2, point.y, point.z + 1, BLOCK.oreCopper)
+        return
+    }
+    if (assetId.includes('ore_storage')) {
+        for (let dz = -1; dz <= 1; dz += 1) {
+            setSolid(ctx, point.x - 2, point.y, point.z + dz, BLOCK.oreIron)
+            setSolid(ctx, point.x + 2, point.y, point.z + dz, BLOCK.oreCopper)
+        }
+        setSolid(ctx, point.x, point.y, point.z, BLOCK.metal)
+        return
+    }
+    if (assetId.includes('storage')) {
+        for (let dz = -1; dz <= 1; dz += 1) {
+            setSolid(ctx, point.x - 1, point.y, point.z + dz, BLOCK.plank)
+            setSolid(ctx, point.x + 1, point.y, point.z + dz, BLOCK.plank)
+        }
+        return
+    }
+    if (assetId.includes('meeting')) {
+        for (let dx = -2; dx <= 2; dx += 1) setSolid(ctx, point.x + dx, point.y, point.z, BLOCK.wood)
+        setSolid(ctx, point.x - 2, point.y, point.z - 2, BLOCK.plank)
+        setSolid(ctx, point.x + 2, point.y, point.z - 2, BLOCK.plank)
+        setSolid(ctx, point.x - 2, point.y, point.z + 2, BLOCK.plank)
+        setSolid(ctx, point.x + 2, point.y, point.z + 2, BLOCK.plank)
+        return
+    }
+    if (assetId.includes('shop')) {
+        for (let dx = -2; dx <= 2; dx += 1) setSolid(ctx, point.x + dx, point.y, point.z - 1, BLOCK.plank)
+        setSolid(ctx, point.x - 2, point.y + 1, point.z - 1, BLOCK.oreCopper)
+        setSolid(ctx, point.x, point.y + 1, point.z - 1, BLOCK.oreIron)
+        setSolid(ctx, point.x + 2, point.y + 1, point.z - 1, BLOCK.oreCrystal)
+        return
+    }
+    if (assetId.includes('office')) {
+        setSolid(ctx, point.x, point.y, point.z, BLOCK.plank)
+        setSolid(ctx, point.x - 1, point.y, point.z, BLOCK.plank)
+        setSolid(ctx, point.x + 1, point.y, point.z - 2, BLOCK.wood)
+        setSolid(ctx, point.x + 2, point.y, point.z - 2, BLOCK.wood)
+        return
+    }
+    if (assetId.includes('rail_station')) {
+        for (let dx = -3; dx <= 3; dx += 1) setSolid(ctx, point.x + dx, point.y, point.z, BLOCK.rail)
+        setSolid(ctx, point.x - 2, point.y, point.z - 2, BLOCK.fence)
+        setSolid(ctx, point.x + 2, point.y, point.z - 2, BLOCK.fence)
+        setSolid(ctx, point.x, point.y + 1, point.z - 2, BLOCK.torch)
+        return
+    }
+    const block = assetId.includes('bunks') ? BLOCK.woodDark : BLOCK.wood
+    for (let dx = -2; dx <= 2; dx += 2) {
+        setSolid(ctx, point.x + dx, point.y, point.z - 1, block)
+        setSolid(ctx, point.x + dx, point.y, point.z + 1, block)
+    }
 }
 
 function inactivePortalMarkerZone(id: string, access: VoxelCoord): Zone {

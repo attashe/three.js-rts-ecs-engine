@@ -226,6 +226,7 @@ function carveMineTunnelNetwork(ctx: WorldgenCompileContext, state: UndergroundS
     const floorBlock = ctx.material(feature.floor_material, 'stone', `${path}.floor_material`)
     const supportEvery = Math.max(0, Math.floor(ctx.number(feature.supports_every ?? feature.support_every, 7, `${path}.supports_every`, { min: 0 })))
     const lanternEvery = Math.max(0, Math.floor(ctx.number(feature.lantern_every, 11, `${path}.lantern_every`, { min: 0 })))
+    const railCells = new Map<string, Vec3Tuple>()
     let step = 0
 
     for (const corridor of corridors) {
@@ -240,7 +241,7 @@ function carveMineTunnelNetwork(ctx: WorldgenCompileContext, state: UndergroundS
                 const y = Math.round(lerp(a[1], b[1], t))
                 const z = Math.round(lerp(a[2], b[2], t))
                 stampTunnelCell(ctx, f, x, y, z, halfWidth, height, floorBlock)
-                if (feature.rails !== false) setSolid(ctx, x, y, z, BLOCK.rail)
+                if (feature.rails !== false) railCells.set(`${x},${y},${z}`, [x, y, z])
                 if (supportEvery > 0 && step % supportEvery === 0) {
                     for (let py = y; py < y + height; py += 1) {
                         setSolid(ctx, x - halfWidth, py, z, BLOCK.wood)
@@ -252,6 +253,8 @@ function carveMineTunnelNetwork(ctx: WorldgenCompileContext, state: UndergroundS
             }
         }
     }
+
+    for (const [x, y, z] of railCells.values()) setSolid(ctx, x, y, z, BLOCK.rail)
 
     f.meta.type = feature.type
     f.meta.center = corridors[0]?.[0] ? [...corridors[0][0]] as Vec3Tuple : [0, 0, 0]
@@ -374,10 +377,18 @@ function stampWalkablePath(ctx: WorldgenCompileContext, state: UndergroundState,
             const x = lerp(a[0], b[0], t)
             const y = lerp(a[1], b[1], t)
             const z = lerp(a[2], b[2], t)
+            const railsToRestore = railCellsWithinSphere(ctx, x, y + carveRadius * 0.45, z, carveRadius)
             carveSphere(ctx, f, x, y + carveRadius * 0.45, z, carveRadius)
+            for (const [rx, ry, rz] of railsToRestore) setSolid(ctx, rx, ry, rz, BLOCK.rail)
             for (let dz = -width; dz <= width; dz += 1) {
                 for (let dx = -width; dx <= width; dx += 1) {
-                    if (Math.hypot(dx, dz) <= width) stampFloorCell(ctx, f, Math.round(x + dx), Math.round(y), Math.round(z + dz), floorBlock)
+                    if (Math.hypot(dx, dz) > width) continue
+                    const wx = Math.round(x + dx)
+                    const wy = Math.round(y)
+                    const wz = Math.round(z + dz)
+                    const hadRail = ctx.chunks.getVoxel(wx, wy, wz) === BLOCK.rail
+                    stampFloorCell(ctx, f, wx, wy, wz, floorBlock)
+                    if (hadRail) setSolid(ctx, wx, wy, wz, BLOCK.rail)
                 }
             }
         }
@@ -385,4 +396,19 @@ function stampWalkablePath(ctx: WorldgenCompileContext, state: UndergroundState,
     f.meta.type = 'guaranteed_path'
     f.meta.center = waypoints[Math.floor(waypoints.length / 2)]!
     ctx.report.placements.push({ id: pathSpec.id, kind: 'guaranteed_path', width, carveRadius, waypoints })
+}
+
+function railCellsWithinSphere(ctx: WorldgenCompileContext, cx: number, cy: number, cz: number, radius: number): Vec3Tuple[] {
+    const rails: Vec3Tuple[] = []
+    const r = Math.ceil(radius)
+    for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y += 1) {
+        for (let z = Math.floor(cz - r); z <= Math.ceil(cz + r); z += 1) {
+            for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x += 1) {
+                if (Math.hypot(x - cx, y - cy, z - cz) <= radius && ctx.chunks.getVoxel(x, y, z) === BLOCK.rail) {
+                    rails.push([x, y, z])
+                }
+            }
+        }
+    }
+    return rails
 }

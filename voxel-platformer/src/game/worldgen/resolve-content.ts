@@ -28,6 +28,7 @@ import {
     positiveNumber,
     readOptionalVec2,
     readString,
+    readVoxelCoord,
     resolveContentPosition,
     type WorldgenContentResolveOptions,
 } from './content-common'
@@ -294,7 +295,7 @@ function readRailCartCell(
 ): VoxelCoord | null {
     const explicit = spec.railCell ?? spec.rail_cell
     if (explicit !== undefined) {
-        const cell = readVoxelCell(explicit)
+        const cell = readVoxelCoord(explicit, true)
         if (!cell) {
             contentDiagnostic(ctx, required, {
                 code: 'invalid_feature',
@@ -333,21 +334,6 @@ function readRailCartCell(
         return null
     }
     return cell
-}
-
-function readVoxelCell(value: unknown): VoxelCoord | null {
-    if (Array.isArray(value) && value.length === 3 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
-        return { x: Math.round(value[0] as number), y: Math.round(value[1] as number), z: Math.round(value[2] as number) }
-    }
-    if (
-        isRecord(value) &&
-        typeof value.x === 'number' && Number.isFinite(value.x) &&
-        typeof value.y === 'number' && Number.isFinite(value.y) &&
-        typeof value.z === 'number' && Number.isFinite(value.z)
-    ) {
-        return { x: Math.round(value.x), y: Math.round(value.y), z: Math.round(value.z) }
-    }
-    return null
 }
 
 function readRailCartFacing(

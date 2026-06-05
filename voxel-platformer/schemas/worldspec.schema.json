@@ -33,6 +33,7 @@
       "properties": {
         "base_height": { "type": "number" },
         "noise": { "type": "object", "additionalProperties": true },
+        "border_walls": { "type": "boolean" },
         "features": {
           "type": "array",
           "items": { "$ref": "#/$defs/idObject" }

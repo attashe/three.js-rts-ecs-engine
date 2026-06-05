@@ -13,7 +13,7 @@ export function scatterUnderground(ctx: WorldgenCompileContext, state: Undergrou
         const path = `$.scatter[${i}]`
         const count = Math.max(0, Math.floor(ctx.number(spec.count, 0, `${path}.count`, { min: 0 })))
         const asset = typeof spec.asset === 'string' ? spec.asset.trim() : ''
-        if (!['proc.mushroom.glow_cluster', 'proc.crystal.wall_cluster', 'proc.stalactite'].includes(asset)) {
+        if (!['proc.mushroom.glow_cluster', 'proc.crystal.wall_cluster', 'proc.stalactite', 'proc.ore.wall_cluster', 'proc.ore.floor_pile'].includes(asset)) {
             ctx.warning({ code: 'unsupported_structure_asset', message: `Unsupported underground scatter asset "${asset}".`, path: `${path}.asset`, details: { id: spec.id, asset } })
             ctx.report.placements.push({ id: spec.id, kind: 'scatter_summary', requested: count, placed: 0, surface: spec.surface ?? 'floor', feature: spec.feature ?? 'any' })
             continue
@@ -31,6 +31,10 @@ export function scatterUnderground(ctx: WorldgenCompileContext, state: Undergrou
                 setSolid(ctx, candidate.x, candidate.y + 1, candidate.z, BLOCK.torch)
             } else if (asset === 'proc.crystal.wall_cluster') {
                 setSolid(ctx, candidate.x, candidate.y, candidate.z, BLOCK.glow)
+            } else if (asset === 'proc.ore.wall_cluster') {
+                setSolid(ctx, candidate.x, candidate.y, candidate.z, oreBlockFor(ctx, spec.id, placed))
+            } else if (asset === 'proc.ore.floor_pile') {
+                setSolid(ctx, candidate.x, candidate.y - 1, candidate.z, oreBlockFor(ctx, spec.id, placed))
             } else {
                 const maxLength = Math.max(2, Math.floor(ctx.number(spec.max_length, 7, `${path}.max_length`, { min: 2 })))
                 const length = ctx.randInt(2, maxLength, spec.id, placed, 'length')
@@ -42,6 +46,13 @@ export function scatterUnderground(ctx: WorldgenCompileContext, state: Undergrou
         ctx.report.placements.push({ id: spec.id, kind: 'scatter_summary', requested: count, placed, surface: spec.surface ?? 'floor', feature: spec.feature ?? 'any' })
         if (placed < count) ctx.warning({ code: 'placement_failed', message: `Underground scatter "${spec.id}" placed ${placed} of ${count}.`, path, details: { requested: count, placed } })
     }
+}
+
+function oreBlockFor(ctx: WorldgenCompileContext, id: string, index: number): number {
+    const roll = ctx.rand01(id, index, 'ore-kind')
+    if (roll < 0.42) return BLOCK.oreIron
+    if (roll < 0.78) return BLOCK.oreCopper
+    return BLOCK.oreCrystal
 }
 
 function undergroundScatterCandidates(ctx: WorldgenCompileContext, state: UndergroundState, spec: ScatterSpec): SurfaceCandidate[] {

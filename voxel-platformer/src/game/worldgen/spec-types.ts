@@ -54,6 +54,10 @@ export interface SurfaceSpec {
     base_height?: number
     noise?: Record<string, unknown>
     features?: SurfaceFeatureSpec[]
+    /** Stamp a noWalk collision wall around the world edge so actors stay
+     *  inside the authored bounds. Defaults to true; set false for worlds whose
+     *  edges are meant to be open (e.g. seamless or edge-exiting layouts). */
+    border_walls?: boolean
 }
 
 export interface SurfaceFeatureSpec extends IdSpec {

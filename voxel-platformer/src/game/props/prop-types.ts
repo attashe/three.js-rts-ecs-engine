@@ -50,6 +50,14 @@ export const PROP_KINDS = [
     'broken-wagon',
     'fallen-driver',
     'repair-materials-crate',
+    'ore-pile',
+    'ore-crate',
+    'mine-tool-rack',
+    'broken-rail-cart',
+    'support-debris',
+    'notice-board',
+    'vent-fan',
+    'abandoned-lamp-cluster',
 ] as const
 
 export type EditorPropKind = (typeof PROP_KINDS)[number]
@@ -117,4 +125,12 @@ export const PROP_LABELS: Record<EditorPropKind, string> = {
     'broken-wagon': 'Broken Wagon',
     'fallen-driver': 'Fallen Driver',
     'repair-materials-crate': 'Repair Materials Crate',
+    'ore-pile': 'Ore Pile',
+    'ore-crate': 'Ore Crate',
+    'mine-tool-rack': 'Mine Tool Rack',
+    'broken-rail-cart': 'Broken Rail Cart',
+    'support-debris': 'Support Debris',
+    'notice-board': 'Notice Board',
+    'vent-fan': 'Vent Fan',
+    'abandoned-lamp-cluster': 'Abandoned Lamp Cluster',
 }

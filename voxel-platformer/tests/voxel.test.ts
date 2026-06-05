@@ -7,7 +7,7 @@ import { voxelAABBOverlap, sweepAxis } from '../src/engine/voxel/voxel-collide'
 import { greedyMesh } from '../src/engine/voxel/greedy-mesher'
 import { liquidTopSurfaceMesh } from '../src/engine/voxel/liquid-surface-mesher'
 import { movementEnvironmentForAABB } from '../src/engine/voxel/movement-effects'
-import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, isRenderableVoxel, liquidBlockKind, voxelHeightForBlock, voxelOpacity } from '../src/engine/voxel/palette'
+import { BLOCK, DEFAULT_PALETTE, clonePalette, isCollidable, isPathSurface, isRenderableVoxel, liquidBlockKind, voxelHeightForBlock, voxelLightSpec, voxelOpacity } from '../src/engine/voxel/palette'
 import { voxelRaycast } from '../src/engine/voxel/voxel-raycast'
 import { Vector3 } from 'three'
 
@@ -213,6 +213,34 @@ test('legacy palettes migrate liquid markers without losing existing special blo
     assert.equal(chunks.palette.entries[BLOCK.unlitLantern]?.renderAs, 'torch-off')
     assert.equal(chunks.palette.entries[BLOCK.water]?.liquid, 'water')
     assert.equal(chunks.palette.entries[BLOCK.lava]?.liquid, 'lava')
+})
+
+test('default palette covers block constants and appends mine ore blocks safely', () => {
+    const blockIndices = Object.values(BLOCK)
+    for (const index of blockIndices) {
+        assert.ok(DEFAULT_PALETTE.entries[index], `DEFAULT_PALETTE missing BLOCK index ${index}`)
+    }
+    assert.equal(new Set(DEFAULT_PALETTE.entries.map((entry) => entry.name)).size, DEFAULT_PALETTE.entries.length)
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreIron]?.name, 'iron ore')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreCopper]?.name, 'copper ore')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreCrystal]?.name, 'crystal ore')
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.oreIron), true)
+    assert.equal(isPathSurface(DEFAULT_PALETTE, BLOCK.oreCopper), true)
+    assert.ok(voxelLightSpec(DEFAULT_PALETTE, BLOCK.oreCrystal), 'crystal ore should provide a subtle cave readability light')
+
+    const oldPalette = clonePalette(DEFAULT_PALETTE)
+    oldPalette.entries.length = BLOCK.oreIron
+    const migrated = new ChunkManager(oldPalette)
+    assert.equal(migrated.palette.entries[BLOCK.oreIron]?.name, 'iron ore')
+    assert.equal(migrated.palette.entries[BLOCK.oreCopper]?.name, 'copper ore')
+    assert.equal(migrated.palette.entries[BLOCK.oreCrystal]?.name, 'crystal ore')
+
+    const customTail = clonePalette(DEFAULT_PALETTE)
+    customTail.entries.length = BLOCK.oreIron
+    customTail.entries.push({ name: 'custom ore slot', color: [0.2, 0.1, 0.3], solid: true })
+    const custom = new ChunkManager(customTail)
+    assert.equal(custom.palette.entries[BLOCK.oreIron]?.name, 'custom ore slot')
+    assert.ok(custom.palette.entries.findIndex((entry) => entry.name === 'iron ore') > BLOCK.oreIron)
 })
 
 test('no-walk block is an invisible collidable border outside debug rendering', () => {

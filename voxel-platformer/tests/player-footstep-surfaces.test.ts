@@ -19,6 +19,9 @@ test('surfaceForBlock maps each palette block to a footstep family', () => {
     assert.equal(surfaceForBlock(BLOCK.glow), 'stone')
     assert.equal(surfaceForBlock(BLOCK.noWalk), 'stone')
     assert.equal(surfaceForBlock(BLOCK.stairs), 'stone')
+    assert.equal(surfaceForBlock(BLOCK.oreIron), 'stone')
+    assert.equal(surfaceForBlock(BLOCK.oreCopper), 'stone')
+    assert.equal(surfaceForBlock(BLOCK.oreCrystal), 'stone')
 
     // Wood family — hollow creak.
     assert.equal(surfaceForBlock(BLOCK.wood), 'wood')

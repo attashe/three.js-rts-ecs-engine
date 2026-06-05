@@ -20,6 +20,10 @@ export const DEFAULT_MATERIAL_ALIASES: NormalizedMaterialAliasMap = {
     bed: 'plank',
     furniture: 'plank',
     leaves: 'leaf',
+    iron_ore: 'oreIron',
+    copper_ore: 'oreCopper',
+    crystal_ore: 'oreCrystal',
+    glowing_ore: 'oreCrystal',
 }
 
 const BLOCK_KEY_BY_NORMALIZED_NAME = new Map<string, EngineBlockKey>(

@@ -410,9 +410,13 @@ export function positiveNumber(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
-function readPosition(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): VoxelCoord | null {
+/** Parse a voxel coordinate from a `[x, y, z]` tuple or `{ x, y, z }` object.
+ *  Returns null on an invalid shape. When `round` is true every component is
+ *  rounded to an integer (for cell references); otherwise kept as authored. */
+export function readVoxelCoord(value: unknown, round = false): VoxelCoord | null {
+    const map = round ? Math.round : (n: number) => n
     if (Array.isArray(value) && value.length === 3 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
-        return { x: value[0] as number, y: value[1] as number, z: value[2] as number }
+        return { x: map(value[0] as number), y: map(value[1] as number), z: map(value[2] as number) }
     }
     if (
         isRecord(value) &&
@@ -420,8 +424,14 @@ function readPosition(ctx: WorldgenCompileContext, value: unknown, path: string,
         typeof value.y === 'number' && Number.isFinite(value.y) &&
         typeof value.z === 'number' && Number.isFinite(value.z)
     ) {
-        return { x: value.x, y: value.y, z: value.z }
+        return { x: map(value.x), y: map(value.y), z: map(value.z) }
     }
+    return null
+}
+
+function readPosition(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): VoxelCoord | null {
+    const coord = readVoxelCoord(value)
+    if (coord) return coord
     contentDiagnostic(ctx, required, {
         code: 'invalid_feature',
         message: `${path} must be a [x, y, z] tuple or { x, y, z } object.`,
@@ -432,17 +442,7 @@ function readPosition(ctx: WorldgenCompileContext, value: unknown, path: string,
 }
 
 function readRailCellPosition(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): VoxelCoord | null {
-    let cell: VoxelCoord | null = null
-    if (Array.isArray(value) && value.length === 3 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
-        cell = { x: Math.round(value[0] as number), y: Math.round(value[1] as number), z: Math.round(value[2] as number) }
-    } else if (
-        isRecord(value) &&
-        typeof value.x === 'number' && Number.isFinite(value.x) &&
-        typeof value.y === 'number' && Number.isFinite(value.y) &&
-        typeof value.z === 'number' && Number.isFinite(value.z)
-    ) {
-        cell = { x: Math.round(value.x), y: Math.round(value.y), z: Math.round(value.z) }
-    }
+    const cell = readVoxelCoord(value, true)
     if (!cell) {
         contentDiagnostic(ctx, required, {
             code: 'invalid_feature',

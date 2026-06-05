@@ -7,7 +7,6 @@ import { isRecord } from './worldgen-util'
 interface CutawayOptions {
     mode: string
     clearance: number
-    horizontalMargin: number
     shellMargin: number
     rimHeight: number
     rimMaterial: number
@@ -54,7 +53,6 @@ export function applyUndergroundCutaway(ctx: WorldgenCompileContext, state: Unde
         kind: 'underground_cutaway',
         mode: options.mode,
         clearance: options.clearance,
-        horizontalMargin: options.horizontalMargin,
         shellMargin: options.shellMargin,
         rimHeight: options.rimHeight,
         exposedColumns: exposedColumns.size,
@@ -119,13 +117,16 @@ function readCutawayOptions(ctx: WorldgenCompileContext): CutawayOptions | null 
     const clearance = isRecord(source)
         ? Math.max(2, Math.floor(ctx.number(objectSource.clearance, 6, '$.volume.cutaway.clearance', { min: 2 })))
         : 6
-    const horizontalMargin = isRecord(source)
-        ? Math.max(0, Math.floor(ctx.number(objectSource.horizontal_margin, 1, '$.volume.cutaway.horizontal_margin', { min: 0 })))
-        : 1
-    const shellFallback = defaultShellMargin(ctx, horizontalMargin)
+    // `shell_margin` is the horizontal exposure radius around floor cells;
+    // `wall_margin`/`horizontal_margin` are accepted as aliases for it.
     const shellMargin = isRecord(source)
-        ? Math.max(horizontalMargin, Math.floor(ctx.number(objectSource.shell_margin ?? objectSource.wall_margin, shellFallback, '$.volume.cutaway.shell_margin', { min: 0 })))
-        : shellFallback
+        ? Math.max(0, Math.floor(ctx.number(
+            objectSource.shell_margin ?? objectSource.wall_margin ?? objectSource.horizontal_margin,
+            defaultShellMargin(ctx),
+            '$.volume.cutaway.shell_margin',
+            { min: 0 },
+        )))
+        : defaultShellMargin(ctx)
     const rimFallback = Math.max(1, Math.min(2, clearance - 2))
     const rimHeight = isRecord(source)
         ? Math.max(0, Math.floor(ctx.number(objectSource.rim_height ?? objectSource.wall_height, rimFallback, '$.volume.cutaway.rim_height', { min: 0 })))
@@ -135,7 +136,7 @@ function readCutawayOptions(ctx: WorldgenCompileContext): CutawayOptions | null 
     const features = isRecord(source) && objectSource.features !== undefined
         ? readFeatureFilter(ctx, objectSource.features)
         : null
-    return { mode: mode || 'open_top', clearance, horizontalMargin, shellMargin, rimHeight, rimMaterial, features }
+    return { mode: mode || 'open_top', clearance, shellMargin, rimHeight, rimMaterial, features }
 }
 
 function readFeatureFilter(ctx: WorldgenCompileContext, value: unknown): Set<string> {
@@ -180,17 +181,19 @@ function cutawayStartY(ctx: WorldgenCompileContext, floorY: number, clearance: n
     return clamp(Math.round(floorY + clearance), 0, ctx.sizeY)
 }
 
-function defaultShellMargin(ctx: WorldgenCompileContext, horizontalMargin: number): number {
+/** When the cutaway has no explicit shell margin, match the prune shell so the
+ *  exposed rim and the pruned terrain line up. Falls back to 1 (just the floor
+ *  cells plus one ring) when there is no feature-shell prune. */
+function defaultShellMargin(ctx: WorldgenCompileContext): number {
     const prune = ctx.spec.volume?.prune
-    if (prune === undefined || prune === false) return horizontalMargin
-    if (typeof prune === 'string') return prune.trim().length > 0 ? Math.max(horizontalMargin, 4) : horizontalMargin
-    if (!isRecord(prune)) return horizontalMargin
+    if (prune === undefined || prune === false) return 1
+    if (typeof prune === 'string') return prune.trim().length > 0 ? 4 : 1
+    if (!isRecord(prune)) return 1
     const mode = typeof prune.mode === 'string' ? prune.mode.trim() : 'feature_shell'
-    if (mode !== 'feature_shell') return horizontalMargin
-    const margin = typeof prune.horizontal_margin === 'number' && Number.isFinite(prune.horizontal_margin)
+    if (mode !== 'feature_shell') return 1
+    return typeof prune.horizontal_margin === 'number' && Number.isFinite(prune.horizontal_margin)
         ? Math.max(1, Math.floor(prune.horizontal_margin))
         : 4
-    return Math.max(horizontalMargin, margin)
 }
 
 function columnKey(x: number, z: number): string {

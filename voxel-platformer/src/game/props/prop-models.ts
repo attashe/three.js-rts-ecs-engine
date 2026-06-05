@@ -98,6 +98,14 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'broken-wagon': return buildBrokenWagon()
         case 'fallen-driver': return buildFallenDriver()
         case 'repair-materials-crate': return buildRepairMaterialsCrate()
+        case 'ore-pile': return buildOrePile()
+        case 'ore-crate': return buildOreCrate()
+        case 'mine-tool-rack': return buildMineToolRack()
+        case 'broken-rail-cart': return buildBrokenRailCart()
+        case 'support-debris': return buildSupportDebris()
+        case 'notice-board': return buildNoticeBoard()
+        case 'vent-fan': return buildVentFan()
+        case 'abandoned-lamp-cluster': return buildAbandonedLampCluster()
     }
 }
 
@@ -1164,6 +1172,146 @@ function buildLiftControlLever(): BufferGeometry {
         spherePart(0.105, [0.31, 0.82, 0], red, [1, 1.06, 1]),
         boxPart([0.42, 0.025, 0.06], [0, 0.31, -0.19], brass),
         boxPart([0.42, 0.025, 0.06], [0, 0.31, 0.19], brass),
+    ]
+    return mergeAndCleanup(parts)
+}
+
+function buildOrePile(): BufferGeometry {
+    const rock = [0.20, 0.22, 0.23] as const
+    const iron = [0.56, 0.58, 0.57] as const
+    const copper = [0.72, 0.38, 0.20] as const
+    const crystal = [0.24, 0.72, 0.90] as const
+    const parts: BufferGeometry[] = [
+        spherePart(0.22, [-0.18, 0.13, 0.02], rock, [1.25, 0.55, 0.9]),
+        spherePart(0.18, [0.08, 0.12, -0.10], iron, [1.15, 0.58, 0.95]),
+        spherePart(0.16, [0.20, 0.10, 0.16], copper, [1.2, 0.52, 0.8]),
+        spherePart(0.12, [-0.02, 0.25, 0.10], rock, [0.95, 0.70, 0.8]),
+        boxPart([0.08, 0.20, 0.08], [-0.10, 0.27, -0.18], crystal, [0.32, 0.1, 0.18]),
+        boxPart([0.07, 0.16, 0.07], [0.16, 0.23, 0.00], crystal, [-0.22, 0.16, -0.12]),
+    ]
+    return mergeAndCleanup(parts)
+}
+
+function buildOreCrate(): BufferGeometry {
+    const wood = [0.39, 0.23, 0.12] as const
+    const darkWood = [0.24, 0.14, 0.08] as const
+    const ore = [0.54, 0.48, 0.42] as const
+    const copper = [0.70, 0.34, 0.18] as const
+    const parts: BufferGeometry[] = [
+        boxPart([0.66, 0.34, 0.48], [0, 0.19, 0], wood),
+        boxPart([0.72, 0.06, 0.54], [0, 0.39, 0], darkWood),
+        boxPart([0.08, 0.42, 0.56], [-0.27, 0.23, 0], darkWood),
+        boxPart([0.08, 0.42, 0.56], [0.27, 0.23, 0], darkWood),
+        spherePart(0.12, [-0.18, 0.50, -0.07], ore, [1.12, 0.62, 0.9]),
+        spherePart(0.10, [0.06, 0.48, 0.08], copper, [1.05, 0.58, 0.85]),
+        spherePart(0.08, [0.22, 0.47, -0.04], ore, [1.0, 0.62, 1.0]),
+    ]
+    return mergeAndCleanup(parts)
+}
+
+function buildMineToolRack(): BufferGeometry {
+    const wood = [0.34, 0.20, 0.10] as const
+    const metal = [0.48, 0.50, 0.50] as const
+    const handle = [0.50, 0.31, 0.15] as const
+    const parts: BufferGeometry[] = [
+        boxPart([0.92, 0.08, 0.12], [0, 0.12, 0], wood),
+        boxPart([0.92, 0.08, 0.12], [0, 0.78, 0], wood),
+        boxPart([0.08, 0.82, 0.10], [-0.42, 0.43, 0], wood),
+        boxPart([0.08, 0.82, 0.10], [0.42, 0.43, 0], wood),
+        boxPart([0.05, 0.72, 0.05], [-0.22, 0.46, -0.08], handle, [0, 0, -0.12]),
+        boxPart([0.24, 0.08, 0.06], [-0.25, 0.82, -0.10], metal, [0, 0, -0.12]),
+        boxPart([0.05, 0.68, 0.05], [0.02, 0.45, -0.09], handle, [0, 0, 0.18]),
+        boxPart([0.20, 0.14, 0.06], [0.08, 0.78, -0.11], metal, [0, 0, 0.18]),
+        boxPart([0.05, 0.62, 0.05], [0.28, 0.43, -0.08], handle, [0, 0, -0.32]),
+        boxPart([0.18, 0.07, 0.07], [0.18, 0.72, -0.09], metal, [0, 0, -0.32]),
+    ]
+    return mergeAndCleanup(parts)
+}
+
+function buildBrokenRailCart(): BufferGeometry {
+    const wood = [0.36, 0.21, 0.11] as const
+    const darkWood = [0.20, 0.12, 0.07] as const
+    const metal = [0.22, 0.24, 0.25] as const
+    const ore = [0.48, 0.42, 0.36] as const
+    const parts: BufferGeometry[] = [
+        boxPart([0.96, 0.28, 0.58], [0.00, 0.30, 0], wood, [0, 0, -0.12]),
+        boxPart([1.04, 0.08, 0.10], [0.00, 0.47, -0.32], darkWood, [0, 0, -0.12]),
+        boxPart([0.92, 0.08, 0.10], [0.08, 0.46, 0.32], darkWood, [0, 0, -0.22]),
+        boxPart([0.10, 0.34, 0.66], [-0.49, 0.34, 0], darkWood, [0.04, 0, -0.08]),
+        boxPart([0.10, 0.24, 0.56], [0.51, 0.30, 0], darkWood, [-0.1, 0, -0.34]),
+        boxPart([1.14, 0.05, 0.06], [0, 0.16, -0.38], metal, [0, 0.02, 0]),
+        boxPart([1.14, 0.05, 0.06], [0, 0.16, 0.38], metal, [0, -0.02, 0]),
+        spherePart(0.12, [-0.14, 0.56, -0.04], ore, [1.12, 0.58, 0.9]),
+        spherePart(0.10, [0.14, 0.52, 0.09], ore, [1.0, 0.55, 0.86]),
+    ]
+    for (const [x, z, yaw] of [[-0.34, -0.34, 0], [-0.34, 0.34, 0.1], [0.36, -0.34, -0.15], [0.46, 0.34, 0.55]] as const) {
+        parts.push(cylPart(0.13, 0.13, 0.07, [x, 0.17, z], metal, 10, [Math.PI * 0.5, 0, yaw]))
+    }
+    return mergeAndCleanup(parts)
+}
+
+function buildSupportDebris(): BufferGeometry {
+    const wood = [0.33, 0.19, 0.09] as const
+    const stone = [0.32, 0.34, 0.35] as const
+    const parts: BufferGeometry[] = [
+        boxPart([0.92, 0.10, 0.12], [-0.05, 0.18, 0.02], wood, [0.04, 0.18, -0.36]),
+        boxPart([0.76, 0.09, 0.11], [0.14, 0.28, -0.10], wood, [0.02, -0.38, 0.24]),
+        boxPart([0.48, 0.08, 0.10], [-0.22, 0.11, 0.20], wood, [0.1, 0.56, 0.08]),
+        spherePart(0.16, [0.25, 0.10, 0.18], stone, [1.2, 0.48, 0.9]),
+        spherePart(0.12, [-0.30, 0.08, -0.16], stone, [1.0, 0.55, 0.82]),
+    ]
+    const geometry = mergeAndCleanup(parts)
+    geometry.translate(0, 0.08, 0)
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+    return geometry
+}
+
+function buildNoticeBoard(): BufferGeometry {
+    const wood = [0.38, 0.23, 0.12] as const
+    const paper = [0.86, 0.78, 0.58] as const
+    const ink = [0.10, 0.08, 0.06] as const
+    const parts: BufferGeometry[] = [
+        boxPart([0.10, 1.02, 0.10], [-0.46, 0.51, 0], wood),
+        boxPart([0.10, 1.02, 0.10], [0.46, 0.51, 0], wood),
+        boxPart([1.04, 0.62, 0.10], [0, 0.82, 0], [0.46, 0.30, 0.16]),
+        boxPart([0.28, 0.24, 0.04], [-0.27, 0.88, -0.06], paper, [0, 0, -0.04]),
+        boxPart([0.24, 0.20, 0.04], [0.12, 0.76, -0.06], paper, [0, 0, 0.05]),
+        boxPart([0.06, 0.18, 0.045], [-0.30, 0.88, -0.09], ink, [0, 0, -0.25]),
+        boxPart([0.18, 0.025, 0.045], [-0.18, 0.94, -0.09], ink),
+        boxPart([0.14, 0.025, 0.045], [0.14, 0.80, -0.09], ink),
+    ]
+    return mergeAndCleanup(parts)
+}
+
+function buildVentFan(): BufferGeometry {
+    const metal = [0.22, 0.24, 0.25] as const
+    const dark = [0.08, 0.09, 0.10] as const
+    const brass = [0.62, 0.48, 0.24] as const
+    const parts: BufferGeometry[] = [
+        cylPart(0.34, 0.34, 0.08, [0, 0.36, 0], metal, 14, [Math.PI * 0.5, 0, 0]),
+        cylPart(0.25, 0.25, 0.09, [0, 0.36, 0], dark, 14, [Math.PI * 0.5, 0, 0]),
+        cylPart(0.06, 0.07, 0.12, [0, 0.36, -0.02], brass, 10, [Math.PI * 0.5, 0, 0]),
+    ]
+    for (let i = 0; i < 4; i++) {
+        const blade = boxPart([0.10, 0.025, 0.26], [0, 0.36, -0.04], metal, [0, 0, i * Math.PI * 0.5 + 0.35])
+        parts.push(blade)
+    }
+    parts.push(boxPart([0.78, 0.08, 0.08], [0, 0.04, 0], metal))
+    return mergeAndCleanup(parts)
+}
+
+function buildAbandonedLampCluster(): BufferGeometry {
+    const metal = [0.24, 0.24, 0.23] as const
+    const glass = [0.94, 0.72, 0.32] as const
+    const soot = [0.08, 0.07, 0.06] as const
+    const parts: BufferGeometry[] = [
+        boxPart([0.46, 0.05, 0.32], [0, 0.04, 0], soot, [0, 0.1, 0.02]),
+        cylPart(0.06, 0.07, 0.18, [-0.12, 0.16, -0.04], glass, 8, [0.08, 0, 0.12]),
+        cylPart(0.07, 0.08, 0.20, [0.13, 0.17, 0.05], glass, 8, [-0.04, 0, -0.18]),
+        cylPart(0.08, 0.09, 0.04, [-0.12, 0.27, -0.04], metal, 8),
+        cylPart(0.08, 0.09, 0.04, [0.13, 0.29, 0.05], metal, 8),
+        boxPart([0.36, 0.035, 0.035], [0.02, 0.09, -0.20], metal, [0, 0.35, 0.04]),
     ]
     return mergeAndCleanup(parts)
 }

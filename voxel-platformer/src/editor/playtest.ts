@@ -80,6 +80,24 @@ export async function consumePlaytestLevel(): Promise<ArrayBuffer | null> {
     }
 }
 
+/**
+ * Drop any IndexedDB playtest snapshot that no longer has a live sessionStorage
+ * pointer. The pointer is session-scoped (it clears when the editor tab closes)
+ * but the IndexedDB bytes persist, so a snapshot from a previous session would
+ * otherwise linger on disk indefinitely. Safe to call on editor startup: it
+ * never touches a live snapshot, because a present pointer means the bytes are
+ * still needed for restore-on-return.
+ */
+export async function purgeStalePlaytestLevel(): Promise<void> {
+    if (readSessionStorage(PLAYTEST_STORAGE_KEY) !== null) return
+    if (!globalThis.indexedDB) return
+    try {
+        await deleteIndexedDbLevel(PLAYTEST_DB_KEY)
+    } catch (err) {
+        console.warn('Playtest: failed to purge stale IndexedDB snapshot', err)
+    }
+}
+
 async function writePlaytestLevel(buffer: ArrayBuffer): Promise<boolean> {
     try {
         await writeIndexedDbLevel(buffer)
@@ -158,6 +176,15 @@ async function readIndexedDbLevel(key: string): Promise<ArrayBuffer | null> {
         const out = new ArrayBuffer(value.byteLength)
         new Uint8Array(out).set(new Uint8Array(value))
         return out
+    } finally {
+        db.close()
+    }
+}
+
+async function deleteIndexedDbLevel(key: string): Promise<void> {
+    const db = await openPlaytestDb()
+    try {
+        await idbRequest(db.transaction(PLAYTEST_DB_STORE, 'readwrite').objectStore(PLAYTEST_DB_STORE).delete(key))
     } finally {
         db.close()
     }

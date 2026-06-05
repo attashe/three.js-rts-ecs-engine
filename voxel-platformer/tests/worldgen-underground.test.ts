@@ -171,6 +171,7 @@ test('Phase 12 underground mine stress spec validates rails, rooms, caves, and r
     const result = compileWorldSpec(PHASE12_UNDERGROUND_STRESS_SPEC)
 
     assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.equal(result.meta.name, 'Abandoned Mine Shafts')
     assert.equal(result.report.errors.length, 0)
     assert.equal(result.report.metrics.regionCount, 2)
     assert.ok(result.report.metrics.chunkCount <= 28, `expected low-ceiling shell-pruned mine to stay compact, got ${result.report.metrics.chunkCount}`)
@@ -188,17 +189,23 @@ test('Phase 12 underground mine stress spec validates rails, rooms, caves, and r
     assert.equal(prune?.mode, 'feature_shell')
     assert.ok(typeof prune?.removedVoxels === 'number' && prune.removedVoxels > 1_000_000)
     assert.ok(typeof prune?.removedChunks === 'number' && prune.removedChunks >= 15)
-    for (const id of ['entrance_shaft', 'root_cavern', 'old_rail_network', 'canyon_rail_cut']) {
+    for (const id of ['entrance_shaft', 'root_cavern', 'west_ore_excavation', 'miner_village_hall', 'old_rail_network', 'canyon_rail_cut']) {
         assert.ok(result.report.placements.some((placement) => placement.id === id && placement.kind === 'carver'), `${id} carver should report placement`)
     }
-    for (const id of ['living_room_decor', 'forge_decor', 'storage_decor', 'blue_portal', 'broken_rail_bridge']) {
+    for (const id of ['station_decor', 'bunk_decor', 'meeting_decor', 'office_decor', 'shop_decor', 'forge_decor', 'ore_storage_decor', 'blue_portal', 'broken_rail_bridge']) {
         assert.ok(result.report.resolvedObjects[id], `${id} should resolve`)
     }
-    assert.equal(result.meta.railCarts.length, 2)
-    assert.equal(result.meta.railCarts.every((cart) => cart.enabled === false), true)
-    assert.equal(result.chunks.getVoxel(116, 22, 150), BLOCK.rail)
-    assert.equal(result.chunks.getVoxel(154, 20, 42), BLOCK.rail)
+    assert.equal(result.meta.railCarts.length, 3)
+    assert.equal(result.meta.railCarts.filter((cart) => cart.enabled).map((cart) => cart.id).join(','), 'main_route_cart')
+    assert.equal(result.chunks.getVoxel(44, 28, 136), BLOCK.rail)
+    assert.equal(result.chunks.getVoxel(104, 24, 112), BLOCK.rail)
+    assert.equal(result.chunks.getVoxel(164, 22, 86), BLOCK.rail)
+    const propKinds = new Set(result.meta.props.map((prop) => prop.kind))
+    for (const kind of ['ore-pile', 'ore-crate', 'mine-tool-rack', 'broken-rail-cart', 'support-debris', 'notice-board', 'vent-fan', 'abandoned-lamp-cluster'] as const) {
+        assert.ok(propKinds.has(kind), `${kind} prop should be present`)
+    }
     assert.ok(result.report.placements.some((placement) => placement.id === 'root_mushrooms' && placement.kind === 'scatter_summary'))
+    assert.ok(result.report.placements.some((placement) => placement.id === 'west_ore_wall' && placement.kind === 'scatter_summary'))
     assert.ok(result.report.placements.some((placement) => placement.id === 'grotto_mist' && placement.kind === 'content_weather_zone'))
 })
 
@@ -375,10 +382,12 @@ test('mine_tunnel_network carves rail-laid corridors', () => {
         world: { id: 'mine_only', name: 'Mine', type: 'underground', seed: 'mine', size: [40, 40, 40] },
         volume: { initial: 'solid', default_material: 'dark_limestone' },
         carvers: [{ id: 'mine', type: 'mine_tunnel_network', half_width: 2, height: 4, rails: true, floor_material: 'stone', supports_every: 0, lantern_every: 0, corridors: [[[8, 16, 20], [32, 16, 20]]] }],
+        main_paths: [{ id: 'rail_walk_route', width: 2, carve_radius: 3, floor_block: 'stone', waypoints: [[8, 16, 20], [32, 16, 20]] }],
     })
     assert.notEqual(r.report.status, 'failed', diagnosticSummary(r.report.errors, r.report.warnings))
     assert.equal(r.chunks.getVoxel(20, 17, 20), BLOCK.air, 'corridor headroom carved above the walkway')
     assert.equal(r.chunks.getVoxel(20, 15, 20), BLOCK.stone, 'corridor floor stamped below the walkway')
+    assert.equal(r.chunks.getVoxel(20, 16, 20), BLOCK.rail, 'guaranteed walk paths should preserve authored rail cells')
     let railFound = false
     for (let x = 8; x <= 32 && !railFound; x += 1) {
         if (r.chunks.getVoxel(x, 16, 20) === BLOCK.rail) railFound = true

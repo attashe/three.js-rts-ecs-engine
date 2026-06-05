@@ -130,6 +130,35 @@ test('forest lift quest props are registered as compact readable assets', () => 
     assert.ok(sign.max.x - sign.min.x > 1.1, 'road sign should have a readable plank silhouette')
 })
 
+test('mine props are registered as compact readable assets', () => {
+    const kinds = [
+        'ore-pile',
+        'ore-crate',
+        'mine-tool-rack',
+        'broken-rail-cart',
+        'support-debris',
+        'notice-board',
+        'vent-fan',
+        'abandoned-lamp-cluster',
+    ] as const
+    for (const kind of kinds) {
+        assert.ok(PROP_KINDS.includes(kind))
+        assert.ok(PROP_LABELS[kind].length > 0)
+        const geometry = getPropModel(kind).geometry
+        geometry.computeBoundingBox()
+        assert.ok(geometry.boundingBox)
+        assert.ok(geometry.boundingBox!.min.y >= -0.001, `${kind} should sit on its placement base`)
+        assert.ok(geometry.boundingBox!.max.y > 0.10, `${kind} should have a visible silhouette`)
+    }
+
+    const cart = getPropModel('broken-rail-cart').geometry.boundingBox!
+    assert.ok(cart.max.x - cart.min.x > 0.9, 'broken rail cart should read wider than a small crate')
+    const rack = getPropModel('mine-tool-rack').geometry.boundingBox!
+    assert.ok(rack.max.y > 0.75, 'mine tool rack should stand tall enough for wall dressing')
+    const fan = getPropModel('vent-fan').geometry.boundingBox!
+    assert.ok(fan.max.x - fan.min.x > 0.6, 'vent fan should have a readable circular frame')
+})
+
 test('disposePropModels clears the cache so the next lookup rebuilds', () => {
     const before = getPropModel('bush').geometry
     disposePropModels()

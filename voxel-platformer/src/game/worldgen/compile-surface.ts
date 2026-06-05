@@ -338,7 +338,7 @@ function writeInitialTerrain(ctx: WorldgenCompileContext, grid: SurfaceGrid): vo
     for (let z = 0; z < ctx.sizeZ; z += 1) {
         for (let x = 0; x < ctx.sizeX; x += 1) writeTerrainColumn(ctx, grid, x, z, surfaceY(grid, x, z), surfaceBlock(grid, x, z))
     }
-    writeSurfaceBorderWalls(ctx, grid)
+    if (ctx.spec.terrain?.border_walls !== false) writeSurfaceBorderWalls(ctx, grid)
 }
 
 function surfaceSpawn(ctx: WorldgenCompileContext, grid: SurfaceGrid): VoxelCoord {
@@ -473,6 +473,10 @@ function relaxRoadGrade(
 
 function writeSurfaceBorderWalls(ctx: WorldgenCompileContext, grid: SurfaceGrid): void {
     const write = (x: number, z: number): void => {
+        // Don't seal authored edge exits: roads that reach the boundary and
+        // anchor/feature reservations stay open so their content is reachable.
+        const key = ctx.reservationKey(x, z)
+        if (ctx.roadCells.has(key) || ctx.reserved.has(key)) return
         const fromY = surfaceY(grid, x, z) + 1
         const toY = Math.min(ctx.sizeY - 1, fromY + SURFACE_BORDER_WALL_HEIGHT - 1)
         for (let y = fromY; y <= toY; y += 1) ctx.setVoxel(x, y, z, BLOCK.noWalk)

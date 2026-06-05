@@ -167,6 +167,20 @@ test('materials resolve direct block keys and default aliases', () => {
         block: BLOCK.dirt,
         source: 'default-alias',
     })
+    assert.deepEqual(resolveMaterial('iron_ore'), {
+        ok: true,
+        name: 'iron_ore',
+        blockKey: 'oreIron',
+        block: BLOCK.oreIron,
+        source: 'default-alias',
+    })
+    assert.deepEqual(resolveMaterial('oreCrystal'), {
+        ok: true,
+        name: 'oreCrystal',
+        blockKey: 'oreCrystal',
+        block: BLOCK.oreCrystal,
+        source: 'direct',
+    })
 })
 
 test('custom material aliases target engine block keys and unknown materials fail', () => {

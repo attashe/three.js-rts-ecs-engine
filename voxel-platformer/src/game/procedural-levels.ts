@@ -145,7 +145,7 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
     {
         id: PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
         file: `${PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID}.vplevel`,
-        name: 'Phase 12 Underground Mine Stress',
+        name: 'Abandoned Mine Shafts',
         generate: generatePhase12UndergroundMineStressLevel,
     },
 ]

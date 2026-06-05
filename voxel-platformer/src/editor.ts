@@ -54,7 +54,7 @@ import { createFenceRenderSystem } from './game/fence/fence-render-system'
 import { createLadderRenderSystem } from './game/ladder/ladder-render-system'
 import { mountEditorPanel } from './editor/editor-ui'
 import { createCinematicPreview } from './editor/cinematic-preview'
-import { consumePlaytestLevel } from './editor/playtest'
+import { consumePlaytestLevel, purgeStalePlaytestLevel } from './editor/playtest'
 import { loadLevelFromBuffer } from './editor/save-load'
 import type { GameWorld } from './engine/ecs/world'
 import type { EditorState } from './editor/editor-state'
@@ -97,6 +97,9 @@ async function main(): Promise<void> {
     // 12×12 grass pad when there's nothing to restore.
     const restored = await restoreSessionLevel(world, chunks, editorState)
     if (!restored) {
+        // No live playtest snapshot to restore — reclaim any IndexedDB bytes
+        // orphaned by a previous (closed) editor session before seeding fresh.
+        void purgeStalePlaytestLevel()
         for (let x = 0; x < 12; x++) {
             for (let z = 0; z < 12; z++) {
                 chunks.setVoxel(x, padY, z, BLOCK.grass)

@@ -144,6 +144,9 @@ export const BLOCK = {
     fence: 45,
     stairs: 46,
     ladder: 47,
+    oreIron: 48,
+    oreCopper: 49,
+    oreCrystal: 50,
 } as const
 
 /**
@@ -369,6 +372,19 @@ export const DEFAULT_PALETTE: Palette = {
             opacity: 0,
             renderAs: 'ladder',
         },
+        { name: 'iron ore', color: [0.35, 0.37, 0.38], solid: true, textureKey: 'stone' },
+        { name: 'copper ore', color: [0.45, 0.29, 0.20], solid: true, textureKey: 'stone' },
+        {
+            name: 'crystal ore',
+            color: [0.22, 0.62, 0.78],
+            solid: true,
+            textureKey: 'stone',
+            emissive: [0.12, 0.48, 0.72],
+            emissiveIntensity: 0.45,
+            lightColor: [0.16, 0.60, 0.95],
+            lightIntensity: 1.5,
+            lightDistance: 6,
+        },
     ],
 }
 
@@ -576,14 +592,7 @@ export function appendMissingDefaultPaletteEntries(palette: Palette): void {
     normalizeNoWalkBlock(palette)
     normalizeLiquidBlock(palette, 'water', BLOCK.water)
     normalizeLiquidBlock(palette, 'lava', BLOCK.lava)
-    appendMissingSpecialBlock(palette, BLOCK.torch)
-    appendMissingSpecialBlock(palette, BLOCK.unlitLantern)
-    appendMissingLiquidBlock(palette, 'lava', BLOCK.lava)
-    appendMissingStructureBlocks(palette)
-    appendMissingSpecialBlock(palette, BLOCK.rail)
-    appendMissingSpecialBlock(palette, BLOCK.fence)
-    appendMissingDefaultBlockByName(palette, BLOCK.stairs)
-    appendMissingSpecialBlock(palette, BLOCK.ladder)
+    appendMissingDefaultBlocks(palette)
 }
 
 function normalizeNoWalkBlock(palette: Palette): void {
@@ -598,30 +607,12 @@ function normalizeNoWalkBlock(palette: Palette): void {
     palette.entries[BLOCK.noWalk] = clonePalette({ entries: [defaultEntry] }).entries[0]!
 }
 
-function appendMissingSpecialBlock(palette: Palette, defaultIndex: number): void {
-    const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
-    if (!defaultEntry?.renderAs) return
-    if (palette.entries.some((entry) => entry.renderAs === defaultEntry.renderAs)) return
-    const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
-    entry.name = uniquePaletteName(palette, entry.name)
-    palette.entries.push(entry)
-}
-
 function normalizeLiquidBlock(palette: Palette, kind: LiquidBlockKind, defaultIndex: number): void {
     const entry = palette.entries[defaultIndex]
     const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
     if (!entry || defaultEntry?.liquid !== kind || entry.liquid === kind) return
     if (entry.name !== defaultEntry.name) return
     entry.liquid = kind
-}
-
-function appendMissingLiquidBlock(palette: Palette, kind: LiquidBlockKind, defaultIndex: number): void {
-    if (palette.entries.some((entry) => entry.liquid === kind)) return
-    const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
-    if (defaultEntry?.liquid !== kind) return
-    const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
-    entry.name = uniquePaletteName(palette, entry.name)
-    palette.entries.push(entry)
 }
 
 const DEFAULT_STRUCTURE_BLOCKS = [
@@ -654,17 +645,57 @@ const DEFAULT_STRUCTURE_BLOCKS = [
     BLOCK.fire,
 ] as const
 
-function appendMissingStructureBlocks(palette: Palette): void {
-    for (const index of DEFAULT_STRUCTURE_BLOCKS) {
-        appendMissingDefaultBlockByName(palette, index)
+type DefaultPaletteAppendRule =
+    | { index: number; by: 'name' }
+    | { index: number; by: 'renderAs' }
+    | { index: number; by: 'liquid'; liquid: LiquidBlockKind }
+
+const DEFAULT_PALETTE_APPEND_RULES: readonly DefaultPaletteAppendRule[] = [
+    { index: BLOCK.torch, by: 'renderAs' },
+    { index: BLOCK.unlitLantern, by: 'renderAs' },
+    { index: BLOCK.lava, by: 'liquid', liquid: 'lava' },
+    ...DEFAULT_STRUCTURE_BLOCKS.map((index) => ({ index, by: 'name' as const })),
+    { index: BLOCK.rail, by: 'renderAs' },
+    { index: BLOCK.fence, by: 'renderAs' },
+    { index: BLOCK.stairs, by: 'name' },
+    { index: BLOCK.ladder, by: 'renderAs' },
+    { index: BLOCK.oreIron, by: 'name' },
+    { index: BLOCK.oreCopper, by: 'name' },
+    { index: BLOCK.oreCrystal, by: 'name' },
+]
+
+function appendMissingDefaultBlocks(palette: Palette): void {
+    for (const rule of DEFAULT_PALETTE_APPEND_RULES) appendMissingDefaultBlock(palette, rule)
+}
+
+function appendMissingDefaultBlock(palette: Palette, rule: DefaultPaletteAppendRule): void {
+    const defaultEntry = DEFAULT_PALETTE.entries[rule.index]
+    if (!defaultEntry) return
+    if (rule.by === 'renderAs') {
+        if (!defaultEntry.renderAs) return
+        if (palette.entries.some((entry) => entry.renderAs === defaultEntry.renderAs)) return
+        appendDefaultBlock(palette, rule.index)
+        return
     }
+    if (rule.by === 'liquid') {
+        if (defaultEntry.liquid !== rule.liquid) return
+        if (palette.entries.some((entry) => entry.liquid === rule.liquid)) return
+        appendDefaultBlock(palette, rule.index)
+        return
+    }
+    appendMissingDefaultBlockByName(palette, rule.index)
 }
 
 function appendMissingDefaultBlockByName(palette: Palette, defaultIndex: number): void {
     const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
     if (!defaultEntry) return
     if (palette.entries.some((entry) => entry.name === defaultEntry.name)) return
+    appendDefaultBlock(palette, defaultIndex)
+}
 
+function appendDefaultBlock(palette: Palette, defaultIndex: number): void {
+    const defaultEntry = DEFAULT_PALETTE.entries[defaultIndex]
+    if (!defaultEntry) return
     const entry = clonePalette({ entries: [defaultEntry] }).entries[0]!
     if (palette.entries.length === defaultIndex) {
         palette.entries.push(entry)
