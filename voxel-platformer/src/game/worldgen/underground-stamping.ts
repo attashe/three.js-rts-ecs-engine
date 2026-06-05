@@ -45,6 +45,11 @@ export function carveSphere(ctx: WorldgenCompileContext, feature: UndergroundFea
 
 export function carveAir(ctx: WorldgenCompileContext, feature: UndergroundFeature, x: number, y: number, z: number): void {
     if (!ctx.inXYZ(x, y, z)) return
+    if (ctx.chunks.getVoxel(x, y, z) === BLOCK.air) {
+        feature.cells.add(coordKey(x, y, z))
+        feature.bounds = mergeBounds(feature.bounds, { minX: x, maxX: x, minY: y, maxY: y, minZ: z, maxZ: z })
+        return
+    }
     ctx.setVoxel(x, y, z, BLOCK.air)
     feature.cells.add(coordKey(x, y, z))
     feature.bounds = mergeBounds(feature.bounds, { minX: x, maxX: x, minY: y, maxY: y, minZ: z, maxZ: z })

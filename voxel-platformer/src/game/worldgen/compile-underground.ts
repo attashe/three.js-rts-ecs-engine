@@ -13,6 +13,8 @@ import { validateRequiredPaths } from './validate'
 import { createUndergroundState } from './underground-types'
 import { fillUnderground, applyStrata } from './underground-volume'
 import { applyCarvers, applyConnectors, applyMainPaths } from './underground-carvers'
+import { applyUndergroundCutaway } from './underground-cutaway'
+import { pruneUndergroundFiller } from './underground-prune'
 import {
     findBestSurfaceNear,
     refreshAllFeatureSurfaces,
@@ -47,6 +49,8 @@ export function compileUndergroundWorld(
         applyCarvers(ctx, state)
         applyConnectors(ctx, state)
         applyMainPaths(ctx, state)
+        applyUndergroundCutaway(ctx, state)
+        pruneUndergroundFiller(ctx, state)
         refreshAllFeatureSurfaces(ctx, state)
     })
     if (shouldStopWorldgen(ctx, opts)) return finishWorldgenCompile(ctx, emptyWorldgenMeta(spec))
