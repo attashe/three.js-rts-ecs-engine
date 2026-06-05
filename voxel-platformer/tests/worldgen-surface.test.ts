@@ -224,6 +224,80 @@ test('surface features alter terrain deterministically', () => {
     assert.equal(topBlockAt(result, 18, 30), BLOCK.sand, 'road material should use path alias')
 })
 
+test('road splines relax local low cells so the path stays walkable', () => {
+    const spec: WorldSpec = {
+        version: 1,
+        world: {
+            id: 'road.relaxation',
+            name: 'Road Relaxation',
+            type: 'surface',
+            seed: 'road-relaxation',
+            size: [32, 32, 32],
+        },
+        terrain: {
+            base_height: 7,
+            features: [
+                { id: 'sink', type: 'flatten_disc', center: [8, 16], radius: 1, height: 3, blend: 0, material: 'grass' },
+                {
+                    id: 'road',
+                    type: 'road_spline',
+                    points: [[6, 16], [8, 16], [10, 16]],
+                    width: 1,
+                    shoulder: 1,
+                    material: 'path',
+                    profile_smoothing_iterations: 0,
+                },
+            ],
+        },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+    }
+    const normalized = normalizeWorldSpec(spec)
+    assert.equal(normalized.ok, true)
+    if (!normalized.ok) return
+
+    const result = compileSurfaceWorld(normalized.spec)
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors))
+    for (let x = 6; x < 10; x += 1) {
+        const a = topYAt(result, x, 16)
+        const b = topYAt(result, x + 1, 16)
+        assert.ok(Math.abs(a - b) <= 1, `road step from x=${x} to x=${x + 1} is too large: ${a} -> ${b}`)
+        assert.equal(topBlockAt(result, x, 16), BLOCK.sand)
+    }
+})
+
+test('surface border collision walls follow local edge terrain height', () => {
+    const spec: WorldSpec = {
+        version: 1,
+        world: {
+            id: 'surface.dynamic.border',
+            name: 'Surface Dynamic Border',
+            type: 'surface',
+            seed: 'surface-dynamic-border',
+            size: [32, 32, 32],
+        },
+        terrain: {
+            base_height: 6,
+            features: [
+                { id: 'edge_peak', type: 'mountain_peak', center: [31, 16], radius: 9, height: 8, profile: 'mesa', roughness: 0, material: 'stone' },
+            ],
+        },
+        anchors: [{ id: 'spawn', place_at_xz: [8, 8] }],
+    }
+    const normalized = normalizeWorldSpec(spec)
+    assert.equal(normalized.ok, true)
+    if (!normalized.ok) return
+
+    const result = compileSurfaceWorld(normalized.spec)
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors))
+    const lowEdgeTop = topYAt(result, 0, 0)
+    const highEdgeTop = topYAt(result, 31, 16)
+
+    assert.equal(topBlockAt(result, 0, 0), BLOCK.noWalk)
+    assert.equal(topBlockAt(result, 31, 16), BLOCK.noWalk)
+    assert.ok(highEdgeTop > lowEdgeTop, `expected high edge wall top ${highEdgeTop} to exceed low edge wall top ${lowEdgeTop}`)
+    assert.notEqual(topBlockAt(result, 8, 8), BLOCK.noWalk)
+})
+
 test('missing validation references and optional placement skips are reported clearly', () => {
     const missingReference = normalizeWorldSpec({
         ...SURFACE_VALLEY_SPEC,

@@ -36,6 +36,10 @@ interface PointDistance {
 }
 
 const SUPPORTED_FEATURES = new Set(['cliff_band', 'road_spline', 'flatten_disc', 'mountain_peak'])
+const DEFAULT_ROAD_PROFILE_SMOOTHING = 2
+const DEFAULT_ROAD_GRADE_RELAXATION = 4
+const DEFAULT_ROAD_MAX_STEP = 1
+const SURFACE_BORDER_WALL_HEIGHT = 3
 
 export function compileSurfaceWorld(
     spec: NormalizedWorldSpec,
@@ -167,8 +171,22 @@ function applyRoadSpline(ctx: WorldgenCompileContext, grid: SurfaceGrid, feature
     const edgeBlock = typeof feature.edge_material === 'string'
         ? ctx.material(feature.edge_material, 'sand', `${path}.edge_material`)
         : surfaceBlock(grid, Math.round(points[0]![0]), Math.round(points[0]![1]))
-    const smoothing = ctx.number(feature.profile_smoothing_iterations, 0, `${path}.profile_smoothing_iterations`, { min: 0, integer: true })
+    const smoothing = ctx.number(
+        feature.profile_smoothing_iterations,
+        DEFAULT_ROAD_PROFILE_SMOOTHING,
+        `${path}.profile_smoothing_iterations`,
+        { min: 0, integer: true },
+    )
+    const maxStep = ctx.number(feature.max_step, DEFAULT_ROAD_MAX_STEP, `${path}.max_step`, { min: 0, integer: true })
+    const gradeRelaxation = ctx.number(
+        feature.grade_relaxation_iterations,
+        DEFAULT_ROAD_GRADE_RELAXATION,
+        `${path}.grade_relaxation_iterations`,
+        { min: 0, integer: true },
+    )
     const heights = points.map(([x, z]) => surfaceY(grid, Math.round(x), Math.round(z)))
+    const gradeCells: { x: number; z: number }[] = []
+    const gradeCellKeys = new Set<string>()
 
     for (let i = 0; i < smoothing; i += 1) {
         const next = heights.slice()
@@ -186,12 +204,16 @@ function applyRoadSpline(ctx: WorldgenCompileContext, grid: SurfaceGrid, feature
             if (r.dist <= width) {
                 setSurface(grid, x, z, roadY, block)
                 ctx.roadCells.add(ctx.reservationKey(x, z))
+                rememberRoadGradeCell(ctx, gradeCells, gradeCellKeys, x, z)
             } else {
                 const t = shoulder <= 0 ? 1 : (r.dist - width) / shoulder
                 setSurface(grid, x, z, ctx.clampSurfaceY(lerp(roadY, surfaceY(grid, x, z), smoothstep(t))), edgeBlock)
+                if (r.dist <= width + Math.min(1, shoulder)) rememberRoadGradeCell(ctx, gradeCells, gradeCellKeys, x, z)
             }
         }
     }
+
+    relaxRoadGrade(ctx, grid, gradeCells, gradeRelaxation, maxStep)
 }
 
 function applyFlattenDiscFeature(ctx: WorldgenCompileContext, grid: SurfaceGrid, feature: SurfaceFeatureSpec, path: string): void {
@@ -316,6 +338,7 @@ function writeInitialTerrain(ctx: WorldgenCompileContext, grid: SurfaceGrid): vo
     for (let z = 0; z < ctx.sizeZ; z += 1) {
         for (let x = 0; x < ctx.sizeX; x += 1) writeTerrainColumn(ctx, grid, x, z, surfaceY(grid, x, z), surfaceBlock(grid, x, z))
     }
+    writeSurfaceBorderWalls(ctx, grid)
 }
 
 function surfaceSpawn(ctx: WorldgenCompileContext, grid: SurfaceGrid): VoxelCoord {
@@ -389,6 +412,79 @@ function readReserve(value: unknown): [number, number, number] | null {
         return [Math.floor(Number(value[0])), Math.floor(Number(value[1])), Math.floor(Number(value[2]))]
     }
     return null
+}
+
+function rememberRoadGradeCell(
+    ctx: WorldgenCompileContext,
+    cells: { x: number; z: number }[],
+    keys: Set<string>,
+    x: number,
+    z: number,
+): void {
+    const key = ctx.reservationKey(x, z)
+    if (keys.has(key)) return
+    keys.add(key)
+    cells.push({ x, z })
+}
+
+function relaxRoadGrade(
+    ctx: WorldgenCompileContext,
+    grid: SurfaceGrid,
+    cells: readonly { x: number; z: number }[],
+    iterations: number,
+    maxStep: number,
+): void {
+    if (cells.length === 0 || iterations <= 0) return
+    const members = new Set(cells.map(({ x, z }) => ctx.reservationKey(x, z)))
+    for (let i = 0; i < iterations; i += 1) {
+        const next = new Map<string, number>()
+        for (const cell of cells) {
+            const y = surfaceY(grid, cell.x, cell.z)
+            let target = y
+            let neighborCount = 0
+            let neighborTotal = 0
+            let lo = -Infinity
+            let hi = Infinity
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+                const nx = cell.x + dx
+                const nz = cell.z + dz
+                const nkey = ctx.reservationKey(nx, nz)
+                if (!members.has(nkey)) continue
+                const ny = surfaceY(grid, nx, nz)
+                neighborCount += 1
+                neighborTotal += ny
+                lo = Math.max(lo, ny - maxStep)
+                hi = Math.min(hi, ny + maxStep)
+            }
+            if (neighborCount > 0) {
+                target = lo <= hi ? clamp(y, lo, hi) : Math.round((lo + hi) / 2)
+                const localAverage = Math.round((target * 2 + neighborTotal / neighborCount) / 3)
+                target = lo <= hi ? clamp(localAverage, lo, hi) : localAverage
+            }
+            next.set(ctx.reservationKey(cell.x, cell.z), ctx.clampSurfaceY(target))
+        }
+        for (const cell of cells) {
+            const y = next.get(ctx.reservationKey(cell.x, cell.z))
+            if (y === undefined) continue
+            setSurface(grid, cell.x, cell.z, y, surfaceBlock(grid, cell.x, cell.z))
+        }
+    }
+}
+
+function writeSurfaceBorderWalls(ctx: WorldgenCompileContext, grid: SurfaceGrid): void {
+    const write = (x: number, z: number): void => {
+        const fromY = surfaceY(grid, x, z) + 1
+        const toY = Math.min(ctx.sizeY - 1, fromY + SURFACE_BORDER_WALL_HEIGHT - 1)
+        for (let y = fromY; y <= toY; y += 1) ctx.setVoxel(x, y, z, BLOCK.noWalk)
+    }
+    for (let x = 0; x < ctx.sizeX; x += 1) {
+        write(x, 0)
+        write(x, ctx.sizeZ - 1)
+    }
+    for (let z = 1; z < ctx.sizeZ - 1; z += 1) {
+        write(0, z)
+        write(ctx.sizeX - 1, z)
+    }
 }
 
 function pointSegmentDistance(x: number, z: number, from: Vec2Tuple, to: Vec2Tuple): PointDistance {
