@@ -73,9 +73,9 @@ test('setPlayerTorchShadow round-trips + notifies live subscribers only on chang
     assert.equal(seen.length, 2, 'unsubscribed listener should stop firing')
 })
 
-test('debug info defaults on and notifies subscribers when changed', () => {
+test('debug info defaults off and notifies subscribers when changed', () => {
     __resetDebugInfoCache()
-    assert.equal(getDebugInfoEnabled(), true)
+    assert.equal(getDebugInfoEnabled(), false)
 
     const seen: boolean[] = []
     const unsubscribe = subscribeDebugInfo((enabled) => seen.push(enabled))
@@ -84,7 +84,7 @@ test('debug info defaults on and notifies subscribers when changed', () => {
     setDebugInfoEnabled(false)
     setDebugInfoEnabled(true)
 
-    assert.deepEqual(seen, [false, true])
+    assert.deepEqual(seen, [true, false, true])
     assert.equal(getDebugInfoEnabled(), true)
     unsubscribe()
 })

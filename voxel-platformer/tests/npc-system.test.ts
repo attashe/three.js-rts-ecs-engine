@@ -4,6 +4,7 @@ import { Group, LineSegments, Scene, type Object3D } from 'three'
 import { createGameWorld } from '../src/engine/ecs/world'
 import { createNpcModel } from '../src/game/npcs/npc-models'
 import { createNpcRenderSystem } from '../src/game/npcs/npc-render-system'
+import { setDebugInfoEnabled } from '../src/engine/render/render-settings'
 import { defeatedNpcSnapshot, registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
 import {
     NPC_MODEL_KINDS,
@@ -474,6 +475,7 @@ test('NPC renderer draws static collision boxes and live runtime hitboxes', () =
     const scene = new Scene()
     const collidable = npc('solid')
     const passable = { ...npc('passable'), id: 'passable', collisionEnabled: false }
+    setDebugInfoEnabled(true) // collider boxes only show with debug info on (read at system creation)
     const system = createNpcRenderSystem(scene, { getNpcs: () => [collidable, passable] })
     const world = createGameWorld()
 
@@ -492,6 +494,7 @@ test('NPC renderer draws static collision boxes and live runtime hitboxes', () =
     runtime.dispose()
     system.dispose?.()
     assert.equal(scene.children.includes(lines!), false)
+    setDebugInfoEnabled(false) // restore the default so other tests aren't affected
 })
 
 function findByName(root: Object3D, name: string): Object3D | null {
