@@ -76,7 +76,7 @@ import { createFenceRenderSystem } from './game/fence/fence-render-system'
 import { createRailCartSystem, nearestRailCartInteractionTarget } from './game/rail/rail-cart-system'
 import { createLadderRenderSystem } from './game/ladder/ladder-render-system'
 import { createLadderSystem, nearestLadderInteractionTarget } from './game/ladder/ladder-system'
-import { getTorchSystem } from './engine/render/render-settings'
+import { getDebugInfoEnabled, getTorchSystem } from './engine/render/render-settings'
 import { spawnCoinPile } from './game/pickups'
 import { spawnLevelStone } from './game/stones'
 import { registerPistonMechanism } from './game/mechanisms'
@@ -951,6 +951,7 @@ async function main(): Promise<void> {
             keyboardPan: false,
             edgePan: false,
             wheelZoom: true,
+            zoomMin: () => getDebugInfoEnabled() ? 0.25 : 0.42,
         }), 'cameraControl')
         .addSystem(createCameraFollowSystem(renderer.iso, { smoothing: 8 }), 'cameraFollow')
         .addSystem(createCinematicSystem(cinematicDirector), 'cinematic')
