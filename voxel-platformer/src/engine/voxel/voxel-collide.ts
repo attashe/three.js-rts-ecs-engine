@@ -17,6 +17,7 @@ export interface ObstacleSource {
 }
 
 const EPS = 1e-6
+const VERTICAL_SIDE_SLIDE_SKIN = 0.06
 
 /** Returns true if any solid voxel overlaps the AABB. */
 export function voxelAABBOverlap(chunks: ChunkManager, aabb: AABB): boolean {
@@ -133,6 +134,12 @@ export function sweepAxis(
     const startOverlapping = voxelAABBOverlap(chunks, tmpStart) ||
         (obstacles ? obstacles.intersects(tmpStart, excludeEid) : false)
     if (startOverlapping) {
+        if (axis === 'y' && anchor === 'foot') {
+            const slideHalf = verticalSideSlideHalf(half)
+            if (slideHalf && !overlapsAt(chunks, pos, slideHalf, anchor, obstacles, excludeEid)) {
+                return sweepAxis(chunks, pos, slideHalf, axis, delta, obstacles, excludeEid, anchor)
+            }
+        }
         return sweepAxisOnce(chunks, pos, half, axis, delta, obstacles, excludeEid, anchor)
     }
 
@@ -210,6 +217,31 @@ function sweepAxisOnce(
     else if (axis === 'y') pos.y += lo
     else pos.z += lo
     return { moved: lo, blocked: true }
+}
+
+function verticalSideSlideHalf(half: { x: number; y: number; z: number }): { x: number; y: number; z: number } | null {
+    const inset = Math.min(VERTICAL_SIDE_SLIDE_SKIN, half.x * 0.45, half.z * 0.45)
+    if (inset <= EPS) return null
+    return {
+        x: half.x - inset,
+        y: half.y,
+        z: half.z - inset,
+    }
+}
+
+function overlapsAt(
+    chunks: ChunkManager,
+    pos: { x: number; y: number; z: number },
+    half: { x: number; y: number; z: number },
+    anchor: ColliderAnchor,
+    obstacles: ObstacleSource | null | undefined,
+    excludeEid: number | undefined,
+): boolean {
+    const tmp: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 }
+    aabbForAnchor(pos, half, anchor, tmp)
+    if (voxelAABBOverlap(chunks, tmp)) return true
+    if (obstacles && obstacles.intersects(tmp, excludeEid)) return true
+    return false
 }
 
 /** Standing-on-ground check: is there a solid voxel (or registered obstacle)

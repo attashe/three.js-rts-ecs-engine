@@ -169,6 +169,31 @@ test('sweepAxis: body inside a wall reports not-blocked when destination still o
     assert.equal(pos.x, 1.4)
 })
 
+test('sweepAxis: vertical movement slides through shallow side overlap', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(1, 1, 0, BLOCK.stone)
+    const pos = { x: 0.7, y: 1, z: 0.5 }
+    const half = { x: 0.34, y: 0.77, z: 0.34 }
+
+    const sweep = sweepAxis(chunks, pos, half, 'y', 0.25)
+
+    assert.equal(sweep.blocked, false)
+    assert.ok(Math.abs(pos.y - 1.25) < 1e-9, `expected y=1.25 while sliding up a side face, got ${pos.y}`)
+})
+
+test('sweepAxis: vertical side slide still lands on real floor', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    chunks.setVoxel(1, 1, 0, BLOCK.stone)
+    const pos = { x: 0.7, y: 1.2, z: 0.5 }
+    const half = { x: 0.34, y: 0.77, z: 0.34 }
+
+    const sweep = sweepAxis(chunks, pos, half, 'y', -0.6)
+
+    assert.equal(sweep.blocked, true)
+    assert.ok(pos.y >= 0.999 && pos.y <= 1.001, `expected y≈1 after landing on floor, got ${pos.y}`)
+})
+
 test('sweepAxis: centre-anchored body lands with its centre half above the floor', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     chunks.setVoxel(0, 0, 0, BLOCK.stone)
@@ -246,6 +271,38 @@ test('PhysicsSystem: ordinary one-block ledges still block actors', () => {
     assert.ok(Position.x[eid] < 0.7, `expected actor to stop before the ledge, got x=${Position.x[eid]}`)
     assert.equal(Position.y[eid], 1)
     assert.equal(Velocity.x[eid], 0)
+})
+
+test('PhysicsSystem: jump is not cancelled by shallow side overlap', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    for (let y = 1; y <= 3; y++) chunks.setVoxel(1, y, 0, BLOCK.stone)
+    const world = createGameWorld()
+    const eid = addMovableActor(world, 0.7, 1, 0.5)
+    Velocity.x[eid] = 0
+    Velocity.y[eid] = 8
+    Velocity.z[eid] = 0
+
+    createPhysicsSystem(chunks).update(world, 1 / 60)
+
+    assert.ok(Position.y[eid] > 1.05, `expected jump to raise actor despite side overlap, got y=${Position.y[eid]}`)
+    assert.ok(Velocity.y[eid] > 0, `expected upward velocity to remain after jump, got vy=${Velocity.y[eid]}`)
+})
+
+test('PhysicsSystem: falling beside a block reaches the floor instead of hanging mid-air', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    for (let y = 1; y <= 3; y++) chunks.setVoxel(1, y, 0, BLOCK.stone)
+    const world = createGameWorld()
+    const eid = addMovableActor(world, 0.7, 1.2, 0.5)
+    Velocity.x[eid] = 0
+    Velocity.y[eid] = -3
+    Velocity.z[eid] = 0
+
+    createPhysicsSystem(chunks, { gravity: 0 }).update(world, 0.2)
+
+    assert.ok(Position.y[eid] >= 0.999 && Position.y[eid] <= 1.001, `expected actor to land on floor, got y=${Position.y[eid]}`)
+    assert.equal(Velocity.y[eid], 0)
 })
 
 test('PhysicsSystem: a jump carries the actor over a one-block ledge instead of sticking to its side', () => {

@@ -182,6 +182,22 @@ export class ChunkManager {
         return this.chunks.size
     }
 
+    /** Drop allocated chunks that contain no non-air voxels. Generators and
+     *  import cleanup passes can call this after large delete operations so
+     *  saves do not keep serializing empty 32³ buffers. */
+    pruneEmptyChunks(): number {
+        let removed = 0
+        for (const [key, chunk] of this.chunks) {
+            if (chunk.nonAirCount !== 0) continue
+            this.chunks.delete(key)
+            this.dirty.delete(key)
+            this.bulkDirty?.delete(key)
+            removed++
+        }
+        if (removed > 0) this.revisionValue++
+        return removed
+    }
+
     revision(): number {
         return this.revisionValue
     }

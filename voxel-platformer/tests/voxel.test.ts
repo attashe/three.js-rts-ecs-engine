@@ -89,6 +89,22 @@ test('chunk contentHash is recomputed by replaceData and survives level round-tr
     assert.equal(restoredChunk.nonAirCount, 2)
 })
 
+test('ChunkManager prunes empty chunks after large delete passes', () => {
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const startRevision = chunks.revision()
+    chunks.setVoxel(0, 0, 0, BLOCK.stone)
+    chunks.getOrCreate(1, 0, 0)
+    assert.equal(chunks.chunkCount(), 2)
+
+    chunks.setVoxel(0, 0, 0, BLOCK.air)
+    const removed = chunks.pruneEmptyChunks()
+
+    assert.equal(removed, 2)
+    assert.equal(chunks.chunkCount(), 0)
+    assert.ok(chunks.revision() > startRevision)
+    assert.equal(chunks.drainDirty().length, 0)
+})
+
 test('ChunkManager owns a mutable palette copy and can replace it', () => {
     const initial = clonePalette(DEFAULT_PALETTE)
     initial.entries[BLOCK.grass]!.name = 'editor grass'
