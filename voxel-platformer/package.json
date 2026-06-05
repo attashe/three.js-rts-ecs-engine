@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:game": "npm run levels:procedural && tsc --noEmit && vite build --mode game",
     "preview": "vite preview",
     "audio:samples": "node scripts/generate-audio-samples.mjs",
     "worldgen:compile": "tsc -p tsconfig.test.json && cp tests/package.cjs.json .tmp/test-build/package.json && node .tmp/test-build/scripts/compile-world-spec.js",

@@ -181,8 +181,9 @@ function buildMenu(opts: BuildMenuOptions): {
 
     const returnButton = menuButton('Return', opts.onReturn)
     const settingsButton = menuButton('Settings', opts.onSettings)
-    const exitButton = menuButton('Exit to Editor', opts.onExit)
-    menuPanel.append(returnButton, settingsButton, exitButton)
+    menuPanel.append(returnButton, settingsButton)
+    // The public game build has no editor to exit to — hide the button.
+    if (!__GAME_BUILD__) menuPanel.append(menuButton('Exit to Editor', opts.onExit))
 
     const settingsTitle = document.createElement('h1')
     settingsTitle.textContent = 'Settings'

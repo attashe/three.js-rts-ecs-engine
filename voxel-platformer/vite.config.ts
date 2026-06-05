@@ -4,32 +4,42 @@ import { basename, extname, join, resolve } from 'node:path'
 
 const LEVELS_DIR = resolve(__dirname, 'public/levels')
 
-export default defineConfig({
-  root: '.',
-  plugins: [levelLibraryPlugin()],
-  build: {
-    outDir: 'dist',
-    emptyOutDir: true,
-    target: 'esnext',
-    rollupOptions: {
-      input: {
-        game: resolve(__dirname, 'index.html'),
-        editor: resolve(__dirname, 'editor.html'),
-        fxDemo: resolve(__dirname, 'fx-demo.html'),
-        soundDemo: resolve(__dirname, 'sound-demo.html'),
-        proceduralStructures: resolve(__dirname, 'procedural-structures.html'),
-        backdropDemo: resolve(__dirname, 'backdrop-demo.html'),
-        animation: resolve(__dirname, 'animation.html'),
+// `--mode game` ships the public bundle: only the game page (index.html). The
+// default build keeps every page (editor + demos) so dev/authoring tools still
+// build. `__GAME_BUILD__` lets game code drop editor-only affordances.
+export default defineConfig(({ mode }) => {
+  const gameOnly = mode === 'game'
+  const fullInput = {
+    game: resolve(__dirname, 'index.html'),
+    editor: resolve(__dirname, 'editor.html'),
+    fxDemo: resolve(__dirname, 'fx-demo.html'),
+    soundDemo: resolve(__dirname, 'sound-demo.html'),
+    proceduralStructures: resolve(__dirname, 'procedural-structures.html'),
+    backdropDemo: resolve(__dirname, 'backdrop-demo.html'),
+    animation: resolve(__dirname, 'animation.html'),
+  }
+  return {
+    root: '.',
+    plugins: [levelLibraryPlugin()],
+    define: {
+      __GAME_BUILD__: JSON.stringify(gameOnly),
+    },
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+      target: 'esnext',
+      rollupOptions: {
+        input: gameOnly ? { game: resolve(__dirname, 'index.html') } : fullInput,
       },
     },
-  },
-  server: {
-    port: 8001,
-    open: process.env.VISUAL_TEST ? false : '/index.html',
-  },
-  worker: {
-    format: 'es',
-  },
+    server: {
+      port: 8001,
+      open: process.env.VISUAL_TEST ? false : '/index.html',
+    },
+    worker: {
+      format: 'es',
+    },
+  }
 })
 
 function levelLibraryPlugin(): Plugin {
