@@ -58,6 +58,9 @@ export const TILE_NAMES = [
     'tool_panel',
     'ore_shelf',
     'record_shelf',
+    'ore_iron',
+    'ore_copper',
+    'ore_crystal',
 ] as const
 
 export type TileName = (typeof TILE_NAMES)[number]

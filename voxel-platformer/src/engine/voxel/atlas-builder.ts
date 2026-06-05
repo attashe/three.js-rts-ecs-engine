@@ -66,6 +66,9 @@ const PAINTERS: Record<TileName, TilePainter> = {
     tool_panel: paintToolPanel,
     ore_shelf: paintOreShelf,
     record_shelf: paintRecordShelf,
+    ore_iron: paintOreIron,
+    ore_copper: paintOreCopper,
+    ore_crystal: paintOreCrystal,
 }
 
 export function buildVoxelAtlas(): AtlasBuildResult {
@@ -260,27 +263,63 @@ function paintWood(rgba: Uint8Array, originX: number, originY: number): void {
     }
 }
 
-/** Closed chest — plank grain plus a dark seam and metal banding. */
+/** Closed chest — a banded wooden coffer: vertical plank slats, an iron
+ *  rim, a lid seam across the upper third, and a centred lock plate with a
+ *  keyhole. The strong silhouette reads as a chest at iso/32px sizes. */
 function paintChest(rgba: Uint8Array, originX: number, originY: number): void {
-    paintWood(rgba, originX, originY)
+    const rng = makeRng(7301)
+    // Warm plank body with faint vertical slat grain.
     for (let y = 0; y < TILE_SIZE; y++) {
         for (let x = 0; x < TILE_SIZE; x++) {
-            if (y === 15 || y === 16) setLum(rgba, originX + x, originY + y, 0.56)
-            if (x === 7 || x === 24) setLum(rgba, originX + x, originY + y, 0.70)
-            if (x >= 14 && x <= 17 && y >= 13 && y <= 19) setLum(rgba, originX + x, originY + y, 0.62)
+            let lum = 0.95 + (rng() - 0.5) * 0.05
+            if (x % 8 === 0 || x % 8 === 7) lum *= 0.95
+            setLum(rgba, originX + x, originY + y, lum)
         }
     }
+    // Iron rim around the edges (two-pixel band on each side).
+    for (let i = 0; i < TILE_SIZE; i++) {
+        for (const e of [1, 2, TILE_SIZE - 2, TILE_SIZE - 3]) {
+            mulLum(rgba, originX + i, originY + e, 0.74)
+            mulLum(rgba, originX + e, originY + i, 0.74)
+        }
+    }
+    // Lid seam across the upper third — the lid/body division.
+    for (let x = 0; x < TILE_SIZE; x++) {
+        setLum(rgba, originX + x, originY + 11, 0.5)
+        setLum(rgba, originX + x, originY + 12, 0.56)
+    }
+    // Centred lock plate straddling the seam, with a dark keyhole.
+    for (let y = 8; y <= 16; y++) {
+        for (let x = 13; x <= 18; x++) setLum(rgba, originX + x, originY + y, 0.84)
+    }
+    for (let y = 8; y <= 16; y++) {
+        mulLum(rgba, originX + 13, originY + y, 0.6)
+        mulLum(rgba, originX + 18, originY + y, 0.6)
+    }
+    setLum(rgba, originX + 15, originY + 12, 0.36)
+    setLum(rgba, originX + 16, originY + 12, 0.36)
+    setLum(rgba, originX + 15, originY + 13, 0.42)
+    setLum(rgba, originX + 16, originY + 13, 0.42)
 }
 
-/** Open chest — the same wood surface with a darker interior stripe. */
+/** Open chest — the lid is up (seam pushed to the top), revealing a dark
+ *  interior cavity with a faint contents glint, keeping the iron rim. */
 function paintOpenChest(rgba: Uint8Array, originX: number, originY: number): void {
     paintChest(rgba, originX, originY)
-    for (let y = 5; y <= 12; y++) {
-        for (let x = 4; x < TILE_SIZE - 4; x++) setLum(rgba, originX + x, originY + y, 0.54)
+    // Carve a contained open interior over the lid/lock region. Kept moderate
+    // (not pitch black) so the tile still averages bright enough.
+    for (let y = 8; y <= 15; y++) {
+        for (let x = 7; x < TILE_SIZE - 7; x++) setLum(rgba, originX + x, originY + y, 0.66)
     }
-    for (let x = 4; x < TILE_SIZE - 4; x++) {
-        setLum(rgba, originX + x, originY + 4, 0.72)
-        setLum(rgba, originX + x, originY + 13, 0.68)
+    // Bright lifted lid above the opening + lip lines top and bottom.
+    for (let x = 7; x < TILE_SIZE - 7; x++) {
+        for (let y = 3; y <= 6; y++) setLum(rgba, originX + x, originY + y, 0.97)
+        setLum(rgba, originX + x, originY + 7, 0.82)
+        setLum(rgba, originX + x, originY + 16, 0.76)
+    }
+    // Faint glint of contents inside.
+    for (const [gx, gy] of [[11, 13], [18, 10], [21, 14], [14, 12]] as const) {
+        setLum(rgba, originX + gx, originY + gy, 0.9)
     }
 }
 
@@ -356,6 +395,61 @@ function paintRecordShelf(rgba: Uint8Array, originX: number, originY: number): v
     for (let x = 7; x <= 13; x += 2) drawBookSpine(rgba, originX + x, originY + 9, 0.68 + (x % 4) * 0.04)
     for (let x = 18; x <= 24; x += 3) drawScroll(rgba, originX + x, originY + 10)
     for (let x = 8; x <= 24; x += 2) drawBookSpine(rgba, originX + x, originY + 18, 0.72)
+}
+
+/** Iron ore — stone shot through with angular metallic nuggets: a dark
+ *  rim around a bright core so each speck reads as a hard chunk of ore. */
+function paintOreIron(rgba: Uint8Array, originX: number, originY: number): void {
+    paintStone(rgba, originX, originY)
+    scatterOre(rgba, originX, originY, 4801, 8, (x, y) => {
+        drawSoftRect(rgba, x - 1, y - 1, 3, 3, 0.72) // dark socket
+        setLum(rgba, x, y, 0.99)                      // metallic glint
+        setLum(rgba, x + 1, y, 0.9)
+        setLum(rgba, x, y + 1, 0.88)
+    })
+}
+
+/** Copper ore — rounder, veinier blobs than iron, with a soft highlight
+ *  so the deposits read as smoother metal pockets. */
+function paintOreCopper(rgba: Uint8Array, originX: number, originY: number): void {
+    paintStone(rgba, originX, originY)
+    scatterOre(rgba, originX, originY, 4907, 7, (x, y) => {
+        drawSoftRect(rgba, x - 1, y - 1, 4, 3, 0.78) // blob body
+        setLum(rgba, x, y, 0.97)
+        setLum(rgba, x + 1, y, 1.0)                   // highlight
+        setLum(rgba, x + 2, y + 1, 0.86)
+    })
+}
+
+/** Crystal ore — faceted gems embedded in stone: bright diamond cores
+ *  with shaded facet edges so they catch the eye (matches the block's
+ *  emissive glow). */
+function paintOreCrystal(rgba: Uint8Array, originX: number, originY: number): void {
+    paintStone(rgba, originX, originY)
+    scatterOre(rgba, originX, originY, 5021, 6, (x, y) => {
+        setLum(rgba, x, y - 2, 0.7)
+        setLum(rgba, x - 1, y - 1, 0.82); setLum(rgba, x, y - 1, 1.0); setLum(rgba, x + 1, y - 1, 0.8)
+        setLum(rgba, x - 1, y, 0.9); setLum(rgba, x, y, 1.0); setLum(rgba, x + 1, y, 0.88)
+        setLum(rgba, x - 1, y + 1, 0.74); setLum(rgba, x, y + 1, 0.84); setLum(rgba, x + 1, y + 1, 0.72)
+        setLum(rgba, x, y + 2, 0.68)
+    })
+}
+
+/** Deterministic scatter of ore specks within the tile interior. */
+function scatterOre(
+    rgba: Uint8Array,
+    originX: number,
+    originY: number,
+    seed: number,
+    count: number,
+    draw: (x: number, y: number) => void,
+): void {
+    const rng = makeRng(seed)
+    for (let i = 0; i < count; i++) {
+        const x = originX + 4 + Math.floor(rng() * (TILE_SIZE - 8))
+        const y = originY + 4 + Math.floor(rng() * (TILE_SIZE - 8))
+        draw(x, y)
+    }
 }
 
 function drawSoftRect(rgba: Uint8Array, x0: number, y0: number, w: number, h: number, lum: number): void {
