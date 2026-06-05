@@ -181,6 +181,20 @@ test('materials resolve direct block keys and default aliases', () => {
         block: BLOCK.oreCrystal,
         source: 'direct',
     })
+    assert.deepEqual(resolveMaterial('tool_panel'), {
+        ok: true,
+        name: 'tool_panel',
+        blockKey: 'toolPanel',
+        block: BLOCK.toolPanel,
+        source: 'default-alias',
+    })
+    assert.deepEqual(resolveMaterial('ledger-shelf'), {
+        ok: true,
+        name: 'ledger-shelf',
+        blockKey: 'recordShelf',
+        block: BLOCK.recordShelf,
+        source: 'default-alias',
+    })
 })
 
 test('custom material aliases target engine block keys and unknown materials fail', () => {

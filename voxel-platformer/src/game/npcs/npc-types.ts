@@ -25,6 +25,7 @@ export const NPC_MODEL_KINDS = [
     'player',
     'large-troll',
     'rabbit',
+    'spider',
     'archer',
     'shield-warrior',
     'shield-spearman',
@@ -38,6 +39,7 @@ export const NPC_MODEL_LABELS: Record<NpcModelKind, string> = {
     player: 'Player',
     'large-troll': 'Large Troll',
     rabbit: 'Rabbit',
+    spider: 'Spider',
     archer: 'Archer',
     'shield-warrior': 'Shield Warrior',
     'shield-spearman': 'Shield Spearman',
@@ -275,6 +277,7 @@ export interface StuckArrow {
 export const NPC_DEFAULT_HP = 2
 export const TROLL_DEFAULT_HP = 5
 export const RABBIT_DEFAULT_HP = 1
+export const SPIDER_DEFAULT_HP = 2
 export const SHIELD_WARRIOR_DEFAULT_HP = 4
 export const SHIELD_SPEARMAN_DEFAULT_HP = 4
 
@@ -286,6 +289,7 @@ export function npcDefaultHp(npc: Pick<NpcConfig, 'model'>): number {
     switch (npc.model) {
         case 'large-troll': return TROLL_DEFAULT_HP
         case 'rabbit': return RABBIT_DEFAULT_HP
+        case 'spider': return SPIDER_DEFAULT_HP
         case 'shield-spearman': return SHIELD_SPEARMAN_DEFAULT_HP
         case 'shield-warrior': return SHIELD_WARRIOR_DEFAULT_HP
         default: return NPC_DEFAULT_HP
@@ -386,6 +390,7 @@ export function defaultNpcBeard(model: NpcModelKind, variant: NpcVariantKind = d
             }
         case 'player':
         case 'rabbit':
+        case 'spider':
         case 'archer':
             return 'none'
         case 'shield-spearman':
@@ -416,6 +421,7 @@ export function defaultNpcEquipment(model: NpcModelKind, variant: NpcVariantKind
             }
         case 'player':
         case 'rabbit':
+        case 'spider':
             return { handR: null, handL: null }
         case 'archer':
             return { handR: null, handL: 'bow' }

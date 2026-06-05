@@ -36,6 +36,11 @@ export const GameAudio = {
     MusicTown: 'music.amb.town',
     MusicTension: 'music.amb.tension',
     MusicCave: 'music.amb.cave',
+    /** Abandoned dwarf-mine bed ("Hollowdeep") — darker/heavier than
+     *  `MusicCave`: a faded dwarf-hall motif, cold organ swell, ghost-forge
+     *  metal rings, drip echoes, and timber creaks. Set as the environment
+     *  track for deep mine levels. */
+    MusicMine: 'music.amb.mine',
 
     /** Themed location/screen music — richer, composed pieces (vs the
      *  always-on ambient beds). Set as a level `environment` bed, the title
@@ -122,6 +127,29 @@ export const GameAudio = {
     SpellOrbCast: 'sfx.spell.orb.cast',
     SpellOrbZap: 'sfx.spell.orb.zap',
 
+    // ── Vehicles ─────────────────────────────────────────────────────
+    // Looping bed played spatially while a rail cart moves; stopped (with
+    // a short fade) when the cart halts. See the rail-cart system.
+    CartRolling: 'sfx.cart.rolling',
+
+    // ── Consumables ──────────────────────────────────────────────────
+    // Fired when the player uses a held consumable: a drink cue for
+    // potions, an eat cue for food.
+    ConsumeDrink: 'sfx.consume.drink',
+    ConsumeEat: 'sfx.consume.eat',
+
+    // ── Containers ───────────────────────────────────────────────────
+    // Spatial cue when a loot chest is opened (lid creak + treasure ring).
+    ChestOpen: 'sfx.chest.open',
+
+    // ── Creatures: spider ─────────────────────────────────────────────
+    // Spatial spider voice — chitter on lunge/attack, screech on hurt,
+    // descending screech on death. Played from the NPC render hooks for
+    // NPCs whose model is `spider`.
+    SpiderChitter: 'sfx.spider.chitter',
+    SpiderHurt: 'sfx.spider.hurt',
+    SpiderDie: 'sfx.spider.die',
+
     // ── One-shot effects ─────────────────────────────────────────────
     Thunder: 'sfx.thunder',
     FireWhoosh: 'sfx.fire.whoosh',
@@ -202,6 +230,22 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.AmbMagic,  url: path('magic-loop.wav'),  volume: 0.30, loop: true, maxInstances: 3, priority: 1 },
         { id: GameAudio.TorchFire, url: path('torch-loop.wav'),  volume: 0.22, loop: true, maxInstances: 8, priority: 1 },
 
+        // Vehicles — looping rolling bed; a couple of carts may move at once.
+        { id: GameAudio.CartRolling, url: path('cart-rolling-loop.wav'), volume: 0.34, loop: true, maxInstances: 4, priority: 2 },
+
+        // Consumables — short one-shots on use (drink potion / eat food).
+        { id: GameAudio.ConsumeDrink, url: path('consume-drink.wav'), volume: 0.52, maxInstances: 3, priority: 3 },
+        { id: GameAudio.ConsumeEat,   url: path('consume-eat.wav'),   volume: 0.48, maxInstances: 3, priority: 3 },
+
+        // Containers — chest open (spatial). Few open at once, so a small cap.
+        { id: GameAudio.ChestOpen, url: path('chest-open.wav'), volume: 0.56, maxInstances: 3, priority: 3 },
+
+        // Creatures: spider — spatial, played from NPC render hooks. Caps are
+        // generous so a nest of spiders attacking at once never starves voices.
+        { id: GameAudio.SpiderChitter, url: path('spider-chitter.wav'), volume: 0.44, maxInstances: 5, priority: 2 },
+        { id: GameAudio.SpiderHurt,    url: path('spider-hurt.wav'),    volume: 0.46, maxInstances: 5, priority: 2 },
+        { id: GameAudio.SpiderDie,     url: path('spider-die.wav'),     volume: 0.52, maxInstances: 4, priority: 3 },
+
         // One-shot effects
         { id: GameAudio.Thunder,        url: path('thunder.wav'),         volume: 0.78, maxInstances: 2, priority: 5 },
         { id: GameAudio.FireWhoosh,     url: path('fire-whoosh.wav'),     volume: 0.55, maxInstances: 3, priority: 3 },
@@ -234,6 +278,7 @@ export const GAME_AUDIO_MANIFEST: AudioManifest = {
         { id: GameAudio.MusicTown,        url: path('amb-town-loop.wav'),         volume: 0.30, loop: true, priority: 1 },
         { id: GameAudio.MusicTension,     url: path('amb-tension-loop.wav'),      volume: 0.40, loop: true, priority: 1 },
         { id: GameAudio.MusicCave,        url: path('amb-cave-loop.wav'),         volume: 0.40, loop: true, priority: 1 },
+        { id: GameAudio.MusicMine,        url: path('amb-mine-loop.wav'),         volume: 0.42, loop: true, priority: 1 },
         // Themed location/screen music.
         { id: GameAudio.ThemeMenu,        url: path('theme-menu-loop.wav'),       volume: 0.34, loop: true, priority: 1 },
         { id: GameAudio.ThemeTavern,      url: path('theme-tavern-loop.wav'),     volume: 0.32, loop: true, priority: 1 },

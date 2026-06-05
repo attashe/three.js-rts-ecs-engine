@@ -13,6 +13,7 @@ import type { EditorProp } from '../props/prop-types'
 import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from '../sound-sources'
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from '../weather-config'
 import type { VoxelCoord } from './spec-types'
+import type { LootChestConfig } from '../chests'
 
 export interface WorldgenLevelDraftInit {
     name: string
@@ -39,6 +40,7 @@ export class WorldgenLevelDraft {
     zones: Zone[] = []
     soundSources: SoundSourceConfig[] = []
     railCarts: RailCartConfig[] = []
+    chests: LootChestConfig[] = []
     soundZones: SoundZoneConfig[] = []
     environment?: EnvironmentConfig
     weatherZones: WeatherZoneRuntimeConfig[] = []
@@ -74,6 +76,7 @@ export class WorldgenLevelDraft {
             zones: this.zones,
             soundSources: this.soundSources,
             railCarts: this.railCarts,
+            chests: this.chests,
             soundZones: this.soundZones,
             environment: this.environment,
             weatherZones: this.weatherZones,

@@ -331,6 +331,10 @@ writeWav('amb-garden-loop.wav',  ambGardenLoop(13.0))
 writeWav('amb-town-loop.wav',    ambTownLoop(14.0))
 writeWav('amb-tension-loop.wav', ambTensionLoop(10.0))
 writeWav('amb-cave-loop.wav',    ambCaveLoop(16.0))
+// Abandoned dwarf mine — "Hollowdeep". Darker/heavier than the cave bed,
+// with a faded dwarf-hall motif, a cold organ swell, ghost-forge metal
+// rings, echoing drops, timber-support creaks, and a deep shaft draft.
+writeWav('amb-mine-loop.wav',    ambMineLoop(19.0))
 
 // Themed music set — richer, more "composed" location/screen themes than
 // the always-on ambient beds: a hopeful Menu title theme, a merry Tavern
@@ -448,6 +452,77 @@ writeWav('quest-fanfare.wav', mix(0.92, [
     note(0.36, 0.78, 1760, 0.48),  // A6 (sustained)
     note(0.40, 0.78, 2217, 0.18),  // C#7 — sparkle
     filteredNoise(0.00, 0.92, 0.04, 4500, 4101),
+]))
+
+// ── Vehicles ─────────────────────────────────────────────────────────
+// Rail cart rolling — a looping bed played spatially while a cart moves
+// and stopped when it halts. Low wheel rumble + friction hiss + evenly
+// spaced rail-joint clacks (so the loop wraps seamlessly) + a faint axle
+// squeak that drifts so it never feels static.
+writeWav('cart-rolling-loop.wav', cartRollingLoop(1.5))
+
+// ── Consumables ──────────────────────────────────────────────────────
+// One-shots fired when the player uses a held consumable. `drink` is a
+// soft cork-pop + liquid gulps + a satisfied "ahh" of relief (potions);
+// `eat` is a couple of muffled bites with a crunchy transient (food).
+writeWav('consume-drink.wav', mix(0.62, [
+    noiseBurst(0.00, 0.03, 0.30, 5101),                 // cork / lip pop
+    bubble(0.04, 0.16, 300, 0.30, 5103),                // gulp 1
+    bubble(0.18, 0.30, 260, 0.28, 5107),                // gulp 2
+    bubble(0.32, 0.44, 220, 0.24, 5113),                // gulp 3
+    sineChirp(0.46, 0.60, 360, 300, 0.10),              // soft "ahh" tail
+    filteredNoise(0.00, 0.44, 0.05, 900, 5119),         // liquid body
+]))
+writeWav('consume-eat.wav', mix(0.46, [
+    noiseBurst(0.00, 0.05, 0.34, 5201),                 // first bite crunch
+    filteredNoise(0.00, 0.10, 0.18, 2600, 5203),        // chew grit
+    pluck(0.02, 0.12, 150, 0.18),                        // muffled body
+    noiseBurst(0.18, 0.23, 0.28, 5209),                 // second bite
+    filteredNoise(0.18, 0.28, 0.14, 2400, 5211),
+    pluck(0.20, 0.30, 140, 0.14),
+]))
+
+// ── Containers ───────────────────────────────────────────────────────
+// Loot chest opening — a wooden lid creak + latch knock, then a short
+// rising "treasure" sparkle so opening a chest feels rewarding. Played
+// spatially at the chest when it is opened.
+writeWav('chest-open.wav', mix(0.74, [
+    chirpNoise(0.00, 0.34, 700, 280, 0.16, 6011),       // hinge creak (lid lifting)
+    pluck(0.28, 0.40, 150, 0.30),                        // lid knock / latch body
+    noiseBurst(0.28, 0.32, 0.28, 6017),                  // latch clack
+    note(0.38, 0.58, 880, 0.16),                         // treasure sparkle…
+    note(0.46, 0.66, 1175, 0.13),
+    shimmer(0.48, 0.74, 1568, 0.10),                     // …with a soft ring tail
+]))
+
+// ── Creatures: spider ────────────────────────────────────────────────
+// A cave spider's voice. `chitter` plays as it lunges (rapid mandible
+// clicks + a breathy hiss); `hurt` is a short shrill screech; `die` is a
+// descending death screech with the legs skittering to a collapse.
+writeWav('spider-chitter.wav', mix(0.36, [
+    noiseBurst(0.00, 0.025, 0.30, 6101),                 // mandible clicks…
+    noiseBurst(0.05, 0.075, 0.28, 6103),
+    noiseBurst(0.10, 0.125, 0.30, 6105),
+    noiseBurst(0.15, 0.175, 0.26, 6107),
+    noiseBurst(0.20, 0.225, 0.24, 6109),
+    filteredNoise(0.00, 0.32, 0.08, 4200, 6111),         // breathy hiss
+    sineChirp(0.04, 0.30, 1500, 1900, 0.05),             // thin shrill overtone
+]))
+writeWav('spider-hurt.wav', mix(0.26, [
+    sineChirp(0.00, 0.16, 1600, 2400, 0.30),             // up-screech
+    sineChirp(0.10, 0.24, 2400, 1500, 0.18),             // down tail
+    noiseBurst(0.00, 0.04, 0.30, 6201),
+    filteredNoise(0.00, 0.20, 0.10, 5000, 6203),
+]))
+writeWav('spider-die.wav', mix(0.74, [
+    sineChirp(0.00, 0.34, 2000, 600, 0.30),              // long descending screech
+    filteredNoise(0.00, 0.40, 0.10, 4000, 6301),         // hiss fading
+    noiseBurst(0.34, 0.36, 0.20, 6303),                  // legs skittering, slowing…
+    noiseBurst(0.42, 0.44, 0.16, 6305),
+    noiseBurst(0.52, 0.54, 0.12, 6307),
+    noiseBurst(0.62, 0.64, 0.08, 6309),
+    pluck(0.30, 0.46, 90, 0.18),                         // soft body thud
+    rumble(0.30, 0.70, 80, 0.06, 6311),
 ]))
 
 
@@ -1359,6 +1434,55 @@ function ambCaveLoop(duration) {
     return signal
 }
 
+/**
+ * Mine bed — "Hollowdeep". The abandoned dwarven deep, below the caves:
+ * a heavy D2/A2 stone drone over a felt G1 sub, a slow solemn D-minor
+ * motif (the faded dwarf-hall song) on distant long-decay piano with one
+ * cold organ swell remembering the great hall, the ghost of the forge
+ * (rare faint metal rings), echoing water drops from the flooded grotto,
+ * old timber-support creaks, and a low shaft draft. Sparser and darker
+ * than `ambCaveLoop` — long near-silent stretches make each event read as
+ * a memory rather than a beat.
+ *   environment.soundId = 'music.amb.mine'
+ */
+function ambMineLoop(duration) {
+    const signal = make(duration)
+    const d = duration
+    // Bedrock drone — deeper and heavier than the cave bed (we're below it).
+    padNote(0, d, 73, 0.06)(signal)               // D2 root
+    padNote(0, d, 110, 0.032)(signal)             // A2 fifth
+    padNote(0, d, 49, 0.05)(signal)               // G1 sub — felt weight of stone
+    padNote(d * 0.55, d, 65, 0.035)(signal)       // C2 settles in, second half
+    // Faded dwarf-hall motif — a slow falling D-minor phrase, distant piano.
+    pianoNote(0.08 * d, 0.08 * d + 3.0, 147, 0.085)(signal) // D3
+    pianoNote(0.21 * d, 0.21 * d + 2.8, 175, 0.075)(signal) // F3 (minor 3rd)
+    pianoNote(0.34 * d, 0.34 * d + 3.2, 131, 0.070)(signal) // C3 (falling)
+    pianoNote(0.53 * d, 0.53 * d + 3.6, 110, 0.075)(signal) // A2 (mournful settle)
+    pianoNote(0.75 * d, 0.75 * d + 3.4, 147, 0.070)(signal) // D3 (unresolved return)
+    // One cold organ swell — the great hall, long empty, briefly remembered.
+    organNote(0.40 * d, 0.40 * d + 4.0, 73, 0.030)(signal)  // D2
+    organNote(0.40 * d, 0.40 * d + 4.0, 110, 0.022)(signal) // A2
+    // Ghost of the forge — rare faint metallic rings (anvils gone cold).
+    shimmer(0.16 * d, 0.16 * d + 1.2, 587, 0.050)(signal)   // D5 distant ring
+    shimmer(0.63 * d, 0.63 * d + 1.4, 440, 0.045)(signal)   // A4
+    // Echoing drops — the flooded lower grotto. Irregular, varied pitch.
+    const drops = [
+        { at: 0.05, hz: 831 },
+        { at: 0.29, hz: 1108 },
+        { at: 0.47, hz: 698 },
+        { at: 0.71, hz: 988 },
+        { at: 0.91, hz: 740 },
+    ]
+    for (const dr of drops) waterDrop(dr.at * d, dr.hz, 0.18)(signal)
+    // Timber-support creaks — old props settling, a woody downward groan.
+    chirpNoise(0.37 * d, 0.37 * d + 0.6, 520, 220, 0.06, 7062)(signal)
+    chirpNoise(0.83 * d, 0.83 * d + 0.7, 460, 190, 0.05, 7063)(signal)
+    // Deep shaft draft — low-cutoff air pressure moving through the shafts.
+    filteredNoise(0, d, 0.045, 260, 7061)(signal)
+    crossfadeEnds(signal, 0.7)
+    return signal
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Themed music set
 // ─────────────────────────────────────────────────────────────────────
@@ -1614,6 +1738,31 @@ function magicLoop(duration) {
     // (e.g. the demo portal) loops next to the player for minutes.
     filteredNoise(0, duration, 0.022, 2600, 5601)(signal)
     crossfadeEnds(signal, 0.30)
+    return signal
+}
+
+/**
+ * Rail-cart rolling loop — a loaded mine cart on iron rails. A low wheel
+ * rumble + mid friction hiss carry the body; evenly spaced rail-joint
+ * clacks (wheel pluck + metallic ring) give the "clack-clack" of crossing
+ * sleepers, spaced so the loop wraps seamlessly; a faint axle squeak
+ * drifts up then back so the bed never feels frozen. Played spatially with
+ * `loop: true` while the cart moves and stopped (fade-out) when it halts.
+ */
+function cartRollingLoop(duration) {
+    const signal = make(duration)
+    const d = duration
+    rumble(0, d, 70, 0.16, 8101)(signal)             // loaded wheels on rail
+    filteredNoise(0, d, 0.10, 1400, 8103)(signal)    // wheel / rail friction hiss
+    const joints = 6                                  // rail-joint clacks
+    for (let i = 0; i < joints; i++) {
+        const t = (i / joints) * d
+        pluck(t, t + 0.05, 220, 0.18)(signal)        // wheel strikes the joint
+        triNote(t, t + 0.04, 660, 0.06)(signal)      // metallic ring of the rail
+    }
+    sineChirp(0.10 * d, 0.55 * d, 900, 1150, 0.03)(signal) // axle squeak drifts up…
+    sineChirp(0.55 * d, d, 1150, 900, 0.03)(signal)        // …and back
+    crossfadeEnds(signal, 0.08)
     return signal
 }
 

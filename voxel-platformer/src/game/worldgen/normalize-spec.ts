@@ -336,7 +336,7 @@ function validateKnownSectionShapes(input: Record<string, unknown>, report: Worl
     validateArraySection(input.scatter, '$.scatter', report)
     validateArraySection(isRecord(input.validation) ? input.validation.require_paths : undefined, '$.validation.require_paths', report)
     if (isRecord(input.content)) {
-        for (const key of ['npcs', 'zones', 'quests', 'shops', 'pickups', 'props', 'scripts', 'cinematics', 'travel', 'rail_carts']) {
+        for (const key of ['npcs', 'zones', 'quests', 'shops', 'pickups', 'props', 'scripts', 'cinematics', 'travel', 'rail_carts', 'chests']) {
             validateArraySection(input.content[key], `$.content.${key}`, report)
         }
     }

@@ -1,7 +1,7 @@
 import type { Zone, ZoneTriggerSource } from '../../engine/ecs/zones'
 import type { RailCartFacing } from '../../engine/ecs/world'
 import type { ScriptEntry } from '../../engine/script/types'
-import { isRailBlock } from '../../engine/voxel/palette'
+import { BLOCK, isCollidable, isRailBlock } from '../../engine/voxel/palette'
 import {
     applyNpcTemplate,
     npcTemplateById,
@@ -36,6 +36,7 @@ import { resolveContentMetadata } from './resolve-content-metadata'
 import { resolveContentPickups } from './resolve-pickups'
 import { resolveContentShops } from './resolve-shops'
 import { resolveContentQuests } from './resolve-quests'
+import type { LootChestItem } from '../chests'
 
 export type { WorldgenContentResolveOptions } from './content-common'
 
@@ -56,10 +57,54 @@ export function resolveContent(ctx: WorldgenCompileContext, draft: WorldgenLevel
     resolveContentNpcs(ctx, draft, content.npcs ?? [], resolveOpts)
     resolveContentMetadata(ctx, draft, content, resolveOpts)
     resolveContentRailCarts(ctx, draft, content.rail_carts ?? [], resolveOpts)
+    resolveContentChests(ctx, draft, content.chests ?? [], resolveOpts)
     resolveContentPickups(ctx, draft, content.pickups ?? [], resolveOpts)
     resolveContentShops(ctx, draft, content.shops ?? [])
     resolveContentQuests(ctx, draft, content.quests ?? [], resolveOpts)
     resolveContentScripts(ctx, draft, content.scripts ?? [])
+}
+
+function resolveContentChests(
+    ctx: WorldgenCompileContext,
+    draft: WorldgenLevelDraft,
+    chests: readonly ContentEntrySpec[],
+    opts: WorldgenContentResolveOptions,
+): void {
+    for (let i = 0; i < chests.length; i += 1) {
+        const spec = chests[i]!
+        const path = `$.content.chests[${i}]`
+        const required = contentEntryRequired(spec)
+        const id = contentId(ctx, spec, path, required)
+        if (!id) continue
+        const cell = readChestCell(ctx, spec, path, required, opts)
+        if (!cell) continue
+        const loot = readChestLoot(ctx, spec.loot, `${path}.loot`, required)
+        if (!loot) continue
+        // Fail closed like rail carts: a chest must land on an open cell. A
+        // solid target would bury the chest inside terrain (or overwrite a
+        // real block), so diagnose and skip rather than place it silently.
+        const occupant = ctx.chunks.getVoxel(cell.x, cell.y, cell.z)
+        if (occupant !== BLOCK.chest && occupant !== BLOCK.openChest && isCollidable(ctx.chunks.palette, occupant)) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path} resolves to ${formatCell(cell)}, which is a solid block — a chest there would be buried. Place it on an open cell.`,
+                path,
+                details: { id, cell, block: occupant },
+            })
+            continue
+        }
+        ctx.setVoxel(cell.x, cell.y, cell.z, BLOCK.chest)
+        draft.chests.push({
+            id,
+            cell,
+            loot,
+            prompt: typeof spec.prompt === 'string' ? spec.prompt : undefined,
+            interactionRadius: positiveNumber(spec.interactionRadius ?? spec.interaction_radius, 1.85),
+        })
+        const position = { x: cell.x + 0.5, y: cell.y, z: cell.z + 0.5 }
+        ctx.resolveObject(id, position)
+        ctx.report.placements.push({ id, kind: 'content_chest', cell, lootCount: loot.length })
+    }
 }
 
 function resolveContentProps(
@@ -249,11 +294,11 @@ function resolveContentRailCarts(
             front,
             speed: positiveNumber(spec.speed, 4),
             interactionRadius: positiveNumber(spec.interactionRadius ?? spec.interaction_radius, 1.75),
-            enabled: typeof spec.enabled === 'boolean' ? spec.enabled : false,
+            enabled: typeof spec.enabled === 'boolean' ? spec.enabled : true,
         })
         const position = { x: railCell.x + 0.5, y: railCell.y, z: railCell.z + 0.5 }
         ctx.resolveObject(id, position)
-        ctx.report.placements.push({ id, kind: 'content_rail_cart', railCell, front, enabled: spec.enabled === true })
+        ctx.report.placements.push({ id, kind: 'content_rail_cart', railCell, front, enabled: spec.enabled !== false })
     }
 }
 
@@ -334,6 +379,121 @@ function readRailCartCell(
         return null
     }
     return cell
+}
+
+function readChestCell(
+    ctx: WorldgenCompileContext,
+    spec: ContentEntrySpec,
+    path: string,
+    required: boolean,
+    opts: WorldgenContentResolveOptions,
+): VoxelCoord | null {
+    const explicit = spec.cell ?? spec.chestCell ?? spec.chest_cell ?? spec.voxel
+    if (explicit !== undefined) {
+        const cell = readVoxelCoord(explicit, true)
+        if (!cell) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path}.cell must be a [x, y, z] tuple or { x, y, z } object.`,
+                path: `${path}.cell`,
+                details: { value: explicit },
+            })
+            return null
+        }
+        if (!ctx.inXYZ(cell.x, cell.y, cell.z)) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path}.cell leaves world bounds.`,
+                path: `${path}.cell`,
+                details: { cell },
+            })
+            return null
+        }
+        return cell
+    }
+
+    const position = resolveContentPosition(ctx, spec, path, required, opts)
+    if (!position) return null
+    const cell = {
+        x: Math.floor(position.x),
+        y: Math.round(position.y),
+        z: Math.floor(position.z),
+    }
+    if (!ctx.inXYZ(cell.x, cell.y, cell.z)) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} resolves to an out-of-bounds chest cell.`,
+            path,
+            details: { position, cell },
+        })
+        return null
+    }
+    return cell
+}
+
+function readChestLoot(
+    ctx: WorldgenCompileContext,
+    value: unknown,
+    path: string,
+    required: boolean,
+): LootChestItem[] | null {
+    if (value === undefined) return []
+    if (!Array.isArray(value)) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} must be an array.`,
+            path,
+            details: { value },
+        })
+        return null
+    }
+    const out: LootChestItem[] = []
+    for (let i = 0; i < value.length; i += 1) {
+        const itemPath = `${path}[${i}]`
+        const item = readChestLootItem(ctx, value[i], itemPath, required)
+        if (item) out.push(item)
+    }
+    return out
+}
+
+function readChestLootItem(
+    ctx: WorldgenCompileContext,
+    value: unknown,
+    path: string,
+    required: boolean,
+): LootChestItem | null {
+    if (typeof value === 'string') {
+        const id = value.trim()
+        if (id) return { id, quantity: 1 }
+    }
+    if (!isRecord(value)) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} must be an item id string or an object with id/resource/kind.`,
+            path,
+            details: { value },
+        })
+        return null
+    }
+    const id = readString(value.id ?? value.itemId ?? value.item_id ?? value.resource ?? value.kind, '')
+    if (!id) {
+        contentDiagnostic(ctx, required, {
+            code: 'missing_id',
+            message: `${path}.id is required for chest loot.`,
+            path: `${path}.id`,
+            details: { value },
+        })
+        return null
+    }
+    const quantity = Math.max(1, Math.floor(finiteNumber(value.quantity ?? value.amount, 1)))
+    return {
+        id,
+        quantity,
+        name: typeof value.name === 'string' ? value.name : undefined,
+        description: typeof value.description === 'string' ? value.description : undefined,
+        category: typeof value.category === 'string' ? value.category as LootChestItem['category'] : undefined,
+        icon: typeof value.icon === 'string' ? value.icon as LootChestItem['icon'] : undefined,
+    }
 }
 
 function readRailCartFacing(

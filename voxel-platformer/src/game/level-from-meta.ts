@@ -7,6 +7,7 @@ import type { EnvironmentConfig, SoundSourceConfig, SoundZoneConfig } from './so
 import type { AmbientWeatherRuntimeConfig, WeatherZoneRuntimeConfig } from './weather-config'
 import { normalizeNpcConfig } from './npcs/npc-types'
 import { normalizePlayerSettings } from './player-settings'
+import { copyLootChestConfig } from './chests'
 
 /**
  * Translate an editor-authored level (`EditorLevelMeta` + already-deserialized
@@ -136,6 +137,7 @@ export function levelMetaFromEditor(meta: EditorLevelMeta, fallbackSize: number 
             interactionRadius: cart.interactionRadius,
             enabled: cart.enabled,
         })),
+        chests: (meta.chests ?? []).map(copyLootChestConfig),
         soundZones,
         environment,
         weatherZones,

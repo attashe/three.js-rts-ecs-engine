@@ -139,6 +139,7 @@
         "cinematics": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
         "travel": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
         "rail_carts": { "type": "array", "items": { "$ref": "#/$defs/railCartEntry" } },
+        "chests": { "type": "array", "items": { "$ref": "#/$defs/contentEntry" } },
         "environment": { "type": "object", "additionalProperties": true }
       },
       "additionalProperties": true

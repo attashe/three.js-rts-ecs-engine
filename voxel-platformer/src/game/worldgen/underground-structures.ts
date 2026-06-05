@@ -202,6 +202,9 @@ function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y:
         setSolid(ctx, point.x, point.y + 1, point.z, BLOCK.fire)
         setSolid(ctx, point.x - 2, point.y, point.z + 1, BLOCK.oreIron)
         setSolid(ctx, point.x + 2, point.y, point.z + 1, BLOCK.oreCopper)
+        setSolid(ctx, point.x - 3, point.y + 1, point.z, BLOCK.toolPanel)
+        setSolid(ctx, point.x + 3, point.y + 1, point.z, BLOCK.toolPanel)
+        setSolid(ctx, point.x, point.y, point.z + 2, BLOCK.oreShelf)
         return
     }
     if (assetId.includes('ore_storage')) {
@@ -210,6 +213,9 @@ function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y:
             setSolid(ctx, point.x + 2, point.y, point.z + dz, BLOCK.oreCopper)
         }
         setSolid(ctx, point.x, point.y, point.z, BLOCK.metal)
+        setSolid(ctx, point.x - 3, point.y, point.z, BLOCK.oreShelf)
+        setSolid(ctx, point.x + 3, point.y, point.z, BLOCK.oreShelf)
+        setSolid(ctx, point.x, point.y + 1, point.z + 2, BLOCK.toolPanel)
         return
     }
     if (assetId.includes('storage')) {
@@ -217,6 +223,9 @@ function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y:
             setSolid(ctx, point.x - 1, point.y, point.z + dz, BLOCK.plank)
             setSolid(ctx, point.x + 1, point.y, point.z + dz, BLOCK.plank)
         }
+        setSolid(ctx, point.x - 3, point.y, point.z, BLOCK.goodsShelf)
+        setSolid(ctx, point.x + 3, point.y, point.z, BLOCK.goodsShelf)
+        setSolid(ctx, point.x, point.y + 1, point.z - 2, BLOCK.recordShelf)
         return
     }
     if (assetId.includes('meeting')) {
@@ -225,13 +234,18 @@ function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y:
         setSolid(ctx, point.x + 2, point.y, point.z - 2, BLOCK.plank)
         setSolid(ctx, point.x - 2, point.y, point.z + 2, BLOCK.plank)
         setSolid(ctx, point.x + 2, point.y, point.z + 2, BLOCK.plank)
+        setSolid(ctx, point.x, point.y + 1, point.z - 3, BLOCK.recordShelf)
+        setSolid(ctx, point.x - 3, point.y + 1, point.z, BLOCK.goodsShelf)
+        setSolid(ctx, point.x + 3, point.y + 1, point.z, BLOCK.goodsShelf)
         return
     }
     if (assetId.includes('shop')) {
         for (let dx = -2; dx <= 2; dx += 1) setSolid(ctx, point.x + dx, point.y, point.z - 1, BLOCK.plank)
-        setSolid(ctx, point.x - 2, point.y + 1, point.z - 1, BLOCK.oreCopper)
-        setSolid(ctx, point.x, point.y + 1, point.z - 1, BLOCK.oreIron)
-        setSolid(ctx, point.x + 2, point.y + 1, point.z - 1, BLOCK.oreCrystal)
+        setSolid(ctx, point.x - 2, point.y + 1, point.z - 1, BLOCK.goodsShelf)
+        setSolid(ctx, point.x, point.y + 1, point.z - 1, BLOCK.recordShelf)
+        setSolid(ctx, point.x + 2, point.y + 1, point.z - 1, BLOCK.oreShelf)
+        setSolid(ctx, point.x - 3, point.y, point.z + 1, BLOCK.goodsShelf)
+        setSolid(ctx, point.x + 3, point.y, point.z + 1, BLOCK.goodsShelf)
         return
     }
     if (assetId.includes('office')) {
@@ -239,6 +253,8 @@ function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y:
         setSolid(ctx, point.x - 1, point.y, point.z, BLOCK.plank)
         setSolid(ctx, point.x + 1, point.y, point.z - 2, BLOCK.wood)
         setSolid(ctx, point.x + 2, point.y, point.z - 2, BLOCK.wood)
+        setSolid(ctx, point.x - 2, point.y + 1, point.z, BLOCK.recordShelf)
+        setSolid(ctx, point.x + 3, point.y + 1, point.z - 2, BLOCK.recordShelf)
         return
     }
     if (assetId.includes('rail_station')) {
@@ -246,6 +262,8 @@ function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y:
         setSolid(ctx, point.x - 2, point.y, point.z - 2, BLOCK.fence)
         setSolid(ctx, point.x + 2, point.y, point.z - 2, BLOCK.fence)
         setSolid(ctx, point.x, point.y + 1, point.z - 2, BLOCK.torch)
+        setSolid(ctx, point.x - 3, point.y + 1, point.z - 1, BLOCK.toolPanel)
+        setSolid(ctx, point.x + 3, point.y + 1, point.z - 1, BLOCK.goodsShelf)
         return
     }
     const block = assetId.includes('bunks') ? BLOCK.woodDark : BLOCK.wood
@@ -253,6 +271,8 @@ function stampDwarfRoomDecor(ctx: WorldgenCompileContext, point: { x: number; y:
         setSolid(ctx, point.x + dx, point.y, point.z - 1, block)
         setSolid(ctx, point.x + dx, point.y, point.z + 1, block)
     }
+    setSolid(ctx, point.x - 3, point.y + 1, point.z, BLOCK.goodsShelf)
+    setSolid(ctx, point.x + 3, point.y + 1, point.z, assetId.includes('bunks') ? BLOCK.recordShelf : BLOCK.goodsShelf)
 }
 
 function inactivePortalMarkerZone(id: string, access: VoxelCoord): Zone {

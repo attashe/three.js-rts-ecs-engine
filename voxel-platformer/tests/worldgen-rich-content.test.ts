@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createScriptEngineSystem } from '../src/engine/script/script-engine-system'
+import { BLOCK } from '../src/engine/voxel/palette'
 import type {
     AudioFacade,
     ChunksFacade,
@@ -196,6 +197,7 @@ test('content placement references are order-independent for spatial content', (
         content: {
             zones: [
                 { id: 'zone_at_later_prop', type: 'interact', place_at: 'later_prop', prompt: 'Inspect' },
+                { id: 'zone_at_later_chest', type: 'interact', place_at: 'later_chest', prompt: 'Open cache' },
                 { id: 'later_zone', type: 'interact', place_at_xz: [12, 10], prompt: 'Talk' },
             ],
             npcs: [
@@ -206,6 +208,9 @@ test('content placement references are order-independent for spatial content', (
             ],
             pickups: [
                 { id: 'later_pickup', kind: 'heal-potion', place_at: 'npc_at_later_zone' },
+            ],
+            chests: [
+                { id: 'later_chest', place_at: 'later_prop', offset: [1, 0, 0], loot: [{ id: 'mana-potion', quantity: 2 }] },
             ],
             props: [
                 { id: 'later_prop', kind: 'road-sign', place_at_xz: [10, 10] },
@@ -229,6 +234,11 @@ test('content placement references are order-independent for spatial content', (
     assert.ok(result.report.resolvedObjects.npc_at_later_zone)
     assert.ok(result.report.resolvedObjects.later_pickup)
     assert.ok(result.report.resolvedObjects.arrival_at_later_pickup)
+    assert.ok(result.report.resolvedObjects.later_chest)
+    assert.ok(result.report.resolvedObjects.zone_at_later_chest)
+    assert.equal(result.meta.chests.length, 1)
+    assert.equal(result.meta.chests[0]?.loot[0]?.id, 'mana-potion')
+    assert.equal(result.chunks.getVoxel(result.meta.chests[0]!.cell.x, result.meta.chests[0]!.cell.y, result.meta.chests[0]!.cell.z), BLOCK.chest)
     assert.ok(result.meta.scripts.some((script) => script.id === 'worldgen:shop:forward_shop'))
     assert.ok(result.meta.npcs.find((npc) => npc.id === 'npc_at_later_zone')?.scriptSource.includes('handleQuest_forward_quest'))
 })
@@ -250,6 +260,7 @@ test('worldgen rail-cart content emits metadata and participates in spatial refe
             ],
             rail_carts: [
                 { id: 'mine_cart', railCell: [14, 6, 10], front: 'east', speed: 3.5, interactionRadius: 1.4, enabled: true },
+                { id: 'mine_cart_default_enabled', railCell: [12, 6, 10], front: 'east' },
             ],
             zones: [
                 { id: 'cart_zone', type: 'interact', place_at: 'cart_crate', prompt: 'Inspect' },
@@ -258,8 +269,8 @@ test('worldgen rail-cart content emits metadata and participates in spatial refe
     })
 
     assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
-    assert.equal(result.meta.railCarts.length, 1)
-    assert.deepEqual(result.meta.railCarts[0], {
+    assert.equal(result.meta.railCarts.length, 2)
+    assert.deepEqual(result.meta.railCarts.find((cart) => cart.id === 'mine_cart'), {
         id: 'mine_cart',
         railCell: { x: 14, y: 6, z: 10 },
         front: 'east',
@@ -267,10 +278,19 @@ test('worldgen rail-cart content emits metadata and participates in spatial refe
         interactionRadius: 1.4,
         enabled: true,
     })
+    assert.deepEqual(result.meta.railCarts.find((cart) => cart.id === 'mine_cart_default_enabled'), {
+        id: 'mine_cart_default_enabled',
+        railCell: { x: 12, y: 6, z: 10 },
+        front: 'east',
+        speed: 4,
+        interactionRadius: 1.75,
+        enabled: true,
+    })
     assert.deepEqual(result.report.resolvedObjects.mine_cart, { x: 14.5, y: 6, z: 10.5 })
     assert.ok(result.report.resolvedObjects.cart_crate)
     assert.ok(result.report.resolvedObjects.cart_zone)
     assert.ok(result.report.placements.some((placement) => placement.kind === 'content_rail_cart' && placement.id === 'mine_cart'))
+    assert.ok(result.report.placements.some((placement) => placement.kind === 'content_rail_cart' && placement.id === 'mine_cart_default_enabled' && placement.enabled === true))
 })
 
 test('worldgen rail-cart content fails closed for invalid required carts', () => {

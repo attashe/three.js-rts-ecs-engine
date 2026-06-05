@@ -196,7 +196,21 @@ test('Phase 12 underground mine stress spec validates rails, rooms, caves, and r
         assert.ok(result.report.resolvedObjects[id], `${id} should resolve`)
     }
     assert.equal(result.meta.railCarts.length, 3)
-    assert.equal(result.meta.railCarts.filter((cart) => cart.enabled).map((cart) => cart.id).join(','), 'main_route_cart')
+    assert.equal(result.meta.railCarts.filter((cart) => cart.enabled).map((cart) => cart.id).join(','), 'main_route_cart,bunk_branch_cart,ore_branch_cart')
+    assert.equal(result.meta.chests.length, 3)
+    for (const id of ['forge_supply_chest', 'ore_storage_cache_chest', 'glitter_cave_risk_chest']) {
+        const chest = result.meta.chests.find((candidate) => candidate.id === id)
+        assert.ok(chest, `${id} should be registered as loot chest metadata`)
+        assert.equal(result.chunks.getVoxel(chest.cell.x, chest.cell.y, chest.cell.z), BLOCK.chest, `${id} should place a closed chest block`)
+    }
+    const spiderIds = result.meta.npcs.filter((npc) => npc.model === 'spider').map((npc) => npc.id).sort()
+    assert.deepEqual(spiderIds, [
+        'mine-spider-deep-grotto',
+        'mine-spider-glitter-a',
+        'mine-spider-glitter-b',
+        'mine-spider-root',
+        'mine-spider-west-ore',
+    ])
     assert.equal(result.chunks.getVoxel(44, 28, 136), BLOCK.rail)
     assert.equal(result.chunks.getVoxel(104, 24, 112), BLOCK.rail)
     assert.equal(result.chunks.getVoxel(164, 22, 86), BLOCK.rail)
@@ -206,6 +220,27 @@ test('Phase 12 underground mine stress spec validates rails, rooms, caves, and r
     }
     assert.ok(result.report.placements.some((placement) => placement.id === 'root_mushrooms' && placement.kind === 'scatter_summary'))
     assert.ok(result.report.placements.some((placement) => placement.id === 'west_ore_wall' && placement.kind === 'scatter_summary'))
+    assert.ok(result.report.placements.some((placement) => placement.id === 'root_cavern_webs' && placement.kind === 'scatter_summary'))
+    assert.ok(result.report.placements.some((placement) => placement.id === 'glitter_cave_webs' && placement.kind === 'scatter_summary'))
+    const blockCounts = new Map<number, number>()
+    for (const chunk of result.chunks.allChunks()) {
+        for (const block of chunk.data) {
+            if (
+                block === BLOCK.spiderWeb ||
+                block === BLOCK.goodsShelf ||
+                block === BLOCK.toolPanel ||
+                block === BLOCK.oreShelf ||
+                block === BLOCK.recordShelf
+            ) {
+                blockCounts.set(block, (blockCounts.get(block) ?? 0) + 1)
+            }
+        }
+    }
+    assert.ok((blockCounts.get(BLOCK.spiderWeb) ?? 0) > 0, 'spider web scatter should write visible slowdown voxels')
+    assert.ok((blockCounts.get(BLOCK.goodsShelf) ?? 0) >= 3, 'miner village should use cheap goods-shelf voxel decor')
+    assert.ok((blockCounts.get(BLOCK.toolPanel) ?? 0) >= 2, 'miner village should use cheap tool-panel voxel decor')
+    assert.ok((blockCounts.get(BLOCK.oreShelf) ?? 0) >= 2, 'miner village should use cheap ore-shelf voxel decor')
+    assert.ok((blockCounts.get(BLOCK.recordShelf) ?? 0) >= 2, 'miner village should use cheap record-shelf voxel decor')
     assert.ok(result.report.placements.some((placement) => placement.id === 'grotto_mist' && placement.kind === 'content_weather_zone'))
 })
 

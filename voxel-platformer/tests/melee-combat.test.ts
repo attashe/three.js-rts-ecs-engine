@@ -9,6 +9,8 @@ import { createMeleeAttackSystem } from '../src/engine/ecs/systems/melee-attack-
 import { createMeleeCombatSystem } from '../src/engine/ecs/systems/melee-combat-system'
 import { startMeleeAttack } from '../src/engine/ecs/melee-combat'
 import { cloneMeleeAttackDef, MELEE_ATTACK_DEFS, type MeleeAttackDef } from '../src/engine/ecs/melee-types'
+import { ChunkManager } from '../src/engine/voxel/chunk-manager'
+import { BLOCK, DEFAULT_PALETTE } from '../src/engine/voxel/palette'
 import {
     NPC_SHIELD_GUARD_ARC_COS,
     NPC_SHIELD_GUARD_MAX_Y,
@@ -17,6 +19,7 @@ import {
 } from '../src/game/npcs/npc-types'
 import { NPC_TARGET_PLAYER } from '../src/game/npcs/npc-ai'
 import { METAL_HELMET_ITEM_ID } from '../src/game/equipment-items'
+import { restoreTemporaryVoxelEdits } from '../src/game/temporary-voxel-edits'
 import { __resetDebugInfoCache, setDebugInfoEnabled } from '../src/engine/render/render-settings'
 
 function onePressAction(): ActionMap {
@@ -160,6 +163,27 @@ test('player swing and staff slam cleave targets in the active wedge', () => {
         assert.equal(left.hp, 1, `${id} should hit the left target`)
         assert.equal(right.hp, 1, `${id} should hit the right target`)
     }
+})
+
+test('player melee destroys spider webs only during the active window and restores them for snapshots', () => {
+    const world = createGameWorld()
+    const chunks = new ChunkManager(DEFAULT_PALETTE)
+    const player = spawnPlayer(world)
+    const combat = createMeleeCombatSystem({ chunks })
+    chunks.setVoxel(0, 1, 1, BLOCK.spiderWeb)
+
+    assert.equal(startMeleeAttack(world, { kind: 'player', eid: player }, MELEE_ATTACK_DEFS['player-thrust']), true)
+    combat.update(world, MELEE_ATTACK_DEFS['player-thrust'].startupSeconds - 0.01)
+    assert.equal(chunks.getVoxel(0, 1, 1), BLOCK.spiderWeb, 'startup should not clear the web')
+    assert.equal(world.temporaryVoxelEdits.size, 0)
+
+    combat.update(world, 0.02)
+    assert.equal(chunks.getVoxel(0, 1, 1), BLOCK.air)
+    assert.equal(world.temporaryVoxelEdits.size, 1)
+
+    restoreTemporaryVoxelEdits(world, chunks)
+    assert.equal(chunks.getVoxel(0, 1, 1), BLOCK.spiderWeb)
+    assert.equal(world.temporaryVoxelEdits.size, 0)
 })
 
 test('NPC shield guard blocks frontal player melee but stays open from the side', () => {

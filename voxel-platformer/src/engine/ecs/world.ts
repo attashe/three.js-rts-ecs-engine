@@ -43,6 +43,10 @@ export interface PickupScriptMeta {
 export interface PopupMessage {
     id: number
     targetId: string
+    /** Optional world-space anchor for provider-backed interactions that are
+     *  not registered zones, such as native loot chests. Script-authored
+     *  popups keep resolving through their target zone id. */
+    anchor?: VoxelCoord
     message: string
     seconds: number
 }
@@ -297,6 +301,9 @@ export interface GameContext {
     /** Active timed melee attacks keyed by actor (`player:<eid>` / `npc:<id>`).
      *  The melee combat system owns timeline advancement and hit resolution. */
     meleeAttacks: Map<string, ActiveMeleeAttack>
+    /** Session-only voxel edits that should not be persisted into travel
+     *  snapshots (e.g. spider webs cleared by player attacks). */
+    temporaryVoxelEdits: Map<string, { x: number; y: number; z: number; original: number }>
     /** True while a cinematic owns the camera. The camera-follow system yields
      *  so the cinematic director can drive the view; cleared on completion. */
     cinematicActive: boolean
@@ -450,6 +457,7 @@ export function createGameWorld(): GameWorld {
         npcRuntimeById: new Map<string, NpcRuntimeState>(),
         defeatedNpcIds: new Set<string>(),
         meleeAttacks: new Map<string, ActiveMeleeAttack>(),
+        temporaryVoxelEdits: new Map<string, { x: number; y: number; z: number; original: number }>(),
         cinematicActive: false,
         obstacles: new ObstacleRegistry(),
         inventory: {
@@ -504,6 +512,7 @@ export function pushPopupMessage(
     world.popupMessages.push({
         id: world.nextPopupMessageId++,
         targetId: message.targetId,
+        anchor: message.anchor ? { ...message.anchor } : undefined,
         message: text,
         seconds: Number.isFinite(message.seconds) ? Math.max(0.5, message.seconds ?? 3.5) : 3.5,
     })

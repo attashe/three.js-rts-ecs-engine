@@ -8,6 +8,7 @@ import {
     type Object3D,
 } from 'three'
 import type { ActionMap } from '../../engine/input/actions'
+import type { AudioEngine, SoundHandle } from '../../engine/audio'
 import { GameAction } from '../actions'
 import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import { isCollidable, isRailBlock } from '../../engine/voxel/palette'
@@ -47,9 +48,20 @@ import {
 
 export interface RailCartSystemOptions {
     actions: ActionMap
+    /** Optional rolling-sound wiring. When provided, a looping spatial sound
+     *  plays at each cart while it is rolling and stops shortly after it
+     *  halts. Movement is detected by per-frame position delta, so it covers
+     *  driven travel, coasting onto a next segment, and slope descents. */
+    audio?: AudioEngine
+    audioReady?: Promise<unknown>
+    soundId?: string
+    soundVolume?: number
 }
 
 const DEFAULT_CART_SPEED = 4
+// Per-frame squared distance above which a cart counts as "rolling". Small
+// enough to catch slow starts, large enough to ignore float jitter at rest.
+const CART_SOUND_MOVE_EPS_SQ = 0.004 * 0.004
 const DEFAULT_INTERACTION_RADIUS = 1.65
 const CART_HALF = { x: 0.43, y: 0.28, z: 0.43 }
 const PLAYER_SEAT_Y = 0.34
@@ -64,6 +76,81 @@ export function createRailCartSystem(
     carts: readonly RailCartConfig[],
     opts: RailCartSystemOptions,
 ): System {
+    const audio = opts.audio
+    const soundId = opts.soundId
+    let soundReady = !opts.audioReady
+    let soundDisabled = false
+    if (opts.audioReady) {
+        void opts.audioReady.then(() => { soundReady = true }).catch((err) => {
+            soundDisabled = true
+            console.warn('Rail cart sounds skipped because audio failed to initialise:', err)
+        })
+    }
+    // Per-cart rolling-sound state, keyed by entity id. Kept in the system
+    // closure (not on RailCartRuntime) so it stays out of the serialized world.
+    const cartSounds = new Map<number, CartSoundState>()
+
+    function syncCartSound(cart: RailCartRuntime): void {
+        if (!audio || !soundId || soundDisabled || !soundReady) return
+        const pos = cartPosition(cart)
+        let rec = cartSounds.get(cart.eid)
+        if (!rec) {
+            // Seed the previous position; movement is measured from next frame.
+            cartSounds.set(cart.eid, { handle: null, x: pos.x, y: pos.y, z: pos.z })
+            return
+        }
+        const dx = pos.x - rec.x
+        const dy = pos.y - rec.y
+        const dz = pos.z - rec.z
+        const moving = cart.enabled && (dx * dx + dy * dy + dz * dz) > CART_SOUND_MOVE_EPS_SQ
+        rec.x = pos.x
+        rec.y = pos.y
+        rec.z = pos.z
+        if (rec.handle?.stopped) rec.handle = null
+        if (!moving) {
+            if (rec.handle) { rec.handle.stop(0.18); rec.handle = null }
+            return
+        }
+        if (rec.handle) { rec.handle.setPosition(pos); return }
+        try {
+            rec.handle = audio.playSpatial(soundId, pos, {
+                deferUntilUnlocked: true,
+                loop: true,
+                volume: opts.soundVolume ?? 0.34,
+                fadeIn: 0.12,
+                fadeOut: 0.18,
+                refDistance: 1.6,
+                maxDistance: 22,
+                rolloffModel: 'linear',
+                panningModel: 'equalpower',
+                maxInstances: 4,
+                priority: 2,
+            })
+        } catch (err) {
+            console.warn('Rail cart sound failed:', err)
+            soundDisabled = true
+            stopAllCartSounds(0.1)
+        }
+    }
+
+    function pruneStaleCartSounds(world: GameWorld): void {
+        if (cartSounds.size === 0) return
+        const live = new Set<number>()
+        for (const cart of world.railCarts) live.add(cart.eid)
+        for (const [eid, rec] of cartSounds) {
+            if (live.has(eid)) continue
+            if (rec.handle) rec.handle.stop(0.1)
+            cartSounds.delete(eid)
+        }
+    }
+
+    function stopAllCartSounds(fade: number): void {
+        for (const rec of cartSounds.values()) {
+            if (rec.handle) { rec.handle.stop(fade); rec.handle = null }
+        }
+        cartSounds.clear()
+    }
+
     return {
         name: 'railCarts',
         fixed: true,
@@ -73,14 +160,25 @@ export function createRailCartSystem(
         },
         update(world, dt) {
             for (const cart of world.railCarts) updateCart(world, chunks, opts.actions, cart, dt)
+            if (audio && soundId) {
+                for (const cart of world.railCarts) syncCartSound(cart)
+                pruneStaleCartSounds(world)
+            }
         },
         dispose() {
-            // The active world is supplied to `dispose` only through closure-free
-            // system APIs elsewhere, so cart cleanup happens in clearRuntimeWorld.
-            // Runtime location swaps call `clearRuntimeWorld` immediately after
-            // slot disposal; this system owns no DOM or scene resources itself.
+            // Stop any rolling sounds this system started. The world/entity
+            // cleanup itself happens in clearRuntimeWorld on location swaps;
+            // this system owns no DOM or scene resources beyond its sounds.
+            stopAllCartSounds(0)
         },
     }
+}
+
+interface CartSoundState {
+    handle: SoundHandle | null
+    x: number
+    y: number
+    z: number
 }
 
 export interface RailCartInteractionTarget {

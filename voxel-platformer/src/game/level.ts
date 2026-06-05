@@ -18,6 +18,7 @@ import {
 import { HELD_TORCH_ITEM_ID, HELD_TORCH_ITEM_OPTIONS } from './inventory'
 import type { ScriptEntry } from '../engine/script/types'
 import type { Cinematic } from './cinematics/cinematic-types'
+import type { LootChestConfig } from './chests'
 import {
     ARENA_FROM_DEMO_ARRIVAL_ID,
     COMBAT_ARENA_LEVEL_ID,
@@ -59,6 +60,8 @@ export interface LevelMeta {
     soundSources: SoundSourceConfig[]
     /** Rideable kinematic carts placed on authored rail blocks. */
     railCarts: RailCartConfig[]
+    /** Loot-bearing chest blocks opened through the native interaction system. */
+    chests: LootChestConfig[]
     /** AABB ambient zones that fade audio in/out as the player enters/leaves. */
     soundZones: SoundZoneConfig[]
     /** Level-wide ambient bed (stereo, non-spatial). Optional. */

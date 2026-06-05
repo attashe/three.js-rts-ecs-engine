@@ -8,11 +8,12 @@ import {
 
 test('pushPopupMessage trims, defaults seconds, and assigns monotonic ids', () => {
     const world = createGameWorld()
-    pushPopupMessage(world, { targetId: 'npc.keeper', message: '  hello  ' })
+    pushPopupMessage(world, { targetId: 'npc.keeper', anchor: { x: 1, y: 2, z: 3 }, message: '  hello  ' })
     pushPopupMessage(world, { targetId: 'npc.keeper', message: 'second', seconds: 6 })
     assert.equal(world.popupMessages.length, 2)
     const [first, second] = world.popupMessages
     assert.equal(first!.message, 'hello', 'leading/trailing whitespace trimmed')
+    assert.deepEqual(first!.anchor, { x: 1, y: 2, z: 3 }, 'explicit anchors are copied for non-zone popup targets')
     assert.equal(first!.seconds, 3.5, 'missing seconds defaults to 3.5')
     assert.equal(second!.seconds, 6)
     assert.ok(second!.id > first!.id, 'ids monotonically increase')

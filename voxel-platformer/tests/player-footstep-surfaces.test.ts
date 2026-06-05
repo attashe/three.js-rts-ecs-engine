@@ -27,6 +27,12 @@ test('surfaceForBlock maps each palette block to a footstep family', () => {
     assert.equal(surfaceForBlock(BLOCK.wood), 'wood')
     assert.equal(surfaceForBlock(BLOCK.plank), 'wood')
     assert.equal(surfaceForBlock(BLOCK.door), 'wood')
+    assert.equal(surfaceForBlock(BLOCK.chest), 'wood')
+    assert.equal(surfaceForBlock(BLOCK.openChest), 'wood')
+    assert.equal(surfaceForBlock(BLOCK.goodsShelf), 'wood')
+    assert.equal(surfaceForBlock(BLOCK.toolPanel), 'wood')
+    assert.equal(surfaceForBlock(BLOCK.recordShelf), 'wood')
+    assert.equal(surfaceForBlock(BLOCK.oreShelf), 'stone')
 
     // Water — splash.
     assert.equal(surfaceForBlock(BLOCK.water), 'water')

@@ -25,6 +25,7 @@ import type { EditorProp } from '../props/prop-types'
 import type { NpcConfig } from '../npcs/npc-types'
 import type { ScriptEntry } from '../../engine/script/types'
 import type { Cinematic } from '../cinematics/cinematic-types'
+import type { LootChestConfig } from '../chests'
 
 interface XZ {
     x: number
@@ -51,6 +52,7 @@ export interface LevelSpec {
     zones?: Zone[]
     soundSources?: SoundSourceConfig[]
     railCarts?: RailCartConfig[]
+    chests?: LootChestConfig[]
     soundZones?: SoundZoneConfig[]
     environment?: EnvironmentConfig
     weatherZones?: WeatherZoneRuntimeConfig[]
@@ -78,6 +80,7 @@ export function defineLevel(spec: LevelSpec): LevelMeta {
         zones: spec.zones ?? [],
         soundSources: spec.soundSources ?? [],
         railCarts: spec.railCarts ?? [],
+        chests: spec.chests ?? [],
         soundZones: spec.soundZones ?? [],
         environment: spec.environment,
         weatherZones: spec.weatherZones ?? [],

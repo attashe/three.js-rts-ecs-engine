@@ -14,6 +14,7 @@ import type { DialogueVoicePreset } from '../game/dialogue-voice/types'
 import type { EquipmentHandLoadout } from '../game/anim/equipment-types'
 import type { CharacterBeardKind } from '../game/character-appearance'
 import { copyPlayerSettings, DEFAULT_PLAYER_SETTINGS, type PlayerSettings } from '../game/player-settings'
+import { copyLootChestConfig, type LootChestConfig } from '../game/chests'
 import { DEFAULT_OUTDOOR_FOG_DENSITY_MUL } from '../game/weather-config'
 import {
     DEFAULT_STONE_RADIUS,
@@ -519,6 +520,8 @@ export interface EditorState {
 
     /** Rideable carts placed on rail voxels. */
     railCarts: RailCartConfig[]
+    /** Hidden metadata for generated/native loot chests. No editor placement UI yet. */
+    chests: LootChestConfig[]
     selectedRailCartId: string | null
     railCartFacing: RailCartFacing
     railCartSpeed: number
@@ -778,6 +781,7 @@ export function createEditorState(spawn: { x: number; y: number; z: number }): E
         stoneSpawnerJitter: 0,
         stoneSpawnerEnabled: true,
         railCarts: [],
+        chests: [],
         selectedRailCartId: null,
         railCartFacing: 'east',
         railCartSpeed: 4,
@@ -872,6 +876,8 @@ export interface EditorLevelMeta {
     soundSources?: EditorSoundSource[]
     /** Rideable rail carts. */
     railCarts?: RailCartConfig[]
+    /** Native loot chests. Optional until the editor exposes chest authoring UI. */
+    chests?: LootChestConfig[]
     /** Level-wide ambient bed. Absent / `soundId: null` ⇒ no env sound. */
     environment?: EditorEnvironment
     /** AABB sound zones that fade ambient audio in/out as the player
@@ -958,6 +964,7 @@ export function toLevelMeta(state: EditorState, name: string): EditorLevelMeta {
             interactionRadius: cart.interactionRadius,
             enabled: cart.enabled,
         })),
+        chests: state.chests.length === 0 ? undefined : state.chests.map(copyLootChestConfig),
         environment: state.environment.soundId
             ? { soundId: state.environment.soundId, volume: state.environment.volume }
             : undefined,

@@ -17,6 +17,7 @@ import { cloneCinematic } from '../game/cinematics/cinematic-types'
 import { despawnEntity } from '../engine/ecs/entity'
 import type { GameWorld } from '../engine/ecs/world'
 import { registerPistonMechanism } from '../game/mechanisms'
+import { copyLootChestConfig } from '../game/chests'
 
 /** Default ground height for a fresh pad. Dirt foundation up to `PAD_Y - 1`,
  *  grass at `PAD_Y`, spawn one cell above. */
@@ -101,6 +102,7 @@ function clearWorldAndEditorState(
     editorState.soundSources = []
     editorState.selectedSoundSourceId = null
     editorState.railCarts = []
+    editorState.chests = []
     editorState.selectedRailCartId = null
     editorState.soundZones = []
     editorState.selectedSoundZoneId = null
@@ -303,6 +305,7 @@ export function loadLevelFromBuffer(
                 enabled: cart.enabled !== false,
             })
         }
+        editorState.chests = (loaded.metadata.chests ?? []).map(copyLootChestConfig)
         for (const z of loaded.metadata.soundZones ?? []) {
             editorState.soundZones.push({
                 id: z.id,

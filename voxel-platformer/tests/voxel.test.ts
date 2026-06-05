@@ -215,7 +215,7 @@ test('legacy palettes migrate liquid markers without losing existing special blo
     assert.equal(chunks.palette.entries[BLOCK.lava]?.liquid, 'lava')
 })
 
-test('default palette covers block constants and appends mine ore blocks safely', () => {
+test('default palette covers block constants and appends mine ore and dungeon blocks safely', () => {
     const blockIndices = Object.values(BLOCK)
     for (const index of blockIndices) {
         assert.ok(DEFAULT_PALETTE.entries[index], `DEFAULT_PALETTE missing BLOCK index ${index}`)
@@ -224,9 +224,26 @@ test('default palette covers block constants and appends mine ore blocks safely'
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreIron]?.name, 'iron ore')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreCopper]?.name, 'copper ore')
     assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreCrystal]?.name, 'crystal ore')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.chest]?.name, 'chest')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.openChest]?.name, 'open chest')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.spiderWeb]?.name, 'spider web')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.goodsShelf]?.name, 'goods shelf')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.toolPanel]?.name, 'tool panel')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.oreShelf]?.name, 'ore shelf')
+    assert.equal(DEFAULT_PALETTE.entries[BLOCK.recordShelf]?.name, 'record shelf')
     assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.oreIron), true)
     assert.equal(isPathSurface(DEFAULT_PALETTE, BLOCK.oreCopper), true)
     assert.ok(voxelLightSpec(DEFAULT_PALETTE, BLOCK.oreCrystal), 'crystal ore should provide a subtle cave readability light')
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.chest), true)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.openChest), true)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.goodsShelf), true)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.toolPanel), true)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.oreShelf), true)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.recordShelf), true)
+    assert.equal(isCollidable(DEFAULT_PALETTE, BLOCK.spiderWeb), false)
+    assert.equal(isPathSurface(DEFAULT_PALETTE, BLOCK.spiderWeb), false)
+    assert.equal(isRenderableVoxel(DEFAULT_PALETTE, BLOCK.spiderWeb), true)
+    assert.ok(voxelOpacity(DEFAULT_PALETTE, BLOCK.spiderWeb) > 0 && voxelOpacity(DEFAULT_PALETTE, BLOCK.spiderWeb) < 1)
 
     const oldPalette = clonePalette(DEFAULT_PALETTE)
     oldPalette.entries.length = BLOCK.oreIron
@@ -234,6 +251,13 @@ test('default palette covers block constants and appends mine ore blocks safely'
     assert.equal(migrated.palette.entries[BLOCK.oreIron]?.name, 'iron ore')
     assert.equal(migrated.palette.entries[BLOCK.oreCopper]?.name, 'copper ore')
     assert.equal(migrated.palette.entries[BLOCK.oreCrystal]?.name, 'crystal ore')
+    assert.equal(migrated.palette.entries[BLOCK.chest]?.name, 'chest')
+    assert.equal(migrated.palette.entries[BLOCK.openChest]?.name, 'open chest')
+    assert.equal(migrated.palette.entries[BLOCK.spiderWeb]?.name, 'spider web')
+    assert.equal(migrated.palette.entries[BLOCK.goodsShelf]?.name, 'goods shelf')
+    assert.equal(migrated.palette.entries[BLOCK.toolPanel]?.name, 'tool panel')
+    assert.equal(migrated.palette.entries[BLOCK.oreShelf]?.name, 'ore shelf')
+    assert.equal(migrated.palette.entries[BLOCK.recordShelf]?.name, 'record shelf')
 
     const customTail = clonePalette(DEFAULT_PALETTE)
     customTail.entries.length = BLOCK.oreIron
@@ -241,6 +265,7 @@ test('default palette covers block constants and appends mine ore blocks safely'
     const custom = new ChunkManager(customTail)
     assert.equal(custom.palette.entries[BLOCK.oreIron]?.name, 'custom ore slot')
     assert.ok(custom.palette.entries.findIndex((entry) => entry.name === 'iron ore') > BLOCK.oreIron)
+    assert.ok(custom.palette.entries.findIndex((entry) => entry.name === 'record shelf') > BLOCK.oreIron)
 })
 
 test('no-walk block is an invisible collidable border outside debug rendering', () => {
@@ -363,6 +388,19 @@ test('movementEnvironmentForAABB applies water movement and lava contact hazards
         maxZ: 0.9,
     })
     assert.deepEqual(cloud, { speedMultiplier: 1, jumpDisabled: false, contactHazard: null })
+
+    chunks.setVoxel(3, 0, 0, BLOCK.spiderWeb)
+    const web = movementEnvironmentForAABB(chunks, {
+        minX: 3.1,
+        minY: 0,
+        minZ: 0.1,
+        maxX: 3.9,
+        maxY: 1,
+        maxZ: 0.9,
+    })
+    assert.equal(web.speedMultiplier, 0.18)
+    assert.equal(web.jumpDisabled, false)
+    assert.equal(web.contactHazard, null)
 
     const lava = movementEnvironmentForAABB(chunks, {
         minX: 4.1,

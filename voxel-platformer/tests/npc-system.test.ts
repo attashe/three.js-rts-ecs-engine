@@ -10,6 +10,7 @@ import {
     NPC_MODEL_LABELS,
     NPC_DEFAULT_HP,
     SHIELD_SPEARMAN_DEFAULT_HP,
+    SPIDER_DEFAULT_HP,
     TROLL_DEFAULT_HP,
     TROLL_OUTFIT_KINDS,
     TROLL_OUTFIT_LABELS,
@@ -42,11 +43,12 @@ function npc(id: string): NpcConfig {
 }
 
 test('NPC model registry exposes humanoid, troll, and creature models', () => {
-    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll', 'rabbit', 'archer', 'shield-warrior', 'shield-spearman'])
+    assert.deepEqual([...NPC_MODEL_KINDS], ['keeper', 'keeper-arlen', 'player', 'large-troll', 'rabbit', 'spider', 'archer', 'shield-warrior', 'shield-spearman'])
     assert.deepEqual([...TROLL_OUTFIT_KINDS], ['wise', 'guardian', 'king', 'princess', 'trader', 'child'])
     assert.equal(NPC_MODEL_LABELS.keeper, 'Dwarf')
     assert.equal(NPC_MODEL_LABELS['keeper-arlen'], 'Keeper Arlen')
     assert.equal(NPC_MODEL_LABELS.rabbit, 'Rabbit')
+    assert.equal(NPC_MODEL_LABELS.spider, 'Spider')
     assert.equal(NPC_MODEL_LABELS.archer, 'Archer')
     assert.equal(NPC_MODEL_LABELS['shield-warrior'], 'Shield Warrior')
     assert.equal(NPC_MODEL_LABELS['shield-spearman'], 'Shield Spearman')
@@ -76,6 +78,7 @@ test('NPC model registry exposes humanoid, troll, and creature models', () => {
     assert.ok(findByName(guardian, 'CharacterBeardFull'), 'Guardian troll defaults to a full beard')
     assert.equal(findByName(guardian, 'LargeTrollLeftLens'), null, 'Guardian troll has no Wise Troll glasses')
     assert.equal(findByName(guardian, 'Cloak'), null, 'Guardian troll has no cloak')
+    assert.ok(findByName(createNpcModel('spider'), 'SpiderAbdomen'), 'spider has a distinct low creature body')
 
     const markers: Record<TrollOutfitKind, string> = {
         wise: 'LargeTrollLeftLens',
@@ -166,9 +169,18 @@ test('NPC appearance and equipment normalize from model defaults and custom choi
     assert.equal(child.beard, 'none')
     assert.deepEqual(child.equipment, { handR: null, handL: null })
 
+    const spider = normalizeNpcConfig({
+        id: 'spider',
+        model: 'spider',
+        position: { x: 0, y: 0, z: 0 },
+    })
+    assert.equal(spider.beard, 'none')
+    assert.deepEqual(spider.equipment, { handR: null, handL: null })
+
     assert.equal(npcDefaultHp(dwarf), NPC_DEFAULT_HP)
     assert.equal(npcDefaultHp(troll), TROLL_DEFAULT_HP)
     assert.equal(npcDefaultHp(guardian), TROLL_DEFAULT_HP)
+    assert.equal(npcDefaultHp(spider), SPIDER_DEFAULT_HP)
 
     const spearman = normalizeNpcConfig({
         id: 'spearman',

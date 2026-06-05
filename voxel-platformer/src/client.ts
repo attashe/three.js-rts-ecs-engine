@@ -87,6 +87,7 @@ import { defeatedNpcSnapshot, registerRuntimeNpcs, type RegisteredNpcRuntime } f
 import { createGameScriptSystem } from './game/script-system'
 import { createInteractionSystem } from './game/interaction-system'
 import { nearestDoorInteractionTarget, scanDoors } from './game/doors'
+import { nearestChestInteractionTarget } from './game/chests'
 import { createDialogueController } from './game/dialogue-system'
 import { createDialogueVoiceService } from './game/dialogue-voice'
 import { createTradeController } from './game/trade-system'
@@ -106,6 +107,7 @@ import type { EditorLevelMeta } from './editor/editor-state'
 import { levelMetaWithSpawn, type LevelMeta } from './game/level'
 import { pushLog, type GameWorld } from './engine/ecs/world'
 import { copyInventoryItems } from './game/inventory'
+import { clearTemporaryVoxelEdits, restoreTemporaryVoxelEdits } from './game/temporary-voxel-edits'
 import type { ScriptEngineSystem } from './engine/script/script-engine-system'
 import type { FlagValue, ScriptEntry, TravelFacade } from './engine/script/types'
 import demoQuestSource from '../examples/scripts/demo-quest.js?raw'
@@ -457,7 +459,7 @@ async function main(): Promise<void> {
         slots.propRender.set(createPropRenderSystem(renderer.scene, { getProps: () => meta.props }))
         slots.npcRender.set(createNpcRenderSystem(renderer.scene, {
             getNpcs: () => meta.npcs,
-            onHurt: (p) => audio.playSpatial(GameAudio.NpcHurt, p, {
+            onHurt: (p, model) => audio.playSpatial(model === 'spider' ? GameAudio.SpiderHurt : GameAudio.NpcHurt, p, {
                 deferUntilUnlocked: true,
                 rate: 0.9 + Math.random() * 0.2,
                 refDistance: 4,
@@ -466,8 +468,34 @@ async function main(): Promise<void> {
                 panningModel: 'equalpower',
                 priority: 2,
             }),
-            // Spatial bow-release cue when the archer looses an arrow.
-            onAttack: (clip, p) => {
+            // Spider death screech (other models settle silently for now).
+            onDie: (p, model) => {
+                if (model !== 'spider') return
+                audio.playSpatial(GameAudio.SpiderDie, p, {
+                    deferUntilUnlocked: true,
+                    rate: 0.94 + Math.random() * 0.12,
+                    refDistance: 5,
+                    maxDistance: 34,
+                    rolloffModel: 'linear',
+                    panningModel: 'equalpower',
+                    priority: 3,
+                })
+            },
+            // Spatial attack cues: a spider chitters as it lunges; the archer's
+            // `shoot` clip plays a bow-release.
+            onAttack: (clip, p, model) => {
+                if (model === 'spider') {
+                    audio.playSpatial(GameAudio.SpiderChitter, p, {
+                        deferUntilUnlocked: true,
+                        rate: 0.92 + Math.random() * 0.16,
+                        refDistance: 5,
+                        maxDistance: 30,
+                        rolloffModel: 'linear',
+                        panningModel: 'equalpower',
+                        priority: 2,
+                    })
+                    return
+                }
                 if (clip !== 'shoot') return
                 audio.playSpatial(GameAudio.Bow, p, {
                     deferUntilUnlocked: true,
@@ -480,7 +508,7 @@ async function main(): Promise<void> {
                 })
             },
         }))
-        slots.railCarts.set(createRailCartSystem(chunks, meta.railCarts, { actions }))
+        slots.railCarts.set(createRailCartSystem(chunks, meta.railCarts, { actions, audio, audioReady, soundId: GameAudio.CartRolling }))
         slots.ladders.set(createLadderSystem(chunks, { actions }))
         slots.piston.set(createPistonSystem(chunks, {
             onFlip: (piston, position) => {
@@ -542,6 +570,7 @@ async function main(): Promise<void> {
 
     function captureCurrentSnapshot(): void {
         if (!active?.editorMeta) return
+        restoreTemporaryVoxelEdits(world, chunks)
         active.editorMeta.pickups = captureLiveEditorPickups(world)
         snapshots.set(active.id, {
             buffer: serializeLevel(chunks, active.editorMeta),
@@ -607,6 +636,7 @@ async function main(): Promise<void> {
         .addSystem(createPlayerShieldSystem(actions, { actionId: GameAction.RaiseShield }), 'playerShield')
         .addSystem(createNpcBehaviourSystem(chunks), 'npcBehaviour')
         .addSystem(createMeleeCombatSystem({
+            chunks,
             onSwing: (e) => playSpatialSfx(
                 HEAVY_MELEE_ATTACKS.has(e.attackId) ? GameAudio.HeavySwing : GameAudio.SwordSwing,
                 e.x, e.y, e.z, 2,
@@ -644,7 +674,7 @@ async function main(): Promise<void> {
         }), 'playerControl')
         .addSystem(createPlayerTorchSystem(), 'playerTorch')
         .addSystem(createWeaponStanceSystem(actions, { actionId: GameAction.SwitchWeapon }), 'weaponStance')
-        .addSystem(createConsumableUseSystem(actions, { actionId: GameAction.UseConsumable }), 'consumableUse')
+        .addSystem(createConsumableUseSystem(actions, { actionId: GameAction.UseConsumable, audio }), 'consumableUse')
         .addSystem(createProjectileLaunchSystem(actions, {
             // F is the universal attack; in the ranged stance it looses an arrow.
             actionId: GameAction.BowShot,
@@ -792,6 +822,7 @@ async function main(): Promise<void> {
             domElement: renderer.webgpu.domElement,
             providers: [
                 (activeWorld, player) => nearestRailCartInteractionTarget(activeWorld, player, chunks),
+                (activeWorld, player) => nearestChestInteractionTarget(activeWorld, player, chunks, active?.meta.chests ?? [], (a) => playSpatialSfx(GameAudio.ChestOpen, a.x, a.y, a.z, 3)),
                 (activeWorld, player) => nearestLadderInteractionTarget(activeWorld, player, chunks),
                 (activeWorld, player) => nearestDoorInteractionTarget(activeWorld, player, chunks),
             ],
@@ -871,6 +902,7 @@ function clearRuntimeWorld(world: GameWorld): void {
     world.nextPopupClearId = 1
     world.scriptTriggerEvents.length = 0
     world.defeatedNpcIds.clear()
+    clearTemporaryVoxelEdits(world)
     world.deathSignal = null
     world.lastCheckpoint = null
     world.weaponStance = 'melee'

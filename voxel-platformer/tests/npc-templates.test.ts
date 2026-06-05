@@ -61,6 +61,17 @@ test('animal is a non-colliding, fleeing rabbit', () => {
     assert.equal(cfg.behaviour?.flee, true)
 })
 
+test('hostile spider is a small colliding hunter', () => {
+    const cfg = applyNpcTemplate({ ...BASE }, npcTemplateById('hostile-spider')!)
+    assert.equal(cfg.model, 'spider')
+    assert.equal(cfg.collisionEnabled, true)
+    assert.equal(cfg.interactionEnabled, false)
+    assert.equal(cfg.colliderRadius, 0.32)
+    assert.equal(cfg.colliderHeight, 0.42)
+    assert.equal(cfg.behaviour?.mode, 'hunter')
+    assert.equal(cfg.behaviour?.hostileToPlayer, true)
+})
+
 test('applying a template resets model-derived equipment to the new model default', () => {
     // Start from a keeper draft carrying a staff, switch to the rabbit template.
     const cfg = applyNpcTemplate({ ...BASE, model: 'keeper', equipment: { handR: 'staff', handL: null } }, npcTemplateById('animal')!)

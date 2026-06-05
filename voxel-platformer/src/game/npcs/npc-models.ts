@@ -35,6 +35,8 @@ export function createNpcModel(kind: NpcModelKind, opts: NpcModelOptions = {}): 
             return createLargeTrollModel(beard, variant)
         case 'rabbit':
             return createRabbitNpcModel()
+        case 'spider':
+            return createSpiderNpcModel()
         case 'archer':
             return createArcherNpcModel(beard)
         case 'shield-warrior':
@@ -50,7 +52,7 @@ export function createNpcModel(kind: NpcModelKind, opts: NpcModelOptions = {}): 
  * drives them with a bespoke animator (see `npc-critter-animator`) instead of
  * an `AnimationController`. Quadrupeds and other non-humanoids opt out here.
  */
-const NPC_MODELS_WITHOUT_DEFAULT_RIG: ReadonlySet<NpcModelKind> = new Set<NpcModelKind>(['rabbit'])
+const NPC_MODELS_WITHOUT_DEFAULT_RIG: ReadonlySet<NpcModelKind> = new Set<NpcModelKind>(['rabbit', 'spider'])
 
 export function npcModelUsesDefaultRig(kind: NpcModelKind): boolean {
     return !NPC_MODELS_WITHOUT_DEFAULT_RIG.has(kind)
@@ -141,6 +143,74 @@ function rabbitHindLeg(name: string, x: number): Group {
     const thigh = shadowed(new Mesh(sharedBoxGeometry(0.07, 0.1, 0.17), sharedMaterial(0xb7aa96, 0.88)))
     thigh.position.set(0, -0.04, -0.04)
     pivot.add(thigh)
+    return pivot
+}
+
+/**
+ * Low cave spider: broad abdomen, low body, and eight readable leg pivots.
+ * Authored around a ~0.55u footprint so `scale: 1` is threatening without
+ * becoming a collision wall in narrow mine tunnels.
+ */
+function createSpiderNpcModel(): Group {
+    const root = new Group()
+    root.name = 'NpcModel:spider'
+
+    const shell = sharedMaterial(0x1b1820, 0.62, 0.18)
+    const belly = sharedMaterial(0x2f2437, 0.56, 0.1)
+    const eyeMat = sharedMaterial(0xce354f, 0.5, 0.2)
+    const fangMat = sharedMaterial(0xd8d0b8, 0.64, 0.1)
+
+    const bob = new Group()
+    bob.name = 'SpiderBob'
+    root.add(bob)
+
+    const abdomen = shadowed(new Mesh(sharedSphereGeometry(0.17, 10, 8), shell))
+    abdomen.name = 'SpiderAbdomen'
+    abdomen.position.set(0, 0.18, -0.1)
+    abdomen.scale.set(1.3, 0.7, 1.55)
+    const thorax = shadowed(new Mesh(sharedSphereGeometry(0.14, 10, 8), belly))
+    thorax.name = 'SpiderThorax'
+    thorax.position.set(0, 0.17, 0.11)
+    thorax.scale.set(1.18, 0.62, 1.0)
+    const head = shadowed(new Mesh(sharedSphereGeometry(0.095, 8, 6), shell))
+    head.name = 'SpiderHead'
+    head.position.set(0, 0.17, 0.26)
+    head.scale.set(1.05, 0.66, 0.82)
+    bob.add(abdomen, thorax, head)
+
+    for (const x of [-0.046, 0.046]) {
+        const eye = shadowed(new Mesh(sharedSphereGeometry(0.018, 6, 5), eyeMat))
+        eye.name = x < 0 ? 'SpiderEyeL' : 'SpiderEyeR'
+        eye.position.set(x, 0.205, 0.315)
+        bob.add(eye)
+    }
+    for (const x of [-0.032, 0.032]) {
+        const fang = shadowed(new Mesh(sharedBoxGeometry(0.018, 0.055, 0.014), fangMat))
+        fang.name = x < 0 ? 'SpiderFangL' : 'SpiderFangR'
+        fang.position.set(x, 0.115, 0.325)
+        fang.rotation.x = 0.18
+        bob.add(fang)
+    }
+
+    const legZ = [0.18, 0.08, -0.04, -0.15]
+    for (let i = 0; i < legZ.length; i += 1) {
+        bob.add(spiderLeg(`SpiderLegL${i + 1}`, -1, legZ[i]!, i))
+        bob.add(spiderLeg(`SpiderLegR${i + 1}`, 1, legZ[i]!, i))
+    }
+
+    return root
+}
+
+function spiderLeg(name: string, side: -1 | 1, z: number, index: number): Group {
+    const pivot = new Group()
+    pivot.name = name
+    pivot.position.set(side * 0.09, 0.15, z)
+    pivot.rotation.y = side * (0.7 + index * 0.13)
+    const leg = shadowed(new Mesh(sharedBoxGeometry(0.23, 0.028, 0.035), sharedMaterial(0x151219, 0.64, 0.16)))
+    leg.name = `${name}Segment`
+    leg.position.set(side * 0.11, -0.02, 0)
+    leg.rotation.z = side * -0.28
+    pivot.add(leg)
     return pivot
 }
 

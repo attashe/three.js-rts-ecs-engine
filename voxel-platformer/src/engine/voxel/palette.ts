@@ -147,6 +147,13 @@ export const BLOCK = {
     oreIron: 48,
     oreCopper: 49,
     oreCrystal: 50,
+    chest: 51,
+    openChest: 52,
+    spiderWeb: 53,
+    goodsShelf: 54,
+    toolPanel: 55,
+    oreShelf: 56,
+    recordShelf: 57,
 } as const
 
 /**
@@ -385,6 +392,24 @@ export const DEFAULT_PALETTE: Palette = {
             lightIntensity: 1.5,
             lightDistance: 6,
         },
+        { name: 'chest', color: [0.54, 0.32, 0.16], solid: true, textureKey: 'chest' },
+        { name: 'open chest', color: [0.50, 0.29, 0.13], solid: true, textureKey: 'chest_open' },
+        {
+            name: 'spider web',
+            color: [0.86, 0.90, 0.94],
+            solid: false,
+            collidable: false,
+            occludesFaces: false,
+            raycastTarget: true,
+            pathSurface: false,
+            opacity: 0.38,
+            movement: { speedMultiplier: 0.18 },
+            textureKey: 'spider_web',
+        },
+        { name: 'goods shelf', color: [0.58, 0.38, 0.20], solid: true, textureKey: 'shelf_goods' },
+        { name: 'tool panel', color: [0.40, 0.33, 0.27], solid: true, textureKey: 'tool_panel' },
+        { name: 'ore shelf', color: [0.34, 0.36, 0.38], solid: true, textureKey: 'ore_shelf' },
+        { name: 'record shelf', color: [0.54, 0.44, 0.30], solid: true, textureKey: 'record_shelf' },
     ],
 }
 
@@ -662,6 +687,13 @@ const DEFAULT_PALETTE_APPEND_RULES: readonly DefaultPaletteAppendRule[] = [
     { index: BLOCK.oreIron, by: 'name' },
     { index: BLOCK.oreCopper, by: 'name' },
     { index: BLOCK.oreCrystal, by: 'name' },
+    { index: BLOCK.chest, by: 'name' },
+    { index: BLOCK.openChest, by: 'name' },
+    { index: BLOCK.spiderWeb, by: 'name' },
+    { index: BLOCK.goodsShelf, by: 'name' },
+    { index: BLOCK.toolPanel, by: 'name' },
+    { index: BLOCK.oreShelf, by: 'name' },
+    { index: BLOCK.recordShelf, by: 'name' },
 ]
 
 function appendMissingDefaultBlocks(palette: Palette): void {

@@ -166,6 +166,7 @@ export interface ContentSpec {
     environment?: Record<string, unknown>
     travel?: ContentEntrySpec[]
     rail_carts?: ContentEntrySpec[]
+    chests?: ContentEntrySpec[]
     [key: string]: unknown
 }
 

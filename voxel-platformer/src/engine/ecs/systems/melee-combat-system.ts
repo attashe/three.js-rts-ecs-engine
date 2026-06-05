@@ -1,5 +1,7 @@
 import { addComponent, hasComponent, query, removeComponent } from 'bitecs'
 import { aabbFromFoot, type AABB } from '../../voxel/voxel-collide'
+import type { ChunkManager } from '../../voxel/chunk-manager'
+import { BLOCK } from '../../voxel/palette'
 import { applyDamage } from '../combat'
 import { BoxCollider, PlayerControlled, Position, Rotation, Shield, Stunned, Velocity } from '../components'
 import { pushDebugHitbox } from '../debug-hitboxes'
@@ -20,6 +22,7 @@ import { FixedOrder } from './orders'
 import { damageNpc, type NpcRuntimeState } from '../../../game/npcs/npc-types'
 import { NPC_TARGET_PLAYER } from '../../../game/npcs/npc-ai'
 import { metalHelmetBlocksIncomingAttack } from '../../../game/equipment-effects'
+import { setTemporaryVoxel } from '../../../game/temporary-voxel-edits'
 
 const COMMITTED_MOVEMENT_DAMPING = 32
 const MIN_DEBUG_TTL = 0.06
@@ -97,6 +100,8 @@ export interface MeleeCombatSystemOptions {
     onStun?: (event: MeleeStunAudioEvent) => void
     /** Test hook for chance-based equipment effects. Defaults to Math.random. */
     helmetBlockRoll?: () => number
+    /** Optional voxel world for attack-reactive destructible clutter. */
+    chunks?: ChunkManager
 }
 
 export function createMeleeCombatSystem(opts: MeleeCombatSystemOptions = {}): System {
@@ -141,6 +146,7 @@ export function createMeleeCombatSystem(opts: MeleeCombatSystemOptions = {}): Sy
                 }
                 if (attack.elapsedSeconds >= activeStart && previousElapsed < activeEnd) {
                     pushActiveDebugHitbox(gw, attack)
+                    destroySpiderWebsInAttack(gw, attack, opts.chunks)
                     resolveActiveHits(gw, attack, opts)
                 }
 
@@ -176,6 +182,48 @@ export function createMeleeCombatSystem(opts: MeleeCombatSystemOptions = {}): Sy
             }
         },
     }
+}
+
+function destroySpiderWebsInAttack(gw: GameWorld, attack: ActiveMeleeAttack, chunks: ChunkManager | undefined): void {
+    if (!chunks || attack.attacker.kind !== 'player') return
+    const origin = attack.lockedOrigin
+    const yaw = attack.lockedYaw
+    if (!origin || yaw === null) return
+    const shape = attack.def.shape
+    const reach = shape.kind === 'circle'
+        ? shape.radius + Math.abs(shape.centerForwardOffset) + 1
+        : shape.range + 1
+    const minX = Math.floor(origin.x - reach)
+    const maxX = Math.ceil(origin.x + reach)
+    const minZ = Math.floor(origin.z - reach)
+    const maxZ = Math.ceil(origin.z + reach)
+    const minY = Math.floor(origin.y + shape.minY)
+    const maxY = Math.ceil(origin.y + shape.maxY)
+    for (let y = minY; y <= maxY; y += 1) {
+        for (let z = minZ; z <= maxZ; z += 1) {
+            for (let x = minX; x <= maxX; x += 1) {
+                if (chunks.getVoxel(x, y, z) !== BLOCK.spiderWeb) continue
+                if (!webCellInsideShape(origin, yaw, shape, x, y, z)) continue
+                setTemporaryVoxel(gw, chunks, x, y, z, BLOCK.air)
+            }
+        }
+    }
+}
+
+function webCellInsideShape(origin: MeleeVec3, yaw: number, shape: MeleeShape, x: number, y: number, z: number): boolean {
+    const target: MeleeTarget = {
+        key: 'web',
+        kind: 'npc',
+        x: x + 0.5,
+        y: y + 0.5,
+        z: z + 0.5,
+        radius: 0.65,
+        minY: y,
+        maxY: y + 1,
+    }
+    return shape.kind === 'circle'
+        ? distanceInsideCircle(origin, yaw, shape, target) !== null
+        : distanceInsideWedge(origin, yaw, shape, target) !== null
 }
 
 function maybeLockAttack(attack: ActiveMeleeAttack, pose: ActorPose): void {

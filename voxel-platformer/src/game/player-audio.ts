@@ -84,6 +84,12 @@ export function surfaceForBlock(block: number): FootstepSurface {
         case BLOCK.door:  return 'wood'
         case BLOCK.wood:  return 'wood'
         case BLOCK.plank: return 'wood'
+        case BLOCK.chest: return 'wood'
+        case BLOCK.openChest: return 'wood'
+        case BLOCK.goodsShelf: return 'wood'
+        case BLOCK.toolPanel: return 'wood'
+        case BLOCK.recordShelf: return 'wood'
+        case BLOCK.oreShelf: return 'stone'
         case BLOCK.water: return 'water'
         default: return 'dirt'
     }

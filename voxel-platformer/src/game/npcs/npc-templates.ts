@@ -113,6 +113,20 @@ export const NPC_TEMPLATES: readonly NpcTemplate[] = [
         }),
     },
     {
+        id: 'hostile-spider', label: 'Hostile Spider', emoji: '🕷️',
+        description: 'A small cave predator that closes into melee and attacks on sight.',
+        build: () => ({
+            model: 'spider',
+            name: 'Cave Spider',
+            scale: 1,
+            collisionEnabled: true,
+            colliderRadius: 0.32,
+            colliderHeight: 0.42,
+            interactionEnabled: false,
+            behaviour: behaviour({ mode: 'hunter', hostileToPlayer: true, perceptionRadius: 9, threatMemorySeconds: 4 }),
+        }),
+    },
+    {
         id: 'blank', label: 'Blank', emoji: '⬜',
         description: 'A plain NPC with no behaviour — start from scratch.',
         build: () => ({

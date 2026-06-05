@@ -287,6 +287,10 @@
     { "id": "glitter_crystals", "asset": "proc.crystal.wall_cluster", "count": 14, "surface": "wall", "feature": "glitter_cave", "min_distance": 4 },
     { "id": "canyon_crystals", "asset": "proc.crystal.wall_cluster", "count": 10, "surface": "wall", "feature": "canyon_rail_cut", "min_distance": 5 },
     { "id": "storage_floor_ore", "asset": "proc.ore.floor_pile", "count": 7, "surface": "floor", "feature": "ore_storage", "min_distance": 3 },
+    { "id": "root_cavern_webs", "asset": "proc.spider_web.patch", "count": 5, "surface": "floor", "feature": "root_cavern", "min_distance": 5 },
+    { "id": "west_excavation_webs", "asset": "proc.spider_web.patch", "count": 5, "surface": "floor", "feature": "west_ore_excavation", "min_distance": 5 },
+    { "id": "glitter_cave_webs", "asset": "proc.spider_web.patch", "count": 8, "surface": "floor", "feature": "glitter_cave", "min_distance": 5 },
+    { "id": "deep_grotto_webs", "asset": "proc.spider_web.patch", "count": 5, "surface": "floor", "feature": "deep_grotto", "min_distance": 4 },
     { "id": "station_stalactites", "asset": "proc.stalactite", "count": 8, "surface": "ceiling", "feature": "root_cavern", "min_distance": 4, "max_length": 5 }
   ],
   "content": {
@@ -408,6 +412,44 @@
         "radius": 2.4
       }
     ],
+    "chests": [
+      {
+        "id": "forge_supply_chest",
+        "place_at": "forge_decor",
+        "offset": [2.8, 0, -3.2],
+        "prompt": "Open Supply Chest",
+        "loot": [
+          { "id": "heal-potion", "quantity": 1, "name": "Healing Potion", "category": "consumables", "icon": "heal-potion" },
+          { "id": "arrows", "quantity": 6 }
+        ]
+      },
+      {
+        "id": "ore_storage_cache_chest",
+        "place_at": "ore_storage_decor",
+        "offset": [-3.2, 0, -2.8],
+        "prompt": "Open Storage Cache",
+        "loot": [
+          { "id": "gold", "quantity": 18 },
+          { "id": "mana-potion", "quantity": 1, "name": "Mana Potion", "category": "consumables", "icon": "mana-potion" }
+        ]
+      },
+      {
+        "id": "glitter_cave_risk_chest",
+        "position": [161.5, 20, 58.5],
+        "prompt": "Open Webbed Chest",
+        "loot": [
+          { "id": "dynamite", "quantity": 1 },
+          { "id": "gold", "quantity": 28 }
+        ]
+      }
+    ],
+    "npcs": [
+      { "id": "mine-spider-root", "template": "hostile-spider", "name": "Root-Cave Spider", "place_at_xz": [60, 128] },
+      { "id": "mine-spider-west-ore", "template": "hostile-spider", "name": "Ore-Shaft Spider", "place_at_xz": [75, 111] },
+      { "id": "mine-spider-glitter-a", "template": "hostile-spider", "name": "Glitter-Cave Spider", "place_at_xz": [158, 63] },
+      { "id": "mine-spider-glitter-b", "template": "hostile-spider", "name": "Webbed Cache Spider", "place_at_xz": [163, 58] },
+      { "id": "mine-spider-deep-grotto", "template": "hostile-spider", "name": "Deep-Grotto Spider", "place_at_xz": [259, 43] }
+    ],
     "rail_carts": [
       {
         "id": "main_route_cart",
@@ -423,7 +465,7 @@
         "front": "south",
         "speed": 3,
         "interactionRadius": 1.5,
-        "enabled": false
+        "enabled": true
       },
       {
         "id": "ore_branch_cart",
@@ -431,12 +473,12 @@
         "front": "east",
         "speed": 3,
         "interactionRadius": 1.5,
-        "enabled": false
+        "enabled": true
       }
     ],
     "environment": {
-      "soundId": "music.amb.start",
-      "volume": 0.18,
+      "soundId": "music.amb.mine",
+      "volume": 0.22,
       "ambientWeather": { "presetId": "clear", "state": { "timeOfDay": 23 } },
       "soundSources": [
         { "id": "shaft_wind", "soundId": "sfx.amb.wind", "place_at": "spawn", "radius": 18, "volume": 0.18 },
@@ -455,7 +497,7 @@
     "scripts": [
       {
         "id": "station-warning-script",
-        "source": "on('input', { action: 'interact', targetId: 'station_warning_zone' }, () => { ui.say('station_warning_zone', 'Old rail authority notice: central cart route remains passable, but village branches and canyon bridges are condemned.', { seconds: 4 }) })"
+        "source": "on('input', { action: 'interact', targetId: 'station_warning_zone' }, () => { ui.say('station_warning_zone', 'Old rail authority notice: all remaining carts are rideable, but webbed side tunnels and canyon bridges remain dangerous.', { seconds: 4 }) })"
       }
     ]
   },

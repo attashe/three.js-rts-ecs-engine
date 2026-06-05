@@ -18,6 +18,7 @@ import type { LevelMeta } from '../game/level'
 import { cloneCinematic } from '../game/cinematics/cinematic-types'
 import { copyNpcConfig } from '../game/npcs/npc-types'
 import { copyPlayerSettings } from '../game/player-settings'
+import { copyLootChestConfig } from '../game/chests'
 
 export interface ProceduralEditorLevel {
     readonly id: string
@@ -119,6 +120,7 @@ export function editorMetaFromRuntimeLevel(meta: LevelMeta): EditorLevelMeta {
             interactionRadius: cart.interactionRadius,
             enabled: cart.enabled,
         })),
+        chests: meta.chests.length === 0 ? undefined : meta.chests.map(copyLootChestConfig),
         environment: meta.environment ? { ...meta.environment } : undefined,
         soundZones: meta.soundZones.map((zone) => ({
             id: zone.id,

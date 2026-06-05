@@ -15,12 +15,18 @@ import {
     updateDelayedConsumables,
 } from './consumables'
 import { inventoryItemCount, removeInventoryItem } from './inventory'
+import type { AudioEngine } from '../engine/audio'
+import { GameAudio } from './audio'
 
 const DYNAMITE_THROW_SPEED = 6.25
 const DYNAMITE_THROW_LIFT = 3.0
 
 export interface ConsumableUseOptions {
     actionId?: ActionId
+    /** When provided, plays a flat drink/eat cue when a consumable is used.
+     *  Potions (`instant`) drink; food (`delayed`) eats; dynamite has its own
+     *  throw/explosion cues elsewhere. */
+    audio?: AudioEngine
 }
 
 export function createConsumableUseSystem(actions: ActionMap, opts: ConsumableUseOptions = {}): System {
@@ -57,6 +63,11 @@ export function createConsumableUseSystem(actions: ActionMap, opts: ConsumableUs
             }
             if (!consumeDirectConsumable(world, itemId)) {
                 pushLog(world, `${def.name} cannot be used right now.`)
+                return
+            }
+            if (opts.audio) {
+                const cue = def.useKind === 'delayed' ? GameAudio.ConsumeEat : GameAudio.ConsumeDrink
+                opts.audio.play(cue, { deferUntilUnlocked: true })
             }
         },
     }

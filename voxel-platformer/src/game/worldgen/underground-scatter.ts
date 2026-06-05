@@ -13,7 +13,7 @@ export function scatterUnderground(ctx: WorldgenCompileContext, state: Undergrou
         const path = `$.scatter[${i}]`
         const count = Math.max(0, Math.floor(ctx.number(spec.count, 0, `${path}.count`, { min: 0 })))
         const asset = typeof spec.asset === 'string' ? spec.asset.trim() : ''
-        if (!['proc.mushroom.glow_cluster', 'proc.crystal.wall_cluster', 'proc.stalactite', 'proc.ore.wall_cluster', 'proc.ore.floor_pile'].includes(asset)) {
+        if (!['proc.mushroom.glow_cluster', 'proc.crystal.wall_cluster', 'proc.stalactite', 'proc.ore.wall_cluster', 'proc.ore.floor_pile', 'proc.spider_web.patch'].includes(asset)) {
             ctx.warning({ code: 'unsupported_structure_asset', message: `Unsupported underground scatter asset "${asset}".`, path: `${path}.asset`, details: { id: spec.id, asset } })
             ctx.report.placements.push({ id: spec.id, kind: 'scatter_summary', requested: count, placed: 0, surface: spec.surface ?? 'floor', feature: spec.feature ?? 'any' })
             continue
@@ -35,6 +35,8 @@ export function scatterUnderground(ctx: WorldgenCompileContext, state: Undergrou
                 setSolid(ctx, candidate.x, candidate.y, candidate.z, oreBlockFor(ctx, spec.id, placed))
             } else if (asset === 'proc.ore.floor_pile') {
                 setSolid(ctx, candidate.x, candidate.y - 1, candidate.z, oreBlockFor(ctx, spec.id, placed))
+            } else if (asset === 'proc.spider_web.patch') {
+                placeSpiderWebPatch(ctx, spec.id, placed, candidate)
             } else {
                 const maxLength = Math.max(2, Math.floor(ctx.number(spec.max_length, 7, `${path}.max_length`, { min: 2 })))
                 const length = ctx.randInt(2, maxLength, spec.id, placed, 'length')
@@ -46,6 +48,29 @@ export function scatterUnderground(ctx: WorldgenCompileContext, state: Undergrou
         ctx.report.placements.push({ id: spec.id, kind: 'scatter_summary', requested: count, placed, surface: spec.surface ?? 'floor', feature: spec.feature ?? 'any' })
         if (placed < count) ctx.warning({ code: 'placement_failed', message: `Underground scatter "${spec.id}" placed ${placed} of ${count}.`, path, details: { requested: count, placed } })
     }
+}
+
+function placeSpiderWebPatch(ctx: WorldgenCompileContext, id: string, index: number, candidate: SurfaceCandidate): void {
+    const cells = 2 + ctx.randInt(0, 2, id, index, 'web-cells')
+    setWebIfAir(ctx, candidate.x, candidate.y, candidate.z)
+    for (let i = 0; i < cells; i += 1) {
+        const angle = ctx.rand01(id, index, i, 'angle') * Math.PI * 2
+        const radius = 1 + Math.floor(ctx.rand01(id, index, i, 'radius') * 2)
+        const x = candidate.x + Math.round(Math.cos(angle) * radius)
+        const z = candidate.z + Math.round(Math.sin(angle) * radius)
+        setWebIfAir(ctx, x, candidate.y, z)
+    }
+    if (candidate.kind === 'wall' && candidate.normal) {
+        setWebIfAir(ctx, candidate.x + candidate.normal.x, candidate.y + 1, candidate.z + candidate.normal.z)
+    } else if (ctx.rand01(id, index, 'vertical') > 0.45) {
+        setWebIfAir(ctx, candidate.x, candidate.y + 1, candidate.z)
+    }
+}
+
+function setWebIfAir(ctx: WorldgenCompileContext, x: number, y: number, z: number): void {
+    if (!ctx.inXYZ(x, y, z)) return
+    if (ctx.chunks.getVoxel(x, y, z) !== BLOCK.air) return
+    setSolid(ctx, x, y, z, BLOCK.spiderWeb)
 }
 
 function oreBlockFor(ctx: WorldgenCompileContext, id: string, index: number): number {

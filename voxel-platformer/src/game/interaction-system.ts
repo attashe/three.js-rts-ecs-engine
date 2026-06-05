@@ -39,6 +39,7 @@ interface InteractionTarget {
 
 interface ActiveBubble {
     targetId: string
+    anchor?: VoxelCoord
     message: string
     expiresAt: number
     /** Queued follow-up messages for the same target, FIFO. Drained
@@ -117,6 +118,7 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
             if (existing) {
                 // Same target already has a bubble — queue the new
                 // message so it plays after the current one expires.
+                existing.anchor = existing.anchor ?? msg.anchor
                 existing.queue.push({ message: msg.message, seconds: msg.seconds })
                 continue
             }
@@ -127,6 +129,7 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
             }
             bubbles.set(msg.targetId, {
                 targetId: msg.targetId,
+                anchor: msg.anchor,
                 message: msg.message,
                 expiresAt: now + msg.seconds,
                 queue: [],
@@ -214,7 +217,7 @@ export function createInteractionSystem(opts: InteractionSystemOptions): System 
     function renderBubbles(world: GameWorld): void {
         if (!bubbleLayer) return
         for (const [id, bubble] of bubbles) {
-            const target = targetForId(world, id)
+            const target = targetForId(world, id, bubble.anchor)
             // If the zone disappeared or deactivated, hide the bubble
             // visually but leave the entry in the map so the seconds
             // timer keeps ticking — the bubble re-appears if the zone
@@ -296,9 +299,18 @@ function nearestInteractionTarget(
     return best
 }
 
-function targetForId(world: GameWorld, targetId: string): InteractionTarget | null {
+function targetForId(world: GameWorld, targetId: string, fallbackAnchor?: VoxelCoord): InteractionTarget | null {
     const zone = world.zones.get(targetId)
-    if (!zone || !isZoneActive(zone)) return null
+    if (!zone || !isZoneActive(zone)) {
+        if (!fallbackAnchor) return null
+        return {
+            id: targetId,
+            anchor: fallbackAnchor,
+            distanceSq: 0,
+            prompt: 'Interaction',
+            interact() {},
+        }
+    }
     return {
         id: zone.id,
         zone,

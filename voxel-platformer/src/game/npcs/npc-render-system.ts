@@ -25,13 +25,17 @@ import { disposeObject3D } from '../../engine/render/dispose-object'
 
 export interface NpcRenderSystemOptions {
     getNpcs: () => readonly NpcConfig[]
-    /** Fired when an NPC takes a non-lethal hit, at its world position, so
-     *  the caller can play a spatial hurt cue. */
-    onHurt?: (position: { x: number; y: number; z: number }) => void
+    /** Fired when an NPC takes a non-lethal hit, at its world position (plus
+     *  its model, so callers can pick a creature-specific hurt cue). */
+    onHurt?: (position: { x: number; y: number; z: number }, model?: NpcConfig['model']) => void
     /** Fired when an NPC launches an attack (the same frame the swing/draw
-     *  animation starts), with the attack clip and the NPC's world position —
-     *  e.g. to play the bow-release cue for the archer's `shoot`. */
-    onAttack?: (clip: NpcAttackClip, position: { x: number; y: number; z: number }) => void
+     *  animation starts), with the attack clip, the NPC's world position, and
+     *  its model — e.g. the bow-release cue for the archer's `shoot`, or a
+     *  spider's chitter on its bite. */
+    onAttack?: (clip: NpcAttackClip, position: { x: number; y: number; z: number }, model?: NpcConfig['model']) => void
+    /** Fired when an NPC dies (its die animation triggers), with world
+     *  position + model, so callers can play a death cue. */
+    onDie?: (position: { x: number; y: number; z: number }, model?: NpcConfig['model']) => void
 }
 
 interface RenderedNpc {
@@ -178,16 +182,17 @@ export function createNpcRenderSystem(scene: Scene, opts: NpcRenderSystemOptions
                 const npc = opts.getNpcs().find((candidate) => candidate.id === id)
                 const clip = runtime.requestAttackClip ?? runtime.attackClip ?? (npc ? npcAttackClip(npc) : 'attack')
                 animator.triggerAttack(clip)
-                opts.onAttack?.(clip, runtime.position)
+                opts.onAttack?.(clip, runtime.position, npc?.model)
                 runtime.requestAttack = false
                 runtime.requestAttackClip = undefined
             }
             if (runtime?.requestDie) {
                 animator.triggerDie()
+                opts.onDie?.(runtime.position, opts.getNpcs().find((candidate) => candidate.id === id)?.model)
                 runtime.requestDie = false
             }
             if (runtime?.requestHurt) {
-                opts.onHurt?.(runtime.position)
+                opts.onHurt?.(runtime.position, opts.getNpcs().find((candidate) => candidate.id === id)?.model)
                 runtime.requestHurt = false
             }
             animator.update(dt)

@@ -59,6 +59,13 @@ const PAINTERS: Record<TileName, TilePainter> = {
     plaster: paintPlaster,
     glass: paintGlass,
     metal: paintMetal,
+    chest: paintChest,
+    chest_open: paintOpenChest,
+    spider_web: paintSpiderWeb,
+    shelf_goods: paintGoodsShelf,
+    tool_panel: paintToolPanel,
+    ore_shelf: paintOreShelf,
+    record_shelf: paintRecordShelf,
 }
 
 export function buildVoxelAtlas(): AtlasBuildResult {
@@ -251,6 +258,125 @@ function paintWood(rgba: Uint8Array, originX: number, originY: number): void {
             setLum(rgba, originX + x, originY + y, cols[x]! + jitter)
         }
     }
+}
+
+/** Closed chest — plank grain plus a dark seam and metal banding. */
+function paintChest(rgba: Uint8Array, originX: number, originY: number): void {
+    paintWood(rgba, originX, originY)
+    for (let y = 0; y < TILE_SIZE; y++) {
+        for (let x = 0; x < TILE_SIZE; x++) {
+            if (y === 15 || y === 16) setLum(rgba, originX + x, originY + y, 0.56)
+            if (x === 7 || x === 24) setLum(rgba, originX + x, originY + y, 0.70)
+            if (x >= 14 && x <= 17 && y >= 13 && y <= 19) setLum(rgba, originX + x, originY + y, 0.62)
+        }
+    }
+}
+
+/** Open chest — the same wood surface with a darker interior stripe. */
+function paintOpenChest(rgba: Uint8Array, originX: number, originY: number): void {
+    paintChest(rgba, originX, originY)
+    for (let y = 5; y <= 12; y++) {
+        for (let x = 4; x < TILE_SIZE - 4; x++) setLum(rgba, originX + x, originY + y, 0.54)
+    }
+    for (let x = 4; x < TILE_SIZE - 4; x++) {
+        setLum(rgba, originX + x, originY + 4, 0.72)
+        setLum(rgba, originX + x, originY + 13, 0.68)
+    }
+}
+
+/** Spider web — pale transparent strands over a flat bright base. */
+function paintSpiderWeb(rgba: Uint8Array, originX: number, originY: number): void {
+    fillTile(rgba, originX, originY, 1.0)
+    const cx = TILE_SIZE / 2
+    const cy = TILE_SIZE / 2
+    for (let y = 0; y < TILE_SIZE; y++) {
+        for (let x = 0; x < TILE_SIZE; x++) {
+            const dx = x - cx
+            const dy = y - cy
+            const dist = Math.hypot(dx, dy)
+            const angle = Math.atan2(dy, dx)
+            const radial = Math.abs(Math.sin(angle * 4)) < 0.12
+            const ring = Math.abs((dist % 6) - 0.5) < 0.45
+            if ((radial && dist > 2) || (ring && dist > 4 && dist < 20)) {
+                setLum(rgba, originX + x, originY + y, 0.72)
+            }
+        }
+    }
+}
+
+/** Goods shelf — shelves with tiny jars and bundles drawn into the face. */
+function paintGoodsShelf(rgba: Uint8Array, originX: number, originY: number): void {
+    paintPlank(rgba, originX, originY)
+    for (const y of [8, 17, 26]) {
+        for (let x = 3; x < TILE_SIZE - 3; x += 1) setLum(rgba, originX + x, originY + y, 0.66)
+    }
+    for (const x of [5, 15, 25]) {
+        for (let y = 5; y < TILE_SIZE - 4; y += 1) if (y % 9 !== 8) setLum(rgba, originX + x, originY + y, 0.76)
+    }
+    drawSoftRect(rgba, originX + 8, originY + 11, 4, 5, 0.74)
+    drawSoftRect(rgba, originX + 18, originY + 11, 5, 5, 0.82)
+    drawSoftRect(rgba, originX + 9, originY + 20, 5, 4, 0.78)
+    drawSoftRect(rgba, originX + 20, originY + 20, 4, 4, 0.72)
+}
+
+/** Tool panel — a cheap wall block with silhouettes of picks and hammers. */
+function paintToolPanel(rgba: Uint8Array, originX: number, originY: number): void {
+    fillTile(rgba, originX, originY, 0.96)
+    for (const y of [5, 26]) for (let x = 3; x < TILE_SIZE - 3; x += 1) setLum(rgba, originX + x, originY + y, 0.70)
+    for (const x of [5, 26]) for (let y = 5; y <= 26; y += 1) setLum(rgba, originX + x, originY + y, 0.74)
+    drawHangingTool(rgba, originX + 10, originY + 8, 1)
+    drawHangingTool(rgba, originX + 19, originY + 8, -1)
+    for (let y = 11; y <= 23; y += 1) setLum(rgba, originX + 15, originY + y, 0.64)
+    for (let x = 12; x <= 18; x += 1) setLum(rgba, originX + x, originY + 11, 0.66)
+}
+
+/** Ore shelf — stacked bins and bright ore chunks for storage rooms. */
+function paintOreShelf(rgba: Uint8Array, originX: number, originY: number): void {
+    paintStone(rgba, originX, originY)
+    for (const y of [9, 18, 27]) {
+        for (let x = 3; x < TILE_SIZE - 3; x += 1) setLum(rgba, originX + x, originY + y, 0.67)
+    }
+    for (const x of [6, 16, 25]) {
+        for (let y = 6; y < TILE_SIZE - 4; y += 1) setLum(rgba, originX + x, originY + y, 0.73)
+    }
+    for (const [x, y, lum] of [
+        [10, 13, 0.58], [12, 14, 0.88], [21, 13, 0.62],
+        [9, 22, 0.72], [19, 22, 0.56], [23, 23, 0.90],
+    ] as const) {
+        drawSoftRect(rgba, originX + x, originY + y, 3, 3, lum)
+    }
+}
+
+/** Record shelf — ledgers, scrolls, and marker lines for meeting/office rooms. */
+function paintRecordShelf(rgba: Uint8Array, originX: number, originY: number): void {
+    fillTile(rgba, originX, originY, 0.98)
+    for (const y of [7, 16, 25]) {
+        for (let x = 4; x < TILE_SIZE - 4; x += 1) setLum(rgba, originX + x, originY + y, 0.68)
+    }
+    for (let x = 7; x <= 13; x += 2) drawBookSpine(rgba, originX + x, originY + 9, 0.68 + (x % 4) * 0.04)
+    for (let x = 18; x <= 24; x += 3) drawScroll(rgba, originX + x, originY + 10)
+    for (let x = 8; x <= 24; x += 2) drawBookSpine(rgba, originX + x, originY + 18, 0.72)
+}
+
+function drawSoftRect(rgba: Uint8Array, x0: number, y0: number, w: number, h: number, lum: number): void {
+    for (let y = y0; y < y0 + h; y += 1) {
+        for (let x = x0; x < x0 + w; x += 1) setLum(rgba, x, y, lum)
+    }
+}
+
+function drawHangingTool(rgba: Uint8Array, x0: number, y0: number, dir: 1 | -1): void {
+    for (let y = 0; y < 15; y += 1) setLum(rgba, x0, y0 + y, 0.62)
+    for (let x = 0; x <= 5; x += 1) setLum(rgba, x0 + x * dir, y0 + 2 + Math.floor(x / 2), 0.58)
+}
+
+function drawBookSpine(rgba: Uint8Array, x: number, y: number, lum: number): void {
+    for (let yy = y; yy <= y + 6; yy += 1) setLum(rgba, x, yy, lum)
+}
+
+function drawScroll(rgba: Uint8Array, x: number, y: number): void {
+    drawSoftRect(rgba, x, y, 4, 6, 0.84)
+    setLum(rgba, x, y, 0.66)
+    setLum(rgba, x + 3, y + 5, 0.66)
 }
 
 /** Sand — fine high-density speckle. */

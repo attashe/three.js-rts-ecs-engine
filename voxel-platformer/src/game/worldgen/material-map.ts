@@ -24,6 +24,17 @@ export const DEFAULT_MATERIAL_ALIASES: NormalizedMaterialAliasMap = {
     copper_ore: 'oreCopper',
     crystal_ore: 'oreCrystal',
     glowing_ore: 'oreCrystal',
+    chest_closed: 'chest',
+    open_chest: 'openChest',
+    spider_web: 'spiderWeb',
+    web: 'spiderWeb',
+    goods_shelf: 'goodsShelf',
+    provision_shelf: 'goodsShelf',
+    tool_panel: 'toolPanel',
+    tool_rack_voxel: 'toolPanel',
+    ore_shelf: 'oreShelf',
+    record_shelf: 'recordShelf',
+    ledger_shelf: 'recordShelf',
 }
 
 const BLOCK_KEY_BY_NORMALIZED_NAME = new Map<string, EngineBlockKey>(
