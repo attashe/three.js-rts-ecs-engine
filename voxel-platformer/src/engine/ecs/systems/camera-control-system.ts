@@ -20,11 +20,13 @@ export interface CameraControlOptions {
     edgePanThreshold?: number
     /** Multiplier per wheel notch. Default 1.1. */
     zoomFactor?: number
-    /** Zoom clamp. Default [0.25, 5]. */
-    zoomMin?: number
-    zoomMax?: number
+    /** Zoom clamp. Default [0.25, 5]. Can be dynamic for debug/gameplay modes. */
+    zoomMin?: ZoomLimit
+    zoomMax?: ZoomLimit
     actions?: CameraControlActions
 }
+
+export type ZoomLimit = number | (() => number)
 
 export interface CameraControlActions {
     forward: ActionId
@@ -122,13 +124,19 @@ export function createCameraControlSystem(
 
             if (wheelZoom) {
                 const wheel = input.consumeWheel()
+                iso.applyZoom(resolveZoomLimit(zoomMin, 0.25), resolveZoomLimit(zoomMax, 5))
                 if (wheel !== 0) {
                     // Up = zoom in, down = zoom out. e.deltaY > 0 on scroll-down in standard browsers.
                     const factor = wheel < 0 ? zoomFactor : 1 / zoomFactor
                     iso.camera.zoom *= factor
-                    iso.applyZoom(zoomMin, zoomMax)
+                    iso.applyZoom(resolveZoomLimit(zoomMin, 0.25), resolveZoomLimit(zoomMax, 5))
                 }
             }
         },
     }
+}
+
+function resolveZoomLimit(limit: ZoomLimit, fallback: number): number {
+    const value = typeof limit === 'function' ? limit() : limit
+    return Number.isFinite(value) ? value : fallback
 }
