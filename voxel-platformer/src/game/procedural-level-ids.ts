@@ -4,6 +4,7 @@ export const LARGE_TOWN_LEVEL_ID = 'demo-large-town'
 export const COMBAT_ARENA_LEVEL_ID = 'demo-combat-arena'
 export const FOREST_LIFT_VALLEY_LEVEL_ID = 'demo-forest-lift-valley'
 export const WORLDGEN_PIPELINE_SAMPLE_LEVEL_ID = 'worldgen-pipeline-sample'
+export const PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID = 'phase12-underground-mine-stress'
 
 export const DEMO_FROM_GARDEN_ARRIVAL_ID = 'arrival.from-garden'
 export const TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID = 'arrival.from-demo'

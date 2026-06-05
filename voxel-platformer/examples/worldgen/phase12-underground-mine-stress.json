@@ -1,0 +1,304 @@
+{
+  "version": 1,
+  "world": {
+    "id": "phase12-underground-mine-stress",
+    "name": "Phase 12 Underground Mine Stress",
+    "type": "underground",
+    "seed": "phase12/underground-mine-stress/v1",
+    "size": [288, 48, 160]
+  },
+  "volume": {
+    "initial": "solid",
+    "default_material": "dark_limestone",
+    "y_range": [0, 27],
+    "cutaway": { "mode": "open_top", "clearance": 4, "horizontal_margin": 1, "shell_margin": 4, "rim_height": 2 },
+    "prune": { "mode": "feature_shell", "horizontal_margin": 4, "vertical_margin": 4 },
+    "strata": [
+      { "y": "0..9", "material": "dark_stone" },
+      { "y": "10..23", "material": "dark_limestone" },
+      { "y": "24..27", "material": "rootbound_dirt" }
+    ]
+  },
+  "carvers": [
+    {
+      "id": "entrance_shaft",
+      "type": "vertical_shaft",
+      "center_xz": [18, 144],
+      "y_range": [26, 27],
+      "radius": 4,
+      "stairs": "spiral",
+      "roughness": 0.08
+    },
+    {
+      "id": "old_station",
+      "type": "rect_room",
+      "center": [32, 28, 136],
+      "size": [18, 7, 12],
+      "floor_material": "platform",
+      "support_pillars": true
+    },
+    {
+      "id": "root_cavern",
+      "type": "chamber_ellipsoid",
+      "center": [70, 26, 122],
+      "radius": [18, 7, 14],
+      "floor_y": 22,
+      "roughness": 0.32,
+      "floor_flatten": { "radius_x": 10, "radius_z": 8 }
+    },
+    {
+      "id": "rail_split_hall",
+      "type": "dwarf_room",
+      "center": [112, 23, 104],
+      "size": [22, 8, 16],
+      "floor_material": "platform",
+      "support_pillars": true
+    },
+    {
+      "id": "worker_bunks",
+      "type": "dwarf_room",
+      "center": [118, 22, 128],
+      "size": [16, 6, 12],
+      "floor_material": "wood",
+      "support_pillars": true
+    },
+    {
+      "id": "forge_room",
+      "type": "dwarf_room",
+      "center": [162, 21, 104],
+      "size": [16, 7, 12],
+      "floor_material": "stone",
+      "support_pillars": true
+    },
+    {
+      "id": "storage_room",
+      "type": "dwarf_room",
+      "center": [196, 21, 92],
+      "size": [14, 6, 12],
+      "floor_material": "platform",
+      "support_pillars": true
+    },
+    {
+      "id": "glitter_cave",
+      "type": "chamber_ellipsoid",
+      "center": [142, 24, 72],
+      "radius": [20, 8, 16],
+      "floor_y": 20,
+      "roughness": 0.38,
+      "floor_flatten": { "radius_x": 12, "radius_z": 9 }
+    },
+    {
+      "id": "canyon_rail_cut",
+      "type": "underground_canyon",
+      "spline": [[176, 20, 80], [210, 20, 62], [246, 19, 50]],
+      "width": [18, 24],
+      "depth": 12,
+      "ceiling_height": 14,
+      "ledges": { "required_main_path": { "width": 4 } },
+      "crossing": { "id": "rail_bridge_socket", "at_t": 0.48 }
+    },
+    {
+      "id": "deep_grotto",
+      "type": "chamber_ellipsoid",
+      "center": [260, 20, 42],
+      "radius": [13, 6, 11],
+      "floor_y": 17,
+      "roughness": 0.26,
+      "floor_flatten": { "radius_x": 8, "radius_z": 6 }
+    },
+    {
+      "id": "portal_vault",
+      "type": "chamber_ellipsoid",
+      "center": [270, 20, 26],
+      "radius": [8, 5, 7],
+      "floor_y": 17,
+      "roughness": 0.16,
+      "floor_flatten": { "radius_x": 5, "radius_z": 4 }
+    },
+    {
+      "id": "old_rail_network",
+      "type": "mine_tunnel_network",
+      "half_width": 2,
+      "height": 5,
+      "supports_every": 7,
+      "lantern_every": 10,
+      "rails": true,
+      "floor_material": "stone",
+      "corridors": [
+        [[18, 28, 144], [32, 28, 136], [70, 22, 122], [112, 23, 104], [142, 20, 72], [176, 20, 80], [210, 20, 62], [246, 19, 50], [260, 17, 42], [270, 17, 26]],
+        [[112, 23, 104], [116, 22, 118], [118, 22, 128]],
+        [[112, 23, 104], [140, 22, 104], [162, 21, 104], [196, 21, 92]],
+        [[70, 22, 122], [78, 22, 138], [92, 22, 146]],
+        [[92, 22, 146], [104, 22, 150], [116, 22, 150]],
+        [[142, 20, 72], [142, 20, 52], [154, 20, 42]]
+      ]
+    }
+  ],
+  "connectors": [
+    {
+      "id": "shaft_to_station",
+      "type": "noise_tube",
+      "from": [18, 28, 144],
+      "to": [32, 28, 136],
+      "radius": [3, 4],
+      "vertical_wander": 1
+    },
+    {
+      "id": "cave_bypass",
+      "type": "noise_tube",
+      "from": [70, 22, 122],
+      "to": [142, 20, 72],
+      "radius": [4, 5],
+      "vertical_wander": 2
+    },
+    {
+      "id": "grotto_squeeze",
+      "type": "noise_tube",
+      "from": [246, 19, 50],
+      "to": [260, 17, 42],
+      "radius": [3, 4],
+      "vertical_wander": 1
+    }
+  ],
+  "main_paths": [
+    {
+      "id": "critical_descent_route",
+      "width": 2,
+      "carve_radius": 3,
+      "floor_block": "stone",
+      "waypoints": [[32, 28, 136], [70, 22, 122], [112, 23, 104], [142, 20, 72], [176, 20, 80], [210, 20, 62], [246, 19, 50], [260, 17, 42], [270, 17, 26], [270, 17, 29]]
+    }
+  ],
+  "structures": [
+    {
+      "id": "spawn",
+      "asset": "marker.spawn",
+      "place": { "mode": "surface_at_xz", "x": 32, "z": 136, "kind": "floor", "y_range": [26, 31], "search_radius": 5, "require_air_above": 2 },
+      "required": true
+    },
+    {
+      "id": "broken_rail_bridge",
+      "asset": "fixed.bridge.broken_stone",
+      "place": { "mode": "canyon_crossing", "feature": "canyon_rail_cut", "at_t": 0.48 },
+      "required": true
+    },
+    {
+      "id": "living_room_decor",
+      "asset": "fixed.room.dwarf_living",
+      "place": { "mode": "room_center", "room": "worker_bunks" },
+      "required": true
+    },
+    {
+      "id": "forge_decor",
+      "asset": "fixed.room.dwarf_forge",
+      "place": { "mode": "room_center", "room": "forge_room" },
+      "required": true
+    },
+    {
+      "id": "storage_decor",
+      "asset": "fixed.room.dwarf_storage",
+      "place": { "mode": "room_center", "room": "storage_room" },
+      "required": true
+    },
+    {
+      "id": "blue_portal",
+      "asset": "fixed.portal.blue_stone",
+      "place": { "mode": "room_center", "room": "portal_vault" },
+      "required": true
+    }
+  ],
+  "scatter": [
+    { "id": "root_mushrooms", "asset": "proc.mushroom.glow_cluster", "count": 18, "surface": "floor", "feature": "root_cavern", "min_distance": 4 },
+    { "id": "glitter_crystals", "asset": "proc.crystal.wall_cluster", "count": 16, "surface": "wall", "feature": "glitter_cave", "min_distance": 4 },
+    { "id": "canyon_crystals", "asset": "proc.crystal.wall_cluster", "count": 12, "surface": "wall", "feature": "canyon_rail_cut", "min_distance": 5 }
+  ],
+  "content": {
+    "props": [
+      {
+        "id": "station_warning_sign",
+        "kind": "road-sign",
+        "place_at": "spawn",
+        "offset": [2.5, 0, -2.5],
+        "yaw": 0.75
+      },
+      {
+        "id": "abandoned_supply_crate",
+        "kind": "repair-materials-crate",
+        "place_at_xz": [92, 146],
+        "y": 22,
+        "yaw": -0.35,
+        "scale": 0.9
+      },
+      {
+        "id": "collapsed_miner",
+        "kind": "fallen-driver",
+        "place_at": "abandoned_supply_crate",
+        "offset": [-1.6, 0, 0.6],
+        "yaw": 1.35,
+        "scale": 0.85
+      }
+    ],
+    "zones": [
+      {
+        "id": "station_warning_zone",
+        "type": "interact",
+        "place_at": "station_warning_sign",
+        "half_xz": [1, 1],
+        "height": 2,
+        "prompt": "Read Sign",
+        "radius": 2.4
+      }
+    ],
+    "rail_carts": [
+      {
+        "id": "bunk_branch_cart",
+        "railCell": [116, 22, 150],
+        "front": "east",
+        "speed": 3,
+        "interactionRadius": 1.5,
+        "enabled": false
+      },
+      {
+        "id": "storage_branch_cart",
+        "railCell": [154, 20, 42],
+        "front": "east",
+        "enabled": false
+      }
+    ],
+    "environment": {
+      "soundId": "music.amb.start",
+      "volume": 0.18,
+      "ambientWeather": { "presetId": "clear", "state": { "timeOfDay": 23 } },
+      "soundSources": [
+        { "id": "shaft_wind", "soundId": "sfx.amb.wind", "place_at": "spawn", "radius": 18, "volume": 0.18 },
+        { "id": "deep_drip", "soundId": "amb.water", "position": [260.5, 17, 42.5], "radius": 16, "volume": 0.2 }
+      ],
+      "soundZones": [
+        { "id": "canyon_echo_zone", "soundId": "sfx.amb.wind", "place_at": "rail_bridge_socket", "size": [36, 12, 28], "volume": 0.18 }
+      ],
+      "weatherZones": [
+        { "id": "grotto_mist", "label": "Grotto Mist", "presetId": "fog", "position": [260.5, 21, 42.5], "size": [24, 10, 20], "addSound": false }
+      ]
+    },
+    "travel": [
+      { "id": "arrival.phase12.start", "type": "arrival", "place_at": "spawn", "half_xz": [1, 1] }
+    ],
+    "scripts": [
+      {
+        "id": "station-warning-script",
+        "source": "on('input', { action: 'interact', targetId: 'station_warning_zone' }, () => { ui.say('station_warning_zone', 'Old rail authority notice: carts beyond the canyon are condemned. Keep to the marked route.', { seconds: 4 }) })"
+      }
+    ]
+  },
+  "validation": {
+    "require_paths": [
+      { "id": "phase12_spawn_to_living", "from": "spawn", "to": "living_room_decor", "actor": "player_basic" },
+      { "id": "phase12_spawn_to_forge", "from": "spawn", "to": "forge_decor", "actor": "player_basic" },
+      { "id": "phase12_spawn_to_storage", "from": "spawn", "to": "storage_decor", "actor": "player_basic" },
+      { "id": "phase12_spawn_to_supply_crate", "from": "spawn", "to": "abandoned_supply_crate", "actor": "player_basic" },
+      { "id": "phase12_spawn_to_bridge", "from": "spawn", "to": "broken_rail_bridge", "actor": "player_basic" },
+      { "id": "phase12_spawn_to_bunk_cart", "from": "spawn", "to": "bunk_branch_cart", "actor": "player_basic" },
+      { "id": "phase12_spawn_to_storage_cart", "from": "spawn", "to": "storage_branch_cart", "actor": "player_basic" }
+    ]
+  }
+}

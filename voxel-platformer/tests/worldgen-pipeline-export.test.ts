@@ -22,6 +22,7 @@ const execFileAsync = promisify(execFile)
 const SAMPLE_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase8-pipeline-sample.json')
 const STRESS_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase9-region-stress.json')
 const AUTHORING_SCALE_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase11-authoring-scale.json')
+const PHASE12_UNDERGROUND_STRESS_SPEC_PATH = resolve(process.cwd(), 'examples/worldgen/phase12-underground-mine-stress.json')
 const CLI_PATH = resolve(process.cwd(), '.tmp/test-build/scripts/compile-world-spec.js')
 
 test('Phase 8 sample worldspec exports to editor-saveable metadata and a stable report', async () => {
@@ -165,6 +166,31 @@ test('Phase 11 authoring-scale worldspec compiles refs and forward content as re
     assert.ok(report.placements.some((placement) => placement.kind === 'content_quest' && placement.id === 'recover_trail_cache'))
     assert.ok(report.validation.every((entry) => entry.ok))
     assert.equal(PROCEDURAL_LEVEL_DEFINITIONS.some((definition) => definition.id === 'phase11-authoring-scale'), false)
+    await assert.rejects(access(defaultLevelPath))
+})
+
+test('Phase 12 underground mine stress worldspec compiles report-only and is registered for export', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'worldgen-cli-phase12-'))
+    const reportPath = join(dir, 'phase12.report.json')
+    const defaultLevelPath = join(dir, 'public/levels/phase12-underground-mine-stress.vplevel')
+
+    await execFileAsync(process.execPath, [CLI_PATH, PHASE12_UNDERGROUND_STRESS_SPEC_PATH, '--report', reportPath, '--report-only'], { cwd: dir })
+
+    const report = await readReport(reportPath)
+    assert.equal(report.specId, 'phase12-underground-mine-stress')
+    assert.equal(report.status, 'ok', diagnosticSummary(report))
+    assert.equal(report.errors.length, 0)
+    assert.equal(report.metrics.regionCount, 2)
+    assert.ok(report.metrics.chunkCount <= 28, `expected low-ceiling shell-pruned mine to stay compact, got ${report.metrics.chunkCount}`)
+    assert.ok(report.metrics.writtenVoxels < 100_000, `expected low-ceiling shell-pruned mine under 100k voxels, got ${report.metrics.writtenVoxels}`)
+    assert.equal(report.warnings.some((warning) => warning.code === 'resident_world_budget'), false)
+    assert.ok(report.validation.every((entry) => entry.ok), diagnosticSummary(report))
+    assert.ok(report.placements.some((placement) => placement.kind === 'underground_cutaway' && placement.mode === 'open_top'))
+    assert.ok(report.placements.some((placement) => placement.kind === 'underground_prune' && placement.mode === 'feature_shell' && typeof placement.removedVoxels === 'number' && placement.removedVoxels > 1_000_000))
+    assert.ok(report.placements.some((placement) => placement.kind === 'content_rail_cart' && placement.id === 'bunk_branch_cart'))
+    assert.ok(report.placements.some((placement) => placement.kind === 'content_rail_cart' && placement.id === 'storage_branch_cart'))
+    assert.ok(report.placements.some((placement) => placement.kind === 'underground_decor' && placement.id === 'forge_decor'))
+    assert.equal(PROCEDURAL_LEVEL_DEFINITIONS.some((definition) => definition.id === 'phase12-underground-mine-stress'), true)
     await assert.rejects(access(defaultLevelPath))
 })
 

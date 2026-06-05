@@ -15,8 +15,9 @@ import { defineLevel, outdoorDay, terrain, zoneBox } from './level-builder'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from './player-settings'
 import { INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS, SWORD_ITEM_ID } from './equipment-items'
 import type { CameraShot, Cinematic } from './cinematics/cinematic-types'
-import { compileSurfaceLevelOrThrow, requireResolvedAnchor, type VoxelCoord } from './worldgen'
+import { compileSurfaceLevelOrThrow, compileWorldgenLevelOrThrow, requireResolvedAnchor, type VoxelCoord } from './worldgen'
 import phase8PipelineSampleSpecJson from '../../examples/worldgen/phase8-pipeline-sample.json'
+import phase12UndergroundMineStressSpecJson from '../../examples/worldgen/phase12-underground-mine-stress.json'
 import {
     generateStructureAsset,
     placeStructureAsset,
@@ -37,6 +38,7 @@ import {
     FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
     FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
+    PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
@@ -53,6 +55,7 @@ export {
     FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
     FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
+    PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
     TELEPORT_GARDEN_FROM_DEMO_ARRIVAL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
@@ -139,6 +142,12 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         name: 'Worldgen Pipeline Sample',
         generate: generateWorldgenPipelineSampleLevel,
     },
+    {
+        id: PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
+        file: `${PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID}.vplevel`,
+        name: 'Phase 12 Underground Mine Stress',
+        generate: generatePhase12UndergroundMineStressLevel,
+    },
 ]
 
 export const PROCEDURAL_LEVEL_IDS = PROCEDURAL_LEVEL_DEFINITIONS.map((level) => level.id)
@@ -171,6 +180,39 @@ export function generateDemoProceduralLevel(
 
 export function generateWorldgenPipelineSampleLevel(chunks: ChunkManager): LevelMeta {
     return compileSurfaceLevelOrThrow(phase8PipelineSampleSpecJson, chunks).meta
+}
+
+export function generatePhase12UndergroundMineStressLevel(chunks: ChunkManager): LevelMeta {
+    const meta = compileWorldgenLevelOrThrow(phase12UndergroundMineStressSpecJson, chunks).meta
+    return {
+        ...meta,
+        player: phase12UndergroundStarterPlayerSettings(meta.player),
+    }
+}
+
+function phase12UndergroundStarterPlayerSettings(base: LevelMeta['player']): LevelMeta['player'] {
+    return applyPlayerSettingsPatch(copyPlayerSettings(base), {
+        abilities: {
+            highJump: false,
+            torch: true,
+        },
+        inventory: {
+            items: {
+                ...base.inventory.items,
+                [HIGH_JUMP_BOOTS_ITEM_ID]: {
+                    quantity: 1,
+                    ...HIGH_JUMP_BOOTS_ITEM_OPTIONS,
+                },
+                [HELD_TORCH_ITEM_ID]: {
+                    quantity: 1,
+                    ...HELD_TORCH_ITEM_OPTIONS,
+                },
+            },
+        },
+        equipment: {
+            boots: HIGH_JUMP_BOOTS_ITEM_ID,
+        },
+    })
 }
 
 /**

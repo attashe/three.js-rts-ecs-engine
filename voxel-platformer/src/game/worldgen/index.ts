@@ -61,5 +61,5 @@ export {
 export { WORLDGEN_REGION_SIZE_CHUNKS, collectWorldgenChunkMetrics } from './region-metrics'
 export { normalizeWorldSpec } from './normalize-spec'
 export { compileWorldSpec } from './compile-world'
-export { compileSurfaceLevelOrThrow, formatWorldgenDiagnostics, requireResolvedAnchor } from './level-helpers'
+export { compileSurfaceLevelOrThrow, compileWorldgenLevelOrThrow, formatWorldgenDiagnostics, requireResolvedAnchor } from './level-helpers'
 export type { WorldgenContentResolveOptions } from './resolve-content'

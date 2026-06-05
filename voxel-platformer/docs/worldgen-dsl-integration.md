@@ -246,8 +246,10 @@ warning, not silently degrade the result.
 | `flatten_disc` | New terrain flatten helper over a circle/ellipse mask with blend shoulder |
 | `cliff_band` | Height offset along a segment/path mask with face-side falloff |
 | `road_spline` | `terrain().path(...)` plus optional grade smoothing and shoulder material |
-| `volume.initial: solid` | Bulk fill of bounded volume through `ChunkManager.withBulkEdit` |
-| `strata` | Per-Y material bands during volume fill |
+| `volume.initial: solid` | Bulk fill of bounded volume through `ChunkManager.withBulkEdit`; underground specs may cap the filled Y band with `volume.y_range` |
+| `strata` | Per-Y material bands during volume fill, clipped to the active fill Y band |
+| `volume.cutaway: open_top` | Remove roof columns above underground floor cells for isometric playable maps while preserving low walls, floors, rails, props, and path validation |
+| `volume.prune: feature_shell` | Remove remote fill/strata terrain outside a shell around carved feature cells, then compact empty chunks before export |
 | `vertical_shaft` | Cylinder/rough cylinder carve, optional stairs/ladder/rail/lift socket |
 | `chamber_ellipsoid` | Ellipsoid carve with roughness, floor flatten, surface classification |
 | `rect_room` / `dwarf_room` | Rectangular clear space with floor material, pillars, lights, and sockets |
@@ -274,9 +276,6 @@ Current MVP content categories:
   a broken runtime zone.
 - `props`: emit `EditorProp` placements with resolved object ids.
 - `scripts`: emit explicit `ScriptEntry` source.
-
-Remaining rich content categories:
-
 - `quests`: compile small state-machine scripts using flags, pickups, dialogue,
   rewards, and stable IDs.
 - `shops`: compile trade-opening scripts using current `TradeResource` values.
@@ -284,6 +283,9 @@ Remaining rich content categories:
 - `cinematics`: emit current cinematic metadata.
 - `environment`: emit ambient music and weather state.
 - `travel`: emit portal zones and arrival zones.
+- `rail_carts`: emit existing `RailCartConfig` metadata from rail-cell or shared
+  spatial placement. Generated carts validate that the target voxel is a rail
+  block so bad carts fail at compile time instead of being skipped at runtime.
 
 The content compiler should not introduce a second quest engine. It should
 generate ordinary `ScriptEntry` source that uses the same patterns as existing
@@ -557,7 +559,20 @@ Implemented scope:
   surface/underground merge contract is designed.
 - Solid volume fill and strata write directly through the shared
   `WorldgenCompileContext`, material resolver, bounds checks, keyed RNG, and
-  diagnostics.
+  diagnostics. `volume.y_range` can cap the filled Y band so generated resident
+  locations do not allocate unused overhead chunks.
+- `volume.cutaway.mode: "open_top"` clears roof columns above underground floor
+  cells after carving and before surface refresh. The cut is local to the
+  nearest floor: `clearance` preserves headroom over walkable cells, while
+  `shell_margin` and `rim_height` trim or rebuild the surrounding shell into a
+  low rim. This keeps descending cave routes readable in the isometric camera
+  instead of using one global top height that is too tall in low sections and
+  too low beside high sections. Closed caves remain the default when no cutaway
+  is requested.
+- `volume.prune.mode: "feature_shell"` removes fill/strata terrain outside a
+  configurable shell around generated feature cells, then prunes empty chunks.
+  This keeps the authored cave/tunnel silhouettes while avoiding huge exported
+  slabs of invisible stone around playable space.
 - Supported carvers are `vertical_shaft`, `chamber_ellipsoid`, `rect_room`,
   `dwarf_room`, `mine_tunnel_network`, and `underground_canyon`.
 - Supported connectors are `noise_tube`; guaranteed walkable routes use
@@ -867,12 +882,21 @@ imply):
 - **Phase 11 — Authoring scale.** Implemented: `defs`/`$ref` object
   composition, order-independent spatial content references, generated-script
   helper hardening, and a report-only authoring-scale fixture.
-- **Phase 12 — Runtime scale.** Region footprints (now expressible thanks to
-  rectangular worlds) → optional streaming. Research note: the world shape is
-  the chunk geometry — the editor and serializer never depended on a square
-  scalar `size` — so region streaming is less risky than the original
-  `large-worlds-plan.md` framing assumed. Still gate the streaming work on a
-  concrete world-size need, not on capability for its own sake.
+- **Phase 12 — Validation before runtime scale.** Implemented a large
+  underground WorldSpec before changing save/load/runtime streaming. It
+  exercises rectangular regions, mine shafts, cave chambers, rail-laid tunnel
+  networks, abandoned dwarf rooms, ambience, content placement, rail-cart
+  metadata, and `require_paths`. The fixture still supports the report-only
+  validation loop, and it is now also registered in `PROCEDURAL_LEVEL_DEFINITIONS`
+  so `npm run levels:procedural` exports
+  `public/levels/phase12-underground-mine-stress.vplevel` for the level list.
+  Follow-up corrections switched the playable fixture from a fully buried solid
+  cuboid to a bounded-fill, open-top cutaway presentation, then added
+  feature-shell pruning so the exported level keeps only stone near authored
+  cave/tunnel spaces. The isometric camera can now read the mine, and the
+  resident footprint stays comfortably under the current chunk/voxel budget.
+  Runtime streaming stays gated on the resident-budget metrics and a concrete
+  production need.
 
 ## Detailed Phase 1 Work
 

@@ -2,15 +2,22 @@ import type { ChunkManager } from '../../engine/voxel/chunk-manager'
 import { compileWorldSpec } from './compile-world'
 import type { VoxelCoord, WorldgenCompileResult, WorldgenReport } from './spec-types'
 
-export function compileSurfaceLevelOrThrow(
+export function compileWorldgenLevelOrThrow(
     spec: unknown,
     chunks?: ChunkManager,
 ): WorldgenCompileResult {
     const result = compileWorldSpec(spec, { chunks })
     if (result.report.status === 'failed') {
-        throw new Error(formatWorldgenDiagnostics('Worldgen surface compilation failed', result.report))
+        throw new Error(formatWorldgenDiagnostics('Worldgen compilation failed', result.report))
     }
     return result
+}
+
+export function compileSurfaceLevelOrThrow(
+    spec: unknown,
+    chunks?: ChunkManager,
+): WorldgenCompileResult {
+    return compileWorldgenLevelOrThrow(spec, chunks)
 }
 
 export function requireResolvedAnchor(report: WorldgenReport, id: string): VoxelCoord {

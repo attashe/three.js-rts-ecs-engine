@@ -1,9 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { serializeLevel } from '../src/engine/voxel/level-serializer'
 import { BLOCK } from '../src/engine/voxel/palette'
 import { compileWorldSpec } from '../src/game/worldgen'
 import type { WorldSpec } from '../src/game/worldgen'
+
+const PHASE12_UNDERGROUND_STRESS_SPEC = JSON.parse(readFileSync('examples/worldgen/phase12-underground-mine-stress.json', 'utf8')) as WorldSpec
 
 const DUNGEON_SPEC: WorldSpec = {
     version: 1,
@@ -164,6 +167,125 @@ test('underground mineshaft-style spec compiles rooms, mine tunnels, and require
     assert.equal(result.report.metrics.pathCount, 1)
 })
 
+test('Phase 12 underground mine stress spec validates rails, rooms, caves, and region metrics', () => {
+    const result = compileWorldSpec(PHASE12_UNDERGROUND_STRESS_SPEC)
+
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.equal(result.report.errors.length, 0)
+    assert.equal(result.report.metrics.regionCount, 2)
+    assert.ok(result.report.metrics.chunkCount <= 28, `expected low-ceiling shell-pruned mine to stay compact, got ${result.report.metrics.chunkCount}`)
+    assert.ok(result.report.metrics.writtenVoxels < 100_000, `expected low-ceiling shell-pruned mine under 100k voxels, got ${result.report.metrics.writtenVoxels}`)
+    assert.equal(result.report.warnings.some((warning) => warning.code === 'resident_world_budget'), false)
+    assert.ok(result.report.validation.every((entry) => entry.ok), diagnosticSummary(result.report.errors, result.report.warnings))
+    const cutaway = result.report.placements.find((placement) => placement.kind === 'underground_cutaway')
+    assert.equal(cutaway?.mode, 'open_top')
+    assert.equal(cutaway?.clearance, 4)
+    assert.equal(cutaway?.shellMargin, 4)
+    assert.equal(cutaway?.rimHeight, 2)
+    assert.ok(typeof cutaway?.rimVoxels === 'number' && cutaway.rimVoxels > 0)
+    assert.ok(typeof cutaway?.clearedVoxels === 'number' && cutaway.clearedVoxels > 3_000)
+    const prune = result.report.placements.find((placement) => placement.kind === 'underground_prune')
+    assert.equal(prune?.mode, 'feature_shell')
+    assert.ok(typeof prune?.removedVoxels === 'number' && prune.removedVoxels > 1_000_000)
+    assert.ok(typeof prune?.removedChunks === 'number' && prune.removedChunks >= 15)
+    for (const id of ['entrance_shaft', 'root_cavern', 'old_rail_network', 'canyon_rail_cut']) {
+        assert.ok(result.report.placements.some((placement) => placement.id === id && placement.kind === 'carver'), `${id} carver should report placement`)
+    }
+    for (const id of ['living_room_decor', 'forge_decor', 'storage_decor', 'blue_portal', 'broken_rail_bridge']) {
+        assert.ok(result.report.resolvedObjects[id], `${id} should resolve`)
+    }
+    assert.equal(result.meta.railCarts.length, 2)
+    assert.equal(result.meta.railCarts.every((cart) => cart.enabled === false), true)
+    assert.equal(result.chunks.getVoxel(116, 22, 150), BLOCK.rail)
+    assert.equal(result.chunks.getVoxel(154, 20, 42), BLOCK.rail)
+    assert.ok(result.report.placements.some((placement) => placement.id === 'root_mushrooms' && placement.kind === 'scatter_summary'))
+    assert.ok(result.report.placements.some((placement) => placement.id === 'grotto_mist' && placement.kind === 'content_weather_zone'))
+})
+
+test('underground open-top cutaway removes room ceilings without allocating empty upper chunks', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'cutaway_room', name: 'Cutaway Room', type: 'underground', seed: 'cutaway-room', size: [32, 48, 32] },
+        volume: {
+            initial: 'solid',
+            default_material: 'dark_limestone',
+            y_range: [0, 31],
+            cutaway: { mode: 'open_top', clearance: 4, horizontal_margin: 1 },
+        },
+        carvers: [
+            { id: 'room', type: 'rect_room', center: [16, 12, 16], size: [10, 5, 10], floor_material: 'stone', support_pillars: false, lanterns: false },
+        ],
+        structures: [
+            { id: 'spawn', asset: 'marker.spawn', place: { mode: 'surface_at_xz', x: 16, z: 16, kind: 'floor', y_range: [10, 14], search_radius: 2, require_air_above: 3 }, required: true },
+        ],
+    })
+
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.equal(result.chunks.getVoxel(16, 11, 16), BLOCK.stone)
+    assert.equal(result.chunks.getVoxel(16, 18, 16), BLOCK.air)
+    assert.equal(result.report.metrics.chunkCount, 1)
+    assert.ok(result.report.placements.some((placement) => placement.kind === 'underground_cutaway' && typeof placement.clearedVoxels === 'number' && placement.clearedVoxels > 0))
+})
+
+test('underground open-top cutaway normalizes shell height against local cave floors', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'cutaway_dynamic_shell', name: 'Cutaway Dynamic Shell', type: 'underground', seed: 'cutaway-dynamic-shell', size: [36, 28, 24] },
+        volume: {
+            initial: 'solid',
+            default_material: 'dark_limestone',
+            y_range: [0, 15],
+            cutaway: { mode: 'open_top', clearance: 4, horizontal_margin: 1, shell_margin: 3, rim_height: 2 },
+        },
+        carvers: [
+            { id: 'low_room', type: 'rect_room', center: [9, 8, 12], size: [4, 4, 4], floor_material: 'stone', support_pillars: false, lanterns: false },
+            { id: 'high_room', type: 'rect_room', center: [27, 16, 12], size: [4, 4, 4], floor_material: 'stone', support_pillars: false, lanterns: false },
+        ],
+        structures: [
+            { id: 'spawn', asset: 'marker.spawn', place: { mode: 'surface_at_xz', x: 9, z: 12, kind: 'floor', y_range: [7, 10], search_radius: 2, require_air_above: 3 }, required: true },
+        ],
+    })
+
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.equal(topYAt(result, 5, 12), 10, 'low-floor shell should be cut down to floor + rim height')
+    assert.equal(result.chunks.getVoxel(5, 11, 12), BLOCK.air)
+    assert.equal(topYAt(result, 23, 12), 18, 'high-floor shell should be built up to floor + rim height')
+    assert.equal(result.chunks.getVoxel(23, 19, 12), BLOCK.air)
+    assert.equal(result.chunks.getVoxel(9, 8, 12), BLOCK.air, 'walkable floor column remains open')
+    assert.equal(result.chunks.getVoxel(27, 16, 12), BLOCK.air, 'high walkable floor column remains open')
+    const cutaway = result.report.placements.find((placement) => placement.kind === 'underground_cutaway')
+    assert.equal(cutaway?.shellMargin, 3)
+    assert.equal(cutaway?.rimHeight, 2)
+    assert.ok(typeof cutaway?.rimVoxels === 'number' && cutaway.rimVoxels > 0)
+})
+
+test('underground feature-shell prune removes remote filler and compacts empty chunks', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'pruned_room', name: 'Pruned Room', type: 'underground', seed: 'pruned-room', size: [64, 32, 64] },
+        volume: {
+            initial: 'solid',
+            default_material: 'dark_limestone',
+            y_range: [0, 31],
+            prune: { mode: 'feature_shell', horizontal_margin: 3, vertical_margin: 3 },
+        },
+        carvers: [
+            { id: 'room', type: 'rect_room', center: [12, 10, 12], size: [10, 5, 10], floor_material: 'stone', support_pillars: false, lanterns: false },
+        ],
+        structures: [
+            { id: 'spawn', asset: 'marker.spawn', place: { mode: 'surface_at_xz', x: 12, z: 12, kind: 'floor', y_range: [8, 12], search_radius: 2, require_air_above: 3 }, required: true },
+        ],
+    })
+
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.equal(result.report.metrics.chunkCount, 1)
+    assert.equal(result.chunks.getVoxel(12, 9, 12), BLOCK.stone)
+    assert.equal(result.chunks.getVoxel(60, 10, 60), BLOCK.air)
+    const prune = result.report.placements.find((placement) => placement.kind === 'underground_prune')
+    assert.ok(typeof prune?.removedVoxels === 'number' && prune.removedVoxels > 100_000)
+    assert.ok(typeof prune?.removedChunks === 'number' && prune.removedChunks >= 3)
+})
+
 test('underground compilation is deterministic across chunks, metadata, and reports', () => {
     const a = compileWorldSpec(DUNGEON_SPEC)
     const b = compileWorldSpec(DUNGEON_SPEC)
@@ -282,4 +404,11 @@ function diagnosticSummary(
     warnings: readonly { code: string; message: string }[] = [],
 ): string {
     return [...errors, ...warnings].map((entry) => `${entry.code}: ${entry.message}`).join('\n')
+}
+
+function topYAt(result: ReturnType<typeof compileWorldSpec>, x: number, z: number): number {
+    for (let y = result.report.metrics.size?.[1] ?? 64; y >= 0; y -= 1) {
+        if (result.chunks.getVoxel(x, y, z) !== BLOCK.air) return y
+    }
+    return -1
 }

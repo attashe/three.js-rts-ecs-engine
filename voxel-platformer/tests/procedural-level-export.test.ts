@@ -16,6 +16,7 @@ import {
     FOREST_LIFT_FROM_EDGE_ARRIVAL_ID,
     FOREST_LIFT_VALLEY_LEVEL_ID,
     LARGE_TOWN_LEVEL_ID,
+    PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
     PROCEDURAL_LEVEL_DEFINITIONS,
     PROCEDURAL_LEVEL_SCRIPT_FILES,
     TELEPORT_GARDEN_LEVEL_ID,
@@ -23,6 +24,7 @@ import {
     type ProceduralScriptSources,
 } from '../src/game/procedural-levels'
 import { HELD_TORCH_ITEM_ID } from '../src/game/inventory'
+import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 
 const FAKE_SCRIPT_SOURCES: ProceduralScriptSources = Object.fromEntries(
     PROCEDURAL_LEVEL_SCRIPT_FILES.map((file) => [file.sourcePath, `// ${file.id}\n`]),
@@ -65,6 +67,27 @@ test('procedural levels export to editor-saveable .vplevel buffers', () => {
         assert.equal(restored.metadata.spawn.x, level.runtimeMeta.spawn.x)
         assert.ok(restored.chunks.chunkCount() > 0, `${definition.id} should serialize visible chunks`)
     }
+})
+
+test('Phase 12 underground mine stress is visible in procedural level exports', () => {
+    const definition = PROCEDURAL_LEVEL_DEFINITIONS.find((level) => level.id === PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID)
+    assert.ok(definition)
+    assert.equal(definition.file, `${PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID}.vplevel`)
+
+    const level = createProceduralEditorLevel(PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID, FAKE_SCRIPT_SOURCES)
+    const restored = deserializeLevel<EditorLevelMeta>(level.buffer)
+
+    assert.equal(level.runtimeMeta.name, 'Phase 12 Underground Mine Stress')
+    assert.equal(restored.metadata.name, 'Phase 12 Underground Mine Stress')
+    assert.equal(level.runtimeMeta.railCarts.length, 2)
+    assert.equal(restored.metadata.railCarts?.length, 2)
+    assert.equal(level.runtimeMeta.player.abilities.highJump, false)
+    assert.equal(level.runtimeMeta.player.abilities.torch, true)
+    assert.equal(level.runtimeMeta.player.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
+    assert.equal(level.runtimeMeta.player.inventory.items[HIGH_JUMP_BOOTS_ITEM_ID]?.quantity, 1)
+    assert.equal(level.runtimeMeta.player.inventory.items[HELD_TORCH_ITEM_ID]?.quantity, 1)
+    assert.equal(restored.metadata.player?.equipment.boots, HIGH_JUMP_BOOTS_ITEM_ID)
+    assert.equal(restored.metadata.player?.abilities.torch, true)
 })
 
 test('procedural demo export preserves scripts and travel metadata', () => {
