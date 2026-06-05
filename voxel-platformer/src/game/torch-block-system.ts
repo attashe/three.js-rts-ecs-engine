@@ -24,7 +24,7 @@ import { sharedCylinderGeometry, sharedMaterial, sharedSphereGeometry } from './
 
 /**
  * Production torch render system. InstancedMesh-based geometry, pool
- * of unshadowed PointLights, per-chunk version tracking, focus-driven
+ * of unshadowed PointLights, per-chunk version tracking, player-distance
  * active-set selection.
  *
  * History: this file used to spawn one `Group` with four `Mesh`
@@ -61,10 +61,10 @@ export interface TorchBlockRenderOptions {
      *  this the system silently drops extras. */
     maxInstances?: number
     /** When a `focus` is provided, only torches in chunks within this
-     *  Chebyshev radius (in chunks) of the focus are tracked/instanced, so
-     *  the instance cap fills with the nearest torches and per-frame work is
-     *  bounded by nearby content rather than the whole world. Default 6.
-     *  Without a focus the system tracks every chunk (back-compat). */
+     *  Chebyshev radius (in chunks) are tracked/instanced. Runtime game code
+     *  normally omits `focus` so the system uses the player position; editor
+     *  tools may provide camera/editor focus explicitly. Default 6. Without a
+     *  focus or player the system tracks every chunk (back-compat). */
     trackRadiusChunks?: number
     /** Cube shadow-map size for the shadow-casting pool slot(s).
      *  Default 256 — small enough that one shadow light costs ~3 MB
@@ -126,8 +126,8 @@ interface LightPoolSlot {
 
 const WALL_LEAN_RADIANS = 0.58
 const WALL_STANDOFF = 0.13
-const DEFAULT_TORCH_LIGHTS = 3
-const DEFAULT_FOCUS_RADIUS = 28
+const DEFAULT_TORCH_LIGHTS = 12
+const DEFAULT_FOCUS_RADIUS = 48
 const DEFAULT_TORCH_SOUND_RADIUS = 5
 const DEFAULT_TORCH_SOUND_SOURCES = 3
 const DEFAULT_MAX_INSTANCES = 256
@@ -807,11 +807,11 @@ export interface TorchLightCandidate extends Vec3Like {
     key: string
 }
 
-/** Pick the N nearest-to-viewer candidates. Used internally by the
+/** Pick the N nearest-to-actor candidates. Used internally by the
  *  active-set sort and the test suite for documentation purposes. */
 export function selectTorchLightKeys(
     candidates: readonly TorchLightCandidate[],
-    viewer: Vec3Like,
+    actor: Vec3Like,
     maxLights: number,
 ): Set<string> {
     const count = Math.max(0, Math.floor(maxLights))
@@ -819,7 +819,7 @@ export function selectTorchLightKeys(
     return new Set(candidates
         .map((candidate) => ({
             key: candidate.key,
-            d2: distanceSquared(candidate, viewer),
+            d2: distanceSquared(candidate, actor),
         }))
         .sort((a, b) => a.d2 - b.d2 || a.key.localeCompare(b.key))
         .slice(0, count)

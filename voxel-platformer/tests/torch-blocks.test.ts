@@ -112,7 +112,7 @@ test('torch sound selection keeps the nearest subtle emitters inside radius', ()
     assert.deepEqual([...selected].sort(), ['near-a', 'near-b'])
 })
 
-test('torch light selection caps active point lights by camera distance', () => {
+test('torch light selection caps active point lights by actor distance', () => {
     const selected = selectTorchLightKeys([
         { key: 'a', x: 1, y: 0, z: 0 },
         { key: 'b', x: 4, y: 0, z: 0 },
