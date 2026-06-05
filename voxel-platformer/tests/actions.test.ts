@@ -13,6 +13,9 @@ import {
     GAME_ACTIONS,
     GAME_COMMAND_HINT_ACTIONS,
     GameAction,
+    loadStoredKeyOverrides,
+    saveKeyOverrides,
+    sanitizeKeyOverrides,
 } from '../src/game/actions'
 
 class FakeInput implements ActionInputSource {
@@ -228,4 +231,22 @@ test('ActionMap.rebind swaps a binding on the live instance', () => {
     assert.equal(actions.consumePressed(GameAction.UseConsumable), null, 'old F binding is gone after rebind')
     input.pressedAt.set('KeyQ', now)
     assert.equal(actions.consumePressed(GameAction.UseConsumable)?.key, 'KeyQ')
+})
+
+test('keybind overrides sanitize and round-trip through a store', () => {
+    // Drops unknown ids and non-string keys.
+    assert.deepEqual(
+        sanitizeKeyOverrides({ [GameAction.UseConsumable]: ['KeyG'], 'bogus.action': ['KeyZ'], [GameAction.Jump]: [1, 'Space'] }),
+        { [GameAction.UseConsumable]: ['KeyG'], [GameAction.Jump]: ['Space'] },
+    )
+
+    const map = new Map<string, string>()
+    const store = {
+        getItem: (k: string) => map.get(k) ?? null,
+        setItem: (k: string, v: string) => { map.set(k, v) },
+        removeItem: (k: string) => { map.delete(k) },
+    }
+    saveKeyOverrides({ [GameAction.BowShot]: ['KeyF'] }, store)
+    assert.deepEqual(loadStoredKeyOverrides(store), { [GameAction.BowShot]: ['KeyF'] })
+    assert.deepEqual(loadStoredKeyOverrides({ getItem: () => null, setItem: () => {}, removeItem: () => {} }), {})
 })

@@ -56,8 +56,13 @@ import { createPlayerAudioListenerSystem } from './engine/ecs/systems/audio-list
 import { AudioEngine, type SoundHandle } from './engine/audio'
 import { Pickup as PickupComponent, PickupValue, Position } from './engine/ecs/components'
 import { despawnEntity } from './engine/ecs/entity'
-import { DEMO_LEVEL_ID } from './game/procedural-level-ids'
-import { getProceduralLevelDefinition, type ProceduralScriptSources } from './game/procedural-levels'
+import { DEMO_LEVEL_ID, FOREST_LIFT_VALLEY_LEVEL_ID } from './game/procedural-level-ids'
+import { getProceduralLevelDefinition, publicPlayableLevels, type ProceduralScriptSources } from './game/procedural-levels'
+import { createTitleScreen, type TitleScreen } from './game/front-end/title-screen'
+import { createLevelSelect, type LevelSelect } from './game/front-end/level-select'
+import { createHelpScreen, type HelpScreen } from './game/front-end/help-screen'
+import { createEndgameCredits, type EndgameCredits } from './game/front-end/endgame-credits'
+import { maybeShowFirstPlayTips } from './game/front-end/first-play-tips'
 import { readPlayerVitals, spawnPlayer, type PlayerVitalsSnapshot } from './game/player'
 import { createPlayerTorchSystem } from './game/player-torch-system'
 import { createIndoorCutSystem } from './game/indoor-cut-system'
@@ -94,8 +99,8 @@ import { createDialogueVoiceService } from './game/dialogue-voice'
 import { createTradeController } from './game/trade-system'
 import { checkpointStorageKey, createSessionCheckpointStore, resolveSpawn, type CheckpointStore } from './game/checkpoint-store'
 import { defineZone, type Zone } from './engine/ecs/zones'
-import { createGameActionMap, GameAction } from './game/actions'
-import { createGameMenuSystem } from './game/game-menu-system'
+import { createGameActionMap, GameAction, loadStoredKeyOverrides } from './game/actions'
+import { createGameMenuSystem, type GameMenuController } from './game/game-menu-system'
 import { createInventorySystem } from './game/inventory-system'
 import { GAME_AUDIO_MANIFEST, GameAudio } from './game/audio'
 import { copyPlayerSettings, type PlayerSettings } from './game/player-settings'
@@ -164,7 +169,7 @@ interface SystemSlot {
 async function main(): Promise<void> {
     const engine = new Engine({ fixedHz: 60 })
     const { renderer, world } = engine
-    const actions = createGameActionMap(engine.input)
+    const actions = createGameActionMap(engine.input, loadStoredKeyOverrides())
     const audio = new AudioEngine()
     const dialogueVoice = createDialogueVoiceService(audio)
     const dialogue = createDialogueController({ input: engine.input, voice: dialogueVoice })
@@ -228,7 +233,10 @@ async function main(): Promise<void> {
                 console.warn(`cinematic.play: unknown cinematic "${id}"`)
                 return Promise.resolve()
             }
-            return cinematicDirector.play(c)
+            const done = cinematicDirector.play(c)
+            // A cinematic flagged `endsGame` (the summit shrine) rolls the
+            // endgame credits when it finishes.
+            return c.endsGame ? done.then(() => { rollEndgameCredits() }) : done
         },
         stop: () => {
             if (!cinematicDirector.isPlaying) return false
@@ -611,13 +619,6 @@ async function main(): Promise<void> {
         }
     }
 
-    const initial = await loadInitialLocation()
-    activateLocation(initial, {
-        playerSettings: copyPlayerSettings(initial.meta.player),
-        saveCurrent: false,
-        useCheckpoint: true,
-    })
-
     // Positioned one-shot SFX helper (melee hits, spell impacts, …). Spatial
     // so a brawl or a bolt across the plaza is placed in the world, not flat;
     // events at the player originate on the listener, so they're full volume.
@@ -634,6 +635,90 @@ async function main(): Promise<void> {
             panningModel: 'equalpower',
             priority,
         })
+    }
+
+    // ── Front-end: title / level select / help / endgame credits ─────────
+    let titleScreen: TitleScreen
+    let levelSelect: LevelSelect
+    let helpScreen: HelpScreen
+    let menuController: GameMenuController
+    let endgameCredits: EndgameCredits | null = null
+
+    titleScreen = createTitleScreen({
+        onPlay: () => { void startLevel(FOREST_LIFT_VALLEY_LEVEL_ID) },
+        onLevelSelect: () => { titleScreen.hide(); levelSelect.show() },
+        onSettings: () => menuController.openSettings(),
+        onHelp: () => { titleScreen.hide(); helpScreen.show() },
+    })
+    levelSelect = createLevelSelect({
+        entries: publicPlayableLevels().map((l) => ({ id: l.id, title: l.menuTitle ?? l.name, description: l.description })),
+        onPick: (id) => { void startLevel(id) },
+        onBack: () => { levelSelect.hide(); titleScreen.show() },
+    })
+    helpScreen = createHelpScreen({
+        actions,
+        onBack: () => { helpScreen.hide(); if (!active) titleScreen.show() },
+    })
+
+    async function startLevel(id: string): Promise<void> {
+        titleScreen.hide()
+        levelSelect.hide()
+        helpScreen.hide()
+        let loaded: LoadedLocation
+        try {
+            loaded = await loadProjectLocation(id, snapshots)
+        } catch (err) {
+            console.error(`Level "${id}" failed to load — using demo:`, err)
+            loaded = loadBuiltinDemoLocation()
+        }
+        activateLocation(loaded, {
+            playerSettings: copyPlayerSettings(loaded.meta.player),
+            saveCurrent: false,
+            useCheckpoint: true,
+        })
+        maybeShowFirstPlayTips()
+    }
+
+    function returnToTitle(): void {
+        menuController.setOpen(false)
+        cleanupActiveLocation()
+        clearRuntimeWorld(world)
+        active = null
+        locationVersion++
+        void audio.playMusic(GameAudio.ThemeMenu, { loop: true, volume: 0.34, crossfade: 1.0 }).catch(() => {})
+        titleScreen.show()
+    }
+
+    function rollEndgameCredits(): void {
+        menuController.setOpen(false)
+        endgameCredits?.dispose()
+        endgameCredits = createEndgameCredits({
+            onDone: () => { endgameCredits?.dispose(); endgameCredits = null; returnToTitle() },
+        })
+        endgameCredits.show()
+    }
+
+    menuController = createGameMenuSystem(engine.input, actions, audio, {
+        renderElement: renderer.webgpu.domElement,
+        exitHref: './editor.html',
+        onMainMenu: returnToTitle,
+        onHelp: () => { menuController.setOpen(false); helpScreen.show() },
+    })
+
+    // A `?level=<id>` deep-link jumps straight into a level (and playtest from
+    // the editor); otherwise the public game opens on the title screen.
+    const deepLinkLevel = new URLSearchParams(window.location.search).get('level')
+    if (deepLinkLevel) {
+        const initial = await loadInitialLocation()
+        activateLocation(initial, {
+            playerSettings: copyPlayerSettings(initial.meta.player),
+            saveCurrent: false,
+            useCheckpoint: true,
+        })
+        maybeShowFirstPlayTips()
+    } else {
+        void audio.playMusic(GameAudio.ThemeMenu, { loop: true, volume: 0.34, fadeIn: 1.2 }).catch(() => {})
+        titleScreen.show()
     }
 
     engine
@@ -842,10 +927,7 @@ async function main(): Promise<void> {
         .addSystem(createManaHudSystem(), 'manaHud')
         .addSystem(createConsumableHudSystem(actions), 'consumableHud')
         .addSystem(createInventorySystem(engine.input, actions), 'inventory')
-        .addSystem(createGameMenuSystem(engine.input, actions, audio, {
-            renderElement: renderer.webgpu.domElement,
-            exitHref: './editor.html',
-        }), 'gameMenu')
+        .addSystem(menuController.system, 'gameMenu')
         .addSystem(dialogue.system, 'dialogue')
         .addSystem(trade.system, 'trade')
         .addSystem(createInteractionSystem({

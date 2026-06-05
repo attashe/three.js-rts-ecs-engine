@@ -116,6 +116,9 @@ export interface Cinematic {
     letterbox?: boolean
     /** Freeze player input/control during playback. Default true. */
     freezePlayer?: boolean
+    /** When this cinematic finishes, end the game — the runtime rolls the
+     *  endgame credits and returns to the title. Used for the final shrine. */
+    endsGame?: boolean
     steps: CinematicStep[]
 }
 
@@ -154,6 +157,7 @@ export function cloneCinematic(c: Cinematic): Cinematic {
         playOnStart: c.playOnStart,
         letterbox: c.letterbox,
         freezePlayer: c.freezePlayer,
+        endsGame: c.endsGame,
         steps: c.steps.map(cloneStep),
     }
 }

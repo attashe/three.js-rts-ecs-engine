@@ -186,3 +186,58 @@ export function createGameActionDefinitions(overrides: GameKeyboardOverrides = {
 export function createGameActionMap(input: Input, overrides: GameKeyboardOverrides = {}): ActionMap {
     return new ActionMap(createGameActionDefinitions(overrides), input)
 }
+
+// ── Keybind persistence ──────────────────────────────────────────────
+// Player-customised bindings live in localStorage so a rebind survives a
+// reload. Stored as { [actionId]: ['Mouse0', ...] }; unknown ids / non-string
+// keys are dropped on read so a stale/corrupt entry can't break startup.
+
+export const KEYBINDS_STORAGE_KEY = 'vp:keybinds'
+
+interface KeyValueStore {
+    getItem(key: string): string | null
+    setItem(key: string, value: string): void
+    removeItem(key: string): void
+}
+
+function browserStore(): KeyValueStore | null {
+    try {
+        return typeof window === 'undefined' ? null : window.localStorage
+    } catch {
+        return null
+    }
+}
+
+const VALID_ACTION_IDS = new Set<string>(Object.values(GameAction))
+
+/** Drop unknown action ids and non-string key codes from a parsed overrides
+ *  blob. Exported for tests. */
+export function sanitizeKeyOverrides(value: unknown): GameKeyboardOverrides {
+    if (!value || typeof value !== 'object') return {}
+    const out: Record<string, readonly string[]> = {}
+    for (const [id, keys] of Object.entries(value as Record<string, unknown>)) {
+        if (!VALID_ACTION_IDS.has(id) || !Array.isArray(keys)) continue
+        const codes = keys.filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+        if (codes.length > 0) out[id] = codes
+    }
+    return out as GameKeyboardOverrides
+}
+
+export function loadStoredKeyOverrides(store: KeyValueStore | null = browserStore()): GameKeyboardOverrides {
+    if (!store) return {}
+    try {
+        const raw = store.getItem(KEYBINDS_STORAGE_KEY)
+        return raw ? sanitizeKeyOverrides(JSON.parse(raw)) : {}
+    } catch {
+        return {}
+    }
+}
+
+export function saveKeyOverrides(overrides: GameKeyboardOverrides, store: KeyValueStore | null = browserStore()): void {
+    if (!store) return
+    try {
+        store.setItem(KEYBINDS_STORAGE_KEY, JSON.stringify(overrides))
+    } catch {
+        // Private mode / quota — bindings still apply in memory this session.
+    }
+}

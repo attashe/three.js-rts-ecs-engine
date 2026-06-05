@@ -92,7 +92,19 @@ export interface ProceduralLevelDefinition {
     readonly id: string
     readonly file: string
     readonly name: string
+    /** Shown in the public level-select picker (overrides `name` there). */
+    readonly menuTitle?: string
+    /** One-line description for the picker. */
+    readonly description?: string
+    /** Whether this level appears in the public game's Level Select (the curated
+     *  arc). Sandbox/test levels stay false. */
+    readonly publicPlayable?: boolean
     generate(chunks: ChunkManager, scripts: ProceduralScriptSources): LevelMeta
+}
+
+/** Curated levels for the public game's Level Select, in arc order. */
+export function publicPlayableLevels(): readonly ProceduralLevelDefinition[] {
+    return PROCEDURAL_LEVEL_DEFINITIONS.filter((level) => level.publicPlayable === true)
 }
 
 export const PROCEDURAL_LEVEL_SCRIPT_FILES = [
@@ -152,6 +164,9 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         id: FOREST_LIFT_VALLEY_LEVEL_ID,
         file: `${FOREST_LIFT_VALLEY_LEVEL_ID}.vplevel`,
         name: 'Forest Lift Valley',
+        menuTitle: 'The Cliffs',
+        description: 'Where the journey begins — repair the lift and descend.',
+        publicPlayable: true,
         generate: generateForestLiftValleyLevel,
     },
     {
@@ -164,12 +179,18 @@ export const PROCEDURAL_LEVEL_DEFINITIONS: readonly ProceduralLevelDefinition[] 
         id: PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
         file: `${PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID}.vplevel`,
         name: 'Abandoned Mine Shafts',
+        menuTitle: 'The Caves',
+        description: 'A flooded dwarven mine between the cliffs and the summit.',
+        publicPlayable: true,
         generate: generatePhase12UndergroundMineStressLevel,
     },
     {
         id: STORMY_EAGLE_PEAK_LEVEL_ID,
         file: `${STORMY_EAGLE_PEAK_LEVEL_ID}.vplevel`,
         name: 'Stormy Eagle Peak',
+        menuTitle: 'The Summit',
+        description: 'The storm road to the Eagle God’s shrine.',
+        publicPlayable: true,
         generate: generateStormyEaglePeakLevel,
     },
 ]
@@ -601,6 +622,8 @@ function stormPeakShrineCinematic(arrival: VoxelCoord, shrine: VoxelCoord): Cine
         playOnStart: false,
         letterbox: true,
         freezePlayer: true,
+        // Praying at the summit shrine ends the game → rolls the credits.
+        endsGame: true,
         steps: [
             { id: 'fade-in', type: 'fade', wait: true, duration: 0.35, to: 'black' },
             { id: 'music', type: 'sound', wait: false, soundId: GameAudio.PianoDrift, volume: 0.34, fade: 1.2 },

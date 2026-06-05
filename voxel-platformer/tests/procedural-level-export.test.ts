@@ -27,6 +27,7 @@ import {
     PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
     PROCEDURAL_LEVEL_DEFINITIONS,
     PROCEDURAL_LEVEL_SCRIPT_FILES,
+    publicPlayableLevels,
     STORMY_EAGLE_PEAK_LEVEL_ID,
     TELEPORT_GARDEN_LEVEL_ID,
     TOWN_FROM_DEMO_ARRIVAL_ID,
@@ -39,6 +40,19 @@ import { GameAudio } from '../src/game/audio'
 const FAKE_SCRIPT_SOURCES: ProceduralScriptSources = Object.fromEntries(
     PROCEDURAL_LEVEL_SCRIPT_FILES.map((file) => [file.sourcePath, `// ${file.id}\n`]),
 )
+
+test('public level select exposes the curated arc and hides test fixtures', () => {
+    const ids = publicPlayableLevels().map((level) => level.id)
+    assert.deepEqual(ids, [
+        FOREST_LIFT_VALLEY_LEVEL_ID,
+        PHASE12_UNDERGROUND_MINE_STRESS_LEVEL_ID,
+        STORMY_EAGLE_PEAK_LEVEL_ID,
+    ])
+    for (const level of publicPlayableLevels()) {
+        assert.ok(level.menuTitle && level.menuTitle.length > 0, `${level.id} needs a menuTitle`)
+    }
+    assert.equal(publicPlayableLevels().some((l) => l.id === DEMO_LEVEL_ID), false)
+})
 
 function standCell(pos: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
     return { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) }
