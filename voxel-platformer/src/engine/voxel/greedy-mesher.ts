@@ -59,7 +59,21 @@ export interface GreedyMeshOptions {
     /** When a separate animated liquid surface is rendered, skip the base
      *  cube's exposed +Y liquid face to avoid overdraw/z-order artefacts. */
     skipLiquidTopFaces?: boolean
+    /** Bake per-vertex ambient occlusion into the full-height face colours:
+     *  each face corner is darkened by how many of its three plane-neighbours
+     *  on the empty side are solid. Off by default (it splits merged quads at
+     *  AO discontinuities, changing vertex counts); the chunk renderer turns
+     *  it on for the in-world look. */
+    ambientOcclusion?: boolean
 }
+
+/** Luminance multiplier per AO level (0 = most occluded corner → 3 = open).
+ *  Index by the corner's AO value. Kept gentle so crevices read as shaded
+ *  without crushing the block's authored colour to black. */
+const AO_LUMA = [0.62, 0.78, 0.9, 1.0] as const
+
+/** Reused scratch coord for AO neighbour sampling (mesher is synchronous). */
+const AO_SCRATCH: [number, number, number] = [0, 0, 0]
 
 const EMPTY: MeshData = {
     positions: new Float32Array(0),
@@ -114,6 +128,11 @@ export function greedyMesh(
 
     const x: [number, number, number] = [0, 0, 0]
     const mask = new Int32Array(dim * dim)
+    const ao = opts.ambientOcclusion === true
+    // Packed 4-corner AO per mask cell, parallel to `mask`. Cells only merge
+    // when both their block id AND their AO pattern match, so AO never bleeds
+    // across a merged quad.
+    const aoMask = ao ? new Int32Array(dim * dim) : null
 
     for (let d = 0; d < 3; d++) {
         const u = (d + 1) % 3
@@ -153,6 +172,9 @@ export function greedyMesh(
                         m = 0
                     }
                     mask[i + j * dim] = m
+                    if (aoMask) {
+                        aoMask[i + j * dim] = m === 0 ? 0 : packFaceAo(sample, palette, d, u, v, m > 0 ? s : s - 1, i, j)
+                    }
                 }
             }
 
@@ -164,16 +186,23 @@ export function greedyMesh(
                         i++
                         continue
                     }
+                    const aoPacked = aoMask ? aoMask[i + j * dim]! : 0
 
-                    // Width: extend along u as long as mask matches.
+                    // Width: extend along u as long as the block id (and AO
+                    // pattern, when enabled) matches.
                     let w = 1
-                    while (i + w < dim && mask[i + w + j * dim] === m) w++
+                    while (
+                        i + w < dim
+                        && mask[i + w + j * dim] === m
+                        && (!aoMask || aoMask[i + w + j * dim] === aoPacked)
+                    ) w++
 
                     // Height: extend along v as long as the entire `w`-wide row matches.
                     let h = 1
                     extend: while (j + h < dim) {
                         for (let k = 0; k < w; k++) {
-                            if (mask[i + k + (j + h) * dim] !== m) break extend
+                            const cell = i + k + (j + h) * dim
+                            if (mask[cell] !== m || (aoMask && aoMask[cell] !== aoPacked)) break extend
                         }
                         h++
                     }
@@ -224,7 +253,18 @@ export function greedyMesh(
                     const nz = d === 2 ? (isPositive ? 1 : -1) : 0
                     const tileIndex = paletteTileIndex(palette, paletteIdx)
                     for (let k = 0; k < 4; k++) normals.push(nx, ny, nz)
-                    for (let k = 0; k < 4; k++) colors.push(r, g, b, a)
+                    if (aoMask) {
+                        // Per-corner AO darkening. c0..c3 = (0,0),(1,0),(1,1),(0,1);
+                        // -d faces emit in c0,c3,c2,c1 order (reversed winding).
+                        const ao0 = AO_LUMA[aoPacked & 3]!
+                        const ao1 = AO_LUMA[(aoPacked >> 2) & 3]!
+                        const ao2 = AO_LUMA[(aoPacked >> 4) & 3]!
+                        const ao3 = AO_LUMA[(aoPacked >> 6) & 3]!
+                        const order = isPositive ? [ao0, ao1, ao2, ao3] : [ao0, ao3, ao2, ao1]
+                        for (const f of order) colors.push(r * f, g * f, b * f, a)
+                    } else {
+                        for (let k = 0; k < 4; k++) colors.push(r, g, b, a)
+                    }
                     for (let k = 0; k < 4; k++) emissive.push(er, eg, eb)
                     for (let k = 0; k < 4; k++) tileIndices.push(tileIndex)
 
@@ -268,6 +308,48 @@ function isRenderable(palette: Palette, index: number, opts: GreedyMeshOptions):
 
 function isFullHeightVoxel(palette: Palette, index: number): boolean {
     return voxelHeightForBlock(palette, index) >= 1
+}
+
+/** 1 if the voxel at (d=dCoord, u=uCoord, v=vCoord) is a full-height
+ *  face-occluding solid (an AO caster), else 0. */
+function aoOccluder(
+    sample: VoxelSampler,
+    palette: Palette,
+    d: number, u: number, v: number,
+    dCoord: number, uCoord: number, vCoord: number,
+): number {
+    AO_SCRATCH[d] = dCoord
+    AO_SCRATCH[u] = uCoord
+    AO_SCRATCH[v] = vCoord
+    const b = sample(AO_SCRATCH[0], AO_SCRATCH[1], AO_SCRATCH[2])
+    return occludesFaces(palette, b) && voxelHeightForBlock(palette, b) >= 1 ? 1 : 0
+}
+
+/**
+ * Pack the four corner AO levels (each 0..3, 2 bits) of a face cell into a
+ * byte. `emptyLayer` is the d-coordinate of the open side the face looks
+ * onto; occluders are sampled there. Corner order matches the emitted quad
+ * corners c0..c3 = (0,0),(1,0),(1,1),(0,1) in (u,v).
+ */
+function packFaceAo(
+    sample: VoxelSampler,
+    palette: Palette,
+    d: number, u: number, v: number,
+    emptyLayer: number, i: number, j: number,
+): number {
+    let packed = 0
+    for (let c = 0; c < 4; c++) {
+        const cu = c === 1 || c === 2 ? 1 : 0
+        const cv = c === 2 || c === 3 ? 1 : 0
+        const su = cu === 0 ? -1 : 1
+        const sv = cv === 0 ? -1 : 1
+        const s1 = aoOccluder(sample, palette, d, u, v, emptyLayer, i + su, j)
+        const s2 = aoOccluder(sample, palette, d, u, v, emptyLayer, i, j + sv)
+        const cor = s1 && s2 ? 1 : aoOccluder(sample, palette, d, u, v, emptyLayer, i + su, j + sv)
+        const ao = s1 && s2 ? 0 : 3 - (s1 + s2 + cor)
+        packed |= ao << (c * 2)
+    }
+    return packed
 }
 
 interface PartialMeshBuffers {

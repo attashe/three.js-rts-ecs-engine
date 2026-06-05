@@ -308,6 +308,7 @@ export class ChunkRenderer {
         const data = greedyMesh(sample, CHUNK_DIM, this.manager.palette, {
             debugVisibleBlocks: this.debugInfoEnabled,
             skipLiquidTopFaces: true,
+            ambientOcclusion: true,
         })
         if (data.vertexCount === 0) {
             // Solid geometry is empty, but a liquid-only chunk keeps the

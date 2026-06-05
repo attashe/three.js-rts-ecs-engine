@@ -283,6 +283,35 @@ test('no-walk block is an invisible collidable border outside debug rendering', 
     ), 1, DEFAULT_PALETTE, { debugVisibleBlocks: true })
     assert.ok(debugMesh.vertexCount > 0, 'debug render should reveal invisible borders')
     assert.ok(debugMesh.colors.some((_, i) => i % 4 === 3 && debugMesh.colors[i]! > 0 && debugMesh.colors[i]! < 1))
+})
+
+test('ambient occlusion darkens occluded face corners and never brightens', () => {
+    // A 3×3 stone floor with one block raised on the centre — the raised
+    // block occludes a corner of each adjacent floor tile's top face.
+    const solid = new Set<string>()
+    for (let xx = 0; xx < 3; xx++) for (let zz = 0; zz < 3; zz++) solid.add(`${xx},0,${zz}`)
+    solid.add('1,1,1')
+    const sample = (x: number, y: number, z: number): number => (solid.has(`${x},${y},${z}`) ? BLOCK.stone : BLOCK.air)
+
+    const flat = greedyMesh(sample, 4, DEFAULT_PALETTE)
+    const ao = greedyMesh(sample, 4, DEFAULT_PALETTE, { ambientOcclusion: true })
+
+    // Without AO every stone face shares the one authored albedo on R.
+    const flatReds = new Set<string>()
+    for (let k = 0; k < flat.vertexCount; k++) flatReds.add(flat.colors[k * 4]!.toFixed(4))
+    assert.equal(flatReds.size, 1, 'without AO all stone faces share one colour')
+    const base = flat.colors[0]!
+
+    let minR = Infinity
+    let maxR = -Infinity
+    for (let k = 0; k < ao.vertexCount; k++) {
+        const r = ao.colors[k * 4]!
+        minR = Math.min(minR, r)
+        maxR = Math.max(maxR, r)
+    }
+    assert.ok(minR < base - 1e-6, 'AO darkens some occluded corners')
+    assert.ok(maxR <= base + 1e-6, 'AO never brightens above the base albedo')
+    assert.ok(ao.vertexCount >= flat.vertexCount, 'AO splits merged quads at AO discontinuities')
 
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     chunks.setVoxel(0, 0, 0, BLOCK.noWalk)
