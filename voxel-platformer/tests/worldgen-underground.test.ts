@@ -208,6 +208,15 @@ function pointInZone(zone: { min: { x: number; y: number; z: number }; max: { x:
         point.z >= zone.min.z && point.z < zone.max.z
 }
 
+function zonesOverlap(
+    a: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } },
+    b: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } },
+): boolean {
+    return a.min.x < b.max.x && a.max.x > b.min.x &&
+        a.min.y < b.max.y && a.max.y > b.min.y &&
+        a.min.z < b.max.z && a.max.z > b.min.z
+}
+
 test('Phase 12 underground mine stress spec validates rails, rooms, caves, and region metrics', () => {
     const result = compileWorldSpec(PHASE12_UNDERGROUND_STRESS_SPEC)
 
@@ -243,6 +252,7 @@ test('Phase 12 underground mine stress spec validates rails, rooms, caves, and r
     assert.equal(forestReturn!.portal?.targetLevelId, FOREST_LIFT_VALLEY_LEVEL_ID)
     assert.equal(forestReturn!.portal?.targetArrivalId, FOREST_LIFT_FROM_MINE_ARRIVAL_ID)
     assert.equal(pointInZone(forestReturn!, zoneCenter(forestArrival!)), false, 'arrival from forest should not immediately trigger the return portal')
+    assert.equal(zonesOverlap(forestReturn!, forestArrival!), false, 'arrival volume from forest must not overlap the forest return portal trigger')
     const peakExit = result.meta.zones.find((zone) => zone.id === MINE_PEAK_PORTAL_ZONE_ID)
     assert.ok(peakExit && peakExit.kind === 'portal', 'deep vault should expose a storm-peak exit portal')
     assert.equal(peakExit!.portal?.targetLevelId, STORMY_EAGLE_PEAK_LEVEL_ID)

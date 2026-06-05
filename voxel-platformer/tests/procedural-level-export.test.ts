@@ -80,6 +80,12 @@ function pointInZone(zone: Zone, point: { x: number; y: number; z: number }): bo
         point.z >= zone.min.z && point.z < zone.max.z
 }
 
+function zonesOverlap(a: Zone, b: Zone): boolean {
+    return a.min.x < b.max.x && a.max.x > b.min.x &&
+        a.min.y < b.max.y && a.max.y > b.min.y &&
+        a.min.z < b.max.z && a.max.z > b.min.z
+}
+
 function xzDistanceToWeatherZoneAabb(
     zone: { position: { x: number; z: number }; size: { x: number; z: number } },
     point: { x: number; z: number },
@@ -145,6 +151,7 @@ test('Phase 12 underground mine stress is visible in procedural level exports', 
     assert.equal(forestReturn!.portal?.targetLevelId, FOREST_LIFT_VALLEY_LEVEL_ID)
     assert.equal(forestReturn!.portal?.targetArrivalId, FOREST_LIFT_FROM_MINE_ARRIVAL_ID)
     assert.equal(pointInZone(forestReturn!, zoneCenterPoint(forestArrival!)), false, 'mine arrival should not immediately bounce back through the return portal')
+    assert.equal(zonesOverlap(forestReturn!, forestArrival!), false, 'mine arrival volume must be separated from the forest return portal trigger')
     const peakExit = level.runtimeMeta.zones.find((zone) => zone.id === MINE_PEAK_PORTAL_ZONE_ID)
     assert.ok(peakExit && peakExit.kind === 'portal')
     assert.equal(peakExit!.portal?.targetLevelId, STORMY_EAGLE_PEAK_LEVEL_ID)

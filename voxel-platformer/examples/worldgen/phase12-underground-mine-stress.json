@@ -608,13 +608,13 @@
     },
     "travel": [
       { "id": "arrival.phase12.start", "type": "arrival", "place_at": "spawn", "half_xz": [1, 1] },
-      { "id": "arrival.mine.from-forest", "type": "arrival", "place_at": "forest_entry_portal", "half_xz": [1, 1] },
+      { "id": "arrival.mine.from-forest", "type": "arrival", "label": "Forest Entry Arrival", "place_at": "forest_entry_portal", "offset": [0, 0, 3.2], "half_xz": [0.85, 0.85] },
       {
         "id": "zone.mine.forest-return",
         "type": "portal",
         "label": "Forest Cliff Return",
         "place_at": "forest_entry_portal",
-        "offset": [0, 0, -1.35],
+        "offset": [0, 0, -2.35],
         "half_xz": [1.05, 1.05],
         "height": 2.8,
         "targetLevelId": "demo-forest-lift-valley",
