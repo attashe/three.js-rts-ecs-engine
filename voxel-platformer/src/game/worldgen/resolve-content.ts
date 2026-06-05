@@ -1,5 +1,7 @@
 import type { Zone, ZoneTriggerSource } from '../../engine/ecs/zones'
+import type { RailCartFacing } from '../../engine/ecs/world'
 import type { ScriptEntry } from '../../engine/script/types'
+import { isRailBlock } from '../../engine/voxel/palette'
 import {
     applyNpcTemplate,
     npcTemplateById,
@@ -38,6 +40,7 @@ export type { WorldgenContentResolveOptions } from './content-common'
 
 const PROP_KIND_SET = new Set<string>(PROP_KINDS)
 const TRIGGER_SOURCES = new Set<ZoneTriggerSource>(['player', 'arrow'])
+const RAIL_CART_FACINGS = new Set<RailCartFacing>(['north', 'east', 'south', 'west'])
 // Zone kinds the runtime understands (see src/engine/ecs/zones.ts consumers),
 // plus 'custom' for script-handled generic zones. Unknown kinds compile to a
 // zone the runtime silently ignores, so reject them instead.
@@ -51,6 +54,7 @@ export function resolveContent(ctx: WorldgenCompileContext, draft: WorldgenLevel
     resolveContentZones(ctx, draft, content.zones ?? [], resolveOpts)
     resolveContentNpcs(ctx, draft, content.npcs ?? [], resolveOpts)
     resolveContentMetadata(ctx, draft, content, resolveOpts)
+    resolveContentRailCarts(ctx, draft, content.rail_carts ?? [], resolveOpts)
     resolveContentPickups(ctx, draft, content.pickups ?? [], resolveOpts)
     resolveContentShops(ctx, draft, content.shops ?? [])
     resolveContentQuests(ctx, draft, content.quests ?? [], resolveOpts)
@@ -213,6 +217,45 @@ function resolveContentScripts(ctx: WorldgenCompileContext, draft: WorldgenLevel
     }
 }
 
+function resolveContentRailCarts(
+    ctx: WorldgenCompileContext,
+    draft: WorldgenLevelDraft,
+    railCarts: readonly ContentEntrySpec[],
+    opts: WorldgenContentResolveOptions,
+): void {
+    for (let i = 0; i < railCarts.length; i += 1) {
+        const spec = railCarts[i]!
+        const path = `$.content.rail_carts[${i}]`
+        const required = contentEntryRequired(spec)
+        const id = contentId(ctx, spec, path, required)
+        if (!id) continue
+        const railCell = readRailCartCell(ctx, spec, path, required, opts)
+        if (!railCell) continue
+        const front = readRailCartFacing(ctx, spec.front ?? spec.facing, `${path}.front`, required)
+        if (!front) continue
+        if (!isRailBlock(ctx.chunks.palette, ctx.chunks.getVoxel(railCell.x, railCell.y, railCell.z))) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path} resolves to ${formatCell(railCell)}, but that voxel is not a rail block.`,
+                path: spec.railCell !== undefined || spec.rail_cell !== undefined ? `${path}.railCell` : path,
+                details: { id, railCell },
+            })
+            continue
+        }
+        draft.railCarts.push({
+            id,
+            railCell,
+            front,
+            speed: positiveNumber(spec.speed, 4),
+            interactionRadius: positiveNumber(spec.interactionRadius ?? spec.interaction_radius, 1.75),
+            enabled: typeof spec.enabled === 'boolean' ? spec.enabled : false,
+        })
+        const position = { x: railCell.x + 0.5, y: railCell.y, z: railCell.z + 0.5 }
+        ctx.resolveObject(id, position)
+        ctx.report.placements.push({ id, kind: 'content_rail_cart', railCell, front, enabled: spec.enabled === true })
+    }
+}
+
 function npcPartial(spec: ContentEntrySpec, id: string, position: VoxelCoord): Partial<NpcConfig> & Pick<NpcConfig, 'id' | 'position'> {
     const partial: Partial<NpcConfig> & Pick<NpcConfig, 'id' | 'position'> = {
         id,
@@ -240,6 +283,92 @@ function npcPartial(spec: ContentEntrySpec, id: string, position: VoxelCoord): P
     if (typeof spec.scriptEnabled === 'boolean') partial.scriptEnabled = spec.scriptEnabled
     if (isRecord(spec.behaviour)) partial.behaviour = spec.behaviour as Partial<NpcBehaviourConfig> as NpcConfig['behaviour']
     return partial
+}
+
+function readRailCartCell(
+    ctx: WorldgenCompileContext,
+    spec: ContentEntrySpec,
+    path: string,
+    required: boolean,
+    opts: WorldgenContentResolveOptions,
+): VoxelCoord | null {
+    const explicit = spec.railCell ?? spec.rail_cell
+    if (explicit !== undefined) {
+        const cell = readVoxelCell(explicit)
+        if (!cell) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path}.railCell must be a [x, y, z] tuple or { x, y, z } object.`,
+                path: `${path}.railCell`,
+                details: { value: explicit },
+            })
+            return null
+        }
+        if (!ctx.inXYZ(cell.x, cell.y, cell.z)) {
+            contentDiagnostic(ctx, required, {
+                code: 'invalid_feature',
+                message: `${path}.railCell leaves world bounds.`,
+                path: `${path}.railCell`,
+                details: { railCell: cell },
+            })
+            return null
+        }
+        return cell
+    }
+
+    const position = resolveContentPosition(ctx, spec, path, required, opts)
+    if (!position) return null
+    const cell = {
+        x: Math.floor(position.x),
+        y: Math.round(position.y),
+        z: Math.floor(position.z),
+    }
+    if (!ctx.inXYZ(cell.x, cell.y, cell.z)) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} resolves to an out-of-bounds rail cell.`,
+            path,
+            details: { position, railCell: cell },
+        })
+        return null
+    }
+    return cell
+}
+
+function readVoxelCell(value: unknown): VoxelCoord | null {
+    if (Array.isArray(value) && value.length === 3 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
+        return { x: Math.round(value[0] as number), y: Math.round(value[1] as number), z: Math.round(value[2] as number) }
+    }
+    if (
+        isRecord(value) &&
+        typeof value.x === 'number' && Number.isFinite(value.x) &&
+        typeof value.y === 'number' && Number.isFinite(value.y) &&
+        typeof value.z === 'number' && Number.isFinite(value.z)
+    ) {
+        return { x: Math.round(value.x), y: Math.round(value.y), z: Math.round(value.z) }
+    }
+    return null
+}
+
+function readRailCartFacing(
+    ctx: WorldgenCompileContext,
+    value: unknown,
+    path: string,
+    required: boolean,
+): RailCartFacing | null {
+    const facing = readString(value, 'east')
+    if (RAIL_CART_FACINGS.has(facing as RailCartFacing)) return facing as RailCartFacing
+    contentDiagnostic(ctx, required, {
+        code: 'invalid_feature',
+        message: `${path} must be north, east, south, or west.`,
+        path,
+        details: { value },
+    })
+    return null
+}
+
+function formatCell(cell: VoxelCoord): string {
+    return `${cell.x},${cell.y},${cell.z}`
 }
 
 function readZoneInteraction(spec: ContentEntrySpec, kind: string, center: VoxelCoord, yMin: number, yMax: number): Pick<Zone, 'interaction'> | null {

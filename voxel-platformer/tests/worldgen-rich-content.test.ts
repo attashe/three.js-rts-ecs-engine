@@ -233,6 +233,76 @@ test('content placement references are order-independent for spatial content', (
     assert.ok(result.meta.npcs.find((npc) => npc.id === 'npc_at_later_zone')?.scriptSource.includes('handleQuest_forward_quest'))
 })
 
+test('worldgen rail-cart content emits metadata and participates in spatial references', () => {
+    const result = compileWorldSpec({
+        version: 1,
+        world: { id: 'rail_cart_content', name: 'Rail Cart Content', type: 'underground', seed: 'rail-cart-content', size: [32, 16, 32] },
+        volume: { initial: 'solid', default_material: 'dark_limestone' },
+        carvers: [
+            { id: 'rail_line', type: 'mine_tunnel_network', half_width: 1, height: 3, rails: true, floor_material: 'stone', supports_every: 0, lantern_every: 0, corridors: [[[10, 6, 10], [14, 6, 10]]] },
+        ],
+        structures: [
+            { id: 'spawn', asset: 'marker.spawn', place: { mode: 'surface_at_xz', x: 10, z: 10, kind: 'floor', y_range: [5, 8], search_radius: 2, require_air_above: 2 }, required: true },
+        ],
+        content: {
+            props: [
+                { id: 'cart_crate', kind: 'repair-materials-crate', place_at: 'mine_cart', offset: [0.5, 0, 0] },
+            ],
+            rail_carts: [
+                { id: 'mine_cart', railCell: [14, 6, 10], front: 'east', speed: 3.5, interactionRadius: 1.4, enabled: true },
+            ],
+            zones: [
+                { id: 'cart_zone', type: 'interact', place_at: 'cart_crate', prompt: 'Inspect' },
+            ],
+        },
+    })
+
+    assert.equal(result.report.status, 'ok', diagnosticSummary(result.report.errors, result.report.warnings))
+    assert.equal(result.meta.railCarts.length, 1)
+    assert.deepEqual(result.meta.railCarts[0], {
+        id: 'mine_cart',
+        railCell: { x: 14, y: 6, z: 10 },
+        front: 'east',
+        speed: 3.5,
+        interactionRadius: 1.4,
+        enabled: true,
+    })
+    assert.deepEqual(result.report.resolvedObjects.mine_cart, { x: 14.5, y: 6, z: 10.5 })
+    assert.ok(result.report.resolvedObjects.cart_crate)
+    assert.ok(result.report.resolvedObjects.cart_zone)
+    assert.ok(result.report.placements.some((placement) => placement.kind === 'content_rail_cart' && placement.id === 'mine_cart'))
+})
+
+test('worldgen rail-cart content fails closed for invalid required carts', () => {
+    const missingRail = compileWorldSpec({
+        version: 1,
+        world: { id: 'bad_rail_cart_content', name: 'Bad Rail Cart Content', type: 'surface', seed: 'bad-rail-cart-content', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            rail_carts: [{ id: 'missing_rail_cart', railCell: [10, 6, 10], front: 'east' }],
+        },
+    })
+
+    assert.equal(missingRail.report.status, 'failed')
+    assert.ok(missingRail.report.errors.some((error) => error.code === 'invalid_feature' && error.path === '$.content.rail_carts[0].railCell'))
+    assert.equal(missingRail.meta.railCarts.length, 0)
+
+    const badFacing = compileWorldSpec({
+        version: 1,
+        world: { id: 'bad_rail_cart_facing', name: 'Bad Rail Cart Facing', type: 'surface', seed: 'bad-rail-cart-facing', size: [32, 24, 32], defaultGroundY: 5 },
+        terrain: { base_height: 5 },
+        anchors: [{ id: 'spawn', place_at_xz: [4, 4] }],
+        content: {
+            rail_carts: [{ id: 'bad_facing_cart', railCell: [10, 6, 10], front: 'uphill' }],
+        },
+    })
+
+    assert.equal(badFacing.report.status, 'failed')
+    assert.ok(badFacing.report.errors.some((error) => error.code === 'invalid_feature' && error.path === '$.content.rail_carts[0].front'))
+    assert.equal(badFacing.meta.railCarts.length, 0)
+})
+
 test('content placement cycles fail closed', () => {
     const result = compileWorldSpec({
         version: 1,

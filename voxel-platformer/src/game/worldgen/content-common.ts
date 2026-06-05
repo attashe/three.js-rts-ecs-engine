@@ -17,7 +17,7 @@ export interface WorldgenContentResolveOptions {
     contentIndex?: ContentResolutionIndex
 }
 
-export type ContentResolutionKind = 'props' | 'zones' | 'npcs' | 'pickups' | 'travel'
+export type ContentResolutionKind = 'props' | 'zones' | 'npcs' | 'pickups' | 'travel' | 'rail_carts'
 
 export interface ContentResolutionEntry {
     id: string
@@ -56,7 +56,7 @@ export function contentDiagnostic(ctx: WorldgenCompileContext, required: boolean
 
 export function createContentResolutionIndex(content: ContentSpec): ContentResolutionIndex {
     const entries = new Map<string, ContentResolutionEntry>()
-    for (const kind of ['props', 'zones', 'npcs', 'pickups', 'travel'] as const) {
+    for (const kind of ['props', 'zones', 'npcs', 'pickups', 'travel', 'rail_carts'] as const) {
         const list = content[kind]
         if (!Array.isArray(list)) continue
         for (let i = 0; i < list.length; i += 1) {
@@ -176,10 +176,16 @@ function resolveContentPositionDirect(
             return null
         }
         coord = { x: x + 0.5, y: finiteNumber(spec.y, opts.standYAtXZ ? opts.standYAtXZ(x, z) : 1), z: z + 0.5 }
+    } else if (spec.position !== undefined) {
+        coord = readPosition(ctx, spec.position, `${path}.position`, required)
+        if (!coord) return null
+    } else if (spec.railCell !== undefined || spec.rail_cell !== undefined) {
+        coord = readRailCellPosition(ctx, spec.railCell ?? spec.rail_cell, `${path}.railCell`, required)
+        if (!coord) return null
     } else {
         contentDiagnostic(ctx, required, {
             code: 'missing_reference',
-            message: `${path} must declare place_at or place_at_xz.`,
+            message: `${path} must declare place_at, place_at_xz, position, or railCell.`,
             path,
         })
         return null
@@ -404,6 +410,59 @@ export function positiveNumber(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
+function readPosition(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): VoxelCoord | null {
+    if (Array.isArray(value) && value.length === 3 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
+        return { x: value[0] as number, y: value[1] as number, z: value[2] as number }
+    }
+    if (
+        isRecord(value) &&
+        typeof value.x === 'number' && Number.isFinite(value.x) &&
+        typeof value.y === 'number' && Number.isFinite(value.y) &&
+        typeof value.z === 'number' && Number.isFinite(value.z)
+    ) {
+        return { x: value.x, y: value.y, z: value.z }
+    }
+    contentDiagnostic(ctx, required, {
+        code: 'invalid_feature',
+        message: `${path} must be a [x, y, z] tuple or { x, y, z } object.`,
+        path,
+        details: { value },
+    })
+    return null
+}
+
+function readRailCellPosition(ctx: WorldgenCompileContext, value: unknown, path: string, required: boolean): VoxelCoord | null {
+    let cell: VoxelCoord | null = null
+    if (Array.isArray(value) && value.length === 3 && value.every((part) => typeof part === 'number' && Number.isFinite(part))) {
+        cell = { x: Math.round(value[0] as number), y: Math.round(value[1] as number), z: Math.round(value[2] as number) }
+    } else if (
+        isRecord(value) &&
+        typeof value.x === 'number' && Number.isFinite(value.x) &&
+        typeof value.y === 'number' && Number.isFinite(value.y) &&
+        typeof value.z === 'number' && Number.isFinite(value.z)
+    ) {
+        cell = { x: Math.round(value.x), y: Math.round(value.y), z: Math.round(value.z) }
+    }
+    if (!cell) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} must be a [x, y, z] tuple or { x, y, z } object.`,
+            path,
+            details: { value },
+        })
+        return null
+    }
+    if (!ctx.inXYZ(cell.x, cell.y, cell.z)) {
+        contentDiagnostic(ctx, required, {
+            code: 'invalid_feature',
+            message: `${path} leaves world bounds.`,
+            path,
+            details: { railCell: cell },
+        })
+        return null
+    }
+    return { x: cell.x + 0.5, y: cell.y, z: cell.z + 0.5 }
+}
 
 function isDeclaredContentId(ctx: WorldgenCompileContext, id: string): boolean {
     if (ctx.spec.anchors?.some((anchor) => anchor.id === id)) return true

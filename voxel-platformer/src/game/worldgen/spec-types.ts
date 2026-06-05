@@ -66,6 +66,26 @@ export interface VolumeSpec {
     initial?: 'solid' | string
     default_material?: string
     strata?: VolumeStratumSpec[]
+    y_range?: string | Vec2Tuple
+    cutaway?: UndergroundCutawaySpec | string | false
+    prune?: UndergroundPruneSpec | string | false
+    [key: string]: unknown
+}
+
+export interface UndergroundCutawaySpec {
+    mode?: 'open_top' | string
+    clearance?: number
+    horizontal_margin?: number
+    features?: string[]
+    [key: string]: unknown
+}
+
+export interface UndergroundPruneSpec {
+    mode?: 'feature_shell' | string
+    horizontal_margin?: number
+    vertical_margin?: number
+    materials?: string[]
+    features?: string[]
     [key: string]: unknown
 }
 
@@ -141,6 +161,7 @@ export interface ContentSpec {
     cinematics?: ContentEntrySpec[]
     environment?: Record<string, unknown>
     travel?: ContentEntrySpec[]
+    rail_carts?: ContentEntrySpec[]
     [key: string]: unknown
 }
 
