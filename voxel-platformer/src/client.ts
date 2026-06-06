@@ -29,6 +29,7 @@ import { createGameCinematicStage } from './game/cinematics/game-cinematic-stage
 import type { CinematicFacade } from './engine/script/types'
 import { createSpellCastSystem } from './game/spells'
 import { createSpellEffectSystem, createSpellEffectRenderSystem } from './game/spell-effect-system'
+import { createMeleeTrailRenderSystem } from './game/melee-trail-system'
 import { createWeaponStanceSystem } from './game/weapon-stance-system'
 import { createPlayerDeathAnimSystem } from './game/anim/player-death-anim-system'
 import { createArrowHitSystem } from './engine/ecs/systems/arrow-hit-system'
@@ -914,6 +915,7 @@ async function main(): Promise<void> {
         .addSystem(createPlayerDeathAnimSystem(), 'playerDeathAnim')
         .addSystem(createAnimationSystem(), 'animation')
         .addSystem(createPlayerStunBlinkSystem(), 'playerStunBlink')
+        .addSystem(createMeleeTrailRenderSystem(renderer.scene), 'meleeTrails')
         .addSystem(createSniperHatTrajectorySystem(renderer.scene, chunks), 'sniperHatTrajectory')
         .addSystem(slots.blockLights.system, 'blockLights')
         .addSystem(slots.chunkRender.system, 'chunkRender')
