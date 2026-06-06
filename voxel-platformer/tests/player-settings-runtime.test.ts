@@ -108,6 +108,7 @@ function queuedPressAction(count: number): ActionMap {
 test('projectile launch consumes starting arrow inventory and spawns an arrow', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.abilities.bow = true
     world.inventory.arrows = 2
     const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
     addComponent(world, player, Grounded)
@@ -123,6 +124,7 @@ test('projectile launch consumes starting arrow inventory and spawns an arrow', 
 test('ranger hat shoots arrows farther by increasing launch velocity', () => {
     const world = createGameWorld()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.abilities.bow = true
     world.playerSettings.equipment.head = 'hat-ranger'
     world.inventory.arrows = 2
     const player = spawnPlayer(world, { spawn: { x: 0, y: 1, z: 0 }, settings: world.playerSettings })
@@ -140,6 +142,7 @@ test('sniper hat enables trajectory preview and predicts NPC target-volume hit',
     const world = createGameWorld()
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.abilities.bow = true
     world.playerSettings.equipment.head = SNIPER_HAT_ITEM_ID
     world.weaponStance = 'ranged'
     world.inventory.arrows = 1
@@ -165,6 +168,7 @@ test('sniper hat trajectory prediction marks first terrain hit point', () => {
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     chunks.setVoxel(0, 1, 4, BLOCK.stone)
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.abilities.bow = true
     world.playerSettings.equipment.head = SNIPER_HAT_ITEM_ID
     world.weaponStance = 'ranged'
     world.inventory.arrows = 1
@@ -182,6 +186,7 @@ test('sniper hat trajectory renderer uses overlay line and dots that do not frus
     const chunks = new ChunkManager(DEFAULT_PALETTE)
     const scene = new Scene()
     world.playerSettings = copyPlayerSettings(DEFAULT_PLAYER_SETTINGS)
+    world.playerSettings.abilities.bow = true
     world.playerSettings.equipment.head = SNIPER_HAT_ITEM_ID
     world.weaponStance = 'ranged'
     world.inventory.arrows = 1

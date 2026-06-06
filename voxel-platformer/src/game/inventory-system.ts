@@ -5,7 +5,7 @@ import { RenderOrder } from '../engine/ecs/systems/orders'
 import type { System } from '../engine/ecs/systems/system'
 import type { ActionMap } from '../engine/input/actions'
 import type { Input } from '../engine/input/input'
-import { PLAYER_ABILITY_KEYS, PLAYER_ABILITY_LABELS } from './player-settings'
+import { PLAYER_ABILITY_KEYS, PLAYER_ABILITY_LABELS, playerKnowsSpell } from './player-settings'
 import {
     HIGH_JUMP_BOOTS_ITEM_ID,
     HIGH_JUMP_BOOTS_NAME,
@@ -36,6 +36,7 @@ import {
 import { SPELLS } from './spells'
 import { AIR_PUSH_MANA_COST, HIGH_JUMP_MANA_COST, MANA_PER_ORB, MANA_POTION_ITEM_ID } from './mana'
 import {
+    CONSUMABLE_DEFS,
     HEAL_POTION_ITEM_ID,
     consumeDirectConsumable,
     consumableSnapshotItem,
@@ -66,10 +67,19 @@ interface InventoryDom {
     loadout: HTMLDivElement
     spell: HTMLDivElement
     categories: HTMLDivElement
+    info: HTMLDivElement
     stats: HTMLDivElement
     closeButton: HTMLButtonElement
     keyHint: HTMLSpanElement
     useConsumableKeys: readonly string[]
+}
+
+interface InventoryInfo {
+    title: string
+    status?: string
+    description?: string
+    lines?: readonly string[]
+    action?: string
 }
 
 interface LoadoutOption {
@@ -281,6 +291,18 @@ function buildInventoryDom(keys: readonly string[], useConsumableKeys: readonly 
     } satisfies Partial<CSSStyleDeclaration>)
     body.appendChild(categories)
 
+    const info = document.createElement('div')
+    Object.assign(info.style, {
+        alignSelf: 'start',
+        border: '1px solid rgba(127, 184, 255, 0.22)',
+        background: 'rgba(28, 45, 62, 0.38)',
+        borderRadius: '8px',
+        padding: '14px',
+        minWidth: '0',
+        minHeight: '138px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    body.appendChild(info)
+
     const stats = document.createElement('div')
     Object.assign(stats.style, {
         alignSelf: 'start',
@@ -296,7 +318,7 @@ function buildInventoryDom(keys: readonly string[], useConsumableKeys: readonly 
         if (ev.target === root) closeButton.click()
     })
 
-    return { root, panel, loadout, spell, categories, stats, closeButton, keyHint, useConsumableKeys }
+    return { root, panel, loadout, spell, categories, info, stats, closeButton, keyHint, useConsumableKeys }
 }
 
 function renderInventory(dom: InventoryDom, world: GameWorld, useConsumableKeys = dom.useConsumableKeys): void {
@@ -307,6 +329,7 @@ function renderInventory(dom: InventoryDom, world: GameWorld, useConsumableKeys 
     dom.categories.replaceChildren(...INVENTORY_CATEGORIES.map((category) =>
         categorySection(category, categoryCards(category, grouped.get(category) ?? [], dom, world)),
     ))
+    setInventoryInfo(dom, defaultInventoryInfo(dom, world))
     dom.stats.replaceChildren(...statsSection(world))
 }
 
@@ -363,6 +386,14 @@ function loadoutButton(dom: InventoryDom, world: GameWorld, option: LoadoutOptio
     } satisfies Partial<CSSStyleDeclaration>)
     button.appendChild(sub)
 
+    wireInventoryInfo(button, dom, {
+        title: option.label,
+        status: active ? 'Active loadout' : 'Loadout',
+        description: option.hint,
+        lines: [describeHandLoadout(world.playerSettings.equipment[option.stance])],
+        action: active ? 'Already selected.' : 'Click to equip this loadout.',
+    })
+
     button.addEventListener('click', () => {
         const players = query(world, [PlayerControlled])
         if (players.length === 0) return
@@ -374,7 +405,7 @@ function loadoutButton(dom: InventoryDom, world: GameWorld, option: LoadoutOptio
 
 function spellSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
     const title = document.createElement('div')
-    title.textContent = 'Spell (cast with C)'
+    title.textContent = 'Spells'
     Object.assign(title.style, {
         color: 'rgba(244, 240, 220, 0.84)',
         font: '700 12px ui-sans-serif, system-ui, sans-serif',
@@ -389,10 +420,12 @@ function spellSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
     } satisfies Partial<CSSStyleDeclaration>)
 
     for (const spell of SPELLS) {
-        const active = world.selectedSpell === spell.id
+        const learned = playerKnowsSpell(world.playerSettings, spell.id)
+        const active = learned && world.selectedSpell === spell.id
         const button = document.createElement('button')
         button.type = 'button'
-        button.title = spell.hint
+        button.title = spell.label
+        button.setAttribute('aria-disabled', learned ? 'false' : 'true')
         Object.assign(button.style, {
             display: 'grid',
             gap: '3px',
@@ -403,8 +436,9 @@ function spellSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
             border: active ? '1px solid #7fb8ff' : '1px solid rgba(238, 246, 242, 0.18)',
             background: active ? 'rgba(127, 184, 255, 0.16)' : 'rgba(238, 246, 242, 0.06)',
             color: '#eef6f2',
-            cursor: 'pointer',
+            cursor: learned ? 'pointer' : 'not-allowed',
             font: '700 13px ui-sans-serif, system-ui, sans-serif',
+            opacity: learned ? '1' : '0.52',
         } satisfies Partial<CSSStyleDeclaration>)
 
         const label = document.createElement('div')
@@ -412,14 +446,16 @@ function spellSection(dom: InventoryDom, world: GameWorld): HTMLElement[] {
         button.appendChild(label)
 
         const sub = document.createElement('div')
-        sub.textContent = `${spell.hint} Cost: ${manaCostLabel(spell.manaCost)}.`
+        sub.textContent = learned ? `Cost: ${manaCostLabel(spell.manaCost)}` : 'Locked'
         Object.assign(sub.style, {
             color: 'rgba(238, 246, 242, 0.58)',
             font: '600 11px ui-sans-serif, system-ui, sans-serif',
         } satisfies Partial<CSSStyleDeclaration>)
         button.appendChild(sub)
 
+        wireInventoryInfo(button, dom, spellInventoryInfo(spell, learned, active))
         button.addEventListener('click', () => {
+            if (!learned) return
             world.selectedSpell = spell.id
             renderInventory(dom, world)
         })
@@ -481,6 +517,13 @@ function hatSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElement[] {
             detail: active ? 'Equipped' : 'Select',
             active,
             title: `Equip ${EQUIPMENT_LABELS[kind]}`,
+            info: {
+                title: EQUIPMENT_LABELS[kind],
+                status: active ? 'Equipped' : 'Head equipment',
+                description: active ? 'This is your current hat slot item.' : 'A hat slot item available in your inventory.',
+                action: active ? 'Already equipped.' : 'Click to equip.',
+            },
+            dom,
             onClick: () => {
                 if (setHeadEquipment(world, kind)) renderInventory(dom, world)
             },
@@ -500,6 +543,13 @@ function meleeWeaponSelectorCards(dom: InventoryDom, world: GameWorld): HTMLElem
                 detail: active ? 'Equipped' : 'Select',
                 active,
                 title: `Equip ${EQUIPMENT_LABELS[kind]} in the melee loadout.`,
+                info: {
+                    title: EQUIPMENT_LABELS[kind],
+                    status: active ? 'Equipped' : 'Melee weapon',
+                    description: 'A hand weapon for the melee loadout.',
+                    action: active ? 'Already equipped.' : 'Click to equip in the melee loadout.',
+                },
+                dom,
                 onClick: () => {
                     if (setMeleeHandEquipment(world, kind)) renderInventory(dom, world)
                 },
@@ -541,6 +591,13 @@ function torchToggleCard(dom: InventoryDom, world: GameWorld): HTMLElement {
         detail: active ? 'On' : 'Off',
         active,
         title: active ? 'Put the hand torch away.' : 'Carry the hand torch.',
+        info: {
+            title: 'Torch',
+            status: active ? 'On' : 'Off',
+            description: HELD_TORCH_ITEM_OPTIONS.description,
+            action: active ? 'Click to put the torch away.' : 'Click to carry the torch.',
+        },
+        dom,
         onClick: () => {
             ensureHeldTorchInventoryItem(world)
             world.playerSettings.abilities.torch = !world.playerSettings.abilities.torch
@@ -601,6 +658,8 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
             name: item.name,
             detail: active ? `Active · x${item.quantity}` : `x${item.quantity}`,
             title: consumableTitle(item, direct, dom.useConsumableKeys),
+            info: consumableInventoryInfo(item, direct, active, dom.useConsumableKeys),
+            dom,
             active,
             disabled: item.quantity <= 0,
             onClick: () => {
@@ -624,6 +683,13 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
             name: item.name || bootInfo.name || HIGH_JUMP_BOOTS_NAME,
             detail: active ? 'Equipped' : 'Select',
             title: item.description ? `${item.name}\n${item.description}` : `Equip ${bootInfo.name || item.name}.`,
+            info: {
+                title: item.name || bootInfo.name || HIGH_JUMP_BOOTS_NAME,
+                status: active ? 'Equipped' : 'Accessory',
+                description: item.description ?? bootInfo.description,
+                action: active ? 'Click to unequip.' : 'Click to equip.',
+            },
+            dom,
             active,
             disabled: item.quantity <= 0,
             onClick: () => {
@@ -636,6 +702,8 @@ function itemCard(item: InventorySnapshotItem, dom: InventoryDom, world: GameWor
         name: item.name,
         detail: `x${item.quantity}`,
         title: item.description ? `${item.name}\n${item.description}` : item.name,
+        info: itemInventoryInfo(item),
+        dom,
         disabled: item.quantity <= 0,
     })
 }
@@ -648,11 +716,128 @@ function consumableTitle(item: InventorySnapshotItem, direct: boolean, useConsum
         : `${base}\nClick to select. Press ${useKey} to throw.`
 }
 
+function defaultInventoryInfo(dom: InventoryDom, world: GameWorld): InventoryInfo {
+    const useKey = actionKeyLabel(dom.useConsumableKeys)
+    const selected = world.selectedConsumable
+    const selectedLine = selected && isConsumableItemId(selected) && inventoryItemCount(world.inventory.items, selected) > 0
+        ? `Active consumable: ${CONSUMABLE_DEFS[selected].name}.`
+        : 'No active consumable.'
+    return {
+        title: 'Item Info',
+        status: 'Hover an item',
+        description: 'Move the cursor over an item, loadout, or spell to inspect it.',
+        lines: [
+            selectedLine,
+            `Press ${useKey} to use or throw the active consumable.`,
+        ],
+    }
+}
+
+function itemInventoryInfo(item: InventorySnapshotItem): InventoryInfo {
+    return {
+        title: item.name,
+        status: `Quantity: ${item.quantity}`,
+        description: item.description ?? 'A carried item.',
+    }
+}
+
+function consumableInventoryInfo(
+    item: InventorySnapshotItem,
+    direct: boolean,
+    active: boolean,
+    useConsumableKeys: readonly string[],
+): InventoryInfo {
+    const useKey = actionKeyLabel(useConsumableKeys)
+    return {
+        title: item.name,
+        status: active ? `Active consumable · x${item.quantity}` : `Quantity: ${item.quantity}`,
+        description: item.description ?? 'A consumable item.',
+        lines: [
+            direct ? `Press ${useKey} to use it.` : `Press ${useKey} to throw it.`,
+            direct ? 'Double-click to use immediately from this menu.' : 'Throwable consumables cannot be used directly from this menu.',
+        ],
+        action: active ? 'Already selected.' : 'Click to select as the active consumable.',
+    }
+}
+
+function spellInventoryInfo(
+    spell: (typeof SPELLS)[number],
+    learned: boolean,
+    active: boolean,
+): InventoryInfo {
+    return {
+        title: spell.label,
+        status: learned
+            ? active ? 'Selected spell' : 'Learned spell'
+            : 'Locked spell',
+        description: spell.description,
+        lines: [
+            spell.hint,
+            `Mana cost: ${manaCostLabel(spell.manaCost)}.`,
+        ],
+        action: learned
+            ? active ? 'Already selected.' : 'Click to select this spell.'
+            : 'Find a spellbook to learn this spell.',
+    }
+}
+
+function wireInventoryInfo(node: HTMLElement, dom: InventoryDom, info: InventoryInfo): void {
+    const show = () => setInventoryInfo(dom, info)
+    node.addEventListener('pointerenter', show)
+    node.addEventListener('focusin', show)
+}
+
+function setInventoryInfo(dom: InventoryDom, info: InventoryInfo): void {
+    const nodes: HTMLElement[] = []
+
+    const title = document.createElement('div')
+    title.textContent = info.title
+    Object.assign(title.style, {
+        color: '#f4f0dc',
+        font: '700 18px ui-serif, Georgia, serif',
+        marginBottom: '8px',
+    } satisfies Partial<CSSStyleDeclaration>)
+    nodes.push(title)
+
+    if (info.status) {
+        const status = document.createElement('div')
+        status.textContent = info.status
+        Object.assign(status.style, {
+            color: '#9bdca9',
+            font: '800 11px ui-sans-serif, system-ui, sans-serif',
+            letterSpacing: '0',
+            textTransform: 'uppercase',
+            marginBottom: '10px',
+        } satisfies Partial<CSSStyleDeclaration>)
+        nodes.push(status)
+    }
+
+    if (info.description) nodes.push(infoText(info.description, '#dce8e4'))
+    for (const line of info.lines ?? []) nodes.push(infoText(line, 'rgba(238, 246, 242, 0.66)'))
+    if (info.action) nodes.push(infoText(info.action, '#7fb8ff'))
+
+    dom.info.replaceChildren(...nodes)
+}
+
+function infoText(text: string, color: string): HTMLElement {
+    const node = document.createElement('div')
+    node.textContent = text
+    Object.assign(node.style, {
+        color,
+        font: '600 13px/1.45 ui-sans-serif, system-ui, sans-serif',
+        marginTop: '8px',
+        overflowWrap: 'anywhere',
+    } satisfies Partial<CSSStyleDeclaration>)
+    return node
+}
+
 interface MenuCardOptions {
     icon: InventoryIconId
     name: string
     detail: string
     title?: string
+    info?: InventoryInfo
+    dom?: InventoryDom
     active?: boolean
     disabled?: boolean
     onClick?: () => void
@@ -662,13 +847,11 @@ interface MenuCardOptions {
 function menuCard(opts: MenuCardOptions): HTMLElement {
     const interactive = opts.onClick !== undefined || opts.onDoubleClick !== undefined
     const card = interactive ? document.createElement('button') : document.createElement('div')
-    if (interactive && opts.disabled) {
-        ;(card as HTMLButtonElement).disabled = true
-    }
     if (opts.onClick) {
         ;(card as HTMLButtonElement).type = 'button'
         let clickTimer: number | null = null
         card.addEventListener('click', () => {
+            if (opts.disabled) return
             if (!opts.onDoubleClick) {
                 opts.onClick?.()
                 return
@@ -682,6 +865,7 @@ function menuCard(opts: MenuCardOptions): HTMLElement {
         if (opts.onDoubleClick) {
             card.addEventListener('dblclick', (ev) => {
                 ev.preventDefault()
+                if (opts.disabled) return
                 if (clickTimer !== null) {
                     window.clearTimeout(clickTimer)
                     clickTimer = null
@@ -694,6 +878,7 @@ function menuCard(opts: MenuCardOptions): HTMLElement {
         if (opts.onDoubleClick) {
             card.addEventListener('dblclick', (ev) => {
                 ev.preventDefault()
+                if (opts.disabled) return
                 opts.onDoubleClick?.()
             })
         }
@@ -711,12 +896,15 @@ function menuCard(opts: MenuCardOptions): HTMLElement {
         borderRadius: '6px',
         boxSizing: 'border-box',
         color: '#eef6f2',
-        cursor: interactive ? 'pointer' : 'default',
+        cursor: opts.disabled ? 'not-allowed' : interactive ? 'pointer' : 'default',
         opacity: opts.disabled ? '0.55' : '1',
         textAlign: 'left',
         font: 'inherit',
     } satisfies Partial<CSSStyleDeclaration>)
     card.title = opts.title ?? opts.name
+    if (interactive && opts.disabled) card.setAttribute('aria-disabled', 'true')
+    if (!interactive && opts.info) card.tabIndex = 0
+    if (opts.dom && opts.info) wireInventoryInfo(card, opts.dom, opts.info)
 
     card.appendChild(itemIcon(opts.icon))
 

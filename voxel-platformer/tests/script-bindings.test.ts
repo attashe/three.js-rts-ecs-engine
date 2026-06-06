@@ -44,7 +44,7 @@ function stubs() {
         audioPlay: [], audioStop: [],
         chunksSet: [], chunksFill: [], chunksGet: [],
         playerTeleport: [], playerKill: [],
-        playerSettings: [], playerAbility: [], playerGold: [], playerArrows: [], playerManaRestore: [],
+        playerSettings: [], playerAbility: [], playerSpell: [], playerGold: [], playerArrows: [], playerManaRestore: [],
         playerItemAdd: [], playerItemRemove: [],
         pickupSpawn: [], pickupDespawn: [], pickupExists: [],
         pistonSetEnabled: [], pistonIsEnabled: [], pistonFlip: [], pistonSetDeployed: [], pistonList: [],
@@ -116,6 +116,15 @@ function stubs() {
         setAbility(ability: PlayerAbilityKey, enabled: boolean) {
             playerSettings.abilities[ability] = enabled
             calls.playerAbility.push({ ability, enabled })
+        },
+        knowsSpell(spellId: string) {
+            return spellId in playerSettings.spells && playerSettings.spells[spellId as keyof typeof playerSettings.spells] === true
+        },
+        setSpellLearned(spellId: string, learned: boolean) {
+            if (!(spellId in playerSettings.spells)) return false
+            playerSettings.spells[spellId as keyof typeof playerSettings.spells] = learned
+            calls.playerSpell.push({ spellId, learned })
+            return true
         },
         setGold(amount: number) { gold = amount; calls.playerGold.push(amount) },
         setArrows(amount: number) { arrows = amount; calls.playerArrows.push(amount) },
@@ -360,16 +369,23 @@ test('player settings bindings expose live ability and parameter mutation', () =
     const s = stubs()
     const ctx = buildScriptContext({ runtime: createRuntime(), ...s.deps, flags: new Map() })
 
-    assert.equal(ctx.player.settings.abilities.bow, true)
+    assert.equal(ctx.player.settings.abilities.bow, false)
     ctx.player.setAbility('bow', false)
     assert.deepEqual(s.calls.playerAbility, [{ ability: 'bow', enabled: false }])
     assert.equal(ctx.player.settings.abilities.bow, false)
+    assert.equal(ctx.player.knowsSpell('bolt'), false)
+    assert.equal(ctx.player.setSpellLearned('bolt', true), true)
+    assert.deepEqual(s.calls.playerSpell, [{ spellId: 'bolt', learned: true }])
+    assert.equal(ctx.player.knowsSpell('bolt'), true)
+    assert.equal(ctx.player.setSpellLearned('missing', true), false)
 
     const next = ctx.player.setSettings({
+        spells: { nova: true },
         inventory: { gold: 12, arrows: 6 },
         moveSpeed: 7.5,
         torch: { intensity: 3.25, castsShadow: false },
     })
+    assert.equal(next.spells.nova, true)
     assert.equal(next.inventory.gold, 12)
     assert.equal(next.inventory.arrows, 6)
     assert.equal(next.moveSpeed, 7.5)

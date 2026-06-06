@@ -156,15 +156,24 @@ test('dynamite cannot be consumed directly from inventory', () => {
 test('player settings deep-copy durable inventory and tolerate old saves', () => {
     assert.equal(DEFAULT_PLAYER_SETTINGS.inventory.items['heal-potion']?.quantity, 2)
     assert.equal(DEFAULT_PLAYER_SETTINGS.inventory.items[SWORD_ITEM_ID]?.quantity, 1)
+    assert.equal(DEFAULT_PLAYER_SETTINGS.abilities.bow, false)
+    assert.equal(DEFAULT_PLAYER_SETTINGS.abilities.highJump, false)
+    assert.equal(DEFAULT_PLAYER_SETTINGS.abilities.airPush, false)
     assert.equal(DEFAULT_PLAYER_SETTINGS.abilities.torch, false)
+    assert.deepEqual(DEFAULT_PLAYER_SETTINGS.spells, { bolt: false, nova: false, orb: false })
     assert.equal(DEFAULT_PLAYER_SETTINGS.inventory.items[HELD_TORCH_ITEM_ID], undefined)
     assert.equal(DEFAULT_PLAYER_SETTINGS.equipment.boots, null)
     assert.equal(normalizePlayerSettings().inventory.items['heal-potion']?.quantity, 2)
     assert.equal(normalizePlayerSettings().inventory.items[SWORD_ITEM_ID]?.quantity, 1)
     const oldSave = normalizePlayerSettings({ inventory: { gold: 4, arrows: 2 } })
     assert.deepEqual(oldSave.inventory.items, {})
+    assert.deepEqual(oldSave.spells, { bolt: false, nova: false, orb: false })
+
+    const spellSave = normalizePlayerSettings({ spells: { bolt: 'true', nova: '0' } } as never)
+    assert.deepEqual(spellSave.spells, { bolt: true, nova: false, orb: false })
 
     const settings = applyPlayerSettingsPatch(copyPlayerSettings(DEFAULT_PLAYER_SETTINGS), {
+        spells: { bolt: true },
         inventory: {
             gold: 7,
             arrows: 3,
@@ -179,6 +188,7 @@ test('player settings deep-copy durable inventory and tolerate old saves', () =>
     assert.equal(settings.inventory.gold, 7)
     assert.equal(settings.inventory.arrows, 3)
     assert.equal(settings.inventory.items['sun-shard']?.quantity, 1)
+    assert.equal(settings.spells.bolt, true)
     assert.equal(copyInventoryItems(settings.inventory.items)['sun-shard']?.quantity, 1)
 })
 

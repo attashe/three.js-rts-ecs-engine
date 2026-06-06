@@ -76,6 +76,7 @@ function buildKind(kind: EditorPropKind): BufferGeometry {
         case 'chair-2':   return buildChair(2)
         case 'book':      return buildBook(1)
         case 'book-2':    return buildBook(2)
+        case 'spellbook': return buildSpellbook()
         case 'npc-keeper': return buildKeeperNpc()
         case 'sundial':   return buildSundial()
         case 'haste-shrine': return buildHasteShrine()
@@ -513,6 +514,38 @@ function buildBook(variant: 1 | 2): BufferGeometry {
     paintVertexColor(pages, 0.94, 0.90, 0.80)
 
     return mergeAndCleanup([pages, cover, spine])
+}
+
+function buildSpellbook(): BufferGeometry {
+    const cover = new BoxGeometry(0.44, 0.035, 0.32)
+    cover.translate(0, 0.018, 0)
+    paintVertexColor(cover, 0.12, 0.18, 0.46)
+
+    const leftPage = new BoxGeometry(0.18, 0.035, 0.28)
+    leftPage.translate(-0.095, 0.045, 0)
+    paintVertexColor(leftPage, 0.94, 0.90, 0.78)
+
+    const rightPage = new BoxGeometry(0.18, 0.035, 0.28)
+    rightPage.translate(0.095, 0.045, 0)
+    paintVertexColor(rightPage, 0.90, 0.86, 0.74)
+
+    const spine = new BoxGeometry(0.044, 0.05, 0.33)
+    spine.translate(0, 0.038, 0)
+    paintVertexColor(spine, 0.44, 0.20, 0.60)
+
+    const runeA = new BoxGeometry(0.105, 0.012, 0.025)
+    runeA.translate(-0.105, 0.07, -0.055)
+    paintVertexColor(runeA, 0.22, 0.55, 1.0)
+
+    const runeB = runeA.clone()
+    runeB.translate(0.21, 0, 0.11)
+    paintVertexColor(runeB, 0.22, 0.55, 1.0)
+
+    const gem = new SphereGeometry(0.045, 8, 6)
+    gem.translate(0, 0.09, 0)
+    paintVertexColor(gem, 0.45, 0.78, 1.0)
+
+    return mergeAndCleanup([cover, leftPage, rightPage, spine, runeA, runeB, gem])
 }
 
 function buildKeeperNpc(): BufferGeometry {

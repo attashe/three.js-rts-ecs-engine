@@ -42,8 +42,10 @@ import {
     copyPlayerSettings,
     PLAYER_ABILITY_KEYS,
     PLAYER_INVENTORY_LIMITS,
+    playerKnowsSpell,
     type PlayerAbilityKey,
     type PlayerSettingsPatch,
+    setPlayerSpellLearned,
 } from './player-settings'
 import { syncPlayerVisuals } from './player'
 import type { TradeMenuFacade } from './trade-system'
@@ -202,6 +204,12 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
             if (!isPlayerAbilityKey(ability)) return
             opts.world.playerSettings.abilities[ability] = clampBoolean(enabled, opts.world.playerSettings.abilities[ability])
         },
+        knowsSpell(spellId) {
+            return playerKnowsSpell(opts.world.playerSettings, spellId)
+        },
+        setSpellLearned(spellId, learned) {
+            return setPlayerSpellLearned(opts.world.playerSettings, spellId, learned)
+        },
         setGold(amount) {
             const gold = safeInventoryAmount(amount, opts.world.inventory.gold, PLAYER_INVENTORY_LIMITS.gold)
             opts.world.inventory.gold = gold
@@ -253,6 +261,7 @@ export function createGameScriptSystem(opts: GameScriptSystemOptions) {
                 id: spawnOpts?.id,
                 label: spawnOpts?.label,
                 inventoryItem: spawnOpts?.inventoryItem,
+                grantInventory: spawnOpts?.grantInventory,
             })
         },
         despawn(id) { return despawnScriptPickup(opts.world, id) },

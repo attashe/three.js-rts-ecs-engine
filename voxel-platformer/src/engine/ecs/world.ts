@@ -38,6 +38,9 @@ export interface PickupScriptMeta {
         quantity?: number
         options?: InventoryItemOptions
     }
+    /** False lets script pickups emit `pickup-taken` without becoming a
+     *  durable inventory item. */
+    grantInventory?: boolean
 }
 
 export interface PopupMessage {

@@ -3,7 +3,7 @@ import type { System } from '../engine/ecs/systems/system'
 import type { ActionMap } from '../engine/input/actions'
 import { GameAction } from './actions'
 import { CONSUMABLE_DEFS, ensureSelectedConsumable } from './consumables'
-import { consumableUseLabel } from './consumable-prompts'
+import { actionKeyLabel, consumableUseLabel } from './consumable-prompts'
 import { inventoryItemCount } from './inventory'
 
 export function createConsumableHudSystem(actions: Pick<ActionMap, 'bindingDisplayKeysFor'>): System {
@@ -51,12 +51,13 @@ export function createConsumableHudSystem(actions: Pick<ActionMap, 'bindingDispl
                 return
             }
             const label = consumableUseLabel(actions.bindingDisplayKeysFor(GameAction.UseConsumable), CONSUMABLE_DEFS[itemId].name)
-            const key = `${itemId}:${count}:${label}`
+            const inventoryLabel = `${actionKeyLabel(actions.bindingDisplayKeysFor(GameAction.Inventory))} menu`
+            const key = `${itemId}:${count}:${label}:${inventoryLabel}`
             if (key === lastKey) return
             lastKey = key
             const def = CONSUMABLE_DEFS[itemId]
             root.style.display = 'flex'
-            root.innerHTML = `<span style="${badgeStyle(def.icon)}"></span><span>${escapeHtml(label)}</span><span style="color:rgba(238,246,242,0.62)">x${count}</span>`
+            root.innerHTML = `<span style="${badgeStyle(def.icon)}"></span><span style="display:grid;gap:2px"><span>${escapeHtml(label)}</span><span style="color:rgba(238,246,242,0.54);font:700 10px ui-sans-serif,system-ui,sans-serif;text-transform:uppercase">${escapeHtml(inventoryLabel)}</span></span><span style="color:rgba(238,246,242,0.62)">x${count}</span>`
         },
         dispose() {
             root?.remove()

@@ -38,6 +38,7 @@ import { createHealthBarSystem } from './game/health-bar-system'
 import { createHealthHudSystem } from './game/health-hud-system'
 import { createManaHudSystem } from './game/mana-hud-system'
 import { createConsumableHudSystem } from './game/consumable-hud-system'
+import { createSpellbookPickupSpinSystem } from './game/spellbook-pickup-system'
 import { createStoneDamageSystem } from './game/stone-damage-system'
 import { createElectricOrbSystem } from './game/electric-orb-system'
 import { createConsumableUseSystem, createDelayedConsumableSystem } from './game/consumable-use-system'
@@ -909,6 +910,7 @@ async function main(): Promise<void> {
             },
         }), 'playerDeath')
         .addSystem(createRenderSyncSystem(renderer.scene), 'renderSync')
+        .addSystem(createSpellbookPickupSpinSystem(), 'spellbookPickupSpin')
         .addSystem(createPlayerDeathAnimSystem(), 'playerDeathAnim')
         .addSystem(createAnimationSystem(), 'animation')
         .addSystem(createPlayerStunBlinkSystem(), 'playerStunBlink')

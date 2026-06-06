@@ -36,6 +36,7 @@ import {
 import { HELD_TORCH_ITEM_ID } from '../src/game/inventory'
 import { HIGH_JUMP_BOOTS_ITEM_ID } from '../src/game/high-jump-boots'
 import { GameAudio } from '../src/game/audio'
+import { DEMO_SPELLBOOK_FEEDBACK_ZONE_ID } from '../src/game/level'
 
 const FAKE_SCRIPT_SOURCES: ProceduralScriptSources = Object.fromEntries(
     PROCEDURAL_LEVEL_SCRIPT_FILES.map((file) => [file.sourcePath, `// ${file.id}\n`]),
@@ -241,9 +242,15 @@ test('procedural demo export preserves scripts and travel metadata', () => {
     const garden = createProceduralEditorLevel(TELEPORT_GARDEN_LEVEL_ID, FAKE_SCRIPT_SOURCES)
 
     assert.deepEqual(
-        demo.editorMeta.scripts?.map((script) => script.sourcePath),
+        demo.editorMeta.scripts?.map((script) => script.sourcePath).filter(Boolean),
         PROCEDURAL_LEVEL_SCRIPT_FILES.map((file) => file.sourcePath),
     )
+    assert.ok(demo.editorMeta.scripts?.some((script) =>
+        script.id === 'demo-spellbook-bolt'
+        && script.source.includes("player.setSpellLearned(SPELL_ID, true)")
+        && script.source.includes(`const FEEDBACK_ZONE = ${JSON.stringify(DEMO_SPELLBOOK_FEEDBACK_ZONE_ID)}`)
+        && script.source.includes('ui.say(FEEDBACK_ZONE')
+        && script.source.includes('grantInventory: false')))
     assert.ok(demo.editorMeta.zones?.some((zone) => zone.portal?.targetLevelId === TELEPORT_GARDEN_LEVEL_ID))
     assert.ok(garden.editorMeta.zones?.some((zone) => zone.portal?.targetLevelId === DEMO_LEVEL_ID))
 })

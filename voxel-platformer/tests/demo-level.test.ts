@@ -5,7 +5,11 @@ import { aabbFromFoot, voxelAABBOverlap, type AABB } from '../src/engine/voxel/v
 import { BLOCK, DEFAULT_PALETTE, voxelLightSpec } from '../src/engine/voxel/palette'
 import { MAIN_CHARACTER_COLLIDER_HALF_HEIGHT, MAIN_CHARACTER_COLLIDER_RADIUS } from '../src/game/assets/main-character'
 import { HELD_TORCH_ITEM_ID } from '../src/game/inventory'
-import { generatePlatformerLevel } from '../src/game/level'
+import {
+    DEMO_SPELLBOOK_FEEDBACK_ZONE_ID,
+    DEMO_SPELLBOOK_PICKUP_POSITION,
+    generatePlatformerLevel,
+} from '../src/game/level'
 import {
     COMBAT_ARENA_LEVEL_ID,
     DEMO_FROM_ARENA_ARRIVAL_ID,
@@ -34,8 +38,11 @@ test('generatePlatformerLevel exposes a stable level name for the script engine'
     const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
     assert.equal(meta.name, DEMO_LEVEL_ID)
     assert.equal(meta.size, 24)
+    assert.equal(meta.player.abilities.bow, false)
     assert.equal(meta.player.abilities.highJump, false)
+    assert.equal(meta.player.abilities.airPush, false)
     assert.equal(meta.player.abilities.torch, true)
+    assert.deepEqual(meta.player.spells, { bolt: false, nova: false, orb: false })
     assert.equal(meta.player.inventory.items['heal-potion']?.quantity, 2)
     assert.equal(meta.player.inventory.items[HELD_TORCH_ITEM_ID]?.quantity, 1)
 })
@@ -250,11 +257,25 @@ test('demo sundial interaction prompt names the object and action clearly', () =
 test('demo haste shrine is an interactable prop near the spawn plaza', () => {
     const meta = generatePlatformerLevel(new ChunkManager(DEFAULT_PALETTE))
     const shrine = meta.zones.find((zone) => zone.id === 'zone.demo.haste-shrine')
+    const spellbookFeedback = meta.zones.find((zone) => zone.id === DEMO_SPELLBOOK_FEEDBACK_ZONE_ID)
 
     assert.equal(shrine?.label, 'Shrine of Haste')
     assert.equal(shrine?.kind, 'interact')
     assert.equal(shrine?.interaction?.prompt, 'Invoke Haste')
     assert.ok(meta.props.some((prop) => prop.id === 'demo:haste-shrine' && prop.kind === 'haste-shrine'))
+    assert.ok(meta.props.some((prop) => prop.id === 'demo:spellbook-display' && prop.kind === 'spellbook'))
+    assert.equal(spellbookFeedback?.kind, 'marker')
+    assert.equal(spellbookFeedback?.active, undefined)
+    assert.equal(spellbookFeedback?.interaction, undefined)
+    assert.deepEqual({
+        x: (spellbookFeedback!.min.x + spellbookFeedback!.max.x) * 0.5,
+        y: spellbookFeedback!.max.y,
+        z: (spellbookFeedback!.min.z + spellbookFeedback!.max.z) * 0.5,
+    }, {
+        x: DEMO_SPELLBOOK_PICKUP_POSITION.x,
+        y: 6,
+        z: DEMO_SPELLBOOK_PICKUP_POSITION.z,
+    })
 })
 
 test('demo includes a repairable cabin lift for the east cliff', () => {

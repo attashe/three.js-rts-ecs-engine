@@ -13,6 +13,13 @@ import {
 } from './anim/equipment-types'
 import { normalizeCharacterBeard, type CharacterBeardKind } from './character-appearance'
 import { INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS, SWORD_ITEM_ID } from './equipment-items'
+import {
+    copyPlayerSpells,
+    isSpellId,
+    normalizePlayerSpells,
+    type PlayerSpellSettings,
+    type SpellId,
+} from './spell-types'
 
 export const PLAYER_MODEL_KINDS = [
     'player',
@@ -91,6 +98,7 @@ export interface PlayerSettings {
     model: PlayerModelKind
     beard: CharacterBeardKind
     abilities: PlayerAbilitySettings
+    spells: PlayerSpellSettings
     inventory: PlayerInventorySettings
     equipment: PlayerEquipmentSettings
     moveSpeed: number
@@ -117,8 +125,9 @@ export interface PlayerEquipmentSettingsPatch {
     magic?: Partial<EquipmentHandLoadout>
 }
 
-export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'inventory' | 'equipment' | 'torch'>> & {
+export type PlayerSettingsPatch = Partial<Omit<PlayerSettings, 'abilities' | 'spells' | 'inventory' | 'equipment' | 'torch'>> & {
     abilities?: Partial<PlayerAbilitySettings>
+    spells?: Partial<PlayerSpellSettings>
     inventory?: Partial<PlayerInventorySettings>
     equipment?: PlayerEquipmentSettingsPatch
     torch?: Partial<PlayerTorchSettings>
@@ -130,12 +139,13 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
     abilities: {
         movement: true,
         jump: true,
-        bow: true,
-        highJump: true,
-        airPush: true,
+        bow: false,
+        highJump: false,
+        airPush: false,
         interact: true,
         torch: false,
     },
+    spells: normalizePlayerSpells(),
     inventory: {
         gold: 0,
         arrows: 0,
@@ -175,6 +185,7 @@ export function copyPlayerSettings(settings: PlayerSettings): PlayerSettings {
     return {
         ...settings,
         abilities: { ...settings.abilities },
+        spells: copyPlayerSpells(settings.spells),
         inventory: { ...settings.inventory, items: copyInventoryItems(settings.inventory.items) },
         equipment: copyPlayerEquipment(settings.equipment),
         torch: { ...settings.torch },
@@ -198,6 +209,7 @@ export function normalizePlayerSettings(input?: PlayerSettingsPatch | null): Pla
             interact: clampBoolean(input?.abilities?.interact, base.abilities.interact),
             torch: clampBoolean(input?.abilities?.torch, base.abilities.torch),
         },
+        spells: normalizePlayerSpells(input?.spells),
         inventory: {
             gold: clampInt(input?.inventory?.gold, 0, PLAYER_INVENTORY_LIMITS.gold, base.inventory.gold),
             arrows: clampInt(input?.inventory?.arrows, 0, PLAYER_INVENTORY_LIMITS.arrows, base.inventory.arrows),
@@ -232,6 +244,7 @@ export function applyPlayerSettingsPatch(settings: PlayerSettings, patch: Player
         ...settings,
         ...patch,
         abilities: { ...settings.abilities, ...patch.abilities },
+        spells: { ...settings.spells, ...patch.spells },
         inventory: {
             ...settings.inventory,
             ...patch.inventory,
@@ -250,6 +263,18 @@ export function applyPlayerSettingsPatch(settings: PlayerSettings, patch: Player
             : currentEquipment,
         torch: { ...settings.torch, ...patch.torch },
     })
+}
+
+export function playerKnowsSpell(settings: PlayerSettings, spellId: string): spellId is SpellId {
+    return isSpellId(spellId) && settings.spells[spellId] === true
+}
+
+export function setPlayerSpellLearned(settings: PlayerSettings, spellId: string, learned: boolean): boolean {
+    if (!isSpellId(spellId)) return false
+    const next = clampBoolean(learned, settings.spells[spellId])
+    if (settings.spells[spellId] === next) return false
+    settings.spells[spellId] = next
+    return true
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

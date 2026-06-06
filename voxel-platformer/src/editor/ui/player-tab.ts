@@ -10,6 +10,7 @@ import {
     type PlayerAbilityKey,
     type PlayerModelKind,
 } from '../../game/player-settings'
+import { SPELL_IDS, SPELL_LABELS, type SpellId } from '../../game/spell-types'
 import {
     CHARACTER_BEARD_KINDS,
     CHARACTER_BEARD_LABELS,
@@ -111,6 +112,17 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
     }
     root.appendChild(abilitiesSection)
 
+    const spellsSection = sectionEl('Spells')
+    const spellInputs = new Map<SpellId, HTMLInputElement>()
+    for (const spellId of SPELL_IDS) {
+        const row = checkboxInput(SPELL_LABELS[spellId], state.player.spells[spellId], (checked) => {
+            state.player.spells[spellId] = checked
+        })
+        spellInputs.set(spellId, row.input)
+        spellsSection.appendChild(row.row)
+    }
+    root.appendChild(spellsSection)
+
     const inventorySection = sectionEl('Starting Inventory')
     const goldField = numberInput('Money', state.player.inventory.gold, 0, 999999, 1, (value) => {
         state.player.inventory.gold = clampInt(value, 0, 999999)
@@ -205,6 +217,10 @@ export function buildPlayerTab(opts: PlayerTabOptions): RefreshableElement {
         for (const ability of PLAYER_ABILITY_KEYS) {
             const input = abilityInputs.get(ability)
             if (input && input.checked !== state.player.abilities[ability]) input.checked = state.player.abilities[ability]
+        }
+        for (const spellId of SPELL_IDS) {
+            const input = spellInputs.get(spellId)
+            if (input && input.checked !== state.player.spells[spellId]) input.checked = state.player.spells[spellId]
         }
         syncNumber(goldField, state.player.inventory.gold)
         syncNumber(arrowsField, state.player.inventory.arrows)

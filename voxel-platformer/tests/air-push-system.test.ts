@@ -45,6 +45,7 @@ function spawnPushable(world: GameWorld): number {
 
 test('Air Push spends mana and pushes valid physics targets', () => {
     const world = createGameWorld()
+    world.playerSettings.abilities.airPush = true
     const player = spawnPlayer(world)
     const target = spawnPushable(world)
 
@@ -56,6 +57,7 @@ test('Air Push spends mana and pushes valid physics targets', () => {
 
 test('Air Push consumes the press but does not push without enough mana', () => {
     const world = createGameWorld()
+    world.playerSettings.abilities.airPush = true
     const player = spawnPlayer(world, 0)
     const target = spawnPushable(world)
 

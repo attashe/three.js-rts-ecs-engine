@@ -10,6 +10,7 @@ import { DEFAULT_PALETTE } from '../src/engine/voxel/palette'
 import { createArrowHitSystem } from '../src/engine/ecs/systems/arrow-hit-system'
 import { createMovingObjectSystem } from '../src/engine/ecs/systems/moving-object-system'
 import { SPELLS, createSpellCastSystem, getSpell, DEFAULT_SPELL_ID } from '../src/game/spells'
+import { normalizePlayerSpells } from '../src/game/spell-types'
 import { advanceSpellWaves } from '../src/game/spell-effect-system'
 import type { NpcRuntimeState } from '../src/game/npcs/npc-types'
 import { PLAYER_DEFAULT_MAX_MANA } from '../src/game/mana'
@@ -47,6 +48,7 @@ function onePressAction(): ActionMap {
 function spawnCastingPlayer(mana = PLAYER_DEFAULT_MAX_MANA) {
     const world = createGameWorld()
     world.weaponStance = 'magic'
+    world.playerSettings.spells.bolt = true
     const player = createEntity(world)
     addComponents(world, player, [PlayerControlled, Position, Rotation, Grounded, Mana])
     Position.x[player] = 0
@@ -71,6 +73,14 @@ test('spell registry has at least two distinct variants and a stable default', (
     ])
 })
 
+test('spell progression normalization ignores non-finite numeric booleans', () => {
+    assert.deepEqual(normalizePlayerSpells({ bolt: Number.NaN, nova: Infinity, orb: 1 }), {
+        bolt: false,
+        nova: false,
+        orb: true,
+    })
+})
+
 test('spell cast system spends mana before spawning the selected spell', () => {
     const { world, player } = spawnCastingPlayer()
     world.selectedSpell = 'bolt'
@@ -91,6 +101,18 @@ test('spell cast system consumes the press but does not cast without enough mana
     assert.equal(Mana.current[player], 0)
     assert.equal([...query(world, [MovingObject])].length, 0)
     assert.ok(world.log.includes('Not enough mana.'))
+})
+
+test('spell cast system refuses spells the player has not learned', () => {
+    const { world, player } = spawnCastingPlayer()
+    world.playerSettings.spells.bolt = false
+    world.selectedSpell = 'bolt'
+
+    createSpellCastSystem(onePressAction()).update(world, 1 / 60)
+
+    assert.equal(Mana.current[player], PLAYER_DEFAULT_MAX_MANA)
+    assert.equal([...query(world, [MovingObject])].length, 0)
+    assert.ok(world.log.includes('Spell not learned.'))
 })
 
 test('spell cast system requires an equipped staff loadout', () => {

@@ -37,6 +37,16 @@ test('prop registry exposes numbered decorative variants', () => {
     assert.equal(PROP_LABELS['mushroom-3'], 'Mushroom 3')
 })
 
+test('spellbook prop is registered and readable above its base', () => {
+    assert.ok(PROP_KINDS.includes('spellbook'))
+    assert.equal(PROP_LABELS.spellbook, 'Spellbook')
+    const { geometry } = getPropModel('spellbook')
+    geometry.computeBoundingBox()
+    assert.ok(geometry.boundingBox)
+    assert.ok(geometry.boundingBox!.min.y >= -0.001, 'spellbook should sit on its placement base')
+    assert.ok(geometry.boundingBox!.max.y > 0.08, 'spellbook should have raised readable details')
+})
+
 test('mushroom variants sit on their base and keep a readable cap silhouette', () => {
     for (const kind of ['mushroom', 'mushroom-2', 'mushroom-3'] as const) {
         const { geometry } = getPropModel(kind)

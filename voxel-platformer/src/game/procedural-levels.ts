@@ -2,7 +2,13 @@ import type { ChunkManager } from '../engine/voxel/chunk-manager'
 import { BLOCK } from '../engine/voxel/palette'
 import type { Zone } from '../engine/ecs/zones'
 import type { ScriptEntry } from '../engine/script/types'
-import { generatePlatformerLevel, playerSettingsWithHighJumpDisabled, type LevelMeta } from './level'
+import {
+    DEMO_SPELLBOOK_FEEDBACK_ZONE_ID,
+    DEMO_SPELLBOOK_PICKUP_POSITION,
+    generatePlatformerLevel,
+    playerSettingsWithHighJumpDisabled,
+    type LevelMeta,
+} from './level'
 import { GameAudio } from './audio'
 import { HELD_TORCH_ITEM_ID, HELD_TORCH_ITEM_OPTIONS } from './inventory'
 import {
@@ -14,6 +20,7 @@ import { normalizeNpcConfig, type NpcConfig } from './npcs/npc-types'
 import { defineLevel, interactZone, outdoorDay, terrain, zoneBox } from './level-builder'
 import { applyPlayerSettingsPatch, copyPlayerSettings, DEFAULT_PLAYER_SETTINGS } from './player-settings'
 import { INVENTORY_HAND_EQUIPMENT_ITEM_OPTIONS, SWORD_ITEM_ID } from './equipment-items'
+import { ARCANE_BOLT_SPELLBOOK_PICKUP_KIND } from './spellbook'
 import type { CameraShot, Cinematic } from './cinematics/cinematic-types'
 import { compileSurfaceLevelOrThrow, compileWorldgenLevelOrThrow, requireResolvedAnchor, type VoxelCoord } from './worldgen'
 import phase8PipelineSampleSpecJson from '../../examples/worldgen/phase8-pipeline-sample.json'
@@ -734,13 +741,58 @@ function demoNpcs(): NpcConfig[] {
 }
 
 export function createDemoScripts(scriptSources: ProceduralScriptSources): ScriptEntry[] {
-    return PROCEDURAL_LEVEL_SCRIPT_FILES.map((file) => ({
-        id: file.id,
-        name: file.name,
-        source: requiredScriptSource(scriptSources, file.sourcePath),
-        fromFile: true,
-        sourcePath: file.sourcePath,
-    }))
+    return [
+        ...PROCEDURAL_LEVEL_SCRIPT_FILES.map((file) => ({
+            id: file.id,
+            name: file.name,
+            source: requiredScriptSource(scriptSources, file.sourcePath),
+            fromFile: true,
+            sourcePath: file.sourcePath,
+        })),
+        demoSpellbookScript(),
+    ]
+}
+
+function demoSpellbookScript(): ScriptEntry {
+    const pickupId = 'demo:spellbook:bolt'
+    const learnedFlag = 'demo.spellbook.bolt.learned'
+    return {
+        id: 'demo-spellbook-bolt',
+        name: 'demo-spellbook-bolt.js',
+        source: [
+            `const PICKUP_KIND = ${JSON.stringify(ARCANE_BOLT_SPELLBOOK_PICKUP_KIND)}`,
+            `const PICKUP_ID = ${JSON.stringify(pickupId)}`,
+            `const FEEDBACK_ZONE = ${JSON.stringify(DEMO_SPELLBOOK_FEEDBACK_ZONE_ID)}`,
+            `const SPELL_ID = 'bolt'`,
+            `const LEARNED_FLAG = ${JSON.stringify(learnedFlag)}`,
+            `const PICKUP_POS = ${JSON.stringify(DEMO_SPELLBOOK_PICKUP_POSITION)}`,
+            ``,
+            `on('level-start', () => {`,
+            `  ensureSpellbook()`,
+            `})`,
+            ``,
+            `on('pickup-taken', { pickupId: PICKUP_ID }, () => {`,
+            `  player.setSpellLearned(SPELL_ID, true)`,
+            `  flags.set(LEARNED_FLAG, true)`,
+            `  audio.play('sfx.quest.chime')`,
+            `  ui.say(FEEDBACK_ZONE, 'You learned Arcane Bolt. Switch to Magician loadout and cast with the secondary button.', { seconds: 4 })`,
+            `})`,
+            ``,
+            `function ensureSpellbook() {`,
+            `  if (player.knowsSpell(SPELL_ID)) {`,
+            `    flags.set(LEARNED_FLAG, true)`,
+            `    return`,
+            `  }`,
+            `  if (!pickups.exists(PICKUP_ID)) {`,
+            `    pickups.spawn(PICKUP_KIND, PICKUP_POS, {`,
+            `      id: PICKUP_ID,`,
+            `      label: 'Spellbook: Arcane Bolt',`,
+            `      grantInventory: false,`,
+            `    })`,
+            `  }`,
+            `}`,
+        ].join('\n'),
+    }
 }
 
 /**

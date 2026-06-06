@@ -32,6 +32,9 @@ import {
 } from './procedural-level-ids'
 import { defineLevel, interactZone, outdoorDay, terrain } from './level-builder'
 
+export const DEMO_SPELLBOOK_PICKUP_POSITION = { x: 13.35, y: 5, z: 12.65 } as const
+export const DEMO_SPELLBOOK_FEEDBACK_ZONE_ID = 'zone.demo.spellbook'
+
 export interface CoinPileSpawn {
     position: { x: number; y: number; z: number }
     amount?: number
@@ -328,6 +331,13 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             anchorDy: 1.35,
             radius: 2.55,
         }),
+        {
+            id: DEMO_SPELLBOOK_FEEDBACK_ZONE_ID,
+            kind: 'marker',
+            label: 'Spellbook',
+            min: { x: 12.75, y: groundY + 1, z: 12.05 },
+            max: { x: 13.95, y: groundY + 2.0, z: 13.25 },
+        },
         interactZone({
             id: 'zone.demo.cliff-lift.bottom',
             label: 'Broken Cliff Lift',
@@ -469,6 +479,14 @@ export function generatePlatformerLevel(chunks: ChunkManager): LevelMeta {
             position: t.stand(14.5, 9.5),
             yaw: Math.PI * 0.08,
             scale: 1.35,
+            gridAligned: false,
+        },
+        {
+            id: 'demo:spellbook-display',
+            kind: 'spellbook',
+            position: t.stand(13.95, 12.1),
+            yaw: -Math.PI * 0.14,
+            scale: 0.9,
             gridAligned: false,
         },
         {

@@ -185,6 +185,59 @@ export function createDynamiteBundle(): Group {
     return shadows(root)
 }
 
+export function createSpellbookPickupProp(): Group {
+    const root = new Group()
+    root.name = 'SpellbookPickup'
+
+    const spin = new Group()
+    spin.name = 'SpellbookSpin'
+    spin.position.y = 0.58
+    root.add(spin)
+
+    const coverMat = material(0x243a84, 0.54, 0.06)
+    const pageMat = material(0xe7dcc0, 0.66)
+    const spineMat = material(0x7a3aa2, 0.5, 0.08)
+    const runeMat = material(0x6fc8ff, 0.35, 0.18)
+    const brassMat = material(0xd4a64b, 0.42, 0.22)
+
+    const cover = new Mesh(sharedBoxGeometry(0.48, 0.04, 0.34), coverMat)
+    cover.name = 'SpellbookCover'
+    cover.position.y = 0.01
+
+    const leftPage = new Mesh(sharedBoxGeometry(0.2, 0.035, 0.29), pageMat)
+    leftPage.name = 'SpellbookLeftPage'
+    leftPage.position.set(-0.11, 0.05, 0)
+    leftPage.rotation.z = 0.08
+
+    const rightPage = new Mesh(sharedBoxGeometry(0.2, 0.035, 0.29), pageMat)
+    rightPage.name = 'SpellbookRightPage'
+    rightPage.position.set(0.11, 0.05, 0)
+    rightPage.rotation.z = -0.08
+
+    const spine = new Mesh(sharedBoxGeometry(0.045, 0.07, 0.36), spineMat)
+    spine.name = 'SpellbookSpine'
+    spine.position.y = 0.04
+
+    const runeA = new Mesh(sharedBoxGeometry(0.12, 0.012, 0.026), runeMat)
+    runeA.name = 'SpellbookRuneA'
+    runeA.position.set(-0.12, 0.085, -0.07)
+    const runeB = runeA.clone()
+    runeB.name = 'SpellbookRuneB'
+    runeB.position.set(0.12, 0.085, 0.07)
+
+    const gem = new Mesh(sharedSphereGeometry(0.046, 8, 6), runeMat)
+    gem.name = 'SpellbookGem'
+    gem.position.y = 0.12
+
+    const ring = new Mesh(sharedTorusGeometry(0.37, 0.012, 6, 28), brassMat)
+    ring.name = 'SpellbookHalo'
+    ring.rotation.x = Math.PI * 0.5
+    ring.position.y = -0.12
+
+    spin.add(cover, leftPage, rightPage, spine, runeA, runeB, gem, ring)
+    return shadows(root)
+}
+
 export function createFoodPickupProp(kind: 'apple' | 'fish' | 'meat' | 'pie' = 'meat'): Group {
     const root = new Group()
     root.name = `FoodPickup:${kind}`

@@ -12,6 +12,7 @@
 
 import type { VoxelCoord } from '../ecs/world'
 import type { PlayerAbilityKey, PlayerSettings, PlayerSettingsPatch } from '../../game/player-settings'
+import type { SpellId } from '../../game/spell-types'
 import type { StoneSpawnOptions, StoneTierId } from '../../game/moving-objects'
 import type { InventoryCategoryId, InventoryItemOptions, InventoryItemRecord, InventorySnapshotItem } from '../../game/inventory'
 import type { DialogueVoiceRef } from '../../game/dialogue-voice/types'
@@ -105,6 +106,8 @@ export interface PlayerFacade {
     getSettings(): PlayerSettings
     setSettings(patch: PlayerSettingsPatch): PlayerSettings
     setAbility(ability: PlayerAbilityKey, enabled: boolean): void
+    knowsSpell?(spellId: string): boolean
+    setSpellLearned?(spellId: string, learned: boolean): boolean
     setGold(amount: number): void
     setArrows(amount: number): void
     teleport(x: number, y: number, z: number): void
@@ -406,6 +409,8 @@ export interface PlayerApi {
     clearCheckpoint(): void
     setSettings(patch: PlayerSettingsPatch): PlayerSettings
     setAbility(ability: PlayerAbilityKey, enabled: boolean): void
+    knowsSpell(spellId: SpellId | string): boolean
+    setSpellLearned(spellId: SpellId | string, learned: boolean): boolean
     setGold(amount: number): void
     setArrows(amount: number): void
     /** Restore player mana. With no amount, refills to max; otherwise restores
@@ -553,6 +558,8 @@ export interface PickupSpawnOptions {
     label?: string
     /** Durable inventory metadata for custom pickups. Coins keep using gold. */
     inventoryItem?: InventoryItemOptions & { id?: string }
+    /** Defaults to true. Set false for pickups that only trigger script logic. */
+    grantInventory?: boolean
 }
 
 export type FlagValue = number | string | boolean

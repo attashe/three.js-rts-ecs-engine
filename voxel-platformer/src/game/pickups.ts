@@ -16,6 +16,7 @@ import {
     createFoodPickupProp,
     createHighJumpBootsProp,
     createQuestShard,
+    createSpellbookPickupProp,
     createSword,
     mergeGroupByMaterial,
 } from './assets'
@@ -29,6 +30,7 @@ import {
     FOOD_PIE_ITEM_ID,
 } from './consumables'
 import { SWORD_ITEM_ID } from './equipment-items'
+import { ARCANE_BOLT_SPELLBOOK_PICKUP_KIND } from './spellbook'
 
 export interface CoinPileOptions {
     /** World-space position; the pile's base sits at this Y. */
@@ -59,6 +61,8 @@ export interface ScriptPickupOptions {
         category?: InventoryCategoryId
         icon?: InventoryIconId
     }
+    /** Defaults to true. False keeps the pickup script-only. */
+    grantInventory?: boolean
 }
 
 let nextScriptPickupId = 1
@@ -103,8 +107,11 @@ export function spawnScriptPickup(world: GameWorld, opts: ScriptPickupOptions): 
         kind,
         pickupId: scriptId,
         label: opts.label ?? defaultPickupLabel(kind),
+        grantInventory: opts.grantInventory !== false,
         inventoryItem: kind === 'coin'
             ? undefined
+            : opts.grantInventory === false
+                ? undefined
             : {
                 id: opts.inventoryItem?.id ?? kind,
                 quantity: itemAmount,
@@ -165,7 +172,10 @@ function spawnQuestItem(
     PickupValue.kind[eid] = PickupKind.ScriptItem
     PickupValue.amount[eid] = safePickupAmount(amount)
 
-    world.object3DByEid.set(eid, mergeGroupByMaterial(createPickupVisual(kind)))
+    const visual = createPickupVisual(kind)
+    world.object3DByEid.set(eid, kind === ARCANE_BOLT_SPELLBOOK_PICKUP_KIND
+        ? mergeGroupByMaterial(visual, { preserveObjectNames: ['SpellbookSpin'] })
+        : mergeGroupByMaterial(visual))
     return eid
 }
 
@@ -183,6 +193,7 @@ function createPickupVisual(kind: string): ReturnType<typeof createQuestShard> {
     if (kind === FOOD_FISH_ITEM_ID) return createFoodPickupProp('fish')
     if (kind === FOOD_PIE_ITEM_ID) return createFoodPickupProp('pie')
     if (kind === FOOD_MEAT_ITEM_ID) return createFoodPickupProp('meat')
+    if (kind === ARCANE_BOLT_SPELLBOOK_PICKUP_KIND) return createSpellbookPickupProp()
     return createQuestShard()
 }
 

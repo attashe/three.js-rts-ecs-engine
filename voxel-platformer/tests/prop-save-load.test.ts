@@ -178,6 +178,7 @@ test('player defaults survive a save -> load round-trip through metadata', () =>
     state.player.beard = 'full'
     state.player.abilities.bow = false
     state.player.abilities.highJump = false
+    state.player.spells.bolt = true
     state.player.inventory.gold = 77
     state.player.inventory.arrows = 5
     state.player.equipment.melee.handR = 'staff'
@@ -193,6 +194,7 @@ test('player defaults survive a save -> load round-trip through metadata', () =>
     const meta = toLevelMeta(state, 'player-test')
     assert.equal(meta.player?.model, 'keeper')
     assert.equal(meta.player?.abilities.bow, false)
+    assert.equal(meta.player?.spells.bolt, true)
 
     const buffer = serializeLevel(chunks, meta)
     const restoreState = createEditorState({ x: 0, y: 0, z: 0 })

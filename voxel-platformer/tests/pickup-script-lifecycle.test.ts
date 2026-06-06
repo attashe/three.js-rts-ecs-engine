@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { hasComponent, removeComponent } from 'bitecs'
-import { Pickup } from '../src/engine/ecs/components'
+import { addComponents, hasComponent, removeComponent } from 'bitecs'
+import { Pickup, PlayerControlled, Position } from '../src/engine/ecs/components'
 import { createGameWorld } from '../src/engine/ecs/world'
+import { createEntity } from '../src/engine/ecs/entity'
+import { createPickupSystem } from '../src/engine/ecs/systems/pickup-system'
 import {
     despawnScriptPickup,
     scriptPickupExists,
@@ -19,6 +21,7 @@ import { createNpcLootSystem } from '../src/game/npc-loot-system'
 import { DYNAMITE_ITEM_ID, FOOD_MEAT_ITEM_ID, FOOD_PIE_ITEM_ID } from '../src/game/consumables'
 import { normalizeNpcConfig } from '../src/game/npcs/npc-types'
 import { registerRuntimeNpcs } from '../src/game/npcs/npc-runtime'
+import { ARCANE_BOLT_SPELLBOOK_PICKUP_KIND } from '../src/game/spellbook'
 
 test('spawnScriptPickup + scriptPickupExists round-trip a stable id', () => {
     const world = createGameWorld()
@@ -116,6 +119,45 @@ test('spawnScriptPickup renders known consumables with consumable props', () => 
     const pie = world.pickupEntityByScriptId.get('pie.meta')!
     assert.equal(world.object3DByEid.get(dynamite)?.name, 'DynamiteBundle')
     assert.equal(world.object3DByEid.get(pie)?.name, 'FoodPickup:pie')
+})
+
+test('spellbook script pickup renders a floating spellbook visual', () => {
+    const world = createGameWorld()
+    spawnScriptPickup(world, {
+        kind: ARCANE_BOLT_SPELLBOOK_PICKUP_KIND,
+        position: { x: 1, y: 2, z: 3 },
+        id: 'spellbook.bolt',
+        grantInventory: false,
+    })
+
+    const eid = world.pickupEntityByScriptId.get('spellbook.bolt')!
+    const visual = world.object3DByEid.get(eid)
+    assert.equal(visual?.name, 'SpellbookPickup')
+    assert.ok(visual?.getObjectByName('SpellbookSpin'), 'spellbook pickup keeps an animated spin child')
+})
+
+test('script pickup can opt out of durable inventory while still emitting pickup-taken', () => {
+    const world = createGameWorld()
+    const player = createEntity(world)
+    addComponents(world, player, [PlayerControlled, Position])
+    Position.x[player] = 0
+    Position.y[player] = 0
+    Position.z[player] = 0
+    spawnScriptPickup(world, {
+        kind: ARCANE_BOLT_SPELLBOOK_PICKUP_KIND,
+        position: { x: 0, y: 0, z: 0 },
+        id: 'spellbook.no-inventory',
+        label: 'Spellbook: Arcane Bolt',
+        grantInventory: false,
+    })
+
+    createPickupSystem().update(world, 1 / 60)
+
+    assert.equal(world.inventory.items[ARCANE_BOLT_SPELLBOOK_PICKUP_KIND], undefined)
+    assert.equal(world.scriptTriggerEvents.length, 1)
+    assert.equal(world.scriptTriggerEvents[0]?.kind, 'pickup-taken')
+    assert.equal(world.scriptTriggerEvents[0]?.pickupKind, ARCANE_BOLT_SPELLBOOK_PICKUP_KIND)
+    assert.equal(world.scriptTriggerEvents[0]?.pickupId, 'spellbook.no-inventory')
 })
 
 test('rabbit death drops rabbit meat once', () => {

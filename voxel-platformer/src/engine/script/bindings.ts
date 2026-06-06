@@ -41,6 +41,7 @@ import type {
 } from './types'
 import type { ScriptRuntime } from './runtime'
 import type { InventoryCategoryId } from '../../game/inventory'
+import { isSpellId } from '../../game/spell-types'
 
 /** Returned by `player.position` when the player entity doesn't
  *  exist. Every AABB / distance check using these coords yields false
@@ -169,6 +170,14 @@ export function buildScriptContext(deps: BindingsDeps): ScriptContext {
             clearCheckpoint() { player.clearCheckpoint() },
             setSettings(patch) { return player.setSettings(patch) },
             setAbility(ability, enabled) { player.setAbility(ability, enabled) },
+            knowsSpell(spellId) {
+                if (player.knowsSpell) return player.knowsSpell(spellId)
+                const settings = player.getSettings()
+                return isSpellId(spellId) && settings.spells[spellId] === true
+            },
+            setSpellLearned(spellId, learned) {
+                return player.setSpellLearned?.(spellId, learned) ?? false
+            },
             setGold(amount) { player.setGold(amount) },
             setArrows(amount) { player.setArrows(amount) },
             restoreMana(amount) { return player.restoreMana?.(amount) ?? false },

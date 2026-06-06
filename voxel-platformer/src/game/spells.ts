@@ -7,13 +7,16 @@ import { pushLog, type GameWorld } from '../engine/ecs/world'
 import { spawnElectricOrb, spawnMagicBolt } from './moving-objects'
 import { spendMana } from './mana'
 import { isStaffEquipmentKind } from './anim/equipment-types'
+import { playerKnowsSpell } from './player-settings'
+import { SPELL_LABELS, type SpellId } from './spell-types'
 
 /** A castable spell. `cast` runs the gameplay effect; `anim` is the combat
  *  overlay param played on the caster; `castLog` is the flavour line. */
 export interface Spell {
-    id: string
+    id: SpellId
     label: string
     hint: string
+    description: string
     /** Integer half-orb units. 1 = half a mana orb. */
     manaCost: number
     /** Combat overlay param to trigger on the caster's rig. */
@@ -37,8 +40,9 @@ const NOVA_FADE = 0.3
 export const SPELLS: readonly Spell[] = [
     {
         id: 'bolt',
-        label: 'Arcane Bolt',
+        label: SPELL_LABELS.bolt,
         hint: 'A single bolt of force fired where you aim.',
+        description: 'A quick force projectile for safe opening attacks. It travels straight from the staff and is easiest to use against single enemies or targets down a corridor.',
         manaCost: 1,
         anim: 'shoot',
         castLog: 'A bolt of force leaps from the staff.',
@@ -55,8 +59,9 @@ export const SPELLS: readonly Spell[] = [
     },
     {
         id: 'nova',
-        label: 'Frost Nova',
+        label: SPELL_LABELS.nova,
         hint: 'A slow ring of frost that chills every enemy it rolls over.',
+        description: 'A defensive wave that grows outward from the caster. It costs more mana than Arcane Bolt, but can catch several enemies that are crowding close.',
         manaCost: 3,
         anim: 'attackWide',
         castLog: 'A ring of frost rolls outward.',
@@ -81,8 +86,9 @@ export const SPELLS: readonly Spell[] = [
     },
     {
         id: 'orb',
-        label: 'Electric Orb',
+        label: SPELL_LABELS.orb,
         hint: 'A crackling orb that arcs and ricochets, zapping what it touches.',
+        description: 'A slower unstable orb that bounces through cramped spaces and can arc into multiple targets. It rewards careful casts in caves and tight rooms.',
         manaCost: 2,
         anim: 'shoot',
         castLog: 'An electric orb leaps from the staff, crackling.',
@@ -99,9 +105,9 @@ export const SPELLS: readonly Spell[] = [
     },
 ]
 
-const SPELL_BY_ID = new Map(SPELLS.map((spell) => [spell.id, spell]))
+const SPELL_BY_ID = new Map<string, Spell>(SPELLS.map((spell) => [spell.id, spell]))
 
-export const DEFAULT_SPELL_ID = SPELLS[0]!.id
+export const DEFAULT_SPELL_ID: SpellId = SPELLS[0]!.id
 
 export function getSpell(id: string): Spell {
     return SPELL_BY_ID.get(id) ?? SPELLS[0]!
@@ -142,6 +148,10 @@ export function createSpellCastSystem(actions: ActionMap, opts: SpellCastOptions
             }
 
             const spell = getSpell(gw.selectedSpell)
+            if (!playerKnowsSpell(gw.playerSettings, spell.id)) {
+                pushLog(gw, 'Spell not learned.')
+                return
+            }
             if (!spendMana(player, spell.manaCost)) {
                 pushLog(gw, 'Not enough mana.')
                 return

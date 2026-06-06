@@ -103,7 +103,7 @@ function applyPickup(
     } else if (kind === PickupKind.Arrow) {
         world.inventory.arrows += safeAmount
         world.playerSettings.inventory.arrows = world.inventory.arrows
-    } else if (kind === PickupKind.ScriptItem && meta?.kind) {
+    } else if (kind === PickupKind.ScriptItem && meta?.kind && meta.grantInventory !== false) {
         const item = meta.inventoryItem ?? {
             id: meta.kind,
             quantity: safeAmount,
